@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": [
+    "src/server",
+    "src/worker",
+    "src/contracts",
+    "src/test-utils",
+    "tsup.config.ts",
+    "vitest.config.ts"
+  ]
+}
