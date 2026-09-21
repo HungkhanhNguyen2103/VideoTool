@@ -10,15 +10,15 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-21 · Phase 1, step 1 of 7 done (dependencies) · base commit: `dba7d9e first commit`_
+_Last updated: 2026-09-22 · Phase 1, step 2 of 7 done (server foundation) · previous commit: `63f11e1 chore: add react-hook-form and resolvers, update status`_
 
 ### Works today (verified)
-- Scaffold only: `npm run typecheck` and `npm run lint` pass; `npm test` runs 5 skipped stub test files (0 tests). Verified on Linux in a scratch copy with `npm ci`.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint pass. Verified on Linux in a scratch copy with `npm ci`.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
-| project | stub | files exist but empty (Phase 1 builds it) |
+| project | stub | files exist but empty (Phase 1 step 3) |
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
@@ -27,7 +27,7 @@ _Last updated: 2026-09-21 · Phase 1, step 1 of 7 done (dependencies) · base co
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
 ### Endpoints implemented
-None yet.
+`GET /api/health` (implemented, **unverified**: needs a real MongoDB, see gaps). Unknown `/api/*` returns JSON 404.
 
 ### Client screens
 | Route | State |
@@ -36,18 +36,21 @@ None yet.
 | `/production/:projectId/review` | stub (Phase 3) |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (no tests yet). `npm run dev` / `build` unverified: server and client entry files are still `export {}`.
+`npm run typecheck`, `npm run lint`, `npm test`. `npm run dev` / `build` unverified (client entry still `export {}`; nothing has been run against a real MongoDB yet).
 
 ### Known gaps / TODO
-- Everything except the scaffold. `docs/prototypes/` (source of truth for UI copy and tokens) is not in the repo yet.
+- Everything except the server foundation. `docs/prototypes/` (source of truth for UI copy and tokens) is not in the repo yet.
+- Anything that needs MongoDB is unverified: the Linux verification sandbox cannot download `mongod` (HTTP 403), so DB tests must be run on Windows.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: `NODE_ENV=production` (in `.env`) makes web serve `dist/client`; default is development (no cross-platform way to set it in `npm start`).
+- 2026-09-22: API error body is `{ error: { code, message, fields? } }` (`contracts/common.ts`); server messages are Vietnamese because they surface in the UI.
 - 2026-09-22: `react-hook-form` + `@hookform/resolvers@5` added (resolver supports zod 4; not yet exercised in code).
 - 2026-09-21: `video-tool` is its own git repo (`.git` at its root, intentional). Commit only here, never push.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 1 step 2: server foundation (config, errors, ids, logger, db, app, main, worker).
+Phase 1 step 3: `contracts/project.ts`, the `project` module, test-utils and server tests, then the checkpoint.
 
 ## 2. Stack
 
