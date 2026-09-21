@@ -8,6 +8,47 @@ A personal tool that produces videos in three stages: **write script → generat
 One Node.js/TypeScript **modular monolith** (single codebase, single package) run as two processes: a web server and a worker.
 Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the DB stores relative paths only.
 
+## Status
+
+_Last updated: 2026-09-21 · Phase 1, step 0 of 7 done (baseline) · base commit: `dba7d9e first commit`_
+
+### Works today (verified)
+- Scaffold only: `npm run typecheck` and `npm run lint` pass; `npm test` runs 5 skipped stub test files (0 tests). Verified on Linux in a scratch copy with `npm ci`.
+
+### Modules
+| Module | State | Notes |
+|---|---|---|
+| project | stub | files exist but empty (Phase 1 builds it) |
+| script | stub | Phase 3 |
+| asset | stub | Phase 4 |
+| video | stub | Phase 5 |
+| job | stub | Phase 2 |
+
+State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
+
+### Endpoints implemented
+None yet.
+
+### Client screens
+| Route | State |
+|---|---|
+| `/production/init` | stub (Phase 1) |
+| `/production/:projectId/review` | stub (Phase 3) |
+
+### Run and verify
+`npm run typecheck`, `npm run lint`, `npm test` (no tests yet). `npm run dev` / `build` unverified: server and client entry files are still `export {}`.
+
+### Known gaps / TODO
+- Everything except the scaffold. `docs/prototypes/` (source of truth for UI copy and tokens) is not in the repo yet.
+- `react-hook-form` and `@hookform/resolvers` are not yet in `package.json`.
+
+### Decisions log (newest first, keep the last 15)
+- 2026-09-21: `video-tool` is its own git repo (`.git` at its root, intentional). Commit only here, never push.
+- 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
+
+### Next step
+Phase 1 step 1: add missing dependencies, then server foundation (config, errors, ids, logger, db, app, main, worker).
+
 ## 2. Stack
 
 - Runtime: Node.js >= 22, ESM, TypeScript strict
@@ -111,6 +152,7 @@ Direction is one-way, no cycles. `job` never imports asset/video; `worker/regist
 8. Secrets (AI keys) exist only in server/worker env. Never in `client/`.
 9. No magic registration. Routes are mounted explicitly in `app.ts`, indexes in `db/ensure-indexes.ts`, job handlers in `worker/registry.ts`.
 10. Files ~100-300 lines, one responsibility, descriptive names (no `utils.ts` / `helpers.ts`). Split only when a file has two responsibilities.
+11. After every step, and in the same commit as the code change, update the "Status" section. A step is not done until Status matches the code. Never mark something as done unless you verified it by running a command.
 
 ## 7. Pipeline
 
