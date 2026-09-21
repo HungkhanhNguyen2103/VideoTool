@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-21 · Phase 1, step 0 of 7 done (baseline) · base commit: `dba7d9e first commit`_
+_Last updated: 2026-09-21 · Phase 1, step 1 of 7 done (dependencies) · base commit: `dba7d9e first commit`_
 
 ### Works today (verified)
 - Scaffold only: `npm run typecheck` and `npm run lint` pass; `npm test` runs 5 skipped stub test files (0 tests). Verified on Linux in a scratch copy with `npm ci`.
@@ -40,14 +40,14 @@ None yet.
 
 ### Known gaps / TODO
 - Everything except the scaffold. `docs/prototypes/` (source of truth for UI copy and tokens) is not in the repo yet.
-- `react-hook-form` and `@hookform/resolvers` are not yet in `package.json`.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: `react-hook-form` + `@hookform/resolvers@5` added (resolver supports zod 4; not yet exercised in code).
 - 2026-09-21: `video-tool` is its own git repo (`.git` at its root, intentional). Commit only here, never push.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 1 step 1: add missing dependencies, then server foundation (config, errors, ids, logger, db, app, main, worker).
+Phase 1 step 2: server foundation (config, errors, ids, logger, db, app, main, worker).
 
 ## 2. Stack
 
