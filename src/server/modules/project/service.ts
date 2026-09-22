@@ -110,6 +110,60 @@ export async function replaceProjectScenes(id: string, scenes: SceneDoc[], newSt
   await updateProject(id, { scenes, ...(newStatus ? { status: newStatus } : {}) });
 }
 
+export async function patchProjectScene(
+  id: string,
+  sceneId: string,
+  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId'>>,
+): Promise<ProjectDetail> {
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  for (const [field, value] of Object.entries(patch)) set[`scenes.$[scene].${field}`] = value;
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id, scenes: { $elemMatch: { id: sceneId } } },
+    { $set: set, $inc: { version: 1 } },
+    { arrayFilters: [{ 'scene.id': sceneId }] },
+  );
+  if (result.matchedCount === 0) throw new NotFound('Không tìm thấy cảnh.');
+  return getProject(id);
+}
+
+export async function setProjectScenesAssetType(id: string, assetType: 'image' | 'video'): Promise<ProjectDetail> {
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id },
+    { $set: { 'scenes.$[].assetType': assetType, updatedAt: new Date() }, $inc: { version: 1 } },
+  );
+  if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
+  return getProject(id);
+}
+
+export async function applySceneAssets(
+  id: string,
+  assetUpdates: Array<{ sceneId: string; assetFileId: string }>,
+): Promise<ProjectDetail> {
+  const project = await getProject(id);
+  const latest = new Map<string, string>();
+  for (const update of assetUpdates) latest.set(update.sceneId, update.assetFileId);
+  if (latest.size === 0) return project;
+  for (const sceneId of latest.keys()) {
+    if (!project.scenes.some((scene) => scene.id === sceneId)) throw new NotFound('Không tìm thấy cảnh.');
+  }
+
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  const arrayFilters: Record<string, unknown>[] = [];
+  let index = 0;
+  for (const [sceneId, assetFileId] of latest) {
+    const identifier = `scene${index}`;
+    set[`scenes.$[${identifier}].assetFileId`] = assetFileId;
+    arrayFilters.push({ [`${identifier}.id`]: sceneId });
+    index += 1;
+  }
+  await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id },
+    { $set: set, $inc: { version: 1 } },
+    { arrayFilters },
+  );
+  return getProject(id);
+}
+
 export async function replaceProjectChapters(
   id: string,
   chapters: ChapterDoc[],

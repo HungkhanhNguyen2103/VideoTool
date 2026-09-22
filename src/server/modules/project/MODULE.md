@@ -11,6 +11,7 @@
 - `status` starts at `draft` on create. `duplicateProject` maps `rendered` -> `assets` (a copy has no video file); every other status is copied as-is.
 - `scenesCount`/`durationSec` in `ProjectSummary` are never stored; they are computed from `scenes` at query time (`repo.listProjectSummaries`), and are `null` when `scenes` is empty.
 - `version` starts at 1 on create and on duplicate (a duplicate is a new document, not a revision), then increments on every scene/chapter mutation. Scene asset metadata defaults to `assetType: 'image'` and `assetFileId: null` when legacy documents are read.
+- Scene asset mutations are public service APIs: `patchProjectScene` targets one scene, `setProjectScenesAssetType` updates all scenes, and `applySceneAssets` applies deduplicated file references in one atomic update.
 - Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 
 ## Flow

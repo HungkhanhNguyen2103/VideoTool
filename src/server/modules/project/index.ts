@@ -8,10 +8,13 @@ export {
   getProject,
   getProjectHistory,
   listProjects,
+  applySceneAssets,
+  patchProjectScene,
   patchProjectChapter,
   replaceProjectChapters,
   replaceProjectScenes,
   restoreProjectChapters,
+  setProjectScenesAssetType,
 } from './service';
 export { SceneDocSchema } from './docs';
 export type { ProjectDoc, SceneDoc } from './docs';

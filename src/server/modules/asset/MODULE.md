@@ -10,6 +10,7 @@
 - Scene asset metadata is part of the project-owned `SceneDoc`: `assetType` defaults to `image`, `assetFileId` defaults to `null`.
 - Asset code never calls `getCollection('projects')`; all scene writes go through public project-service methods.
 - `FileSummary.storedPath` is a generated relative basename used by the client to build preview URLs; no derived `assetUrl` is persisted on scenes.
+- Project asset updates use the public `patchProjectScene`, `setProjectScenesAssetType`, and atomic `applySceneAssets` methods; this module owns no scene persistence.
 
 ## Flow
 
