@@ -15,12 +15,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
     "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-query": "^5.103.2",
     "adm-zip": "^0.6.1",
     "express": "^5.2.1",
     "mongodb": "^7.6.0",
     "multer": "^2.4.0",
+    "openai": "^7.21.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.88.0",

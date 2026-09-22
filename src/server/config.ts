@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AI_PROVIDERS } from '../contracts/project';
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -7,6 +8,9 @@ const EnvSchema = z.object({
   MONGODB_DB: z.string().min(1).default('video_tool'),
   FILES_DIR: z.string().min(1).default('./data/files'),
   WORKER_POLL_MS: z.coerce.number().int().min(100).default(2000),
+  DEEPSEEK_API_KEY: z.string().default(''),
+  ANTHROPIC_API_KEY: z.string().default(''),
+  DEFAULT_AI_PROVIDER: z.enum(AI_PROVIDERS).default('deepseek'),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

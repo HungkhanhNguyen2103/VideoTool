@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Task 1 of 8 done (contracts + project-owned chapter persistence) · latest implementation commit: pending Task 1 commit_
+_Last updated: 2026-09-22 · Phase 3 Task 2 of 8 done (contracts + project persistence + AI clients) · latest implementation commit: pending Task 2 commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -25,7 +25,7 @@ _Last updated: 2026-09-22 · Phase 3 Task 1 of 8 done (contracts + project-owned
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | partial | Phase 3 Task 1 complete: shared chapter/AI contracts and project-owned chapter/history writes; service/AI/routes/client implementation remains |
+| script | partial | Phase 3 Tasks 1–2 complete: shared contracts, project-owned chapter/history writes, and provider-neutral DeepSeek/Claude clients; service/routes/client implementation remains |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -100,9 +100,10 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: shared chapter/snapshot schemas live in `contracts/script.ts` and are re-used by project/script to preserve the one-way `script -> project` boundary.
 - 2026-09-22: `replaceProjectScenes(projectId, scenes, newStatus?)` applies scenes and optional project status in one atomic update; script finalization will use `newStatus: 'assets'`.
 - 2026-09-22: `CreateProjectRequest` is the zod input type so the defaulted `aiProvider` stays optional for existing callers; project service persists `deepseek` when omitted.
+- 2026-09-22: AI adapters warn on missing provider keys at client construction and pass abort signals through provider request options; tests mock both SDKs and make no network calls.
 
 ### Next step
-Phase 3 Task 2: implement the provider-neutral AI clients, then continue the approved plan task-by-task.
+Phase 3 Task 3: implement script docs, prompts, generation/regeneration service, and atomic finalization.
 
 ## 2. Stack
 

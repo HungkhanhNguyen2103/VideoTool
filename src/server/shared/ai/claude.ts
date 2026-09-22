@@ -1,0 +1,39 @@
+import Anthropic from '@anthropic-ai/sdk';
+import type { AiClient, ChatMessage } from './types';
+import { logger } from '../logger';
+
+const MODEL = 'claude-opus-4-5';
+const DEFAULT_MAX_TOKENS = 4_096;
+
+function toRequest(messages: ChatMessage[], maxTokens: number) {
+  const system = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n');
+  return {
+    model: MODEL,
+    max_tokens: maxTokens,
+    ...(system ? { system } : {}),
+    messages: messages.filter((message) => message.role !== 'system').map(({ role, content }) => ({ role, content })),
+  };
+}
+
+export function createClaudeClient(): AiClient {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) logger.warn('ANTHROPIC_API_KEY is not configured. Claude calls will fail until it is set.');
+  const client = new Anthropic({ apiKey: apiKey || 'missing-anthropic-key' });
+
+  return {
+    async chat(messages: ChatMessage[], opts = {}) {
+      const response = await client.messages.create(toRequest(messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS));
+      return response.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
+    },
+
+    async *stream(messages: ChatMessage[], opts = {}) {
+      const stream = client.messages.stream(toRequest(messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS), { signal: opts.signal });
+      for await (const event of stream) {
+        if (event.type !== 'content_block_delta') continue;
+        const delta = event.delta as { text?: string; inputDelta?: { text?: string } };
+        const text = delta.text ?? delta.inputDelta?.text;
+        if (text) yield text;
+      }
+    },
+  };
+}
