@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 4 complete · latest implementation commit: `0bcaa04 fix(asset): harden zip import and studio references`_
+_Last updated: 2026-09-22 · Phase 5 Prompt 1 design spec committed; implementation blocked pending review · latest implementation commit: `2a404d9 docs(phase4): record final review fix commit`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (101 tests pass, 2 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -75,6 +75,7 @@ Unknown `/api/*` returns JSON 404.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: Phase 5 Prompt 1 combined design spec includes VieNeu TTS, FFmpeg rendering, Freesound SFX/BGM, atomic file/project ownership, and a Remotion stub; implementation is blocked pending spec review.
 - 2026-09-22: Final Phase 4 review fixes pass 101 tests (2 stub files skipped): ZIP enumeration/extraction failures map or skip safely, Studio uses dark design tokens and MIME-based previews with mismatch notice, and duplicated projects clear file references; browser Studio comparison remains a documented headless-environment gap.
 - 2026-09-22: Phase 4 acceptance before final review passed 97 tests; the follow-up regression pass added malformed ZIP, duplicate-project, and MIME preview coverage without adding dependencies.
 - 2026-09-22: Phase 4 Task 5 keeps `FlowSceneExport` in `contracts/asset.ts` so client code shares the route contract without importing the server asset module; Studio ZIP upload uses dependency-free XHR progress and preview URLs use validated `storedPath`.
