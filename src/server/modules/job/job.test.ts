@@ -296,6 +296,8 @@ describe('job routes', () => {
     const text = await (await fetch(`${base}/api/job/${job.id}/events`)).text();
     expect(text.indexOf('data: "first"')).toBeGreaterThan(-1);
     expect(text.indexOf('data: "second"')).toBeGreaterThan(text.indexOf('data: "first"'));
+    expect(text.match(/data: "first"/g)).toHaveLength(1);
+    expect(text.match(/data: "second"/g)).toHaveLength(1);
     expect(text).toContain('event: log');
   });
 
