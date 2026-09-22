@@ -7,7 +7,7 @@ import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
 import { createProject, getProject, getProjectHistory, replaceProjectChapters } from '../project';
-import { finalizeScript, generateScript, regenerateChapter } from './service';
+import { finalizeScript, generateScript, patchChapter, regenerateChapter } from './service';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
@@ -238,5 +238,51 @@ describe('script contracts', () => {
     expect(text).toContain('event: chunk\ndata: "{\\"paragraphs\\":[\\"New\\"]}"');
     expect(text.match(/event: done/g)).toHaveLength(1);
     expect(text).toContain('"paragraphs":["New"]');
+  });
+
+  it('prunes chapter history to the ten newest snapshots', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    for (let index = 0; index < 11; index += 1) {
+      await patchChapter(project.id, 'chapter-1', { title: `Version ${index}` });
+    }
+    const history = await getProjectHistory(project.id);
+    expect(history).toHaveLength(10);
+    expect(history[0]!.chapters[0]!.title).toBe('Version 9');
+    expect(history[9]!.chapters[0]!.title).toBe('Version 0');
+  });
+
+  it('rejects an out-of-range restore index with a typed route error', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    const base = await startScriptServer();
+    const response = await fetch(`${base}/api/project/${project.id}/chapters/restore`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ index: 0 }),
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_HISTORY_INDEX' } });
+  });
+
+  it('distributes a non-even target duration without losing seconds', async () => {
+    const project = await createProject({ ...projectInput, targetDurationSec: 61 });
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One', 'Two', 'Three'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+    await finalizeScript(project.id);
+    const saved = await getProject(project.id);
+    expect(saved.scenes.map((scene) => scene.durationSec)).toEqual([21, 20, 20]);
+    expect(saved.chapters[0]!.scenesCount).toBe(3);
+  });
+
+  it('emits an SSE error frame when streamed AI output is invalid', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    aiMock.stream.mockReturnValue((async function* () { yield 'not json'; })());
+    const base = await startScriptServer();
+    const response = await fetch(`${base}/api/project/${project.id}/chapters/chapter-1/regenerate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ instruction: 'bad', level: 'light' }),
+    });
+    const text = await response.text();
+    expect(text).toContain('event: error');
+    expect(text).toContain('AI returned invalid script structure.');
+    expect(text.match(/event: done/g)).toBeNull();
   });
 });

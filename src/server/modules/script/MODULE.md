@@ -6,7 +6,7 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
-- Tasks 1–5 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration/finalization service, explicit worker handler, project routes, and regeneration SSE are implemented; edge/client work remains.
+- Tasks 1–6 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration/finalization service, explicit worker handler, project routes/SSE, and edge coverage are implemented; client work remains.
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
 
 ## Flow
@@ -23,3 +23,4 @@
 - Finalization updates scenes and `assets` status atomically through `replaceProjectScenes`; chapter metadata/history is persisted before that final scene/status write.
 - The script handler is structurally compatible with `JobHandler` without importing the job module, so the module boundary remains enforced.
 - Routes receive job enqueueing from the app composition root and distinguish normal request-body close from an actual SSE response disconnect.
+- Edge coverage verifies ten-snapshot pruning, restore bounds, duration rounding, malformed-stream errors, and the absence of a false successful `done` event.
