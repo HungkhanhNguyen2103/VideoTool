@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import AdmZip from 'adm-zip';
+import { z } from 'zod';
 import { ALLOWED_MIME_TYPES } from '../../../contracts/file';
-import { getProject } from '../project';
-import { AppError, NotFound } from '../../shared/errors';
+import { getProject, replaceProjectScenes, SceneDocSchema } from '../project';
+import { AppError, FieldAppError, NotFound } from '../../shared/errors';
 import { uploadReference, uploadZip } from '../../shared/upload';
 import { findFileById } from './repo';
 import { createFileStoreService, type StoreFileParams } from './service';
@@ -38,6 +40,38 @@ fileStoreRouter.delete('/:id/files/:fileId', async (req, res) => {
   res.status(204).end();
 });
 
-fileStoreRouter.post('/:id/import-zip', uploadZip, async () => {
-  throw new AppError('ZIP import is not implemented yet.', 501, 'NOT_IMPLEMENTED');
+fileStoreRouter.post('/:id/import-zip', uploadZip, async (req, res) => {
+  const projectId = String(req.params.id);
+  await getProject(projectId);
+  const file = req.file;
+  if (!file) throw new AppError('File is required.', 400, 'FILE_REQUIRED');
+  if (file.mimetype !== 'application/zip' && file.mimetype !== 'application/x-zip-compressed') {
+    throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
+  }
+
+  let zip: AdmZip;
+  try {
+    zip = new AdmZip(file.buffer);
+  } catch {
+    throw new FieldAppError('ZIP file is invalid.', 422, 'INVALID_ZIP', []);
+  }
+  const entry = zip.getEntry('scenes.json');
+  if (!entry) throw new FieldAppError('ZIP must contain scenes.json at the root.', 422, 'MISSING_SCENES_JSON', []);
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(entry.getData().toString('utf8'));
+  } catch {
+    throw new FieldAppError('scenes.json is invalid JSON.', 422, 'INVALID_SCENES_JSON', []);
+  }
+  const parsed = z.array(SceneDocSchema).safeParse(raw);
+  if (!parsed.success) {
+    throw new FieldAppError(
+      'scenes.json has invalid scene data.',
+      422,
+      'INVALID_SCENES_JSON',
+      parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+    );
+  }
+  res.json(await replaceProjectScenes(projectId, parsed.data));
 });

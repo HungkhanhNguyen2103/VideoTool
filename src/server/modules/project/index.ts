@@ -2,4 +2,5 @@
 export { projectRouter } from './routes';
 export { ensureProjectIndexes } from './indexes';
 export { createProject, deleteProject, duplicateProject, getProject, listProjects, replaceProjectScenes } from './service';
+export { SceneDocSchema } from './docs';
 export type { ProjectDoc, SceneDoc } from './docs';

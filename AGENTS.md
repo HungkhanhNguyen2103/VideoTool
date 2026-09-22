@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + file upload routes implemented) · latest implementation commit: `b8b1c37 feat(file-store): implement disk-backed reference service`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 2 implementation complete pending acceptance verification · latest implementation commit: `5e35090 feat(file-store): add reference upload and project file routes`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + file uplo
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
-| job | partial | Prompt 1 complete; logs/SSE implemented; Prompt 2 ZIP/import completion remains in progress |
+| job | done | Prompt 1 complete plus Prompt 2 job-log extension; file-store/upload/ZIP acceptance verification pending |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
@@ -76,6 +76,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: SSE log events use `lastLogIndex` on the existing poll, flush existing logs on connect, and the client accumulates them separately from main state events.
 - 2026-09-22: file-store routes delegate scene replacement to `project.replaceProjectScenes`; only the project module updates `projects` with `$inc: { version: 1 }`.
 - 2026-09-22: Multer `LIMIT_FILE_SIZE` maps to HTTP 400 `FILE_TOO_LARGE` in the shared error handler and is covered by a multipart route test.
+- 2026-09-22: ZIP import requires root-level `scenes.json`, validates `SceneDoc[]`, and replaces scenes through `project.replaceProjectScenes` with a version increment.
 - 2026-09-22: search input in RecentProjects is debounced 300ms client-side before hitting the server (the prototype searches an in-memory array on every keystroke; a real HTTP call per keystroke would be wasteful).
 - 2026-09-22: tabs 2/3/4 (Duyệt & Tái Tạo / Studio / SEO) are all disabled without a current project, not just tab 2 as literally specified, because their routes need `:projectId`.
 - 2026-09-22: CSS Modules per component, global tokens+resets+small utility classes (`.label`, `.ic`, `.mono`, `.muted`, `.spacer`, `.sr-only`) in `styles/tokens.css` (loaded once); `.btn`/`.badge` variants live in the shared `ui/Button`, `ui/Badge` components instead of global classes.

@@ -14,6 +14,7 @@ import { createApp } from '../../app';
 import { createProject } from '../project/service';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import AdmZip from 'adm-zip';
 
 let filesDir: string;
 let service: ReturnType<typeof createFileStoreService>;
@@ -153,5 +154,53 @@ describe('file-store schema and repository', () => {
     const base = await startServer();
     const response = await fetch(`${base}/api/project/${second.id}/files/${stored.id}`, { method: 'DELETE' });
     expect(response.status).toBe(404);
+  });
+
+  function zipWith(entries: Record<string, string>): Buffer {
+    const zip = new AdmZip();
+    for (const [name, content] of Object.entries(entries)) zip.addFile(name, Buffer.from(content));
+    return zip.toBuffer();
+  }
+
+  it('imports root scenes.json and replaces project scenes', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const scenes = [{ id: 'scene-1', narration: 'Hello', visualPrompt: 'A room', durationSec: 5 }];
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(zipWith({ 'scenes.json': JSON.stringify(scenes) }))], { type: 'application/zip' }), 'scenes.zip');
+    const response = await fetch(`${base}/api/project/${project.id}/import-zip`, { method: 'POST', body: form });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: project.id, scenes, version: 2 });
+  });
+
+  it('rejects a ZIP without root scenes.json with 422', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(zipWith({ 'nested/scenes.json': '[]' }))], { type: 'application/zip' }), 'scenes.zip');
+    const response = await fetch(`${base}/api/project/${project.id}/import-zip`, { method: 'POST', body: form });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'MISSING_SCENES_JSON' } });
+  });
+
+  it('rejects invalid scenes.json with 422 field errors', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(zipWith({ 'scenes.json': JSON.stringify([{ id: 'bad' }]) }))], { type: 'application/zip' }), 'scenes.zip');
+    const response = await fetch(`${base}/api/project/${project.id}/import-zip`, { method: 'POST', body: form });
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body.error.fields.length).toBeGreaterThan(0);
+  });
+
+  it('rejects non-ZIP MIME for import', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob([Buffer.from('not zip')], { type: 'image/png' }), 'not.zip');
+    const response = await fetch(`${base}/api/project/${project.id}/import-zip`, { method: 'POST', body: form });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
   });
 });
