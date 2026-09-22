@@ -39,6 +39,10 @@
 - `useJobProgress(jobId)` opens one `EventSource` per non-null job id and closes it on id change/unmount.
 - `applyJobEvent` is dependency-free and keeps state parsing testable without a DOM test dependency.
 
+## Acceptance
+- Repository/service/routes/worker tests run against `mongodb-memory-server` on Windows.
+- Final verification: typecheck, lint, 33 tests passed (4 stub files skipped), production build, boundary scan, and built-worker SIGINT smoke test.
+
 ## Known pitfalls
 - Do not release a running lock from the cancel route; the worker owns terminal transitions.
 - SSE emits the current state on the first poll, then only changed state and periodic heartbeats.

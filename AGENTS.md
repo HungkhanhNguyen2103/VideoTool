@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 1 implementation complete pending final acceptance verification · latest implementation commit: `a522664 feat(worker): run guarded job polling loop`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 1 of 2 done (job queue + worker + SSE) · latest implementation commit: `cd431c2 feat(client): add reusable job progress SSE hook`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 2, Prompt 1 implementation complete pending f
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
-| job | done | contracts/schema/indexes/repository/service/routes/worker/client hook implemented and tested; final build/worker smoke verification pending |
+| job | done | contracts/schema/indexes/repository/service/routes/worker/client hook implemented and verified |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
@@ -40,6 +40,8 @@ All implemented and exercised against the live MongoDB service on Windows:
 - `GET /api/project/:id` -> `ProjectDetail` or 404
 - `POST /api/project/:id/duplicate` -> 201 `ProjectDetail`
 - `DELETE /api/project/:id` -> 204 or 404
+- `POST /api/job/:id/cancel` -> current `JobSummary` or 404/409
+- `GET /api/job/:id/events` -> SSE current state/deltas/heartbeats until terminal
 
 Unknown `/api/*` returns JSON 404.
 
@@ -50,7 +52,7 @@ Unknown `/api/*` returns JSON 404.
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ComingSoonPage placeholder, names the delivering phase |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` all pass on Windows. `npm run dev` was exercised with the installed MongoDB service; API is on `3000`, Vite is reachable at `http://localhost:5173`, and the worker starts with the same environment.
+`npm run typecheck`, `npm run lint`, `npm test` (33 passed, 4 skipped), and `npm run build` all pass on Windows. The built worker was started with `node --env-file=.env dist/worker.js`, logged `worker started`, and logged clean SIGINT shutdown against the local MongoDB service.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
@@ -59,6 +61,7 @@ Unknown `/api/*` returns JSON 404.
 - Tabs 2/3/4 are all gated on "there is a current project" (disabled otherwise) — the prompt only specified this rule for tab 2; extended it to 3/4 too since their routes require a `:projectId`. Flag if you want tab 1's gate rule only.
 - No endpoint updates a project in place yet, so the `version` optimistic-lock compare-and-swap is written into `ProjectDoc`/`AGENTS.md` but not exercised by any code path (arrives with scene edits in Phase 3).
 - A brief empty-list state can appear while TanStack Query fetches a newly selected status filter; the settled result is correct (`3/3` in the acceptance run). This is a loading-state polish item, not a data or API failure.
+- The client hook's EventSource open/change/unmount lifecycle is not DOM-automated by design; its pure state transition is covered by Node tests and the hook is not consumed until Phase 4/5.
 
 ### Decisions log (newest first, keep the last 15)
 - 2026-09-22: Phase 2 Task 6 will test a dependency-free job-event state transition helper in the existing Node Vitest environment; EventSource lifecycle wiring is manually verified because the hook has no Phase 2 consumer and adding jsdom/testing-library would expand dependencies.
@@ -68,6 +71,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: SSE sends the current job state on the first poll (`lastState` starts undefined), then only changed state and heartbeat comments; terminal state closes the stream.
 - 2026-09-22: worker loop drains claims in one tick but checks `closing` before every claim, uses a single in-flight tick guard, and recovers stale jobs every tick.
 - 2026-09-22: client hook lifecycle wiring is manually verified in this phase; state transitions use a dependency-free helper test instead of adding jsdom/testing-library dependencies before the hook has a consumer.
+- 2026-09-22: Phase 2 Prompt 1 acceptance uses `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, a forbidden-route/boundary scan, and a built-worker idle/startup/shutdown smoke run; no push was performed.
 - 2026-09-22: search input in RecentProjects is debounced 300ms client-side before hitting the server (the prototype searches an in-memory array on every keystroke; a real HTTP call per keystroke would be wasteful).
 - 2026-09-22: tabs 2/3/4 (Duyệt & Tái Tạo / Studio / SEO) are all disabled without a current project, not just tab 2 as literally specified, because their routes need `:projectId`.
 - 2026-09-22: CSS Modules per component, global tokens+resets+small utility classes (`.label`, `.ic`, `.mono`, `.muted`, `.spacer`, `.sr-only`) in `styles/tokens.css` (loaded once); `.btn`/`.badge` variants live in the shared `ui/Button`, `ui/Badge` components instead of global classes.
@@ -82,7 +86,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 2: implement the `job` module and worker loop, SSE progress, `file-store`, reference-file upload, and ZIP import backend. Keep file generation/rendering behind jobs and preserve the current module boundaries.
+Phase 2 Prompt 2: await the next user prompt for file-store/reference upload/ZIP work; keep file generation/rendering behind jobs and preserve the current module boundaries.
 
 ## 2. Stack
 
