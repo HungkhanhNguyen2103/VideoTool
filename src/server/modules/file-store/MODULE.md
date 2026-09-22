@@ -21,3 +21,4 @@
 ## Known pitfalls
 - There is no garbage collection for orphaned files after partial failures or project deletion; defer to Phase 6+.
 - Do not add this directory to `eslint.config.js` module boundaries.
+- Project scene replacement is delegated to the project service so file-store routes never write the `projects` collection.

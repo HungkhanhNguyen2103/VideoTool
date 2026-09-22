@@ -20,6 +20,14 @@ export async function deleteProjectById(id: string): Promise<number> {
   return result.deletedCount;
 }
 
+export async function replaceProjectScenes(id: string, scenes: ProjectDoc['scenes']): Promise<boolean> {
+  const result = await collection().updateOne(
+    { _id: id },
+    { $set: { scenes, updatedAt: new Date() }, $inc: { version: 1 } },
+  );
+  return result.matchedCount > 0;
+}
+
 /** One row of the project list, with scenesCount/durationSec computed in the query itself. */
 export type ProjectSummaryRow = {
   _id: string;

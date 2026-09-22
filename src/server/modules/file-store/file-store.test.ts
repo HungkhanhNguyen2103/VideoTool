@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,9 +10,26 @@ import { newId } from '../../shared/ids';
 import type { FileDoc } from './docs';
 import { createFileStoreService } from './service';
 import { NotFound } from '../../shared/errors';
+import { createApp } from '../../app';
+import { createProject } from '../project/service';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 let filesDir: string;
 let service: ReturnType<typeof createFileStoreService>;
+let server: Server | null = null;
+
+const projectInput = {
+  title: 'File test project',
+  brief: 'A valid brief for file upload tests.',
+  language: 'vi' as const,
+  referencesText: '',
+  scriptPresetId: 'documentary' as const,
+  targetDurationSec: 60,
+  chapterCount: null,
+  voiceId: null,
+  renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
+};
 
 function makeFile(overrides: Partial<FileDoc> = {}): FileDoc {
   return {
@@ -38,6 +55,18 @@ describe('file-store schema and repository', () => {
     service = createFileStoreService(filesDir);
   });
   afterAll(async () => { await closeTestMongo(); if (filesDir) rmSync(filesDir, { recursive: true, force: true }); });
+
+  async function startServer(): Promise<string> {
+    const app = createApp({ filesDir, clientDir: null });
+    await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
+    return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+  }
+
+  afterEach(async () => {
+    const current = server;
+    server = null;
+    if (current) await new Promise<void>((resolve) => current.close(() => resolve()));
+  });
 
   it('validates the persisted file document', () => {
     expect(FileDocSchema.parse(makeFile()).purpose).toBe('reference');
@@ -85,5 +114,44 @@ describe('file-store schema and repository', () => {
 
   it('throws NotFound for an unknown file id', async () => {
     await expect(service.deleteFile('missing')).rejects.toBeInstanceOf(NotFound);
+  });
+
+  it('uploads a valid PNG through the project route', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob([Buffer.from('png')], { type: 'image/png' }), 'reference.png');
+    const response = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: form });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ projectId: project.id, mimeType: 'image/png', ext: 'png' });
+  });
+
+  it('rejects a disallowed upload MIME type', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob([Buffer.from('text')], { type: 'text/plain' }), 'notes.txt');
+    const response = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: form });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
+  });
+
+  it('maps an oversized upload to FILE_TOO_LARGE', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob([Buffer.alloc(100 * 1024 * 1024 + 1)], { type: 'image/png' }), 'large.png');
+    const response = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: form });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'FILE_TOO_LARGE' } });
+  }, 30_000);
+
+  it('prevents deleting a file through a different project', async () => {
+    const first = await createProject(projectInput);
+    const second = await createProject({ ...projectInput, title: 'Second file project' });
+    const stored = await service.storeFile({ projectId: first.id, originalName: 'a.png', mimeType: 'image/png', buffer: Buffer.from('x'), purpose: 'reference' });
+    const base = await startServer();
+    const response = await fetch(`${base}/api/project/${second.id}/files/${stored.id}`, { method: 'DELETE' });
+    expect(response.status).toBe(404);
   });
 });

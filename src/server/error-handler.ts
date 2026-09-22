@@ -2,6 +2,7 @@ import type { ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 import type { ApiErrorBody } from '../contracts/common';
 import { AppError } from './shared/errors';
+import multer from 'multer';
 import { logger } from './shared/logger';
 
 function body(code: string, message: string, fields?: { path: string; message: string }[]): ApiErrorBody {
@@ -23,8 +24,13 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     res.status(400).json(body('validation_error', 'Dữ liệu không hợp lệ.', fields));
     return;
   }
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+    res.status(400).json(body('FILE_TOO_LARGE', 'File exceeds the size limit.'));
+    return;
+  }
   if (err instanceof AppError) {
-    res.status(err.status).json(body(err.code, err.message));
+    const fields = 'fields' in err ? (err as { fields: { path: string; message: string }[] }).fields : undefined;
+    res.status(err.status).json(body(err.code, err.message, fields));
     return;
   }
   const clientStatus = clientErrorStatus(err);

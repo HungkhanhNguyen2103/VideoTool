@@ -21,3 +21,9 @@ export class Conflict extends AppError {
     super(message, 409, 'conflict');
   }
 }
+
+export class FieldAppError extends AppError {
+  constructor(message: string, status: number, code: string, readonly fields: { path: string; message: string }[]) {
+    super(message, status, code);
+  }
+}

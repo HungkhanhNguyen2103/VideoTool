@@ -1,8 +1,8 @@
 import type { CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectSummary } from '../../../contracts/project';
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
-import type { ProjectDoc } from './docs';
-import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
+import type { ProjectDoc, SceneDoc } from './docs';
+import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, replaceProjectScenes as replaceProjectScenesDoc, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
 
 function toSummary(row: ProjectSummaryRow): ProjectSummary {
@@ -97,4 +97,9 @@ export async function deleteProject(id: string): Promise<void> {
   // TODO(phase-4): also delete assets/renders/files under data/files/<projectId>/
   const deletedCount = await deleteProjectById(id);
   if (deletedCount === 0) throw new NotFound('Không tìm thấy dự án.');
+}
+
+export async function replaceProjectScenes(id: string, scenes: SceneDoc[]): Promise<ProjectDetail> {
+  if (!(await replaceProjectScenesDoc(id, scenes))) throw new NotFound('Không tìm thấy dự án.');
+  return getProject(id);
 }
