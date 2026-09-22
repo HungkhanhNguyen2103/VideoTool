@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Prompt 1 design spec committed; implementation pending review · latest implementation commit: `e192b86 docs(phase2): finalize prompt 2 review evidence`_
+_Last updated: 2026-09-22 · Phase 3 Prompt 1 design spec + implementation plan committed; implementation pending review · latest implementation commit: `e192b86 docs(phase2): finalize prompt 2 review evidence`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -99,7 +99,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 3 Prompt 1: review `docs/superpowers/specs/2026-09-22-phase3-script-design.md`, especially the shared-schema, project-ownership, status-vocabulary, and job-cancellation resolutions. After approval, write the implementation plan before coding.
+Phase 3 Prompt 1: review `docs/superpowers/specs/2026-09-22-phase3-script-design.md` and `docs/superpowers/plans/2026-09-22-phase3-script-implementation.md`; after approval, execute the plan task-by-task before coding beyond the approved scope.
 
 ## 2. Stack
 
