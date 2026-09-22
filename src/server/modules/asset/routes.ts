@@ -8,6 +8,7 @@ import { exportScenesJson, importAssetsFromZip } from './service';
 const PatchSceneSchema = z.object({
   visualPrompt: z.string().optional(),
   assetType: z.enum(['image', 'video']).optional(),
+  sfxPrompt: z.string().optional(),
 }).refine((value) => Object.keys(value).length > 0, { message: 'At least one scene field is required.' });
 const AssetTypeSchema = z.object({ assetType: z.enum(['image', 'video']) });
 

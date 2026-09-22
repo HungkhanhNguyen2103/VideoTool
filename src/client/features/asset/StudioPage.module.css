@@ -5,6 +5,16 @@
 .title { margin: 0; }
 .muted { color: var(--text-3); font-size: .85rem; }
 .toolbar { padding: .75rem 1rem; background: var(--panel-2); border-radius: .6rem; }
+.mediaPanel { display: grid; gap: .75rem; padding: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
+.mediaHeader { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.engineBadge { padding: .2rem .5rem; border: 1px solid var(--border); border-radius: 999px; color: var(--text-3); font-size: .75rem; }
+.audioControls { display: grid; gap: .5rem; align-content: start; }
+.audioInput { min-width: 12rem; padding: .5rem .65rem; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: .45rem; font: inherit; }
+.warning { margin: 0; color: var(--amber-text); font-size: .85rem; }
+.progress { display: grid; grid-template-columns: auto minmax(8rem, 1fr) auto; align-items: center; gap: .6rem; font-size: .85rem; }
+.progress progress { width: 100%; accent-color: var(--amber); }
+.progress ul { grid-column: 1 / -1; max-height: 7rem; margin: 0; padding-left: 1.2rem; overflow: auto; color: var(--text-3); }
+.renderPlayer { width: min(100%, 42rem); max-height: 24rem; border-radius: .6rem; background: var(--input); }
 .sceneList { display: grid; gap: .85rem; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; }
 .cardHead { flex-wrap: wrap; }

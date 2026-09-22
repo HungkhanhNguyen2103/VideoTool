@@ -300,10 +300,10 @@ describe('asset contracts', () => {
     const base = await startAssetServer();
 
     const patched = await fetch(`${base}/api/project/${project.id}/scenes/scene-1`, {
-      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visualPrompt: 'Updated prompt' }),
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visualPrompt: 'Updated prompt', sfxPrompt: 'tiếng gió' }),
     });
     expect(patched.status).toBe(200);
-    expect((await patched.json() as { scenes: Array<{ visualPrompt: string }> }).scenes[0]!.visualPrompt).toBe('Updated prompt');
+    expect((await patched.json() as { scenes: Array<{ visualPrompt: string; sfxPrompt: string }> }).scenes[0]).toMatchObject({ visualPrompt: 'Updated prompt', sfxPrompt: 'tiếng gió' });
 
     const rejected = await fetch(`${base}/api/project/${project.id}/scenes/scene-1`, {
       method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}),

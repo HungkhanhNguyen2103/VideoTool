@@ -6,6 +6,7 @@ import { ApiError, apiRequest } from '../../shared/api-client';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
 const FileListSchema = z.array(FileSummarySchema);
+const JobResponseSchema = z.object({ jobId: z.string() });
 
 export type { FlowSceneExport };
 export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
@@ -36,7 +37,7 @@ export function exportScenesJson(projectId: string): Promise<FlowSceneExport[]> 
 export function patchScene(
   projectId: string,
   sceneId: string,
-  body: { visualPrompt?: string; assetType?: 'image' | 'video' },
+  body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string },
 ): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`, ProjectDetailSchema, {
     method: 'PATCH', body,
@@ -47,6 +48,44 @@ export function setAllAssetType(projectId: string, assetType: 'image' | 'video')
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/set-asset-type`, ProjectDetailSchema, {
     method: 'POST', body: { assetType },
   });
+}
+
+export function generateAllVoiceovers(projectId: string): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-voiceover`, JobResponseSchema, { method: 'POST' });
+}
+
+export function regenerateVoiceover(
+  projectId: string,
+  sceneId: string,
+  body: { voice?: string; speed?: number; temperature?: number; refAudioPath?: string; refAudioText?: string } = {},
+): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/regenerate-voiceover`, ProjectDetailSchema, { method: 'POST', body });
+}
+
+export function generateSceneSfx(projectId: string, sceneId: string): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/generate-sfx`, ProjectDetailSchema, { method: 'POST' });
+}
+
+export function generateBgm(projectId: string, mood: string): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-bgm`, ProjectDetailSchema, { method: 'POST', body: { mood } });
+}
+
+export function renderProject(projectId: string): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/render`, JobResponseSchema, { method: 'POST' });
+}
+
+export async function previewScene(projectId: string, sceneId: string): Promise<Blob> {
+  const response = await fetch(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/render-preview`);
+  if (!response.ok) throw new ApiError(`Preview failed (${response.status}).`, response.status, 'PREVIEW_FAILED');
+  return response.blob();
+}
+
+export function filesByPurpose(files: FileSummary[], purpose: FileSummary['purpose']): FileSummary[] {
+  return files.filter((file) => file.purpose === purpose);
+}
+
+export function missingSceneNumbers(project: Pick<ProjectDetail, 'scenes'>): number[] {
+  return project.scenes.flatMap((scene, index) => scene.assetFileId ? [] : [index + 1]);
 }
 
 export function importAssetsZip(
