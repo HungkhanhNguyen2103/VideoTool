@@ -10,16 +10,16 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 4 Task 5 of 6 complete (asset client Studio) · latest implementation commit: pending Task 5 commit_
+_Last updated: 2026-09-22 · Phase 4 complete · latest implementation commit: pending acceptance docs commit_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (97 tests pass, 2 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
 - Windows acceptance verified against the installed MongoDB 8.0 service at `127.0.0.1:27017`: `GET /api/health` returned `{ ok: true, db: true }`, project CRUD persisted in MongoDB, and the current-project fallback survived a reload.
 - Browser acceptance verified at `http://localhost:5173/production/init` with a 1440px viewport: invalid submit focused the first field and made no DB write; draft/outline creation, reload persistence, accent-insensitive search, status filtering, duplicate, confirmed delete, and delete fallback all worked.
-- `npm run typecheck`, `npm run lint`, `npm test` (7 passed, 5 skipped), and `npm run build` all pass on Windows. The client bundle contains no server environment/API-key identifiers.
+- `npm run typecheck`, `npm run lint`, `npm test` (97 passed, 2 skipped), and `npm run build` all pass on Windows. The client bundle contains no server environment/API-key identifiers.
 - Phase 3 final review fixes are covered by 81 passing tests: legacy project reads apply defaults for new script fields, chapter regeneration preserves concurrent edits, paragraph edits reset approval, empty scripts cannot be saved/finalized, and the client prevents overlapping regeneration streams with lifecycle abort cleanup.
 
 ### Modules
@@ -27,7 +27,7 @@ _Last updated: 2026-09-22 · Phase 4 Task 5 of 6 complete (asset client Studio) 
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
-| asset | partial | Phase 4 Task 5 complete: contracts, project scene APIs, Flow export, ZIP import/routes/tests, and Studio UI; final acceptance pending |
+| asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
@@ -45,6 +45,10 @@ All implemented and exercised against the live MongoDB service on Windows:
 - `GET /api/project/:id/files` -> `FileSummary[]` or 404
 - `DELETE /api/project/:id/files/:fileId` -> 204 or 404
 - `POST /api/project/:id/import-zip` -> updated `ProjectDetail` or 400/404/422
+- `GET /api/project/:id/scenes/export-json` -> Flow scene JSON with attachment filename
+- `POST /api/project/:id/scenes/import-assets` -> `{ updated, skipped }` with 400/422 errors
+- `PATCH /api/project/:id/scenes/:sceneId` -> updated `ProjectDetail`
+- `POST /api/project/:id/scenes/set-asset-type` -> updated `ProjectDetail`
 - `POST /api/job/:id/cancel` -> current `JobSummary` or 404/409
 - `GET /api/job/:id/events` -> SSE current state/deltas/heartbeats until terminal
 
@@ -57,19 +61,21 @@ Unknown `/api/*` returns JSON 404.
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor implemented; SEO remains ComingSoonPage placeholder |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (81 passed, 3 stub files skipped), and `npm run build` all pass. The built worker was started with `node --env-file=.env dist/worker.js`, logged `worker started`, and logged clean SIGINT shutdown. Multipart upload/delete/list and ZIP success/422 cases are covered by the file-store route suite.
+`npm run typecheck`, `npm run lint`, `npm test` (97 passed, 2 stub files skipped), and `npm run build` all pass. The built worker logged `worker started` and clean SIGINT shutdown. Asset/file-store integration covers ZIP success/skips, scene mutations, route validation, and the 200 MB limit. Vite emits a non-blocking client chunk-size warning above 500 kB.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
 - No automated tests were added for the `project` module by explicit request; acceptance coverage is manual on Windows plus the existing suite.
-- File upload for reference files and "Nhập từ ZIP" are intentionally disabled UI (Phase 2+), matching the prompt.
+- Generic reference-file upload still has no dedicated client screen; Studio Flow ZIP import is implemented for Phase 4.
 - Tabs 2/3/4 are all gated on "there is a current project" (disabled otherwise) — the prompt only specified this rule for tab 2; extended it to 3/4 too since their routes require a `:projectId`. Flag if you want tab 1's gate rule only.
 - Project chapter/scene writes now exercise the `version` increment and history snapshot paths; compare-and-swap remains a future enhancement because the current mutation APIs use targeted atomic updates without an expected-version parameter.
 - A brief empty-list state can appear while TanStack Query fetches a newly selected status filter; the settled result is correct (`3/3` in the acceptance run). This is a loading-state polish item, not a data or API failure.
 - The client hook's EventSource open/change/unmount lifecycle is not DOM-automated by design; its pure state transition is covered by Node tests and the hook is not consumed until Phase 4/5.
-- Orphaned files after partial failures or project deletion are not garbage-collected; deferred to Phase 6+ by design.
+- Browser visual acceptance of Studio at 1440px remains pending in this headless environment; API and build checks are green.
+- Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: Phase 4 acceptance passes 97 tests (2 stub files skipped), typecheck, lint, build, and worker startup/SIGINT smoke; browser Studio comparison remains a documented headless-environment gap.
 - 2026-09-22: Phase 4 Task 5 keeps `FlowSceneExport` in `contracts/asset.ts` so client code shares the route contract without importing the server asset module; Studio ZIP upload uses dependency-free XHR progress and preview URLs use validated `storedPath`.
 - 2026-09-22: Phase 4 Task 4 treats `skipped[]` as an unordered membership list because `adm-zip` may enumerate entries in archive order; tests assert exact membership/count, not incidental order.
 - 2026-09-22: Phase 4 Task 3 adds configured asset orchestration over `createFileStoreService`, root-level Flow ZIP parsing, image/video MIME/type checks, 200 MB upload middleware, and explicit `/api/project` route mounting; `eslint.config.js` remains unchanged.
@@ -119,7 +125,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Next phase: Phase 4 asset module (image/voice jobs and handlers).
+Next phase: Phase 5 video/render module and remaining asset-generation decisions.
 
 ## 2. Stack
 
