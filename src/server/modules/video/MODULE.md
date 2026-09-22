@@ -37,7 +37,7 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 
 ## Phase 5 Prompt 2 implementation
 
-The written design and seven-task implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`. Tasks 1–4 are complete: `src/contracts/video.ts` owns JSON-safe props and exact numeric audio volumes, `src/remotion/` owns the independent composition/frame-math entry, the bundle is cached per process with reset-on-failure/reconfiguration, staging validates file ownership/purpose/MIME/extension before copy, and `PATCH /api/project/:id/render-engine` is wired through project ownership with matching web/worker public roots. The remaining tasks add the Studio selector and conditional Chromium/build-isolation acceptance coverage.
+The written design and seven-task implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`. Tasks 1–5 are complete: `src/contracts/video.ts` owns JSON-safe props and exact numeric audio volumes, `src/remotion/` owns the independent composition/frame-math entry, the bundle is cached per process with reset-on-failure/reconfiguration, staging validates file ownership/purpose/MIME/extension before copy, `PATCH /api/project/:id/render-engine` is wired through project ownership with matching web/worker public roots, and Studio offers the persisted engine selector. Task 6 adds conditional Chromium and build-isolation acceptance coverage.
 
 ## Acceptance
 

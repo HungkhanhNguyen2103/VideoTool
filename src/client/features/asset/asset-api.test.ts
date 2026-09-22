@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { fileUrlForSummary, filesByPurpose, generateAllVoiceovers, generateBgm, generateSceneSfx, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime } from './api';
+import { fileUrlForSummary, filesByPurpose, generateAllVoiceovers, generateBgm, generateSceneSfx, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setRenderEngine } from './api';
 
 const project = {
   id: 'project-1',
@@ -50,6 +50,17 @@ describe('asset API helpers', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/project/project%2F1/scenes/scene%2F1/generate-sfx', expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/project/project%2F1/generate-bgm', expect.objectContaining({ body: JSON.stringify({ mood: 'calm' }) }));
     expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/project/project%2F1/render', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('updates the render engine with the exact PATCH route and body', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(setRenderEngine('project/1', 'remotion')).resolves.toMatchObject({ renderEngine: 'ffmpeg' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/render-engine', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ engine: 'remotion' }),
+    }));
+    expect(selectedRenderEngine('remotion')).toBe('remotion');
+    expect(selectedRenderEngine('ffmpeg')).toBe('ffmpeg');
   });
 
   it('reads video/mp4 previews as blobs and computes file/readiness helpers', async () => {

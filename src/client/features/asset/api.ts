@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { FlowSceneExportSchema, type FlowSceneExport } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
-import { ProjectDetailSchema, type ProjectDetail } from '../../../contracts/project';
+import { ProjectDetailSchema, RENDER_ENGINES, type ProjectDetail, type RenderEngine } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
@@ -10,6 +10,15 @@ const JobResponseSchema = z.object({ jobId: z.string() });
 
 export type { FlowSceneExport };
 export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
+
+export const RENDER_ENGINE_OPTIONS = [
+  { value: RENDER_ENGINES[0], label: 'FFmpeg' },
+  { value: RENDER_ENGINES[1], label: 'Remotion' },
+] as const;
+
+export function selectedRenderEngine(engine: RenderEngine): RenderEngine {
+  return engine;
+}
 
 export function fileUrlForSummary(file: Pick<FileSummary, 'storedPath'>): string {
   if (!/^[0-9A-Z]{26}\.[a-z0-9]+$/i.test(file.storedPath)) throw new Error('Invalid stored path.');
@@ -72,6 +81,12 @@ export function generateBgm(projectId: string, mood: string): Promise<ProjectDet
 
 export function renderProject(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/render`, JobResponseSchema, { method: 'POST' });
+}
+
+export function setRenderEngine(projectId: string, engine: RenderEngine): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/render-engine`, ProjectDetailSchema, {
+    method: 'PATCH', body: { engine },
+  });
 }
 
 export async function previewScene(projectId: string, sceneId: string): Promise<Blob> {
