@@ -4,7 +4,9 @@ import { getDb } from './db/client';
 import { errorHandler } from './error-handler';
 import { projectRouter } from './modules/project';
 import { jobRouter } from './modules/job';
+import { enqueueJob } from './modules/job';
 import { configureFileStore, fileStoreRouter } from './modules/file-store';
+import { createScriptRouter } from './modules/script';
 import { NotFound } from './shared/errors';
 
 export type AppOptions = {
@@ -26,6 +28,7 @@ export function createApp(options: AppOptions): Express {
   });
 
   app.use('/api/project', projectRouter);
+  app.use('/api/project', createScriptRouter({ enqueueJob }));
   app.use('/api/project', fileStoreRouter);
   app.use('/api/job', jobRouter);
 

@@ -1,13 +1,17 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
 import { CreateProjectRequestSchema, ProjectDetailSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/script';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
+import { createApp } from '../../app';
 import { createProject, getProject, getProjectHistory, replaceProjectChapters } from '../project';
 import { finalizeScript, generateScript, regenerateChapter } from './service';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
+type JobRecord = { _id: string; type: string; payload: unknown };
 
 const projectInput = {
   title: 'Script contract project',
@@ -24,10 +28,23 @@ const projectInput = {
 beforeAll(() => startTestMongo());
 beforeEach(async () => {
   await getCollection('projects').deleteMany({});
+  await getCollection('jobs').deleteMany({});
   aiMock.chat.mockReset();
   aiMock.stream.mockReset();
 });
 afterAll(() => closeTestMongo());
+let server: Server | null = null;
+afterEach(async () => {
+  const current = server;
+  server = null;
+  if (current) await new Promise<void>((resolve) => current.close(() => resolve()));
+});
+
+async function startScriptServer(): Promise<string> {
+  const app = createApp({ filesDir: './data/files', clientDir: null });
+  await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
+  return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+}
 
 describe('script contracts', () => {
   it('accepts chapters and snapshots with stable chapter metadata', () => {
@@ -152,5 +169,74 @@ describe('script contracts', () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
     await expect(finalizeScript(project.id)).rejects.toMatchObject({ code: 'NOT_ALL_APPROVED', status: 422 });
+  });
+
+  it('enqueues a generate-script job through the project route', async () => {
+    const project = await createProject(projectInput);
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/generate-script`, { method: 'POST' });
+    expect(response.status).toBe(201);
+    const body = await response.json() as { jobId: string };
+    expect(body.jobId).toEqual(expect.any(String));
+    expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({ type: 'generate-script', payload: { projectId: project.id } });
+  });
+
+  it('patches a chapter and returns the refreshed chapter list', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/chapters/chapter-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'approved' }),
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json() as { chapters: Array<{ status: string }> }).chapters[0]!.status).toBe('approved');
+  });
+
+  it('returns history newest-first and restores a selected snapshot', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    await fetch(`${(await startScriptServer())}/api/project/${project.id}/chapters/chapter-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paragraphs: ['New'] }),
+    });
+    const base = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+    const history = await fetch(`${base}/api/project/${project.id}/chapters/history`);
+    expect(history.status).toBe(200);
+    expect((await history.json() as Array<{ chapters: Array<{ paragraphs: string[] }> }>)[0]!.chapters[0]!.paragraphs).toEqual(['Old']);
+
+    const restored = await fetch(`${base}/api/project/${project.id}/chapters/restore`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ index: 0 }),
+    });
+    expect(restored.status).toBe(200);
+    expect((await restored.json() as { chapters: Array<{ paragraphs: string[] }> }).chapters[0]!.paragraphs).toEqual(['Old']);
+  });
+
+  it('finalizes through the route and returns scenes with assets status', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/finalize-script`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: 'assets', scenes: [expect.objectContaining({ narration: 'One' })] });
+  });
+
+  it('streams regeneration chunks and one done event over SSE', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    aiMock.stream.mockReturnValue((async function* () {
+      yield '{"paragraphs":["New"]}';
+    })());
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/chapters/chapter-1/regenerate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ instruction: 'rewrite', level: 'rewrite' }),
+    });
+    const text = await response.text();
+    expect(response.status).toBe(200);
+    expect(text).toContain('event: chunk\ndata: "{\\"paragraphs\\":[\\"New\\"]}"');
+    expect(text.match(/event: done/g)).toHaveLength(1);
+    expect(text).toContain('"paragraphs":["New"]');
   });
 });

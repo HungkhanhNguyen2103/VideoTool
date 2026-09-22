@@ -6,9 +6,11 @@ import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import {
   getProject,
+  getProjectHistory,
   patchProjectChapter,
   replaceProjectChapters,
   replaceProjectScenes,
+  restoreProjectChapters,
 } from '../project';
 import type { SceneDoc } from '../project';
 import { buildRegenerationPrompt, buildScriptPrompt } from './prompts';
@@ -38,6 +40,31 @@ function scriptParseError(): AppError {
 
 function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
   return { takenAt: new Date(), chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })) };
+}
+
+export async function patchChapter(
+  projectId: string,
+  chapterId: string,
+  patch: Partial<Pick<ChapterDoc, 'paragraphs' | 'status' | 'title'>>,
+): Promise<ChapterDoc[]> {
+  const project = await getProject(projectId);
+  const chapter = project.chapters.find((item) => item.id === chapterId);
+  if (!chapter) throw new NotFound('Không tìm thấy chương.');
+  const updated = await patchProjectChapter(projectId, chapterId, patch, snapshotOf(project.chapters));
+  return updated.chapters;
+}
+
+export async function getChapterHistory(projectId: string): Promise<ChapterSnapshot[]> {
+  return getProjectHistory(projectId);
+}
+
+export async function restoreChapters(projectId: string, index: number): Promise<ChapterDoc[]> {
+  const project = await getProject(projectId);
+  const history = await getChapterHistory(projectId);
+  const snapshot = history[index];
+  if (!snapshot) throw new AppError('History snapshot not found.', 422, 'INVALID_HISTORY_INDEX');
+  const updated = await restoreProjectChapters(projectId, snapshot.chapters, snapshotOf(project.chapters));
+  return updated.chapters;
 }
 
 export async function generateScript(projectId: string, appendLog: (message: string) => Promise<void>): Promise<void> {
