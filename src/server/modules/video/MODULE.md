@@ -30,15 +30,20 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 ## Prerequisites and known gaps
 
 - FFmpeg and ffprobe are external prerequisites selected by `FFMPEG_PATH`/`FFPROBE_PATH`, falling back to binaries on `PATH`.
+- Remotion requires a compatible headless Chromium; the renderer may download it on first use. This is an external/first-run prerequisite and is not bundled or managed by this module.
 - Real-binary integration tests are conditional on those executables being available; pure builder and Remotion tests do not require them.
 - Scene transitions, subtitles, partial rerenders, auto-ducking, and orphan-file cleanup are intentionally deferred.
-- VieNeu/Freesound live-provider calls and browser Studio visual checks remain environment-dependent acceptance gaps; adapter tests use mocks.
+- VieNeu/Freesound live-provider calls, Chromium launchability, and browser Studio visual checks remain environment-dependent acceptance gaps until Prompt 2 implementation verification; adapter tests use mocks.
+
+## Phase 5 Prompt 2 design (implementation pending review)
+
+The written design is committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md`. It chooses copy-based staging into the effective `public/` folder of one stable process-lifetime bundle, rather than URLs against the Express server. The design includes dynamic `calculateMetadata` frame math, image/video/audio composition layers, exact FFmpeg/Remotion volume parity, atomic `renderEngine` mutation through the project service, the `/render-engine` route, and a real Studio selector. Implementation and dependency installation remain blocked until the spec and a follow-up implementation plan are approved.
 
 ## Acceptance
 
 - Task 5 pure renderer tests cover scaling/padding/fps, silent inputs, voice/SFX mixing, exact volume constants, concat/BGM arguments, and the Remotion 501 error.
 - Task 6 service tests cover voiceover storage/duration, failure preservation, batch continuation, SFX/BGM no-op and storage, render readiness, and atomic final render metadata.
 - Task 7 route/worker tests cover job payloads, synchronous regeneration/preview content type, provider no-op responses, and cancellation checks.
-- Task 8 ran the real scene+BGM and short-video duration integrations with `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; no binary tests were skipped. Project acceptance is 137 passing tests, typecheck/lint/build green, and worker startup plus SIGINT shutdown logs verified.
+- Task 8 ran the real scene+BGM and short-video duration integrations with `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; no binary tests were skipped. Project acceptance is 138 passing tests, typecheck/lint/build green, and worker startup plus SIGINT shutdown logs verified.
 - Task 9 adds typed Studio API helpers and controls for voiceover, SFX, BGM, previews, render readiness, engine selection badges, and SSE job progress/logs; generated media remains resolved from `FileSummary` purpose/MIME metadata.
-- Phase 5 Prompt 1 acceptance: 137 tests pass, 1 existing stub test file is skipped, `npm run typecheck`, `npm run lint`, and `npm run build` pass, and the built worker starts and logs clean SIGINT shutdown. No dependency or `eslint.config.js` boundary change was made.
+- Phase 5 Prompt 1 acceptance: 138 tests pass, 1 existing stub test file is skipped, `npm run typecheck`, `npm run lint`, and `npm run build` pass, and the built worker starts and logs clean SIGINT shutdown. No dependency or `eslint.config.js` boundary change was made. Prompt 2 Remotion behavior is design-only at this point.

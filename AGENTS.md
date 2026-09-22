@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 5 Prompt 1 Freesound dictionary correction complete · ready for the next reviewed prompt_
+_Last updated: 2026-09-22 · Phase 5 Prompt 2 Remotion design committed; implementation pending review_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (137 tests pass, 1 stub test file skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (138 tests pass, 1 stub test file skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 5 Prompt 1 Freesound dictionary correction co
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
-| video | done | Phase 5 Prompt 1 complete: contracts/config, TTS/Freesound adapters, FFmpeg renderer, services/routes/worker, Studio controls, real-binary checks, and acceptance docs |
+| video | done | Phase 5 Prompt 1 complete; Phase 5 Prompt 2 Remotion design committed, implementation intentionally pending review |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
@@ -67,7 +67,7 @@ Unknown `/api/*` returns JSON 404.
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO remains ComingSoonPage placeholder |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (137 passed, 1 stub file skipped), and `npm run build` all pass. The built worker logged `worker started` and clean SIGINT shutdown. FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; real scene+BGM plus short-video duration integration ran (no binary skip). Vite emits a non-blocking client chunk-size warning above 500 kB.
+`npm run typecheck`, `npm run lint`, `npm test` (138 passed, 1 stub file skipped), and `npm run build` all pass. The built worker logged `worker started` and clean SIGINT shutdown. FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; real scene+BGM plus short-video duration integration ran (no binary skip). Vite emits a non-blocking client chunk-size warning above 500 kB.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
@@ -83,13 +83,16 @@ Unknown `/api/*` returns JSON 404.
 
 ### Decisions log (newest first, keep the last 15)
 - 2026-09-22: Phase 5 Task 2 keeps audio, SFX, BGM, and final-render writes in `project`; BGM mood/file and render file/status each update atomically with one version increment.
+- 2026-09-22: Phase 5 Prompt 2 chooses copy-based Remotion staging into the effective bundle `public/` directory because `bundle()` snapshots its source public directory; this preserves bundle-once behavior without coupling renders to Express uptime.
+- 2026-09-22: Phase 5 Prompt 2 caches the Remotion bundle for the worker process lifetime, uses Remotion's default host-aware concurrency, and keeps SFX/BGM numeric volumes derived from the existing FFmpeg string constants.
+- 2026-09-22: Phase 5 Prompt 2 places render-engine selection in the video router while the project service owns the atomic `renderEngine` mutation.
 - 2026-09-22: Phase 5 Task 3 adds a plain-fetch VieNeu client with one retry, timeout/error mapping, FFmpeg mastering fallback, and ffprobe duration measurement; no TTS SDK or runtime dependency was added.
 - 2026-09-22: Phase 5 Task 4 adds resilient Freesound search/download adapters and ports the Vietnamese keyword dictionary/reference query extraction verbatim; missing API key, no result, malformed response, and download failure all return null without throwing.
 - 2026-09-22: Phase 5 Prompt 1 follow-up corrects Freesound matching order, delimiter splitting, two-word fallback queries, and first-seen deduplication to match the reference implementation exactly.
 - 2026-09-22: Phase 5 Task 5 adds pure FFmpeg scene/concat/BGM builders, temporary-file cleanup, project-owned path resolution, and a documented Remotion 501 stub; the BGM second pass intentionally re-encodes the full video.
 - 2026-09-22: Phase 5 Task 6 keeps generated binaries in file-store, patches scene/project metadata through project APIs, continues batch voiceovers after per-scene failures, and rejects renders with one-based `SCENES_NOT_READY` numbers.
 - 2026-09-22: Phase 5 Task 7 mounts video routes explicitly under `/api/project`; project-wide voiceover/render work is queued as `generate-voiceover` and `render-full-video`, and handlers check cooperative cancellation before work.
-- 2026-09-22: Phase 5 Task 8 runs real scene+BGM and short-video duration FFmpeg integration because `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe` are installed; no binary tests were skipped. Final acceptance is 137 passing tests with the existing stub file skipped.
+- 2026-09-22: Phase 5 Task 8 runs real scene+BGM and short-video duration FFmpeg integration because `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe` are installed; no binary tests were skipped. Final acceptance is 138 passing tests with the existing stub file skipped.
 - 2026-09-22: Phase 5 Task 9 keeps Studio media URLs derived from MIME-checked `FileSummary` records, revokes preview object URLs on replacement/unmount, and exposes project readiness/job logs without adding client dependencies.
 - 2026-09-22: Phase 5 Task 1 adds render/audio/SFX/BGM defaults, TTS/FFmpeg/Freesound config, five file purposes, audio MIME support, and ownership-checked `resolveFilePath`; no new dependency or boundary rule was added.
 - 2026-09-22: Phase 5 Prompt 1 combined design spec includes VieNeu TTS, FFmpeg rendering, Freesound SFX/BGM, atomic file/project ownership, and a Remotion stub; implementation proceeded after the approved review.
@@ -144,7 +147,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Phase 5 Prompt 1 is complete and ready for the next reviewed prompt; browser Studio visual acceptance and live provider calls remain environment-dependent gaps.
+Phase 5 Prompt 2 design is committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md`; implementation is blocked pending spec review, then implementation-plan review. Chromium availability for Remotion remains unverified.
 
 ## 2. Stack
 
@@ -153,7 +156,7 @@ Phase 5 Prompt 1 is complete and ready for the next reviewed prompt; browser Stu
 - Frontend: React + Vite SPA, React Router, TanStack Query (server state), Zustand (UI-only state), react-hook-form
 - Tests: Vitest + mongodb-memory-server
 - Dev: `tsx watch`. Build: `vite build` (client) + `tsup` (server, worker)
-- Renderer: **undecided** (Remotion or FFmpeg). Isolated in `modules/video/handlers/render-video.ts`
+- Renderer: FFmpeg implemented; Remotion design committed and awaiting implementation-plan review. Isolated behind `modules/video` renderer interfaces.
 - Imports are relative. No path aliases.
 
 ## 3. Runtime layout
