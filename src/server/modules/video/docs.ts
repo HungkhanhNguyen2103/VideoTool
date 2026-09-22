@@ -1,7 +1,7 @@
 import type { Scene } from '../../../contracts/project';
+import { BGM_VOLUME, SFX_VOLUME } from '../../../contracts/video';
+export { BGM_VOLUME, BGM_VOLUME_NUMBER, SFX_VOLUME, SFX_VOLUME_NUMBER } from '../../../contracts/video';
 
-export const SFX_VOLUME = '0.31622777';
-export const BGM_VOLUME = '0.1';
 export const AUDIO_BUFFER_SECONDS = 0.3;
 
 export type SceneRenderInputs = {

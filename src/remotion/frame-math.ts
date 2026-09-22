@@ -21,5 +21,6 @@ export function totalDurationInFrames(
   scenes: ReadonlyArray<Pick<RemotionSceneProps, 'durationSec'>>,
   fps: number,
 ): number {
-  return scenes.reduce((total, scene) => total + sceneDurationInFrames(scene.durationSec, fps), 0);
+  const totalDurationSec = scenes.reduce((total, scene) => total + scene.durationSec, 0);
+  return Math.round(totalDurationSec * fps);
 }

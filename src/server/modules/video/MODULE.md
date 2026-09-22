@@ -11,7 +11,7 @@
 - Every FFmpeg input path is resolved through file-store ownership checks for the current project.
 - Scene segments always have H.264 video plus stereo 48 kHz AAC audio, including generated silence when voiceover or SFX is absent.
 - SFX is mixed at `0.31622777` (~-10 dB); BGM is mixed at `0.1` (-20 dB). SFX is never looped.
-- The Remotion composition scaffold is isolated under `src/remotion`; the server-side renderer remains pending until Prompt 2 Task 3.
+- The Remotion composition is isolated under `src/remotion`; the server renderer resolves only project-owned media, stages generated names under the bundle-output `public/renders/<renderId>/`, and cleans that directory after each render.
 
 ## Rendering flow
 
@@ -37,7 +37,7 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 
 ## Phase 5 Prompt 2 implementation
 
-The written design and seven-task implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`. Task 1 is complete: `src/contracts/video.ts` owns JSON-safe Remotion props and exact numeric audio volumes, `src/remotion/` owns the independent composition/frame-math entry, and `REMOTION_PUBLIC_DIR` is validated at startup. The remaining tasks implement bundle caching, public-dir staging, renderer orchestration, engine mutation/route wiring, and the Studio selector.
+The written design and seven-task implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`. Tasks 1–3 are complete: `src/contracts/video.ts` owns JSON-safe props and exact numeric audio volumes, `src/remotion/` owns the independent composition/frame-math entry, the bundle is cached per process with reset-on-failure/reconfiguration, and staging validates file ownership/purpose/MIME/extension before copy. The remaining tasks add process/route wiring, the Studio selector, and conditional Chromium/build-isolation acceptance coverage.
 
 ## Acceptance
 

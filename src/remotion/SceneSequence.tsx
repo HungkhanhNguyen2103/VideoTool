@@ -15,12 +15,12 @@ export function SceneSequence({ scene, from, fps }: SceneSequenceProps) {
     <Sequence from={from} durationInFrames={durationInFrames}>
       <AbsoluteFill style={{ backgroundColor: 'black' }}>
         {scene.assetType === 'video' ? (
-          <OffthreadVideo src={staticFile(scene.assetPath)} style={{ width: '100%', height: '100%' }} />
+          <OffthreadVideo src={staticFile(scene.assetRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         ) : (
-          <Img src={staticFile(scene.assetPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          <Img src={staticFile(scene.assetRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         )}
-        {scene.audioPath ? <Audio src={staticFile(scene.audioPath)} /> : null}
-        {scene.sfxPath ? <Audio src={staticFile(scene.sfxPath)} volume={SFX_VOLUME_NUMBER} /> : null}
+        {scene.voiceRelPath ? <Audio src={staticFile(scene.voiceRelPath)} /> : null}
+        {scene.sfxRelPath ? <Audio src={staticFile(scene.sfxRelPath)} volume={SFX_VOLUME_NUMBER} /> : null}
       </AbsoluteFill>
     </Sequence>
   );

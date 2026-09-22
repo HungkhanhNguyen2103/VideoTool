@@ -19,7 +19,7 @@ import {
 } from '../project';
 import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
-import { FfmpegRenderer, getVideoRenderer } from './index';
+import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
 import { configureVideoModule, generateProjectBgm, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
 import { createVideoRouter } from './routes';
@@ -194,8 +194,8 @@ describe('video renderer builders', () => {
     expect(buildBgmFilterGraph(42)).toContain('amix=inputs=2:duration=first');
   });
 
-  it('throws the explicit not-implemented error for Remotion', async () => {
-    await expect(getVideoRenderer('remotion').renderFullVideo({} as never, async () => undefined)).rejects.toMatchObject({ code: 'RENDER_ENGINE_NOT_IMPLEMENTED', status: 501 });
+  it('selects the Remotion renderer when the project engine is remotion', () => {
+    expect(getVideoRenderer('remotion')).toBeInstanceOf(RemotionRenderer);
   });
 
   it('cleans the temporary preview directory when FFmpeg fails', async () => {

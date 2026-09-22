@@ -1,4 +1,4 @@
-import { AbsoluteFill, Audio, Composition } from 'remotion';
+import { AbsoluteFill, Audio, Composition, staticFile } from 'remotion';
 import type { RemotionInputProps } from '../contracts/video';
 import { BGM_VOLUME_NUMBER } from '../contracts/video';
 import { sceneFrameTimings, totalDurationInFrames } from './frame-math';
@@ -11,7 +11,7 @@ export const DEFAULT_REMOTION_PROPS: RemotionInputProps = {
   width: 1920,
   height: 1080,
   scenes: [],
-  bgmPath: null,
+  bgmRelPath: null,
 };
 
 export function VideoComposition(props: RemotionInputProps) {
@@ -22,7 +22,7 @@ export function VideoComposition(props: RemotionInputProps) {
         const scene = props.scenes.find((candidate) => candidate.id === timing.id);
         return scene ? <SceneSequence key={scene.id} scene={scene} from={timing.from} fps={props.fps} /> : null;
       })}
-      {props.bgmPath ? <Audio src={props.bgmPath} volume={BGM_VOLUME_NUMBER} loop /> : null}
+      {props.bgmRelPath ? <Audio src={staticFile(props.bgmRelPath)} volume={BGM_VOLUME_NUMBER} loop /> : null}
     </AbsoluteFill>
   );
 }

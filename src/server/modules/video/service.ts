@@ -10,11 +10,11 @@ import type { TtsOptions } from '../../shared/tts';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 
-export function configureVideoModule(filesDir: string): void {
+export function configureVideoModule(filesDir: string, remotionPublicDir = './data/remotion-public'): void {
   const store = createFileStoreService(filesDir);
   storeFile = store.storeFile;
   configureVideoTts(filesDir);
-  configureVideoRenderer(filesDir);
+  configureVideoRenderer(filesDir, remotionPublicDir);
 }
 
 export { generateProjectVoiceovers, generateSceneVoiceover };

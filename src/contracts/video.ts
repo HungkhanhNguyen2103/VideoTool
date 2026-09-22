@@ -9,9 +9,9 @@ export const BGM_VOLUME_NUMBER = Number(BGM_VOLUME);
 export const RemotionScenePropsSchema = z.object({
   id: z.string(),
   assetType: z.enum(['image', 'video']),
-  assetPath: z.string().min(1),
-  audioPath: z.string().min(1).nullable(),
-  sfxPath: z.string().min(1).nullable(),
+  assetRelPath: z.string().min(1),
+  voiceRelPath: z.string().min(1).nullable(),
+  sfxRelPath: z.string().min(1).nullable(),
   durationSec: z.number().nonnegative(),
 });
 export type RemotionSceneProps = z.infer<typeof RemotionScenePropsSchema>;
@@ -21,6 +21,6 @@ export const RemotionInputPropsSchema = z.object({
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   scenes: z.array(RemotionScenePropsSchema),
-  bgmPath: z.string().min(1).nullable(),
+  bgmRelPath: z.string().min(1).nullable(),
 });
 export type RemotionInputProps = z.infer<typeof RemotionInputPropsSchema>;
