@@ -14,6 +14,7 @@ import {
   replaceProjectScenes,
   patchProjectScene,
   setProjectBgm,
+  setProjectRenderEngine,
   setProjectRenderFile,
 } from '../project';
 import { createFileStoreService } from '../file-store';
@@ -144,6 +145,22 @@ describe('video project mutations', () => {
 
     expect(updated).toMatchObject({ renderFileId: 'render-1', status: 'rendered' });
     expect(updated.version).toBe(project.version + 1);
+  });
+
+  it('updates the render engine with one version increment through the project API', async () => {
+    const project = await seedProject();
+
+    const remotion = await setProjectRenderEngine(project.id, 'remotion');
+    expect(remotion.renderEngine).toBe('remotion');
+    expect(remotion.version).toBe(project.version + 1);
+
+    const ffmpeg = await setProjectRenderEngine(project.id, 'ffmpeg');
+    expect(ffmpeg.renderEngine).toBe('ffmpeg');
+    expect(ffmpeg.version).toBe(remotion.version + 1);
+  });
+
+  it('maps an unknown render-engine project to NotFound', async () => {
+    await expect(setProjectRenderEngine('missing-project', 'remotion')).rejects.toMatchObject({ status: 404 });
   });
 });
 

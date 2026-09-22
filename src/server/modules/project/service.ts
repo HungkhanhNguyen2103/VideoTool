@@ -159,6 +159,11 @@ export async function setProjectRenderFile(id: string, renderFileId: string): Pr
   return getProject(id);
 }
 
+export async function setProjectRenderEngine(id: string, renderEngine: ProjectDetail['renderEngine']): Promise<ProjectDetail> {
+  await updateProject(id, { renderEngine });
+  return getProject(id);
+}
+
 export async function applySceneAssets(
   id: string,
   assetUpdates: Array<{ sceneId: string; assetFileId: string }>,
