@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 2 implementation complete pending acceptance verification · latest implementation commit: `5e35090 feat(file-store): add reference upload and project file routes`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 2 of 2 done (file store + reference upload + ZIP import) · latest implementation commit: `2f0b842 feat(file-store): add ZIP scene import`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 2, Prompt 2 implementation complete pending a
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
-| job | done | Prompt 1 complete plus Prompt 2 job-log extension; file-store/upload/ZIP acceptance verification pending |
+| job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
@@ -40,6 +40,10 @@ All implemented and exercised against the live MongoDB service on Windows:
 - `GET /api/project/:id` -> `ProjectDetail` or 404
 - `POST /api/project/:id/duplicate` -> 201 `ProjectDetail`
 - `DELETE /api/project/:id` -> 204 or 404
+- `POST /api/project/:id/files` -> 201 `FileSummary` or 400/404
+- `GET /api/project/:id/files` -> `FileSummary[]` or 404
+- `DELETE /api/project/:id/files/:fileId` -> 204 or 404
+- `POST /api/project/:id/import-zip` -> updated `ProjectDetail` or 400/404/422
 - `POST /api/job/:id/cancel` -> current `JobSummary` or 404/409
 - `GET /api/job/:id/events` -> SSE current state/deltas/heartbeats until terminal
 
@@ -52,7 +56,7 @@ Unknown `/api/*` returns JSON 404.
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ComingSoonPage placeholder, names the delivering phase |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (33 passed, 4 skipped), and `npm run build` all pass on Windows. The built worker was started with `node --env-file=.env dist/worker.js`, logged `worker started`, and logged clean SIGINT shutdown against the local MongoDB service.
+`npm run typecheck`, `npm run lint`, `npm test` (52 passed, 4 skipped), and `npm run build` all pass on Windows. The built worker was started with `node --env-file=.env dist/worker.js`, logged `worker started`, and logged clean SIGINT shutdown against the local MongoDB service. Multipart upload/delete/list and ZIP success/422 cases are covered by the file-store route suite.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
@@ -62,6 +66,7 @@ Unknown `/api/*` returns JSON 404.
 - No endpoint updates a project in place yet, so the `version` optimistic-lock compare-and-swap is written into `ProjectDoc`/`AGENTS.md` but not exercised by any code path (arrives with scene edits in Phase 3).
 - A brief empty-list state can appear while TanStack Query fetches a newly selected status filter; the settled result is correct (`3/3` in the acceptance run). This is a loading-state polish item, not a data or API failure.
 - The client hook's EventSource open/change/unmount lifecycle is not DOM-automated by design; its pure state transition is covered by Node tests and the hook is not consumed until Phase 4/5.
+- Orphaned files after partial failures or project deletion are not garbage-collected; deferred to Phase 6+ by design.
 
 ### Decisions log (newest first, keep the last 15)
 - 2026-09-22: Phase 2 Task 6 will test a dependency-free job-event state transition helper in the existing Node Vitest environment; EventSource lifecycle wiring is manually verified because the hook has no Phase 2 consumer and adding jsdom/testing-library would expand dependencies.
@@ -77,6 +82,8 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: file-store routes delegate scene replacement to `project.replaceProjectScenes`; only the project module updates `projects` with `$inc: { version: 1 }`.
 - 2026-09-22: Multer `LIMIT_FILE_SIZE` maps to HTTP 400 `FILE_TOO_LARGE` in the shared error handler and is covered by a multipart route test.
 - 2026-09-22: ZIP import requires root-level `scenes.json`, validates `SceneDoc[]`, and replaces scenes through `project.replaceProjectScenes` with a version increment.
+- 2026-09-22: file-store remains shared infrastructure outside `eslint.config.js` module boundaries; only its own `files` collection is owned here, while project scene writes remain in the project module.
+- 2026-09-22: Phase 2 Prompt 2 acceptance uses exactly four new packages (`multer`, `adm-zip`, `@types/multer`, `@types/adm-zip`); no UI wiring or static `/files` changes were added.
 - 2026-09-22: search input in RecentProjects is debounced 300ms client-side before hitting the server (the prototype searches an in-memory array on every keystroke; a real HTTP call per keystroke would be wasteful).
 - 2026-09-22: tabs 2/3/4 (Duyệt & Tái Tạo / Studio / SEO) are all disabled without a current project, not just tab 2 as literally specified, because their routes need `:projectId`.
 - 2026-09-22: CSS Modules per component, global tokens+resets+small utility classes (`.label`, `.ic`, `.mono`, `.muted`, `.spacer`, `.sr-only`) in `styles/tokens.css` (loaded once); `.btn`/`.badge` variants live in the shared `ui/Button`, `ui/Badge` components instead of global classes.
@@ -91,7 +98,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 2 Prompt 2: await the next user prompt for file-store/reference upload/ZIP work; keep file generation/rendering behind jobs and preserve the current module boundaries.
+Phase 3: implement script generation and scene editing; file references and imported scenes are now available as backend foundations.
 
 ## 2. Stack
 
@@ -223,7 +230,8 @@ Manual edit of one scene goes through `PATCH /api/project/:projectId/scenes/:sce
 | `assets` | `_id`, `projectId`, `sceneId`, `kind` (image, voice, music, subtitle), `status` (pending, running, done, failed), `path`, `inputHash`, `error`, `meta`, `updatedAt`. Unique `{sceneId, kind}` |
 | `script_runs` | `_id`, `projectId`, `presetId`, `promptVersion`, `model`, `rawOutput`, `scenesBefore`, `createdAt` |
 | `renders` | `_id`, `projectId`, `status`, `settings`, `timelineHash`, `outputPath`, `progress`, `error`, `createdAt` |
-| `jobs` | `_id`, `schemaVersion:1`, `type`, `projectId`, `payload`, `status` (queued, running, done, failed, cancelled), `attempts`, `maxAttempts`, `runAt`, `lockedBy`, `lockedAt`, `progress`, `result`, `error`, `cancelRequested`, `createdAt`, `updatedAt`. Index `{status, runAt}` |
+| `jobs` | `_id`, `schemaVersion:1`, `type`, `projectId`, `payload`, `status` (queued, running, done, failed, cancelled), `attempts`, `maxAttempts`, `runAt`, `lockedBy`, `lockedAt`, `progress`, `result`, `error`, `cancelRequested`, `logs[]`, `createdAt`, `updatedAt`. Index `{status, runAt}` |
+| `files` | `_id`, `projectId`, `originalName`, `mimeType`, `ext`, `sizeBytes`, `purpose: reference`, `storedPath` (relative to `FILES_DIR`), `createdAt`. Indexes `{projectId, createdAt}` and `{purpose}` |
 
 `SceneDoc` (embedded in `projects.scenes`): `{ id, narration, visualPrompt, durationSec }`. `id` is stable; assets reference it; array order = scene order.
 

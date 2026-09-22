@@ -23,3 +23,7 @@
 - Do not add this directory to `eslint.config.js` module boundaries.
 - Project scene replacement is delegated to the project service so file-store routes never write the `projects` collection.
 - ZIP import accepts only root-level `scenes.json`; invalid or missing content returns 422 and a valid import replaces the entire scene array.
+
+## Acceptance
+- File-store service and route tests use `mongodb-memory-server` plus unique temp directories.
+- Final verification: typecheck, lint, 52 tests passed (4 stub files skipped), production build, unchanged `eslint.config.js`, dependency allowlist check, and worker startup/SIGINT smoke test.
