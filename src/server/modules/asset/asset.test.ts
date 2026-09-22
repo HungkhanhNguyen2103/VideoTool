@@ -187,4 +187,89 @@ describe('asset contracts', () => {
     expect(rejected.status).toBe(400);
     expect(await rejected.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
   });
+
+  it('skips mixed invalid, unsupported, out-of-range, and type-mismatched entries', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    const zip = new AdmZip();
+    zip.addFile('SCENE_001_Opening.png', Buffer.from('valid'));
+    zip.addFile('SCENE_002_WrongType.png', Buffer.from('wrong-type'));
+    zip.addFile('SCENE_999_TooFar.png', Buffer.from('too-far'));
+    zip.addFile('not-a-scene.txt', Buffer.from('bad-name'));
+    zip.addFile('SCENE_003_Unsupported.gif', Buffer.from('unsupported'));
+    zip.addFile('nested/SCENE_001_Ignored.png', Buffer.from('nested'));
+
+    const result = await importAssetsFromZip(project.id, zip.toBuffer());
+
+    expect(result.updated).toBe(1);
+    expect(result.skipped).toHaveLength(4);
+    expect(result.skipped).toEqual(expect.arrayContaining([
+      'SCENE_002_WrongType.png',
+      'SCENE_999_TooFar.png',
+      'not-a-scene.txt',
+      'SCENE_003_Unsupported.gif',
+    ]));
+    expect((await getProject(project.id)).scenes[0]!.assetFileId).toEqual(expect.any(String));
+    expect((await getProject(project.id)).scenes[1]!.assetFileId).toBeNull();
+  });
+
+  it('uses the last duplicate scene entry and overwrites on re-import', async () => {
+    const project = await seedProjectWithScenes();
+    const duplicateZip = new AdmZip();
+    duplicateZip.addFile('SCENE_001_First.png', Buffer.from('first'));
+    duplicateZip.addFile('SCENE_001_Last.png', Buffer.from('last'));
+
+    const firstImport = await importAssetsFromZip(project.id, duplicateZip.toBuffer());
+    const first = await getProject(project.id);
+    const firstId = first.scenes[0]!.assetFileId;
+    expect(firstImport.updated).toBe(1);
+    expect(firstId).toEqual(expect.any(String));
+    expect(await getCollection<{ _id: string; originalName: string }>('files').findOne({ _id: firstId })).toMatchObject({ originalName: 'SCENE_001_Last.png' });
+
+    const replacementZip = new AdmZip();
+    replacementZip.addFile('SCENE_001_Replacement.png', Buffer.from('replacement'));
+    const secondImport = await importAssetsFromZip(project.id, replacementZip.toBuffer());
+    const second = await getProject(project.id);
+    expect(secondImport).toEqual({ updated: 1, skipped: [] });
+    expect(second.scenes[0]!.assetFileId).not.toBe(firstId);
+  });
+
+  it('returns no updates for an empty ZIP and rejects malformed ZIP data', async () => {
+    const project = await seedProjectWithScenes();
+    const emptyZip = new AdmZip().toBuffer();
+    const before = await getProject(project.id);
+
+    await expect(importAssetsFromZip(project.id, emptyZip)).resolves.toEqual({ updated: 0, skipped: [] });
+    expect((await getProject(project.id)).version).toBe(before.version);
+    await expect(importAssetsFromZip(project.id, Buffer.from('not a zip'))).rejects.toMatchObject({ code: 'INVALID_ZIP', status: 422 });
+  });
+
+  it('patches a scene through the route and validates an empty patch', async () => {
+    const project = await seedProjectWithScenes();
+    const base = await startAssetServer();
+
+    const patched = await fetch(`${base}/api/project/${project.id}/scenes/scene-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visualPrompt: 'Updated prompt' }),
+    });
+    expect(patched.status).toBe(200);
+    expect((await patched.json() as { scenes: Array<{ visualPrompt: string }> }).scenes[0]!.visualPrompt).toBe('Updated prompt');
+
+    const rejected = await fetch(`${base}/api/project/${project.id}/scenes/scene-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}),
+    });
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({ error: { code: 'validation_error' } });
+  });
+
+  it('maps an asset ZIP over the 200 MB limit to FILE_TOO_LARGE', async () => {
+    const project = await seedProjectWithScenes();
+    const base = await startAssetServer();
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(200 * 1024 * 1024 + 1)], { type: 'application/zip' }), 'large.zip');
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/import-assets`, { method: 'POST', body: form });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'FILE_TOO_LARGE' } });
+  }, 60_000);
 });

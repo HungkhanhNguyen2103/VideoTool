@@ -24,3 +24,4 @@
 - Re-import overwrites a scene reference and leaves the old file orphaned; cleanup is deferred.
 - Together AI, voice, and video rendering are out of scope for this phase.
 - `assetUrl` is derived on the client from `FileSummary.storedPath`; it is not stored on scenes and `project` does not import file-store.
+- Integration tests cover mixed ZIP skips, type mismatches, duplicate/re-import replacement, malformed ZIPs, route validation, and the 200 MB Multer limit.

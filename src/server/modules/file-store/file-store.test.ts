@@ -89,7 +89,7 @@ describe('file-store schema and repository', () => {
 
   it('writes a generated safe path and returns a file summary', async () => {
     const summary = await service.storeFile({ projectId: 'project-1', originalName: '../secret.png', mimeType: 'image/png', buffer: Buffer.from('png'), purpose: 'reference' });
-    expect(summary).toMatchObject({ projectId: 'project-1', originalName: '../secret.png', ext: 'png', sizeBytes: 3, purpose: 'reference' });
+    expect(summary).toMatchObject({ projectId: 'project-1', originalName: '../secret.png', ext: 'png', sizeBytes: 3, purpose: 'reference', storedPath: expect.stringMatching(/\.png$/) });
     expect(summary.createdAt).toEqual(expect.any(String));
     expect(summary.id).toMatch(/^[0-9A-Z]{26}$/);
     const doc = await findFileById(summary.id);

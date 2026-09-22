@@ -6,6 +6,7 @@
 
 ## Invariants
 - `storedPath` is relative to `FILES_DIR` and is generated from a new ULID, never from a user path.
+- File summaries expose the generated relative `storedPath` so clients can build safe `/files/<storedPath>` preview URLs.
 - Only reference files are supported in this phase.
 - Database metadata and disk content are coordinated by the service; deleting an already-missing disk file is allowed.
 
