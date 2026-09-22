@@ -11,7 +11,7 @@
 - Every FFmpeg input path is resolved through file-store ownership checks for the current project.
 - Scene segments always have H.264 video plus stereo 48 kHz AAC audio, including generated silence when voiceover or SFX is absent.
 - SFX is mixed at `0.31622777` (~-10 dB); BGM is mixed at `0.1` (-20 dB). SFX is never looped.
-- The `remotion` engine remains an explicit 501 `RENDER_ENGINE_NOT_IMPLEMENTED` stub.
+- The Remotion composition scaffold is isolated under `src/remotion`; the server-side renderer remains pending until Prompt 2 Task 3.
 
 ## Rendering flow
 
@@ -35,9 +35,9 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 - Scene transitions, subtitles, partial rerenders, auto-ducking, and orphan-file cleanup are intentionally deferred.
 - VieNeu/Freesound live-provider calls, Chromium launchability, and browser Studio visual checks remain environment-dependent acceptance gaps until Prompt 2 implementation verification; adapter tests use mocks.
 
-## Phase 5 Prompt 2 design (implementation pending review)
+## Phase 5 Prompt 2 implementation
 
-The written design and seven-task implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`. The plan chooses copy-based staging into the effective `public/` folder of one stable process-lifetime bundle, rather than URLs against the Express server. It includes dynamic `calculateMetadata` frame math, image/video/audio composition layers, exact FFmpeg/Remotion volume parity, atomic `renderEngine` mutation through the project service, the `/render-engine` route, and a real Studio selector. Implementation and dependency installation remain blocked until the plan is reviewed and an execution method is confirmed.
+The written design and seven-task implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`. Task 1 is complete: `src/contracts/video.ts` owns JSON-safe Remotion props and exact numeric audio volumes, `src/remotion/` owns the independent composition/frame-math entry, and `REMOTION_PUBLIC_DIR` is validated at startup. The remaining tasks implement bundle caching, public-dir staging, renderer orchestration, engine mutation/route wiring, and the Studio selector.
 
 ## Acceptance
 
@@ -46,4 +46,4 @@ The written design and seven-task implementation plan are committed at `docs/sup
 - Task 7 route/worker tests cover job payloads, synchronous regeneration/preview content type, provider no-op responses, and cancellation checks.
 - Task 8 ran the real scene+BGM and short-video duration integrations with `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; no binary tests were skipped. Project acceptance is 138 passing tests, typecheck/lint/build green, and worker startup plus SIGINT shutdown logs verified.
 - Task 9 adds typed Studio API helpers and controls for voiceover, SFX, BGM, previews, render readiness, engine selection badges, and SSE job progress/logs; generated media remains resolved from `FileSummary` purpose/MIME metadata.
-- Phase 5 Prompt 1 acceptance: 138 tests pass, 1 existing stub test file is skipped, `npm run typecheck`, `npm run lint`, and `npm run build` pass, and the built worker starts and logs clean SIGINT shutdown. No dependency or `eslint.config.js` boundary change was made. Prompt 2 Remotion behavior is design-only at this point.
+- Phase 5 Prompt 1 acceptance: 138 tests pass, 1 existing stub test file is skipped, `npm run typecheck`, `npm run lint`, and `npm run build` pass, and the built worker starts and logs clean SIGINT shutdown. No dependency or `eslint.config.js` boundary change was made. Prompt 2 Task 1 adds the scaffold and passes its focused tests, typecheck, and build-isolation scan.
