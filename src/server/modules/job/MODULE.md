@@ -35,6 +35,10 @@
 - `worker/main.ts` calls `recoverStaleJobs` every poll tick and drains claims while checking its closing flag between jobs.
 - `worker/registry.ts` is an explicit empty `Record<string, JobHandler>` until asset/video phases register handlers.
 
+## Client integration
+- `useJobProgress(jobId)` opens one `EventSource` per non-null job id and closes it on id change/unmount.
+- `applyJobEvent` is dependency-free and keeps state parsing testable without a DOM test dependency.
+
 ## Known pitfalls
 - Do not release a running lock from the cancel route; the worker owns terminal transitions.
 - SSE emits the current state on the first poll, then only changed state and periodic heartbeats.
