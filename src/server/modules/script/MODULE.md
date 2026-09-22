@@ -13,6 +13,8 @@
 - Generate chapters asynchronously through the `generate-script` job.
 - Regenerate one chapter through inline SSE so token chunks can be cancelled by the client.
 - Snapshot chapter state before mutations and retain the newest ten snapshots.
+- Normalize legacy project documents on read so new `aiProvider`, `chapters`, and `chapterHistory` fields receive schema defaults.
+- Paragraph edits reset a chapter to `pending`; empty generated chapter lists and empty finalizations are rejected before any write.
 - Finalize approved chapters by asking the project module to replace scenes and advance project status.
 
 ## Chapter state machine
@@ -47,11 +49,12 @@ needs-fix ──edit/regen──> pending or generating
 - Finalization updates scenes and `assets` status atomically through `replaceProjectScenes`; chapter metadata/history is persisted before that final scene/status write.
 - The script handler is structurally compatible with `JobHandler` without importing the job module, so the module boundary remains enforced.
 - Routes receive job enqueueing from the app composition root and distinguish normal request-body close from an actual SSE response disconnect.
+- Regeneration transitions update only the target chapter, preserving unrelated concurrent edits; the client serializes bulk regeneration and aborts its active stream on unmount or project change.
 - Edge coverage verifies ten-snapshot pruning, restore bounds, duration rounding, malformed-stream errors, and the absence of a false successful `done` event.
 - The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; page rendering remains intentionally untested without a DOM dependency.
 
 ## Acceptance
-- `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 77 passed and 3 stub files skipped.
+- `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 81 passed and 3 stub files skipped.
 - `mongodb-memory-server` ran successfully; no fallback was required.
 - Built worker logged startup and graceful SIGINT shutdown.
 - `eslint.config.js` was unchanged; only `openai` and `@anthropic-ai/sdk` were added as direct runtime dependencies.

@@ -80,6 +80,19 @@ describe('script contracts', () => {
     expect(detail.aiProvider).toBe('deepseek');
   });
 
+  it('normalizes legacy project documents missing script fields on read', async () => {
+    const project = await createProject(projectInput);
+    await getCollection<{ _id: string }>('projects').updateOne(
+      { _id: project.id },
+      { $unset: { aiProvider: 1, chapters: 1, chapterHistory: 1 } },
+    );
+
+    const loaded = await getProject(project.id);
+    expect(loaded.aiProvider).toBe('deepseek');
+    expect(loaded.chapters).toEqual([]);
+    expect(await getProjectHistory(project.id)).toEqual([]);
+  });
+
   it('generates chapters, logs milestones, and sets project status to script', async () => {
     aiMock.chat.mockResolvedValue(JSON.stringify([
       { no: 1, title: 'Opening', paragraphs: ['First', 'Second'], scenesCount: null, durationSec: null },
@@ -115,6 +128,15 @@ describe('script contracts', () => {
     expect((await getProject(project.id)).chapters).toEqual([]);
   });
 
+  it('rejects an empty AI chapter list without writing chapters', async () => {
+    aiMock.chat.mockResolvedValue('[]');
+    const project = await createProject(projectInput);
+
+    await expect(generateScript(project.id, vi.fn())).rejects.toMatchObject({ code: 'SCRIPT_PARSE_ERROR', status: 422 });
+    expect((await getProject(project.id)).chapters).toEqual([]);
+    expect((await getProject(project.id)).status).toBe('draft');
+  });
+
   it('streams regeneration chunks, updates the chapter, and snapshots old paragraphs', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
@@ -134,17 +156,38 @@ describe('script contracts', () => {
 
   it('marks an aborted regeneration needs-fix and leaves old paragraphs unchanged', async () => {
     const project = await createProject(projectInput);
-    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    await replaceProjectChapters(project.id, [
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null },
+      { id: 'chapter-2', no: 2, title: 'Context', paragraphs: ['Context'], status: 'pending', scenesCount: null, durationSec: null },
+    ], null, 'script');
     const controller = new AbortController();
+    let editedResolve!: () => void;
+    const edited = new Promise<void>((resolve) => { editedResolve = resolve; });
     aiMock.stream.mockReturnValue((async function* () {
+      yield 'partial';
+      await patchChapter(project.id, 'chapter-2', { title: 'Edited concurrently' });
+      editedResolve();
       await new Promise<void>((resolve) => controller.signal.addEventListener('abort', () => resolve(), { once: true }));
       throw new DOMException('Aborted', 'AbortError');
     })());
 
     const promise = regenerateChapter(project.id, 'chapter-1', { instruction: 'stop', level: 'rewrite' }, vi.fn(), controller.signal);
+    await edited;
     controller.abort();
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-    expect((await getProject(project.id)).chapters[0]).toMatchObject({ status: 'needs-fix', paragraphs: ['Old'] });
+    expect((await getProject(project.id)).chapters).toEqual([
+      expect.objectContaining({ id: 'chapter-1', status: 'needs-fix', paragraphs: ['Old'] }),
+      expect.objectContaining({ id: 'chapter-2', title: 'Edited concurrently' }),
+    ]);
+  });
+
+  it('moves an approved chapter back to pending when its paragraphs are edited', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['Edited'] });
+
+    expect((await getProject(project.id)).chapters[0]).toMatchObject({ paragraphs: ['Edited'], status: 'pending' });
   });
 
   it('finalizes approved chapters into scenes and sets status assets', async () => {
@@ -169,6 +212,14 @@ describe('script contracts', () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
     await expect(finalizeScript(project.id)).rejects.toMatchObject({ code: 'NOT_ALL_APPROVED', status: 422 });
+  });
+
+  it('rejects finalization when the project has no chapters', async () => {
+    const project = await createProject(projectInput);
+
+    await expect(finalizeScript(project.id)).rejects.toMatchObject({ code: 'NO_CHAPTERS', status: 422 });
+    expect((await getProject(project.id)).status).toBe('draft');
+    expect((await getProject(project.id)).scenes).toEqual([]);
   });
 
   it('enqueues a generate-script job through the project route', async () => {

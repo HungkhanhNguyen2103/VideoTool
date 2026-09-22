@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Prompt 1 complete (script module) · latest implementation commit: `ebeb7ff feat(client): add ReviewScriptPage and script API`_
+_Last updated: 2026-09-22 · Phase 3 Prompt 1 complete (script module + final review fixes) · latest implementation commit: pending review-fix commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -20,12 +20,13 @@ _Last updated: 2026-09-22 · Phase 3 Prompt 1 complete (script module) · latest
 - Windows acceptance verified against the installed MongoDB 8.0 service at `127.0.0.1:27017`: `GET /api/health` returned `{ ok: true, db: true }`, project CRUD persisted in MongoDB, and the current-project fallback survived a reload.
 - Browser acceptance verified at `http://localhost:5173/production/init` with a 1440px viewport: invalid submit focused the first field and made no DB write; draft/outline creation, reload persistence, accent-insensitive search, status filtering, duplicate, confirmed delete, and delete fallback all worked.
 - `npm run typecheck`, `npm run lint`, `npm test` (7 passed, 5 skipped), and `npm run build` all pass on Windows. The client bundle contains no server environment/API-key identifiers.
+- Phase 3 final review fixes are covered by 81 passing tests: legacy project reads apply defaults for new script fields, chapter regeneration preserves concurrent edits, paragraph edits reset approval, empty scripts cannot be saved/finalized, and the client prevents overlapping regeneration streams with lifecycle abort cleanup.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 77 tests, typecheck, lint, build and worker smoke test |
+| script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -53,22 +54,24 @@ Unknown `/api/*` returns JSON 404.
 | Route | State |
 |---|---|
 | `/production/init` | implemented and browser-verified: NewProjectForm (react-hook-form + zodResolver, error summary, focus-first-invalid, duration chips, aspect->resolution) + RecentProjects (server-side search/status filter, debounced 300ms, open/duplicate/delete) + ConfirmDeleteDialog (native `<dialog>`) |
-| `/production/:projectId/review` \| `/studio` \| `/seo` | ComingSoonPage placeholder, names the delivering phase |
+| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio/SEO remain ComingSoonPage placeholders |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (52 passed, 4 skipped), and `npm run build` all pass on Windows. The built worker was started with `node --env-file=.env dist/worker.js`, logged `worker started`, and logged clean SIGINT shutdown against the local MongoDB service. Multipart upload/delete/list and ZIP success/422 cases are covered by the file-store route suite.
+`npm run typecheck`, `npm run lint`, `npm test` (81 passed, 3 stub files skipped), and `npm run build` all pass. The built worker was started with `node --env-file=.env dist/worker.js`, logged `worker started`, and logged clean SIGINT shutdown. Multipart upload/delete/list and ZIP success/422 cases are covered by the file-store route suite.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
 - No automated tests were added for the `project` module by explicit request; acceptance coverage is manual on Windows plus the existing suite.
 - File upload for reference files and "Nhập từ ZIP" are intentionally disabled UI (Phase 2+), matching the prompt.
 - Tabs 2/3/4 are all gated on "there is a current project" (disabled otherwise) — the prompt only specified this rule for tab 2; extended it to 3/4 too since their routes require a `:projectId`. Flag if you want tab 1's gate rule only.
-- No endpoint updates a project in place yet, so the `version` optimistic-lock compare-and-swap is written into `ProjectDoc`/`AGENTS.md` but not exercised by any code path (arrives with scene edits in Phase 3).
+- Project chapter/scene writes now exercise the `version` increment and history snapshot paths; compare-and-swap remains a future enhancement because the current mutation APIs use targeted atomic updates without an expected-version parameter.
 - A brief empty-list state can appear while TanStack Query fetches a newly selected status filter; the settled result is correct (`3/3` in the acceptance run). This is a loading-state polish item, not a data or API failure.
 - The client hook's EventSource open/change/unmount lifecycle is not DOM-automated by design; its pure state transition is covered by Node tests and the hook is not consumed until Phase 4/5.
 - Orphaned files after partial failures or project deletion are not garbage-collected; deferred to Phase 6+ by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: final review fixes normalize legacy project reads through `ProjectDocSchema` defaults, target only the regenerated chapter during generating/error transitions, force paragraph edits back to `pending`, reject empty scripts/finalizations, and abort/serialize client regeneration streams across unmount/project changes.
+- 2026-09-22: review regression coverage uses a controlled concurrent chapter edit during an aborted stream; the unrelated chapter must survive while the target chapter becomes `needs-fix`.
 - 2026-09-22: Phase 2 Task 6 will test a dependency-free job-event state transition helper in the existing Node Vitest environment; EventSource lifecycle wiring is manually verified because the hook has no Phase 2 consumer and adding jsdom/testing-library would expand dependencies.
 - 2026-09-22: `jobs.cancelRequested` is persisted so a running handler can observe cooperative cancellation without another process releasing its worker lock.
 - 2026-09-22: repository tests use `mongodb-memory-server` successfully on this Windows environment; no local MongoDB fallback was needed for Task 2.
@@ -108,7 +111,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: regeneration listens to request close before headers and response close after headers, avoiding false aborts when a normal request body stream closes while the SSE response is still active.
 - 2026-09-22: script edge tests pin ten-snapshot pruning, invalid restore index, deterministic remainder seconds, and SSE error/no-done behavior for malformed streamed output.
 - 2026-09-22: ReviewScriptPage uses fetch + ReadableStream for chapter regeneration (not EventSource) so AbortController cancellation works; no DOM test dependency was added.
-- 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 77 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
+- 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
 Next phase: Phase 4 asset module (image/voice jobs and handlers).

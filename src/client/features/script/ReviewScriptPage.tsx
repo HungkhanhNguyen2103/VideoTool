@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChapterDoc } from '../../../contracts/script';
@@ -20,6 +20,8 @@ export function ReviewScriptPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
   const [regen, setRegen] = useState<{ id: string; instruction: string; level: 'light' | 'medium' | 'rewrite'; preview: string; controller: AbortController } | null>(null);
+  const regenControllerRef = useRef<AbortController | null>(null);
+  const lifecycleRef = useRef(0);
   const [regenDraft, setRegenDraft] = useState<{ id: string; instruction: string; level: 'light' | 'medium' | 'rewrite' } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<api.ChapterSnapshot[]>([]);
@@ -28,6 +30,14 @@ export function ReviewScriptPage() {
   const chapters = projectQuery.data?.chapters ?? [];
   const allApproved = chapters.length > 0 && chapters.every((chapter) => chapter.status === 'approved');
   const selectedChapters = useMemo(() => chapters.filter((chapter) => selected.has(chapter.id)), [chapters, selected]);
+
+  useEffect(() => {
+    const lifecycle = ++lifecycleRef.current;
+    return () => {
+      if (lifecycleRef.current === lifecycle) lifecycleRef.current += 1;
+      regenControllerRef.current?.abort();
+    };
+  }, [projectId]);
 
   useEffect(() => {
     if (progress?.status === 'done') {
@@ -55,7 +65,9 @@ export function ReviewScriptPage() {
   async function saveEdit(chapterId: string) { await patch(chapterId, { paragraphs: editParagraphs }); setEditing(null); }
 
   async function regenerate(chapter: ChapterDoc, instruction = '', level: 'light' | 'medium' | 'rewrite' = 'medium') {
+    if (regenControllerRef.current) return;
     const controller = new AbortController();
+    regenControllerRef.current = controller;
     setRegen({ id: chapter.id, instruction, level, preview: '', controller });
     try {
       await api.regenerateChapter(projectId, chapter.id, { instruction, level }, (chunk) => setRegen((current) => current ? { ...current, preview: current.preview + chunk } : current), controller.signal);
@@ -63,16 +75,25 @@ export function ReviewScriptPage() {
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
       await refresh();
-    } finally { setRegen(null); }
+    } finally {
+      if (regenControllerRef.current === controller) regenControllerRef.current = null;
+      setRegen((current) => current?.controller === controller ? null : current);
+    }
   }
 
   async function regenerateSelected() {
-    for (const chapter of selectedChapters) await regenerate(chapter, '', 'medium');
+    if (regenControllerRef.current) return;
+    const lifecycle = lifecycleRef.current;
+    for (const chapter of selectedChapters) {
+      if (lifecycleRef.current !== lifecycle) return;
+      await regenerate(chapter, '', 'medium');
+    }
   }
 
   function openRegen(chapter: ChapterDoc) { setRegenDraft({ id: chapter.id, instruction: '', level: 'medium' }); }
 
   async function approveSelected() {
+    if (regenControllerRef.current || selectedChapters.some((chapter) => chapter.status === 'generating')) return;
     await Promise.all(selectedChapters.map((chapter) => api.patchChapter(projectId, chapter.id, { status: 'approved' })));
     await refresh();
   }
@@ -113,7 +134,7 @@ export function ReviewScriptPage() {
           {jobId && progress && progress.status !== 'done' && (
             <div className={styles.chapter} role="status"><strong>Đang tạo kịch bản… {Math.round(progress.progress)}%</strong><div className={styles.logs}>{progress.logs.map((line, index) => <div key={`${index}-${line}`}>{line}</div>)}</div></div>
           )}
-          <div className={styles.toolbar}><strong>{chapters.length} chương</strong><div className={styles.actions}><Button size="sm" onClick={() => void loadHistory()}>Lịch sử</Button>{selectedChapters.length > 0 && <><Button size="sm" onClick={() => void approveSelected()}>Duyệt tất cả</Button><Button size="sm" variant="indigoline" onClick={() => void regenerateSelected()}>Tái tạo đã chọn</Button></>}</div></div>
+          <div className={styles.toolbar}><strong>{chapters.length} chương</strong><div className={styles.actions}><Button size="sm" onClick={() => void loadHistory()}>Lịch sử</Button>{selectedChapters.length > 0 && <><Button size="sm" disabled={Boolean(regen) || selectedChapters.some((chapter) => chapter.status === 'generating')} onClick={() => void approveSelected()}>Duyệt tất cả</Button><Button size="sm" variant="indigoline" disabled={Boolean(regen) || selectedChapters.some((chapter) => chapter.status === 'generating')} onClick={() => void regenerateSelected()}>Tái tạo đã chọn</Button></>}</div></div>
           {chapters.map((chapter) => {
             const busy = regen?.id === chapter.id || chapter.status === 'generating';
             const isEditing = editing === chapter.id;

@@ -1,6 +1,6 @@
 import type { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
-import type { ProjectDoc } from './docs';
+import { ProjectDocSchema, type ProjectDoc } from './docs';
 import { escapeRegex } from './title-search';
 
 function collection(): Collection<ProjectDoc> {
@@ -12,7 +12,8 @@ export async function insertProject(doc: ProjectDoc): Promise<void> {
 }
 
 export async function findProjectById(id: string): Promise<ProjectDoc | null> {
-  return collection().findOne({ _id: id });
+  const doc = await collection().findOne({ _id: id });
+  return doc ? ProjectDocSchema.parse(doc) : null;
 }
 
 export async function deleteProjectById(id: string): Promise<number> {

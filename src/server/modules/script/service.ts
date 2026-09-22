@@ -50,7 +50,8 @@ export async function patchChapter(
   const project = await getProject(projectId);
   const chapter = project.chapters.find((item) => item.id === chapterId);
   if (!chapter) throw new NotFound('Không tìm thấy chương.');
-  const updated = await patchProjectChapter(projectId, chapterId, patch, snapshotOf(project.chapters));
+  const normalizedPatch = patch.paragraphs ? { ...patch, status: 'pending' as const } : patch;
+  const updated = await patchProjectChapter(projectId, chapterId, normalizedPatch, snapshotOf(project.chapters));
   return updated.chapters;
 }
 
@@ -86,7 +87,7 @@ export async function generateScript(projectId: string, appendLog: (message: str
     throw scriptParseError();
   }
   const chapters = z.array(GeneratedChapterSchema).safeParse(parsed);
-  if (!chapters.success) throw scriptParseError();
+  if (!chapters.success || chapters.data.length === 0) throw scriptParseError();
   const saved: ChapterDoc[] = chapters.data.map((chapter, index) => ({
     ...chapter,
     id: newId(),
@@ -108,8 +109,7 @@ export async function regenerateChapter(
   const chapter = project.chapters.find((item) => item.id === chapterId);
   if (!chapter) throw new NotFound('Không tìm thấy chương.');
   const snapshot = snapshotOf(project.chapters);
-  const generating = project.chapters.map((item) => item.id === chapterId ? { ...item, status: 'generating' as const } : item);
-  await replaceProjectChapters(projectId, generating, snapshot);
+  await patchProjectChapter(projectId, chapterId, { status: 'generating' }, snapshot);
 
   try {
     const prompt = buildRegenerationPrompt(project, chapter, opts.instruction, opts.level);
@@ -137,11 +137,7 @@ export async function regenerateChapter(
     return result.chapters.find((item) => item.id === chapterId) ?? updated;
   } catch (error) {
     const aborted = signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
-    await replaceProjectChapters(
-      projectId,
-      project.chapters.map((item) => item.id === chapterId ? { ...item, status: 'needs-fix' as const } : item),
-      null,
-    );
+    await patchProjectChapter(projectId, chapterId, { status: 'needs-fix' });
     if (aborted && error instanceof DOMException) throw error;
     throw error;
   }
@@ -155,6 +151,9 @@ function sceneDurations(target: number, count: number): number[] {
 
 export async function finalizeScript(projectId: string): Promise<void> {
   const project: ProjectDetail = await getProject(projectId);
+  if (project.chapters.length === 0) {
+    throw new AppError('At least one chapter is required before finalizing.', 422, 'NO_CHAPTERS');
+  }
   if (project.chapters.some((chapter) => chapter.status !== 'approved')) {
     throw new AppError('All chapters must be approved before finalizing.', 422, 'NOT_ALL_APPROVED');
   }
