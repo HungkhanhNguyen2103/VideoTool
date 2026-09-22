@@ -11,6 +11,10 @@ export async function findJobById(id: string): Promise<JobDoc | null> {
   return jobs().findOne({ _id: id });
 }
 
+export async function appendJobLog(id: string, message: string): Promise<void> {
+  await jobs().updateOne({ _id: id }, { $push: { logs: message }, $set: { updatedAt: new Date() } });
+}
+
 export async function claimNextJob(lockedBy: string): Promise<JobDoc | null> {
   const now = new Date();
   return jobs().findOneAndUpdate(

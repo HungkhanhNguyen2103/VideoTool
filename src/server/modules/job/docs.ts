@@ -18,6 +18,7 @@ export const JobDocSchema = z.object({
   result: z.unknown().nullable(),
   error: z.string().nullable(),
   cancelRequested: z.boolean(),
+  logs: z.array(z.string()),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

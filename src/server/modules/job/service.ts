@@ -4,6 +4,7 @@ import { newId } from '../../shared/ids';
 import type { JobDoc } from './docs';
 import {
   claimNextJob,
+  appendJobLog,
   findJobById,
   insertJob,
   markCancelled,
@@ -17,6 +18,7 @@ import {
 export type JobContext = {
   reportProgress: (pct: number, result?: unknown) => Promise<void>;
   isCancelled: () => Promise<boolean>;
+  appendLog: (message: string) => Promise<void>;
 };
 
 export type JobHandler = (job: JobDoc, ctx: JobContext) => Promise<unknown>;
@@ -61,6 +63,7 @@ export async function enqueueJob(input: EnqueueJobInput): Promise<JobSummary> {
     result: null,
     error: null,
     cancelRequested: false,
+    logs: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -108,6 +111,7 @@ export async function claimAndRun(handlers: Record<string, JobHandler>, lockedBy
   const context: JobContext = {
     reportProgress: async (pct, result) => updateProgress(job._id, pct, result),
     isCancelled: async () => (await findJobById(job._id))?.cancelRequested ?? false,
+    appendLog: async (message) => appendJobLog(job._id, message),
   };
   try {
     const result = await handler(job, context);

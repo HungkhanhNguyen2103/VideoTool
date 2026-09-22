@@ -19,6 +19,7 @@ export function makeJob(overrides: Partial<JobDoc> = {}): JobDoc {
     result: null,
     error: null,
     cancelRequested: false,
+    logs: [],
     createdAt: now,
     updatedAt: now,
     ...overrides,

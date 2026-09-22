@@ -4,6 +4,7 @@ import { JobDocSchema } from './docs';
 import { JOB_INDEXES } from './indexes';
 import {
   claimNextJob,
+  appendJobLog,
   findJobById,
   insertJob,
   markDone,
@@ -88,6 +89,14 @@ describe('job repository', () => {
     const job = makeJob({ type: 'example' });
     await insertJob(job);
     expect(await findJobById(job._id)).toMatchObject({ _id: job._id, type: 'example' });
+  });
+
+  it('appends job logs without replacing earlier messages', async () => {
+    const job = makeJob();
+    await insertJob(job);
+    await appendJobLog(job._id, 'first');
+    await appendJobLog(job._id, 'second');
+    expect((await findJobById(job._id))?.logs).toEqual(['first', 'second']);
   });
 
   it('claims the oldest eligible queued job and returns null when empty', async () => {
@@ -187,6 +196,12 @@ describe('job service', () => {
     expect(handled).toBe(true);
     expect(seen).toEqual([0]);
     expect(await getJob(job.id)).toMatchObject({ status: 'done', progress: 100 });
+  });
+
+  it('exposes appendLog in the handler context', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    await claimAndRun({ example: async (_doc, ctx) => { await ctx.appendLog('working'); return { ok: true }; } }, 'worker-a');
+    expect((await findJobById(job.id))?.logs).toEqual(['working']);
   });
 
   it('marks unknown handlers failed without retrying', async () => {

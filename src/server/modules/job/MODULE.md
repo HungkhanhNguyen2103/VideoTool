@@ -9,6 +9,7 @@
 - Every job document has `schemaVersion: 1`, a string ULID `_id`, and a valid status.
 - Only this module writes the `jobs` collection; worker handlers receive jobs through the public API.
 - A running job keeps its worker lock while cancellation is cooperative through `cancelRequested`.
+- `logs` is append-only; handlers add messages through `JobContext.appendLog`.
 - Attempts increment only when a worker atomically claims a queued job.
 - Progress is clamped to 0–100 and terminal jobs do not re-enter the queue.
 
@@ -26,6 +27,7 @@
 ## Service surface
 - Internal callers use `enqueueJob`; public callers receive only `JobSummary` through `getJob`/`cancelJob`.
 - `claimAndRun` owns handler context, retry backoff, unknown-type failure, and terminal transitions.
+- Handler logs are persisted before the handler completes and are streamed separately from state events.
 
 ## HTTP surface
 - `POST /api/job/:id/cancel` returns the current summary after requesting cancellation.
