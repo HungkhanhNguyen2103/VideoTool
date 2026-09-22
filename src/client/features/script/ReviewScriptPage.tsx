@@ -12,6 +12,18 @@ import styles from './ReviewScriptPage.module.css';
 const statusTone = { approved: 'green', 'needs-fix': 'amber', generating: 'indigo', pending: 'muted' } as const;
 const statusLabel = { approved: 'Đã duyệt', 'needs-fix': 'Cần sửa', generating: 'Đang tạo lại', pending: 'Chưa duyệt' } as const;
 
+export function getReviewStepperState(chapterCount: number, jobId: string | null, allApproved: boolean) {
+  const hasChapters = chapterCount > 0;
+  const currentStep = !hasChapters ? 1 : allApproved ? 3 : 2;
+  const stepSubs = [
+    'Hoàn tất',
+    hasChapters ? 'Hoàn tất' : jobId ? 'Đang thực hiện' : 'Chưa bắt đầu',
+    !hasChapters ? 'Chưa bắt đầu' : allApproved ? 'Hoàn tất' : 'Đang thực hiện',
+    allApproved ? 'Sẵn sàng' : 'Chưa bắt đầu',
+  ];
+  return { currentStep, stepSubs };
+}
+
 export function ReviewScriptPage() {
   const { projectId = '' } = useParams();
   const navigate = useNavigate();
@@ -29,6 +41,7 @@ export function ReviewScriptPage() {
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
   const allApproved = chapters.length > 0 && chapters.every((chapter) => chapter.status === 'approved');
+  const { currentStep, stepSubs } = getReviewStepperState(chapters.length, jobId, allApproved);
   const selectedChapters = useMemo(() => chapters.filter((chapter) => selected.has(chapter.id)), [chapters, selected]);
 
   useEffect(() => {
@@ -119,7 +132,7 @@ export function ReviewScriptPage() {
     <div className={styles.page}>
       <ol className={styles.stepper} aria-label="Tiến trình sản xuất">
         {['Dàn ý', 'Nháp kịch bản', 'Duyệt & Tái Tạo', 'Chốt & Chia Cảnh'].map((label, index) => (
-          <li className={styles.step} key={label} aria-current={index === 2 ? 'step' : undefined}><span className={styles.stepLabel}>{index + 1}. {label}</span><span className={styles.stepSub}>{index < 2 ? 'Hoàn tất' : index === 2 ? 'Đang thực hiện' : allApproved ? 'Sẵn sàng' : 'Chưa bắt đầu'}</span></li>
+          <li className={styles.step} key={label} aria-current={index === currentStep ? 'step' : undefined}><span className={styles.stepLabel}>{index + 1}. {label}</span><span className={styles.stepSub}>{stepSubs[index]}</span></li>
         ))}
       </ol>
 

@@ -52,7 +52,7 @@ needs-fix ──edit/regen──> pending or generating
 - Routes receive job enqueueing from the app composition root and distinguish normal request-body close from an actual SSE response disconnect.
 - Regeneration transitions update only the target chapter, preserving unrelated concurrent edits; the client serializes bulk regeneration and aborts its active stream on unmount or project change.
 - Edge coverage verifies ten-snapshot pruning, restore bounds, duration rounding, malformed-stream errors, and the absence of a false successful `done` event.
-- The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; page rendering remains intentionally untested without a DOM dependency.
+- The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; ReviewScriptPage's stepper state and shared theme-token usage are covered by pure Node tests, while full page rendering remains untested without a DOM dependency.
 
 ## Acceptance
 - `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 81 passed and 3 stub files skipped.

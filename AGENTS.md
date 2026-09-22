@@ -13,7 +13,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 _Last updated: 2026-09-22 · Phase 5 Prompt 2 complete (Remotion render engine implemented, verified, and documented)_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (156 tests pass; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (160 tests pass; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -68,9 +68,10 @@ Unknown `/api/*` returns JSON 404.
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO remains ComingSoonPage placeholder |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (156 passed; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
+`npm run typecheck`, `npm run lint`, `npm test` (160 passed; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
 - The post-review Remotion parity fix mutes embedded audio on source video scenes, and progress log writes are serialized and surfaced as controlled render failures instead of unhandled rejections; the focused Remotion suite passes 13/13.
 - Remotion cleanup failures are logged without replacing the primary staging/render error.
+- ReviewScriptPage now derives its production stepper from chapter/job state and uses the shared dark-theme tokens; four focused regression tests cover the state matrix and CSS token references.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
@@ -99,6 +100,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 5 Prompt 2 places render-engine selection in the video router while the project service owns the atomic `renderEngine` mutation.
 - 2026-09-22: Phase 5 Prompt 2 review fix mutes embedded source-video audio to match FFmpeg's explicit audio mapping and serializes/awaits Remotion progress-log writes so persistence failures remain controlled render errors.
 - 2026-09-22: Phase 5 Prompt 2 cleanup diagnostics log staging/output removal failures while preserving the original render error.
+- 2026-09-22: ReviewScriptPage fixes derive stepper progress from chapters/job state and replace undefined light-theme CSS fallbacks with the shared dark tokens; pure client regression coverage avoids adding a DOM dependency.
 - 2026-09-22: Phase 5 Task 3 adds a plain-fetch VieNeu client with one retry, timeout/error mapping, FFmpeg mastering fallback, and ffprobe duration measurement; no TTS SDK or runtime dependency was added.
 - 2026-09-22: Phase 5 Task 4 adds resilient Freesound search/download adapters and ports the Vietnamese keyword dictionary/reference query extraction verbatim; missing API key, no result, malformed response, and download failure all return null without throwing.
 - 2026-09-22: Phase 5 Prompt 1 follow-up corrects Freesound matching order, delimiter splitting, two-word fallback queries, and first-seen deduplication to match the reference implementation exactly.
