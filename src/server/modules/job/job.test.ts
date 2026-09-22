@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { JOB_STATUSES, JobSummarySchema } from '../../../contracts/job';
 import { JobDocSchema } from './docs';
 import { JOB_INDEXES } from './indexes';
@@ -24,6 +24,13 @@ import {
 } from './service';
 import { Conflict, NotFound } from '../../shared/errors';
 import { getCollection } from '../../db/client';
+import type { JobDoc } from './docs';
+import { createApp } from '../../app';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
 
 describe('job contracts and indexes', () => {
   it('exposes the five persisted statuses', () => {
@@ -195,7 +202,7 @@ describe('job service', () => {
     expect(await getJob(job.id)).toMatchObject({ status: 'queued', attempts: 1, error: 'boom' });
     const retryDoc = await findJobById(job.id);
     expect(retryDoc?.runAt.getTime()).toBeGreaterThan(Date.now());
-    await getCollection('jobs').updateOne({ _id: job.id }, { $set: { runAt: new Date(0) } });
+    await getCollection<JobDoc>('jobs').updateOne({ _id: job.id }, { $set: { runAt: new Date(0) } });
     await claimAndRun({ example: handler }, 'worker-a');
     expect(await getJob(job.id)).toMatchObject({ status: 'failed', attempts: 2, error: 'boom' });
   });
@@ -219,5 +226,49 @@ describe('job service', () => {
     const stale = makeJob({ status: 'running', lockedBy: 'dead', lockedAt: new Date(Date.now() - 600_000), attempts: 1 });
     await insertJob(stale);
     expect(await recoverStaleJobService()).toBe(1);
+  });
+});
+
+describe('job routes', () => {
+  let server: Server | null = null;
+  beforeAll(async () => startTestMongo());
+  beforeEach(async () => resetTestMongo());
+  afterAll(async () => closeTestMongo());
+
+  async function startServer(): Promise<string> {
+    const app = createApp({ filesDir: mkdtempSync(path.join(tmpdir(), 'job-files-')), clientDir: null });
+    await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
+    return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+  }
+
+  afterEach(async () => {
+    const current = server;
+    server = null;
+    if (current) await new Promise<void>((resolve) => current.close(() => resolve()));
+  });
+
+  it('cancels a queued job and returns its summary', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    const base = await startServer();
+    const response = await fetch(`${base}/api/job/${job.id}/cancel`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: job.id, status: 'cancelled' });
+  });
+
+  it('returns 404 when cancelling an unknown job', async () => {
+    const base = await startServer();
+    const response = await fetch(`${base}/api/job/missing/cancel`, { method: 'POST' });
+    expect(response.status).toBe(404);
+  });
+
+  it('emits the current terminal state immediately and closes the SSE stream', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    await cancelJob(job.id);
+    const base = await startServer();
+    const response = await fetch(`${base}/api/job/${job.id}/events`);
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).toContain(`data: ${JSON.stringify({ status: 'cancelled', progress: 0, error: null })}`);
+    expect(text).toContain('\n\n');
   });
 });

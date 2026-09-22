@@ -27,6 +27,10 @@
 - Internal callers use `enqueueJob`; public callers receive only `JobSummary` through `getJob`/`cancelJob`.
 - `claimAndRun` owns handler context, retry backoff, unknown-type failure, and terminal transitions.
 
+## HTTP surface
+- `POST /api/job/:id/cancel` returns the current summary after requesting cancellation.
+- `GET /api/job/:id/events` sends the current `{ status, progress, error }` immediately, then deltas and 15-second heartbeats until terminal.
+
 ## Known pitfalls
 - Do not release a running lock from the cancel route; the worker owns terminal transitions.
 - SSE emits the current state on the first poll, then only changed state and periodic heartbeats.

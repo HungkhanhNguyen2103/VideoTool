@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 1 in progress (job contracts/schema/repository/service implemented) · latest implementation commit: `38a19a7 feat(job): implement Mongo queue repository`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 1 in progress (job contracts/schema/repository/service/routes implemented) · latest implementation commit: `c7d01fa feat(job): add queue service and public API`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 2, Prompt 1 in progress (job contracts/schema
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
-| job | partial | contracts/schema/indexes/repository/service and tests implemented; routes/worker/hook remain in progress |
+| job | partial | contracts/schema/indexes/repository/service/routes and tests implemented; worker/hook remain in progress |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
@@ -65,6 +65,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: `jobs.cancelRequested` is persisted so a running handler can observe cooperative cancellation without another process releasing its worker lock.
 - 2026-09-22: repository tests use `mongodb-memory-server` successfully on this Windows environment; no local MongoDB fallback was needed for Task 2.
 - 2026-09-22: service-owned handler errors retry with `min(2 ** attempts * 1000, 30000)` until `maxAttempts`; unknown handler types fail terminally because the registry is explicit.
+- 2026-09-22: SSE sends the current job state on the first poll (`lastState` starts undefined), then only changed state and heartbeat comments; terminal state closes the stream.
 - 2026-09-22: search input in RecentProjects is debounced 300ms client-side before hitting the server (the prototype searches an in-memory array on every keystroke; a real HTTP call per keystroke would be wasteful).
 - 2026-09-22: tabs 2/3/4 (Duyệt & Tái Tạo / Studio / SEO) are all disabled without a current project, not just tab 2 as literally specified, because their routes need `:projectId`.
 - 2026-09-22: CSS Modules per component, global tokens+resets+small utility classes (`.label`, `.ic`, `.mono`, `.muted`, `.spacer`, `.sr-only`) in `styles/tokens.css` (loaded once); `.btn`/`.badge` variants live in the shared `ui/Button`, `ui/Badge` components instead of global classes.

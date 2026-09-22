@@ -9,3 +9,4 @@ export {
   recoverStaleJobs,
 } from './service';
 export type { EnqueueJobInput, JobContext, JobHandler } from './service';
+export { createJobRouter, jobRouter } from './routes';

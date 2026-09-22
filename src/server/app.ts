@@ -3,6 +3,7 @@ import express, { type Express } from 'express';
 import { getDb } from './db/client';
 import { errorHandler } from './error-handler';
 import { projectRouter } from './modules/project';
+import { jobRouter } from './modules/job';
 import { NotFound } from './shared/errors';
 
 export type AppOptions = {
@@ -23,6 +24,7 @@ export function createApp(options: AppOptions): Express {
   });
 
   app.use('/api/project', projectRouter);
+  app.use('/api/job', jobRouter);
 
   app.use('/api', (_req, _res, next) => next(new NotFound('Không tìm thấy đường dẫn.')));
 
