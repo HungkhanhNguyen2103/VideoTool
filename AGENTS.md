@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + SSE streaming implemented) · latest implementation commit: `a34ecc1 feat(job): add logs field and appendLog to job module`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + file contracts/repository implemented) · latest implementation commit: `bfb91d8 feat(job): stream log events over SSE`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + SSE strea
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
-| job | partial | Prompt 1 complete; append-only logs, SSE named log events, and client accumulation implemented; file-store work remains |
+| job | partial | Prompt 1 complete; logs/SSE implemented; Prompt 2 file-store integration remains in progress |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
