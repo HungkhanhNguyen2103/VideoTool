@@ -18,6 +18,7 @@ export function getVideoRenderer(engine: RenderEngine): VideoRenderer {
 
 export type { VideoRenderer } from './ffmpeg-renderer';
 export { FfmpegRenderer } from './ffmpeg-renderer';
+export { createVideoRouter } from './routes';
 export {
   configureVideoModule,
   generateProjectBgm,

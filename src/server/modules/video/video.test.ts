@@ -1,7 +1,10 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import express from 'express';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import {
   createProject,
@@ -16,6 +19,8 @@ import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSc
 import { FfmpegRenderer, getVideoRenderer } from './index';
 import * as videoIndex from './index';
 import { configureVideoModule, generateProjectBgm, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
+import { createVideoRouter } from './routes';
+import { jobHandlers } from '../../../worker/registry';
 
 const mocks = vi.hoisted(() => ({
   synthesize: vi.fn(),
@@ -46,6 +51,7 @@ const projectInput = {
 };
 
 let filesDir = '';
+let server: Server | null = null;
 
 beforeAll(async () => {
   await startTestMongo();
@@ -64,6 +70,11 @@ beforeEach(async () => {
 afterAll(async () => {
   await closeTestMongo();
   if (filesDir) await rm(filesDir, { recursive: true, force: true });
+});
+afterEach(async () => {
+  const current = server;
+  server = null;
+  if (current) await new Promise<void>((resolve) => current.close(() => resolve()));
 });
 
 async function seedProject() {
@@ -247,5 +258,79 @@ describe('video orchestration services', () => {
     const files = await createFileStoreService(filesDir).listProjectFiles(project.id);
     expect(files).toContainEqual(expect.objectContaining({ purpose: 'render', mimeType: 'video/mp4' }));
     expect(renderer.renderFullVideo).toHaveBeenCalledOnce();
+  });
+});
+
+type VideoEnqueue = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
+
+async function startVideoRouterServer(enqueueJob: VideoEnqueue): Promise<string> {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/project', createVideoRouter({ enqueueJob }));
+  await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
+  return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+}
+
+describe('video routes and worker handlers', () => {
+  it('enqueues project voiceover and render jobs with the project payload', async () => {
+    const project = await seedVoiceProject();
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' });
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    const voiceoverResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-voiceover`, { method: 'POST' });
+    expect(voiceoverResponse.status).toBe(201);
+    expect(await voiceoverResponse.json()).toEqual({ jobId: 'job-1' });
+    await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } }));
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } }));
+  });
+
+  it('regenerates synchronously and serves a preview as video/mp4', async () => {
+    const project = await seedVoiceProject();
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(1.2);
+    const renderer = { renderScenePreview: vi.fn().mockResolvedValue(Buffer.from('preview-mp4')), renderFullVideo: vi.fn() };
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+    const enqueueJob = vi.fn();
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    const regenerate = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/regenerate-voiceover`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ speed: 1.1 }) });
+    expect(regenerate.status).toBe(200);
+    expect((await regenerate.json()).scenes[0].audioFileId).toEqual(expect.any(String));
+
+    const preview = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/render-preview`);
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get('content-type')).toContain('video/mp4');
+    expect(Buffer.from(await preview.arrayBuffer()).toString()).toBe('preview-mp4');
+  });
+
+  it('handles SFX/BGM routes as successful project responses when providers miss', async () => {
+    const project = await seedVoiceProject();
+    mocks.searchAndDownloadSfx.mockResolvedValue(null);
+    mocks.searchAndDownloadBgm.mockResolvedValue(null);
+    const enqueueJob = vi.fn();
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    const sfx = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/generate-sfx`, { method: 'POST' });
+    const bgm = await fetch(`${base}/api/project/${project.id}/generate-bgm`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mood: 'calm' }) });
+    expect(sfx.status).toBe(200);
+    expect(bgm.status).toBe(200);
+    expect((await bgm.json()).bgmFileId).toBeNull();
+  });
+
+  it('worker handlers honor cancellation before invoking services', async () => {
+    const job = { payload: { projectId: 'project-1' } } as never;
+    const context = {
+      isCancelled: vi.fn().mockResolvedValue(true),
+      appendLog: vi.fn(),
+      reportProgress: vi.fn(),
+    };
+
+    await jobHandlers['generate-voiceover']!(job, context);
+    await jobHandlers['render-full-video']!(job, context);
+
+    expect(mocks.synthesize).not.toHaveBeenCalled();
+    expect(context.isCancelled).toHaveBeenCalledTimes(2);
   });
 });

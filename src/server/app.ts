@@ -8,6 +8,7 @@ import { enqueueJob } from './modules/job';
 import { configureFileStore, fileStoreRouter } from './modules/file-store';
 import { createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
+import { configureVideoModule, createVideoRouter } from './modules/video';
 import { NotFound } from './shared/errors';
 
 export type AppOptions = {
@@ -23,6 +24,7 @@ export function createApp(options: AppOptions): Express {
   app.use(express.json({ limit: '1mb' }));
   configureFileStore(options.filesDir);
   configureAssetModule(options.filesDir);
+  configureVideoModule(options.filesDir);
 
   app.get('/api/health', async (_req, res) => {
     await getDb().command({ ping: 1 });
@@ -33,6 +35,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api/project', createScriptRouter({ enqueueJob }));
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);
+  app.use('/api/project', createVideoRouter({ enqueueJob }));
   app.use('/api/job', jobRouter);
 
   app.use('/api', (_req, _res, next) => next(new NotFound('Không tìm thấy đường dẫn.')));

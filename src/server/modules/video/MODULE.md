@@ -23,6 +23,8 @@ The BGM pass intentionally re-encodes the full video a second time. This is a de
 
 The orchestration services call VieNeu and Freesound adapters, store generated voiceover/SFX/BGM/render files through the configured file-store service, and mutate scene/project references only through the public project API. Voiceover batches run sequentially and continue after an individual failure; a failed scene keeps its previous reference and duration.
 
+The router is mounted explicitly at `/api/project`. Project-wide voiceover and render requests enqueue jobs; single-scene voiceover regeneration, SFX/BGM generation, and preview rendering remain synchronous. Worker handlers check cancellation before invoking the service and forward `appendLog` for progress events.
+
 ## Prerequisites and known gaps
 
 - FFmpeg and ffprobe are external prerequisites selected by `FFMPEG_PATH`/`FFPROBE_PATH`, falling back to binaries on `PATH`.
@@ -33,3 +35,4 @@ The orchestration services call VieNeu and Freesound adapters, store generated v
 
 - Task 5 pure renderer tests cover scaling/padding/fps, silent inputs, voice/SFX mixing, exact volume constants, concat/BGM arguments, and the Remotion 501 error.
 - Task 6 service tests cover voiceover storage/duration, failure preservation, batch continuation, SFX/BGM no-op and storage, render readiness, and atomic final render metadata.
+- Task 7 route/worker tests cover job payloads, synchronous regeneration/preview content type, provider no-op responses, and cancellation checks.
