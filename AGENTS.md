@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 2 of 2 done (file store + reference upload + ZIP import) · latest implementation commit: `f309434 fix(project): keep scene replacement writes in service`_
+_Last updated: 2026-09-22 · Phase 3 Prompt 1 design spec committed; implementation pending review · latest implementation commit: `e192b86 docs(phase2): finalize prompt 2 review evidence`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -25,7 +25,7 @@ _Last updated: 2026-09-22 · Phase 2, Prompt 2 of 2 done (file store + reference
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | stub | Phase 3 |
+| script | stub | Phase 3 Prompt 1 design spec committed; implementation pending review |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -99,7 +99,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 3: implement script generation and scene editing; file references and imported scenes are now available as backend foundations.
+Phase 3 Prompt 1: review `docs/superpowers/specs/2026-09-22-phase3-script-design.md`, especially the shared-schema, project-ownership, status-vocabulary, and job-cancellation resolutions. After approval, write the implementation plan before coding.
 
 ## 2. Stack
 
