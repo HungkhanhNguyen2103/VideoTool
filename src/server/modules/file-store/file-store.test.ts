@@ -19,6 +19,7 @@ import AdmZip from 'adm-zip';
 let filesDir: string;
 let service: ReturnType<typeof createFileStoreService>;
 let server: Server | null = null;
+const tempDirs: string[] = [];
 
 const projectInput = {
   title: 'File test project',
@@ -53,9 +54,10 @@ describe('file-store schema and repository', () => {
     await resetTestMongo();
     await getCollection<FileDoc>('files').deleteMany({});
     filesDir = mkdtempSync(path.join(tmpdir(), 'video-tool-files-'));
+    tempDirs.push(filesDir);
     service = createFileStoreService(filesDir);
   });
-  afterAll(async () => { await closeTestMongo(); if (filesDir) rmSync(filesDir, { recursive: true, force: true }); });
+  afterAll(async () => { await closeTestMongo(); for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true }); });
 
   async function startServer(): Promise<string> {
     const app = createApp({ filesDir, clientDir: null });
