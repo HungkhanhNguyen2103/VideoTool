@@ -14,6 +14,8 @@ import { NotFound } from './shared/errors';
 export type AppOptions = {
   /** Absolute directory served under /files. */
   filesDir: string;
+  /** Stable output directory used by the Remotion bundle. */
+  remotionPublicDir?: string;
   /** Absolute path of the built SPA (dist/client). null = do not serve it (development). */
   clientDir: string | null;
 };
@@ -24,7 +26,7 @@ export function createApp(options: AppOptions): Express {
   app.use(express.json({ limit: '1mb' }));
   configureFileStore(options.filesDir);
   configureAssetModule(options.filesDir);
-  configureVideoModule(options.filesDir);
+  configureVideoModule(options.filesDir, options.remotionPublicDir);
 
   app.get('/api/health', async (_req, res) => {
     await getDb().command({ ping: 1 });

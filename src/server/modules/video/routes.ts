@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject } from '../project';
+import { getProject, setProjectRenderEngine } from '../project';
+import { RENDER_ENGINES } from '../../../contracts/project';
 import {
   generateProjectBgm,
   generateSceneSfx,
@@ -20,6 +21,7 @@ const VoiceoverOptionsSchema = z.object({
 }).default({});
 
 const BgmSchema = z.object({ mood: z.string().trim().min(1) });
+const RenderEngineSchema = z.object({ engine: z.enum(RENDER_ENGINES) });
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Router {
   const router = Router();
@@ -57,6 +59,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
     assertProjectRenderReady(project);
     const job = await options.enqueueJob({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } });
     res.status(201).json({ jobId: job.id });
+  });
+
+  router.patch('/:id/render-engine', async (req, res) => {
+    const { engine } = RenderEngineSchema.parse(req.body);
+    res.json(await setProjectRenderEngine(req.params.id, engine));
   });
 
   return router;

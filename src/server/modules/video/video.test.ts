@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -309,15 +309,45 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue): Promise<string>
   const app = express();
   app.use(express.json());
   app.use('/api/project', createVideoRouter({ enqueueJob }));
-  app.use((error: { status?: number; code?: string; message?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  app.use((error: { status?: number; code?: string; message?: string; name?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     void next;
-    res.status(error.status ?? 500).json({ error: { code: error.code ?? 'unknown_error', message: error.message ?? 'error' } });
+    const status = error.status ?? (error.name === 'ZodError' ? 400 : 500);
+    res.status(status).json({ error: { code: error.code ?? (status === 400 ? 'validation_error' : 'unknown_error'), message: error.message ?? 'error' } });
   });
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
   return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
 }
 
 describe('video routes and worker handlers', () => {
+  it('updates the render engine through the thin route and rejects invalid or missing projects', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn();
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    const remotion = await fetch(`${base}/api/project/${project.id}/render-engine`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ engine: 'remotion' }),
+    });
+    expect(remotion.status).toBe(200);
+    expect((await remotion.json())).toMatchObject({ renderEngine: 'remotion', version: project.version + 1 });
+
+    const invalid = await fetch(`${base}/api/project/${project.id}/render-engine`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ engine: 'unknown' }),
+    });
+    expect(invalid.status).toBe(400);
+
+    const missing = await fetch(`${base}/api/project/missing-project/render-engine`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ engine: 'ffmpeg' }),
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it('passes one configured Remotion public directory into both web and worker startup', async () => {
+    const appSource = await readFile('src/server/app.ts', 'utf8');
+    const workerSource = await readFile('src/worker/main.ts', 'utf8');
+    expect(appSource).toContain('configureVideoModule(options.filesDir, options.remotionPublicDir)');
+    expect(workerSource).toContain('configureVideoModule(config.FILES_DIR, config.REMOTION_PUBLIC_DIR)');
+  });
+
   it('enqueues project voiceover and render jobs with the project payload', async () => {
     const project = await seedVoiceProject();
     const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' });
