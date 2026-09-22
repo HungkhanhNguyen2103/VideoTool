@@ -14,6 +14,16 @@ import {
 } from './repo';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { makeJob } from '../../../test-utils/factories';
+import {
+  cancelJob,
+  claimAndRun,
+  computeBackoffMs,
+  enqueueJob,
+  getJob,
+  recoverStaleJobs as recoverStaleJobService,
+} from './service';
+import { Conflict, NotFound } from '../../shared/errors';
+import { getCollection } from '../../db/client';
 
 describe('job contracts and indexes', () => {
   it('exposes the five persisted statuses', () => {
@@ -133,5 +143,81 @@ describe('job repository', () => {
     const claims = await Promise.all([claimNextJob('worker-a'), claimNextJob('worker-b')]);
     expect(claims.filter(Boolean)).toHaveLength(1);
     expect((await findJobById(job._id))?.status).toBe('running');
+  });
+});
+
+describe('job service', () => {
+  beforeAll(async () => startTestMongo());
+  beforeEach(async () => resetTestMongo());
+  afterAll(async () => closeTestMongo());
+
+  it('enqueues a queued job and maps it to a public summary', async () => {
+    const summary = await enqueueJob({ type: 'example', projectId: 'project-1', payload: { value: 1 } });
+    expect(summary).toMatchObject({ type: 'example', projectId: 'project-1', status: 'queued', progress: 0, attempts: 0, maxAttempts: 3 });
+    expect((await getJob(summary.id)).id).toBe(summary.id);
+  });
+
+  it('computes bounded exponential retry delays', () => {
+    expect(computeBackoffMs(0)).toBe(1_000);
+    expect(computeBackoffMs(4)).toBe(16_000);
+    expect(computeBackoffMs(8)).toBe(30_000);
+  });
+
+  it('reports missing and terminal cancellation as typed errors', async () => {
+    await expect(cancelJob('missing')).rejects.toBeInstanceOf(NotFound);
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    await cancelJob(job.id);
+    await expect(cancelJob(job.id)).rejects.toBeInstanceOf(Conflict);
+  });
+
+  it('runs a handler, clamps progress, and persists its result', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    const seen: number[] = [];
+    const handled = await claimAndRun(
+      { example: async (_doc, ctx) => { await ctx.reportProgress(150); seen.push((await ctx.isCancelled()) ? 1 : 0); return { ok: true }; } },
+      'worker-a',
+    );
+    expect(handled).toBe(true);
+    expect(seen).toEqual([0]);
+    expect(await getJob(job.id)).toMatchObject({ status: 'done', progress: 100 });
+  });
+
+  it('marks unknown handlers failed without retrying', async () => {
+    const job = await enqueueJob({ type: 'unknown', projectId: 'project-1', payload: {} });
+    expect(await claimAndRun({}, 'worker-a')).toBe(true);
+    expect(await getJob(job.id)).toMatchObject({ status: 'failed', error: 'Unknown job type: unknown' });
+  });
+
+  it('requeues thrown handlers with backoff and eventually fails at max attempts', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {}, maxAttempts: 2 });
+    const handler = async () => { throw new Error('boom'); };
+    await claimAndRun({ example: handler }, 'worker-a');
+    expect(await getJob(job.id)).toMatchObject({ status: 'queued', attempts: 1, error: 'boom' });
+    const retryDoc = await findJobById(job.id);
+    expect(retryDoc?.runAt.getTime()).toBeGreaterThan(Date.now());
+    await getCollection('jobs').updateOne({ _id: job.id }, { $set: { runAt: new Date(0) } });
+    await claimAndRun({ example: handler }, 'worker-a');
+    expect(await getJob(job.id)).toMatchObject({ status: 'failed', attempts: 2, error: 'boom' });
+  });
+
+  it('observes a running cancellation request in handler context', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    let cancelled = false;
+    const running = claimAndRun({
+      example: async (_doc, ctx) => {
+        await cancelJob(job.id);
+        cancelled = await ctx.isCancelled();
+        return { cancelled };
+      },
+    }, 'worker-a');
+    await running;
+    expect(cancelled).toBe(true);
+    expect(await getJob(job.id)).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('uses the service stale-job threshold', async () => {
+    const stale = makeJob({ status: 'running', lockedBy: 'dead', lockedAt: new Date(Date.now() - 600_000), attempts: 1 });
+    await insertJob(stale);
+    expect(await recoverStaleJobService()).toBe(1);
   });
 });

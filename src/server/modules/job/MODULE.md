@@ -23,6 +23,10 @@
 - Progress and terminal transitions preserve worker ownership until the worker marks the job done or failed.
 - Stale recovery requeues old running jobs and clears their lock fields.
 
+## Service surface
+- Internal callers use `enqueueJob`; public callers receive only `JobSummary` through `getJob`/`cancelJob`.
+- `claimAndRun` owns handler context, retry backoff, unknown-type failure, and terminal transitions.
+
 ## Known pitfalls
 - Do not release a running lock from the cancel route; the worker owns terminal transitions.
 - SSE emits the current state on the first poll, then only changed state and periodic heartbeats.

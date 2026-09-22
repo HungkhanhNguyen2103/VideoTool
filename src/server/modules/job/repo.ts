@@ -39,6 +39,13 @@ export async function markDone(id: string, result: unknown): Promise<void> {
   );
 }
 
+export async function markCancelled(id: string): Promise<void> {
+  await jobs().updateOne(
+    { _id: id, status: 'running' },
+    { $set: { status: 'cancelled', lockedBy: null, lockedAt: null, updatedAt: new Date() } },
+  );
+}
+
 export async function markFailed(
   id: string,
   error: string,
