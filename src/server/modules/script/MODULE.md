@@ -6,7 +6,7 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
-- Tasks 1–2 complete: shared contracts, project-owned chapter/history persistence, and provider-neutral DeepSeek/Claude adapters are implemented; service/routes/client work remains.
+- Tasks 1–3 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration, snapshot history, and finalization service are implemented; worker/routes/client work remains.
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
 
 ## Flow
@@ -20,3 +20,4 @@
 - Preserve the existing project status vocabulary (`assets`, `rendered`) unless an explicit migration is approved.
 - Use the existing job context (`isCancelled`, `appendLog`) and registry location in `src/worker/registry.ts`.
 - AI keys are server-only; absent keys warn when an adapter is constructed and provider streams honor `AbortSignal`.
+- Finalization updates scenes and `assets` status atomically through `replaceProjectScenes`; chapter metadata/history is persisted before that final scene/status write.

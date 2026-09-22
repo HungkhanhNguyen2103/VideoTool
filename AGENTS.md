@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Task 2 of 8 done (contracts + project persistence + AI clients) · latest implementation commit: pending Task 2 commit_
+_Last updated: 2026-09-22 · Phase 3 Task 3 of 8 done (contracts + project persistence + AI clients + script service) · latest implementation commit: pending Task 3 commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -25,7 +25,7 @@ _Last updated: 2026-09-22 · Phase 3 Task 2 of 8 done (contracts + project persi
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | partial | Phase 3 Tasks 1–2 complete: shared contracts, project-owned chapter/history writes, and provider-neutral DeepSeek/Claude clients; service/routes/client implementation remains |
+| script | partial | Phase 3 Tasks 1–3 complete: contracts, project-owned chapter/history writes, AI clients, prompts, generation/regeneration/finalization service; worker/routes/client implementation remains |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -101,9 +101,11 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: `replaceProjectScenes(projectId, scenes, newStatus?)` applies scenes and optional project status in one atomic update; script finalization will use `newStatus: 'assets'`.
 - 2026-09-22: `CreateProjectRequest` is the zod input type so the defaulted `aiProvider` stays optional for existing callers; project service persists `deepseek` when omitted.
 - 2026-09-22: AI adapters warn on missing provider keys at client construction and pass abort signals through provider request options; tests mock both SDKs and make no network calls.
+- 2026-09-22: script parsing tolerates one optional JSON markdown fence for provider robustness, while still rejecting non-JSON/non-schema output with `SCRIPT_PARSE_ERROR` before any chapter write.
+- 2026-09-22: finalization writes chapter metadata/history separately, then updates scenes and project status `assets` in one atomic `replaceProjectScenes` update as required by the implementation review note.
 
 ### Next step
-Phase 3 Task 3: implement script docs, prompts, generation/regeneration service, and atomic finalization.
+Phase 3 Task 4: register the `generate-script` job handler in the explicit worker registry.
 
 ## 2. Stack
 
