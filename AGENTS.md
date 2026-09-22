@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Task 3 of 8 done (contracts + project persistence + AI clients + script service) · latest implementation commit: pending Task 3 commit_
+_Last updated: 2026-09-22 · Phase 3 Task 4 of 8 done (contracts + project persistence + AI clients + script service + worker handler) · latest implementation commit: pending Task 4 commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -25,7 +25,7 @@ _Last updated: 2026-09-22 · Phase 3 Task 3 of 8 done (contracts + project persi
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | partial | Phase 3 Tasks 1–3 complete: contracts, project-owned chapter/history writes, AI clients, prompts, generation/regeneration/finalization service; worker/routes/client implementation remains |
+| script | partial | Phase 3 Tasks 1–4 complete: contracts, project-owned chapter/history writes, AI clients, prompts, generation/regeneration/finalization service, and `generate-script` worker handler; routes/client implementation remains |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -103,9 +103,10 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: AI adapters warn on missing provider keys at client construction and pass abort signals through provider request options; tests mock both SDKs and make no network calls.
 - 2026-09-22: script parsing tolerates one optional JSON markdown fence for provider robustness, while still rejecting non-JSON/non-schema output with `SCRIPT_PARSE_ERROR` before any chapter write.
 - 2026-09-22: finalization writes chapter metadata/history separately, then updates scenes and project status `assets` in one atomic `replaceProjectScenes` update as required by the implementation review note.
+- 2026-09-22: script job handler uses a local structural context type instead of importing `job`, preserving the enforced `script -> project` boundary while remaining assignable to the worker's `JobHandler`.
 
 ### Next step
-Phase 3 Task 4: register the `generate-script` job handler in the explicit worker registry.
+Phase 3 Task 5: implement script HTTP routes and regeneration SSE, then mount them under `/api/project`.
 
 ## 2. Stack
 
