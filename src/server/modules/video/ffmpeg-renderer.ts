@@ -41,7 +41,7 @@ export class FfmpegRenderer implements VideoRenderer {
     const directory = await mkdtemp(path.join(tmpdir(), 'video-tool-preview-'));
     try {
       await this.renderSegment(project, scene, directory, 'preview.mp4');
-      return readFile(path.join(directory, 'preview.mp4'));
+      return await readFile(path.join(directory, 'preview.mp4'));
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -61,12 +61,12 @@ export class FfmpegRenderer implements VideoRenderer {
       const concatPath = path.join(directory, 'concat.mp4');
       await writeFile(listPath, segmentPaths.map(quoteConcatPath).join('\n'));
       await runProcess(this.ffmpegPath, buildConcatArguments(listPath, concatPath), appendLog);
-      if (!project.bgmFileId) return readFile(concatPath);
+      if (!project.bgmFileId) return await readFile(concatPath);
       const bgm = await this.resolveFilePath(project.id, project.bgmFileId);
       const outputPath = path.join(directory, 'final.mp4');
       const totalDuration = project.scenes.reduce((sum, scene) => sum + scene.durationSec, 0);
       await runProcess(this.ffmpegPath, buildBgmArguments(concatPath, bgm.absolutePath, outputPath, totalDuration), appendLog);
-      return readFile(outputPath);
+      return await readFile(outputPath);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

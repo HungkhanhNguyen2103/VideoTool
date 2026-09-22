@@ -13,7 +13,7 @@
 - `version` starts at 1 on create and on duplicate (a duplicate is a new document, not a revision), then increments on every scene/chapter mutation. Scene asset metadata defaults to `assetType: 'image'` and `assetFileId: null` when legacy documents are read.
 - Scene asset mutations are public service APIs: `patchProjectScene` targets one scene, `setProjectScenesAssetType` updates all scenes, and `applySceneAssets` applies deduplicated file references in one atomic update.
 - Scene schema defaults now also include `audioFileId: null`, `sfxPrompt: ''`, and `sfxFileId: null`; project defaults include `renderEngine: 'ffmpeg'`, `voiceoverVoice: 'Truc Ly'`, `renderFileId: null`, `bgmMood: ''`, and `bgmFileId: null`.
-- Duplicating a project never carries `assetFileId` references into the new project; file metadata and disk files remain owned by the source project.
+- Duplicating a project never carries `assetFileId`, `audioFileId`, or `sfxFileId` scene references, and clears project `bgmFileId`/`renderFileId`; prompts, mood, and render settings remain. File metadata and disk files remain owned by the source project.
 - `setProjectBgm` atomically updates `bgmMood` and `bgmFileId`; `setProjectRenderFile` atomically updates `renderFileId` and `status: 'rendered'`. Both increment `version` once.
 - Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 

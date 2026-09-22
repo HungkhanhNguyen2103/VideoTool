@@ -4,6 +4,7 @@ import { createFileStoreService } from '../file-store';
 import { getProject, patchProjectScene } from '../project';
 import type { SceneDoc } from '../project';
 import { logger } from '../../shared/logger';
+import { NotFound } from '../../shared/errors';
 import { AUDIO_BUFFER_SECONDS } from './docs';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
@@ -15,7 +16,7 @@ export function configureVideoTts(filesDir: string): void {
 export async function generateSceneVoiceover(projectId: string, sceneId: string, options: TtsOptions = {}): Promise<SceneDoc> {
   const project = await getProject(projectId);
   const scene = project.scenes.find((candidate) => candidate.id === sceneId);
-  if (!scene) throw new Error(`Không tìm thấy cảnh ${sceneId}.`);
+  if (!scene) throw new NotFound('Không tìm thấy cảnh.');
 
   const raw = await getTtsClient().synthesize(scene.narration, {
     ...options,

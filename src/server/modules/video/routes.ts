@@ -5,6 +5,7 @@ import {
   generateProjectBgm,
   generateSceneSfx,
   generateSceneVoiceover,
+  assertProjectRenderReady,
   renderScenePreviewBuffer,
 } from './service';
 
@@ -53,6 +54,7 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
 
   router.post('/:id/render', async (req, res) => {
     const project = await getProject(req.params.id);
+    assertProjectRenderReady(project);
     const job = await options.enqueueJob({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } });
     res.status(201).json({ jobId: job.id });
   });

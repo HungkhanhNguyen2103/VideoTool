@@ -17,9 +17,11 @@
 
 `FfmpegRenderer` creates a temporary segment for each scene, scales/pads the visual to the project render settings, mixes voiceover and optional SFX, and concatenates segments in scene order. When BGM exists, a second FFmpeg pass loops/trims the BGM and mixes it with the concatenated audio.
 
-The BGM pass intentionally re-encodes the full video a second time. This is a deliberate simplicity/performance trade-off for this phase; long projects may benefit from a future single-pass filter graph.
+The BGM pass intentionally runs a second FFmpeg pass over the full video: it copies the video stream and re-encodes the mixed audio. This is a deliberate simplicity/performance trade-off for this phase; long projects may benefit from a future single-pass filter graph.
 
 `buildSceneArguments`, `buildConcatArguments`, and `buildBgmArguments` are pure argument builders so filter graphs can be tested without an installed binary. The renderer uses raw `child_process.spawn` argument arrays, streams stdout lines to `appendLog`, preserves stderr on failure, and removes temporary files in `finally` blocks.
+
+The scene graph scales/pads visuals, adds temporal last-frame padding for short video assets, creates silent stereo 48 kHz inputs when audio is absent, and mixes voice/SFX at the fixed levels above. Voiceover mastering uses the shared high-pass/loudness filter with an unmastered fallback; duration is `ceil(ffprobeSeconds + 0.3)`.
 
 The orchestration services call VieNeu and Freesound adapters, store generated voiceover/SFX/BGM/render files through the configured file-store service, and mutate scene/project references only through the public project API. Voiceover batches run sequentially and continue after an individual failure; a failed scene keeps its previous reference and duration.
 
@@ -37,6 +39,6 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 - Task 5 pure renderer tests cover scaling/padding/fps, silent inputs, voice/SFX mixing, exact volume constants, concat/BGM arguments, and the Remotion 501 error.
 - Task 6 service tests cover voiceover storage/duration, failure preservation, batch continuation, SFX/BGM no-op and storage, render readiness, and atomic final render metadata.
 - Task 7 route/worker tests cover job payloads, synchronous regeneration/preview content type, provider no-op responses, and cancellation checks.
-- Task 8 ran the real scene+BGM integration with `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; no binary tests were skipped. Project acceptance is 133 passing tests, typecheck/lint/build green, and worker startup plus SIGINT shutdown logs verified.
+- Task 8 ran the real scene+BGM and short-video duration integrations with `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; no binary tests were skipped. Project acceptance is 137 passing tests, typecheck/lint/build green, and worker startup plus SIGINT shutdown logs verified.
 - Task 9 adds typed Studio API helpers and controls for voiceover, SFX, BGM, previews, render readiness, engine selection badges, and SSE job progress/logs; generated media remains resolved from `FileSummary` purpose/MIME metadata.
-- Phase 5 Prompt 1 acceptance: 135 tests pass, 1 existing stub test file is skipped, `npm run typecheck`, `npm run lint`, and `npm run build` pass, and the built worker starts and logs clean SIGINT shutdown. No dependency or `eslint.config.js` boundary change was made.
+- Phase 5 Prompt 1 acceptance: 137 tests pass, 1 existing stub test file is skipped, `npm run typecheck`, `npm run lint`, and `npm run build` pass, and the built worker starts and logs clean SIGINT shutdown. No dependency or `eslint.config.js` boundary change was made.

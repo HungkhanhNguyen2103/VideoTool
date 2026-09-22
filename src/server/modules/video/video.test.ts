@@ -10,6 +10,7 @@ import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-ut
 import {
   createProject,
   getProject,
+  duplicateProject,
   replaceProjectScenes,
   patchProjectScene,
   setProjectBgm,
@@ -105,6 +106,19 @@ async function seedVoiceProject() {
 }
 
 describe('video project mutations', () => {
+  it('clears all cross-project media references when duplicating a project', async () => {
+    const project = await seedProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', sfxFileId: 'sfx-1' });
+    await setProjectBgm(project.id, 'calm', 'bgm-1');
+    await setProjectRenderFile(project.id, 'render-1');
+
+    const duplicate = await duplicateProject(project.id);
+
+    expect(duplicate.renderFileId).toBeNull();
+    expect(duplicate.bgmFileId).toBeNull();
+    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, sfxFileId: null });
+  });
+
   it('patches scene audio, duration, and SFX fields with one version increment', async () => {
     const project = await seedProject();
 
@@ -153,6 +167,8 @@ describe('video renderer builders', () => {
     expect(args).not.toContain('-stream_loop');
     const silentArgs = buildSceneArguments({ assetType: 'image', videoPath: 'scene.png', outputPath: 'silent.mp4', durationSec: 5, width: 1920, height: 1080, fps: 30 });
     expect(silentArgs.join(' ')).toContain('anullsrc');
+    const videoArgs = buildSceneArguments({ assetType: 'video', videoPath: 'scene.mp4', outputPath: 'video-segment.mp4', durationSec: 5, width: 1920, height: 1080, fps: 30 });
+    expect(videoArgs.join(' ')).toContain('tpad=stop_mode=clone:stop_duration=5');
   });
 
   it('builds the concat and BGM second-pass graph with fixed volume', () => {
@@ -276,6 +292,10 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue): Promise<string>
   const app = express();
   app.use(express.json());
   app.use('/api/project', createVideoRouter({ enqueueJob }));
+  app.use((error: { status?: number; code?: string; message?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    void next;
+    res.status(error.status ?? 500).json({ error: { code: error.code ?? 'unknown_error', message: error.message ?? 'error' } });
+  });
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
   return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
 }
@@ -292,6 +312,19 @@ describe('video routes and worker handlers', () => {
     await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } }));
+  });
+
+  it('rejects an unready render before enqueueing a job', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [{ id: 'scene-1', narration: 'Missing asset', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null }]);
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' });
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    const response = await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'SCENES_NOT_READY' } });
+    expect(enqueueJob).not.toHaveBeenCalled();
   });
 
   it('regenerates synchronously and serves a preview as video/mp4', async () => {
@@ -366,5 +399,18 @@ describe('real FFmpeg integration', () => {
 
     expect(preview.byteLength).toBeGreaterThan(100);
     expect(full.byteLength).toBeGreaterThan(100);
+
+    const shortVideoPath = path.join(filesDir, 'short.mp4');
+    const shortOutputPath = path.join(filesDir, 'short-preview.mp4');
+    const generatedShort = spawnSync(ffmpegPath, ['-y', '-f', 'lavfi', '-i', 'color=c=blue:s=320x180:r=30:d=0.5', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', shortVideoPath], { encoding: 'utf8' });
+    expect(generatedShort.status).toBe(0);
+    const videoProject = await createProject(projectInput);
+    await replaceProjectScenes(videoProject.id, [{ id: 'video-scene', narration: 'Video', visualPrompt: '', durationSec: 2, assetType: 'video', assetFileId: 'video-1', audioFileId: null, sfxPrompt: '', sfxFileId: null }]);
+    const videoRenderer = new FfmpegRenderer({ ffmpegPath, resolveFilePath: async () => ({ absolutePath: shortVideoPath, mimeType: 'video/mp4', purpose: 'reference' }) });
+    const shortPreview = await videoRenderer.renderScenePreview(await getProject(videoProject.id), (await getProject(videoProject.id)).scenes[0]!);
+    await writeFile(shortOutputPath, shortPreview);
+    const probed = spawnSync(ffprobePath, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', shortOutputPath], { encoding: 'utf8' });
+    expect(probed.status).toBe(0);
+    expect(Number.parseFloat(probed.stdout.trim())).toBeGreaterThanOrEqual(1.8);
   });
 });

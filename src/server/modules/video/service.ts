@@ -1,5 +1,6 @@
 import { AppError, NotFound } from '../../shared/errors';
 import { logger } from '../../shared/logger';
+import type { ProjectDetail } from '../../../contracts/project';
 import { createFileStoreService } from '../file-store';
 import { getProject, patchProjectScene, setProjectBgm, setProjectRenderFile } from '../project';
 import { getFreesoundClient } from '../../shared/freesound';
@@ -17,6 +18,14 @@ export function configureVideoModule(filesDir: string): void {
 }
 
 export { generateProjectVoiceovers, generateSceneVoiceover };
+
+export function assertProjectRenderReady(project: Pick<ProjectDetail, 'scenes'>): void {
+  if (project.scenes.length === 0) throw new AppError('Scenes are not ready: the project has no scenes.', 422, 'SCENES_NOT_READY');
+  const missing = project.scenes
+    .map((scene, index) => scene.assetFileId ? null : index + 1)
+    .filter((number): number is number => number !== null);
+  if (missing.length > 0) throw new AppError(`Scenes are not ready: ${missing.join(', ')}.`, 422, 'SCENES_NOT_READY');
+}
 
 export async function generateSceneSfx(projectId: string, sceneId: string): Promise<void> {
   const project = await getProject(projectId);
@@ -52,12 +61,7 @@ export async function generateProjectBgm(projectId: string, mood: string): Promi
 
 export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>): Promise<void> {
   const project = await getProject(projectId);
-  const missing = project.scenes
-    .map((scene, index) => scene.assetFileId ? null : index + 1)
-    .filter((number): number is number => number !== null);
-  if (missing.length > 0) {
-    throw new AppError(`Scenes are not ready: ${missing.join(', ')}.`, 422, 'SCENES_NOT_READY');
-  }
+  assertProjectRenderReady(project);
   const output = await getVideoRenderer(project.renderEngine).renderFullVideo(project, appendLog);
   const stored = await storeFile({ projectId, originalName: 'render.mp4', mimeType: 'video/mp4', buffer: output, purpose: 'render' });
   await setProjectRenderFile(projectId, stored.id);

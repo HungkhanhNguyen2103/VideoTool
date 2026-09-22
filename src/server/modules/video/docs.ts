@@ -16,9 +16,10 @@ export type SceneRenderInputs = {
   fps: number;
 };
 
-export function buildSceneFilterGraph(input: Pick<SceneRenderInputs, 'durationSec' | 'width' | 'height' | 'fps'>): string {
+export function buildSceneFilterGraph(input: Pick<SceneRenderInputs, 'durationSec' | 'width' | 'height' | 'fps'> & Partial<Pick<SceneRenderInputs, 'assetType'>>): string {
   const { durationSec, width, height, fps } = input;
-  return `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${fps},format=yuv420p,setsar=1[v];` +
+  const temporalPad = input.assetType === 'video' ? `,tpad=stop_mode=clone:stop_duration=${durationSec}` : '';
+  return `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${fps},format=yuv420p,setsar=1${temporalPad}[v];` +
     `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:${durationSec},apad=whole_dur=${durationSec}[voiceD];` +
     `[2:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:${durationSec},apad=whole_dur=${durationSec},volume=${SFX_VOLUME}[sfxD];` +
     '[voiceD][sfxD]amix=inputs=2:duration=first:dropout_transition=0[a]';

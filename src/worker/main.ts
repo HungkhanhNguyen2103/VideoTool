@@ -1,6 +1,7 @@
 import { ConfigError, loadConfig } from '../server/config';
 import { closeDb, connectDb } from '../server/db/client';
 import { claimAndRun, recoverStaleJobs, type JobHandler } from '../server/modules/job';
+import { configureVideoModule } from '../server/modules/video';
 import { logger } from '../server/shared/logger';
 
 export type WorkerLoopOptions = {
@@ -48,6 +49,7 @@ export function createWorkerLoop(options: WorkerLoopOptions) {
 async function main(): Promise<void> {
   const config = loadConfig();
   await connectDb(config.MONGODB_URI, config.MONGODB_DB);
+  configureVideoModule(config.FILES_DIR);
   logger.info('worker started');
 
   const { jobHandlers } = await import('./registry');

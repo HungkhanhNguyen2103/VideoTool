@@ -20,6 +20,7 @@ export type { VideoRenderer } from './ffmpeg-renderer';
 export { FfmpegRenderer } from './ffmpeg-renderer';
 export { createVideoRouter } from './routes';
 export {
+  assertProjectRenderReady,
   configureVideoModule,
   generateProjectBgm,
   generateProjectVoiceovers,
