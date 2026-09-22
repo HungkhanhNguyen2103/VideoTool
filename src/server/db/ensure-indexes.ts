@@ -1,4 +1,5 @@
 import { ensureProjectIndexes } from '../modules/project';
+import { ensureJobIndexes } from '../modules/job';
 
 /**
  * Explicit registry of index creators. Each module exports its own `ensure<Name>Indexes`
@@ -7,4 +8,5 @@ import { ensureProjectIndexes } from '../modules/project';
  */
 export async function ensureIndexes(): Promise<void> {
   await ensureProjectIndexes();
+  await ensureJobIndexes();
 }
