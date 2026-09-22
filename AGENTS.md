@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Task 7 of 8 done (script backend + client review page) · latest implementation commit: pending Task 7 commit_
+_Last updated: 2026-09-22 · Phase 3 Prompt 1 complete (script module) · latest implementation commit: `ebeb7ff feat(client): add ReviewScriptPage and script API`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -25,7 +25,7 @@ _Last updated: 2026-09-22 · Phase 3 Task 7 of 8 done (script backend + client r
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | partial | Phase 3 Tasks 1–7 complete: contracts, project-owned chapter/history writes, AI clients, prompts, generation/regeneration/finalization service, worker handler, routes/SSE, edge coverage, typed client API and ReviewScriptPage; acceptance verification remains |
+| script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 77 tests, typecheck, lint, build and worker smoke test |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -108,9 +108,10 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: regeneration listens to request close before headers and response close after headers, avoiding false aborts when a normal request body stream closes while the SSE response is still active.
 - 2026-09-22: script edge tests pin ten-snapshot pruning, invalid restore index, deterministic remainder seconds, and SSE error/no-done behavior for malformed streamed output.
 - 2026-09-22: ReviewScriptPage uses fetch + ReadableStream for chapter regeneration (not EventSource) so AbortController cancellation works; no DOM test dependency was added.
+- 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 77 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Phase 3 Task 8: run full acceptance verification, worker smoke test, dependency/boundary scan, and record Phase 3 status.
+Next phase: Phase 4 asset module (image/voice jobs and handlers).
 
 ## 2. Stack
 

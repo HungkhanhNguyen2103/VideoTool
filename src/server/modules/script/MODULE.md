@@ -6,7 +6,7 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
-- Tasks 1–7 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration/finalization service, explicit worker handler, project routes/SSE, edge coverage, typed client streaming API, and ReviewScriptPage are implemented; final acceptance remains.
+- Phase 3 Prompt 1 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration/finalization service, explicit worker handler, project routes/SSE, edge coverage, typed client streaming API, and ReviewScriptPage are implemented and verified.
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
 
 ## Flow
@@ -14,6 +14,30 @@
 - Regenerate one chapter through inline SSE so token chunks can be cancelled by the client.
 - Snapshot chapter state before mutations and retain the newest ten snapshots.
 - Finalize approved chapters by asking the project module to replace scenes and advance project status.
+
+## Chapter state machine
+
+```text
+pending ──approve──> approved
+   │                    │
+   └─regenerate──> generating ──success──> pending
+                         └────abort/error──> needs-fix
+needs-fix ──edit/regen──> pending or generating
+```
+
+## Regeneration and history
+- Initial generation does not snapshot an empty chapter array.
+- Existing-array mutations snapshot first; project-owned persistence prepends the snapshot and prunes to the newest ten.
+- Regeneration uses inline SSE rather than the job queue because the user needs token-by-token preview and immediate AbortController cancellation; initial generation remains a job because it is a whole-project operation.
+
+## Finalization
+- Every chapter must be `approved`.
+- Paragraphs become ordered scenes with fresh ULIDs, empty `visualPrompt`, deterministic integer duration distribution, and at least one scene per chapter.
+- Chapter metadata/history is persisted before the final scene write; `replaceProjectScenes(projectId, scenes, 'assets')` atomically updates scenes and project status.
+
+## AI abstraction
+- `src/server/shared/ai/` owns the `AiClient` interface, DeepSeek/OpenAI-compatible adapter, Claude adapter, and provider factory.
+- Provider keys remain server/worker-only; the client receives only project/provider metadata and job/SSE results.
 
 ## Known pitfalls
 - Keep the shared chapter schema in `contracts/script.ts` to avoid a project-to-script import cycle.
@@ -25,3 +49,9 @@
 - Routes receive job enqueueing from the app composition root and distinguish normal request-body close from an actual SSE response disconnect.
 - Edge coverage verifies ten-snapshot pruning, restore bounds, duration rounding, malformed-stream errors, and the absence of a false successful `done` event.
 - The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; page rendering remains intentionally untested without a DOM dependency.
+
+## Acceptance
+- `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 77 passed and 3 stub files skipped.
+- `mongodb-memory-server` ran successfully; no fallback was required.
+- Built worker logged startup and graceful SIGINT shutdown.
+- `eslint.config.js` was unchanged; only `openai` and `@anthropic-ai/sdk` were added as direct runtime dependencies.
