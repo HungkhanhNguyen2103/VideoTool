@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { ProjectInitPage } from '../features/project/ProjectInitPage';
 import { Layout } from './Layout';
 import { ComingSoonPage } from './pages/ComingSoonPage';
+import { ReviewScriptPage } from '../features/script/ReviewScriptPage';
 
 export const router = createBrowserRouter([
   {
@@ -12,7 +13,7 @@ export const router = createBrowserRouter([
       { path: 'production/init', element: <ProjectInitPage /> },
       {
         path: 'production/:projectId/review',
-        element: <ComingSoonPage title="2. Duyệt & Tái Tạo" phase={3} />,
+        element: <ReviewScriptPage />,
       },
       {
         path: 'production/:projectId/studio',

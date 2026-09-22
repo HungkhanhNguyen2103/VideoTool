@@ -1,0 +1,26 @@
+.page { display: grid; gap: 1rem; }
+.stepper, .toolbar, .footer, .chapterTop, .actions, .historyHead { display: flex; align-items: center; gap: .75rem; }
+.stepper { flex-wrap: wrap; padding: .75rem 1rem; background: var(--surface, #fff); border: 1px solid var(--line, #ddd); border-radius: .75rem; }
+.step { display: grid; gap: .15rem; }
+.stepLabel { font-weight: 700; }
+.stepSub, .muted { color: var(--muted, #6b7280); font-size: .82rem; }
+.panel { display: grid; gap: .85rem; }
+.toolbar { justify-content: space-between; flex-wrap: wrap; }
+.chapter { background: var(--surface, #fff); border: 1px solid var(--line, #ddd); border-radius: .8rem; padding: 1rem; }
+.chapterTop { flex-wrap: wrap; }
+.chapterNo { font-weight: 800; color: var(--accent, #555); }
+.chapterTitle { font-weight: 750; min-width: 10rem; }
+.chapterMeta { color: var(--muted, #6b7280); font-size: .85rem; }
+.spacer { flex: 1; }
+.body { display: grid; gap: .65rem; margin: 1rem 0 0 2rem; line-height: 1.55; }
+.body p { margin: 0; }
+.textarea { width: 100%; min-height: 7rem; padding: .65rem; border: 1px solid var(--line, #ddd); border-radius: .5rem; font: inherit; }
+.actions { justify-content: flex-end; flex-wrap: wrap; }
+.regen { display: grid; gap: .6rem; margin: .8rem 0 0 2rem; padding: .8rem; background: var(--surface-subtle, #f7f7f8); border-radius: .6rem; }
+.preview { white-space: pre-wrap; padding: .7rem; background: #111827; color: #f9fafb; border-radius: .5rem; min-height: 3rem; }
+.logs { display: grid; gap: .2rem; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .8rem; max-height: 9rem; overflow: auto; }
+.history { padding: .9rem; border: 1px solid var(--line, #ddd); border-radius: .7rem; }
+.historyList { display: grid; gap: .5rem; margin: .75rem 0 0; padding: 0; list-style: none; }
+.historyItem { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.footer { justify-content: flex-end; position: sticky; bottom: .75rem; padding: .75rem; background: color-mix(in srgb, var(--surface, #fff) 92%, transparent); border: 1px solid var(--line, #ddd); border-radius: .7rem; }
+.error { color: #b42318; }
