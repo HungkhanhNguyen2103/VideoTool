@@ -31,6 +31,10 @@
 - `POST /api/job/:id/cancel` returns the current summary after requesting cancellation.
 - `GET /api/job/:id/events` sends the current `{ status, progress, error }` immediately, then deltas and 15-second heartbeats until terminal.
 
+## Worker integration
+- `worker/main.ts` calls `recoverStaleJobs` every poll tick and drains claims while checking its closing flag between jobs.
+- `worker/registry.ts` is an explicit empty `Record<string, JobHandler>` until asset/video phases register handlers.
+
 ## Known pitfalls
 - Do not release a running lock from the cancel route; the worker owns terminal transitions.
 - SSE emits the current state on the first poll, then only changed state and periodic heartbeats.
