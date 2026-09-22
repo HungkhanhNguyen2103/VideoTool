@@ -37,7 +37,7 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 
 ## Phase 5 Prompt 2 design (implementation pending review)
 
-The written design is committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md`. It chooses copy-based staging into the effective `public/` folder of one stable process-lifetime bundle, rather than URLs against the Express server. The design includes dynamic `calculateMetadata` frame math, image/video/audio composition layers, exact FFmpeg/Remotion volume parity, atomic `renderEngine` mutation through the project service, the `/render-engine` route, and a real Studio selector. Implementation and dependency installation remain blocked until the spec and a follow-up implementation plan are approved.
+The written design and seven-task implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`. The plan chooses copy-based staging into the effective `public/` folder of one stable process-lifetime bundle, rather than URLs against the Express server. It includes dynamic `calculateMetadata` frame math, image/video/audio composition layers, exact FFmpeg/Remotion volume parity, atomic `renderEngine` mutation through the project service, the `/render-engine` route, and a real Studio selector. Implementation and dependency installation remain blocked until the plan is reviewed and an execution method is confirmed.
 
 ## Acceptance
 

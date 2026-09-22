@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 5 Prompt 2 Remotion design committed; implementation pending review_
+_Last updated: 2026-09-22 · Phase 5 Prompt 2 implementation plan committed; implementation pending plan review_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (138 tests pass, 1 stub test file skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -84,6 +84,7 @@ Unknown `/api/*` returns JSON 404.
 ### Decisions log (newest first, keep the last 15)
 - 2026-09-22: Phase 5 Task 2 keeps audio, SFX, BGM, and final-render writes in `project`; BGM mood/file and render file/status each update atomically with one version increment.
 - 2026-09-22: Phase 5 Prompt 2 chooses copy-based Remotion staging into the effective bundle `public/` directory because `bundle()` snapshots its source public directory; this preserves bundle-once behavior without coupling renders to Express uptime.
+- 2026-09-22: Phase 5 Prompt 2 implementation is split into seven sequential TDD tasks: scaffold/build isolation, project mutation, renderer/staging, route wiring, Studio selector, conditional integration, and acceptance docs.
 - 2026-09-22: Phase 5 Prompt 2 caches the Remotion bundle for the worker process lifetime, uses Remotion's default host-aware concurrency, and keeps SFX/BGM numeric volumes derived from the existing FFmpeg string constants.
 - 2026-09-22: Phase 5 Prompt 2 places render-engine selection in the video router while the project service owns the atomic `renderEngine` mutation.
 - 2026-09-22: Phase 5 Task 3 adds a plain-fetch VieNeu client with one retry, timeout/error mapping, FFmpeg mastering fallback, and ffprobe duration measurement; no TTS SDK or runtime dependency was added.
@@ -147,7 +148,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Phase 5 Prompt 2 design is committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md`; implementation is blocked pending spec review, then implementation-plan review. Chromium availability for Remotion remains unverified.
+Phase 5 Prompt 2 design and implementation plan are committed at `docs/superpowers/specs/2026-09-22-phase5-remotion-design.md` and `docs/superpowers/plans/2026-09-22-phase5-remotion-implementation.md`; implementation is blocked pending plan review and execution-method confirmation. Chromium availability for Remotion remains unverified.
 
 ## 2. Stack
 
