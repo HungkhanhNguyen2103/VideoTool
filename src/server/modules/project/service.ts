@@ -125,7 +125,7 @@ export async function replaceProjectScenes(id: string, scenes: SceneDoc[], newSt
 export async function patchProjectScene(
   id: string,
   sceneId: string,
-  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId'>>,
+  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'sfxFileId'>>,
 ): Promise<ProjectDetail> {
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(patch)) set[`scenes.$[scene].${field}`] = value;
@@ -144,6 +144,16 @@ export async function setProjectScenesAssetType(id: string, assetType: 'image' |
     { $set: { 'scenes.$[].assetType': assetType, updatedAt: new Date() }, $inc: { version: 1 } },
   );
   if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
+  return getProject(id);
+}
+
+export async function setProjectBgm(id: string, mood: string, bgmFileId: string | null): Promise<ProjectDetail> {
+  await updateProject(id, { bgmMood: mood, bgmFileId });
+  return getProject(id);
+}
+
+export async function setProjectRenderFile(id: string, renderFileId: string): Promise<ProjectDetail> {
+  await updateProject(id, { renderFileId, status: 'rendered' });
   return getProject(id);
 }
 

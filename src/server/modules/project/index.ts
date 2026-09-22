@@ -15,6 +15,8 @@ export {
   replaceProjectScenes,
   restoreProjectChapters,
   setProjectScenesAssetType,
+  setProjectBgm,
+  setProjectRenderFile,
 } from './service';
 export { SceneDocSchema } from './docs';
 export type { ProjectDoc, SceneDoc } from './docs';
