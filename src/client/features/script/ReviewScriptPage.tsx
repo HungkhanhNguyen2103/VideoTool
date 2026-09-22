@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChapterDoc } from '../../../contracts/script';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
+import { Icon } from '../../shared/ui/Icon';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import * as api from './api';
@@ -12,16 +13,21 @@ import styles from './ReviewScriptPage.module.css';
 const statusTone = { approved: 'green', 'needs-fix': 'amber', generating: 'indigo', pending: 'muted' } as const;
 const statusLabel = { approved: 'Đã duyệt', 'needs-fix': 'Cần sửa', generating: 'Đang tạo lại', pending: 'Chưa duyệt' } as const;
 
-export function getReviewStepperState(chapterCount: number, jobId: string | null, allApproved: boolean) {
+type ReviewStepState = 'done' | 'active' | 'todo';
+
+type ReviewStep = { label: string; sub: string; state: ReviewStepState };
+
+export function getReviewStepperState(chapterCount: number, approvedCount: number, jobId: string | null) {
   const hasChapters = chapterCount > 0;
+  const allApproved = hasChapters && approvedCount === chapterCount;
   const currentStep = !hasChapters ? 1 : allApproved ? 3 : 2;
-  const stepSubs = [
-    'Hoàn tất',
-    hasChapters ? 'Hoàn tất' : jobId ? 'Đang thực hiện' : 'Chưa bắt đầu',
-    !hasChapters ? 'Chưa bắt đầu' : allApproved ? 'Hoàn tất' : 'Đang thực hiện',
-    allApproved ? 'Sẵn sàng' : 'Chưa bắt đầu',
+  const steps: ReviewStep[] = [
+    { label: 'Dàn ý', sub: 'Hoàn tất', state: 'done' },
+    { label: 'Nháp kịch bản', sub: hasChapters ? 'Hoàn tất' : jobId ? 'Đang thực hiện' : 'Chưa bắt đầu', state: hasChapters ? 'done' : 'active' },
+    { label: 'Duyệt & tái tạo', sub: !hasChapters ? 'Chưa bắt đầu' : allApproved ? 'Hoàn tất' : `Đã duyệt ${approvedCount}/${chapterCount}`, state: !hasChapters ? 'todo' : allApproved ? 'done' : 'active' },
+    { label: 'Chốt & chia cảnh', sub: allApproved ? 'Sẵn sàng' : 'Chưa bắt đầu', state: allApproved ? 'active' : 'todo' },
   ];
-  return { currentStep, stepSubs };
+  return { currentStep, steps };
 }
 
 export function ReviewScriptPage() {
@@ -40,8 +46,9 @@ export function ReviewScriptPage() {
   const progress = useJobProgress(jobId);
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
-  const allApproved = chapters.length > 0 && chapters.every((chapter) => chapter.status === 'approved');
-  const { currentStep, stepSubs } = getReviewStepperState(chapters.length, jobId, allApproved);
+  const approvedCount = chapters.filter((chapter) => chapter.status === 'approved').length;
+  const allApproved = chapters.length > 0 && approvedCount === chapters.length;
+  const { steps } = getReviewStepperState(chapters.length, approvedCount, jobId);
   const selectedChapters = useMemo(() => chapters.filter((chapter) => selected.has(chapter.id)), [chapters, selected]);
 
   useEffect(() => {
@@ -131,8 +138,14 @@ export function ReviewScriptPage() {
   return (
     <div className={styles.page}>
       <ol className={styles.stepper} aria-label="Tiến trình sản xuất">
-        {['Dàn ý', 'Nháp kịch bản', 'Duyệt & Tái Tạo', 'Chốt & Chia Cảnh'].map((label, index) => (
-          <li className={styles.step} key={label} aria-current={index === currentStep ? 'step' : undefined}><span className={styles.stepLabel}>{index + 1}. {label}</span><span className={styles.stepSub}>{stepSubs[index]}</span></li>
+        {steps.map((step, index) => (
+          <Fragment key={step.label}>
+            <li className={[styles.step, step.state === 'done' ? styles.stepDone : step.state === 'active' ? styles.stepActive : ''].filter(Boolean).join(' ')} aria-current={step.state === 'active' ? 'step' : undefined}>
+              <span className={styles.stepDot}>{step.state === 'done' ? <Icon name="check" /> : index + 1}</span>
+              <div><div className={styles.stepLabel}>{step.label}</div><div className={styles.stepSub}>{step.sub}</div></div>
+            </li>
+            {index < steps.length - 1 && <li className={[styles.stepLine, step.state === 'done' ? styles.stepLineDone : ''].filter(Boolean).join(' ')} aria-hidden="true" />}
+          </Fragment>
         ))}
       </ol>
 
