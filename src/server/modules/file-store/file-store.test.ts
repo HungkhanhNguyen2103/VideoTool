@@ -15,6 +15,7 @@ import { createProject } from '../project/service';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import AdmZip from 'adm-zip';
+import { ProjectDocSchema } from '../project/docs';
 
 let filesDir: string;
 let service: ReturnType<typeof createFileStoreService>;
@@ -74,6 +75,20 @@ describe('file-store schema and repository', () => {
 
   it('validates the persisted file document', () => {
     expect(FileDocSchema.parse(makeFile()).purpose).toBe('reference');
+    expect(FileDocSchema.parse({ ...makeFile(), purpose: 'voiceover' }).purpose).toBe('voiceover');
+  });
+
+  it('normalizes legacy project audio and render fields through schema defaults', () => {
+    const legacy = {
+      _id: 'project-1', schemaVersion: 1, title: 'Legacy', titleSearch: 'legacy', language: 'vi', brief: 'A legacy project',
+      referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: null, voiceId: null,
+      renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, status: 'assets',
+      scenes: [{ id: 'scene-1', narration: 'Hello', visualPrompt: '', durationSec: 5 }], chapters: [], chapterHistory: [], version: 1,
+      createdAt: new Date(), updatedAt: new Date(),
+    };
+    const parsed = ProjectDocSchema.parse(legacy);
+    expect(parsed).toMatchObject({ renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null });
+    expect(parsed.scenes[0]).toMatchObject({ audioFileId: null, sfxPrompt: '', sfxFileId: null });
   });
 
   it('inserts, finds, deletes, and lists files by project', async () => {
@@ -95,6 +110,13 @@ describe('file-store schema and repository', () => {
     const doc = await findFileById(summary.id);
     expect(doc?.storedPath).toMatch(/^[0-9A-Z]{26}\.png$/);
     expect(readFileSync(path.join(filesDir, doc!.storedPath))).toEqual(Buffer.from('png'));
+  });
+
+  it('stores audio purposes and resolves only files owned by the requested project', async () => {
+    const first = await service.storeFile({ projectId: 'project-1', originalName: 'voice.wav', mimeType: 'audio/wav', buffer: Buffer.from('wav'), purpose: 'voiceover' });
+    expect(first.purpose).toBe('voiceover');
+    await expect(service.resolveFilePath('project-1', first.id)).resolves.toMatchObject({ mimeType: 'audio/wav', purpose: 'voiceover', absolutePath: path.join(filesDir, first.storedPath) });
+    await expect(service.resolveFilePath('project-2', first.id)).rejects.toBeInstanceOf(NotFound);
   });
 
   it('derives an extension from MIME when the original name has none', async () => {

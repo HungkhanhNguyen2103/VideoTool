@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, SCRIPT_PRESET_IDS } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/script';
 
 export const SceneDocSchema = z.object({
@@ -9,6 +9,9 @@ export const SceneDocSchema = z.object({
   durationSec: z.number().int().nonnegative(),
   assetType: z.enum(['image', 'video']).default('image'),
   assetFileId: z.string().nullable().default(null),
+  audioFileId: z.string().nullable().default(null),
+  sfxPrompt: z.string().default(''),
+  sfxFileId: z.string().nullable().default(null),
 });
 export type SceneDoc = z.infer<typeof SceneDocSchema>;
 
@@ -27,6 +30,11 @@ export const ProjectDocSchema = z.object({
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
+  renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
+  voiceoverVoice: z.string().default('Truc Ly'),
+  renderFileId: z.string().nullable().default(null),
+  bgmMood: z.string().default(''),
+  bgmFileId: z.string().nullable().default(null),
   renderSettings: z.object({
     aspect: z.enum(ASPECT_RATIOS),
     width: z.number().int(),

@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 5 Prompt 1 design spec committed; implementation blocked pending review · latest implementation commit: `2a404d9 docs(phase4): record final review fix commit`_
+_Last updated: 2026-09-22 · Phase 5 Task 1 complete (contracts/config/file-store) · implementation continues sequentially_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (101 tests pass, 2 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 5 Prompt 1 design spec committed; implementat
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
-| video | stub | Phase 5 |
+| video | stub | Phase 5 implementation in progress; contracts/config/file-store groundwork complete |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
@@ -75,6 +75,7 @@ Unknown `/api/*` returns JSON 404.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: Phase 5 Task 1 adds render/audio/SFX/BGM defaults, TTS/FFmpeg/Freesound config, five file purposes, audio MIME support, and ownership-checked `resolveFilePath`; no new dependency or boundary rule was added.
 - 2026-09-22: Phase 5 Prompt 1 combined design spec includes VieNeu TTS, FFmpeg rendering, Freesound SFX/BGM, atomic file/project ownership, and a Remotion stub; implementation is blocked pending spec review.
 - 2026-09-22: Final Phase 4 review fixes pass 101 tests (2 stub files skipped): ZIP enumeration/extraction failures map or skip safely, Studio uses dark design tokens and MIME-based previews with mismatch notice, and duplicated projects clear file references; browser Studio comparison remains a documented headless-environment gap.
 - 2026-09-22: Phase 4 acceptance before final review passed 97 tests; the follow-up regression pass added malformed ZIP, duplicate-project, and MIME preview coverage without adding dependencies.

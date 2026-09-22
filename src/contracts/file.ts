@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const FILE_PURPOSES = ['reference'] as const;
+export const FILE_PURPOSES = ['reference', 'voiceover', 'sfx', 'bgm', 'render'] as const;
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
 
 export const ALLOWED_MIME_TYPES = [
@@ -12,6 +12,8 @@ export const ALLOWED_MIME_TYPES = [
   'image/jpeg',
   'image/png',
   'image/webp',
+  'audio/wav',
+  'audio/mpeg',
 ] as const;
 
 export const FileSummarySchema = z.object({

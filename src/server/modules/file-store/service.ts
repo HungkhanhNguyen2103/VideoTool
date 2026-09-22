@@ -1,6 +1,6 @@
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
+import { FileSummarySchema, type FilePurpose, type FileSummary } from '../../../contracts/file';
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import type { FileDoc } from './docs';
@@ -11,7 +11,7 @@ export type StoreFileParams = {
   originalName: string;
   mimeType: string;
   buffer: Buffer;
-  purpose: 'reference';
+  purpose: FilePurpose;
 };
 
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -23,6 +23,8 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+  'audio/wav': 'wav',
+  'audio/mpeg': 'mp3',
 };
 
 function extensionFor(originalName: string, mimeType: string): string {
@@ -71,5 +73,11 @@ export function createFileStoreService(filesDir: string) {
     return (await listFilesByProjectId(projectId)).map(summaryOf);
   }
 
-  return { storeFile, deleteFile, listProjectFiles };
+  async function resolveFilePath(projectId: string, fileId: string): Promise<{ absolutePath: string; mimeType: string; purpose: FilePurpose }> {
+    const doc = await findFileById(fileId);
+    if (!doc || doc.projectId !== projectId) throw new NotFound('Không tìm thấy tệp.');
+    return { absolutePath: path.join(filesDir, doc.storedPath), mimeType: doc.mimeType, purpose: doc.purpose };
+  }
+
+  return { storeFile, deleteFile, listProjectFiles, resolveFilePath };
 }

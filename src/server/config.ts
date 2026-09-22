@@ -11,6 +11,12 @@ const EnvSchema = z.object({
   DEEPSEEK_API_KEY: z.string().default(''),
   ANTHROPIC_API_KEY: z.string().default(''),
   DEFAULT_AI_PROVIDER: z.enum(AI_PROVIDERS).default('deepseek'),
+  TTS_API_URL: z.string().url().default('http://127.0.0.1:8000/api/tts'),
+  TTS_DEFAULT_VOICE: z.string().default('Truc Ly'),
+  TTS_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
+  FFPROBE_PATH: z.string().min(1).default('ffprobe'),
+  FREESOUND_API_KEY: z.string().default(''),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

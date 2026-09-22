@@ -7,7 +7,8 @@
 ## Invariants
 - `storedPath` is relative to `FILES_DIR` and is generated from a new ULID, never from a user path.
 - File summaries expose the generated relative `storedPath` so clients can build safe `/files/<storedPath>` preview URLs.
-- Only reference files are supported in this phase.
+- File purposes are `reference`, `voiceover`, `sfx`, `bgm`, and `render`; generated audio/video files use the same project-scoped store as references.
+- `resolveFilePath(projectId, fileId)` verifies ownership before returning an absolute path for server-side media processing; clients still use `storedPath` URLs.
 - Database metadata and disk content are coordinated by the service; deleting an already-missing disk file is allowed.
 
 ## Flow

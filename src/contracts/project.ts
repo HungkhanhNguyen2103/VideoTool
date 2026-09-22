@@ -4,6 +4,9 @@ import { ChapterDocSchema } from './script';
 export const PROJECT_STATUSES = ['draft', 'script', 'assets', 'rendered'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
+export const RENDER_ENGINES = ['ffmpeg', 'remotion'] as const;
+export type RenderEngine = (typeof RENDER_ENGINES)[number];
+
 export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -48,6 +51,11 @@ const CreateProjectRequestBase = z.object({
   chapterCount: z.number().nullable(),
   voiceId: z.string().nullable(),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
+  renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
+  voiceoverVoice: z.string().default('Truc Ly'),
+  renderFileId: z.string().nullable().default(null),
+  bgmMood: z.string().default(''),
+  bgmFileId: z.string().nullable().default(null),
   renderSettings: RenderSettingsSchema,
 });
 
@@ -108,6 +116,9 @@ export const SceneSchema = z.object({
   durationSec: z.number().int().nonnegative(),
   assetType: z.enum(['image', 'video']).default('image'),
   assetFileId: z.string().nullable().default(null),
+  audioFileId: z.string().nullable().default(null),
+  sfxPrompt: z.string().default(''),
+  sfxFileId: z.string().nullable().default(null),
 });
 export type Scene = z.infer<typeof SceneSchema>;
 
@@ -133,6 +144,11 @@ export const ProjectDetailSchema = z.object({
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
+  renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
+  voiceoverVoice: z.string().default('Truc Ly'),
+  renderFileId: z.string().nullable().default(null),
+  bgmMood: z.string().default(''),
+  bgmFileId: z.string().nullable().default(null),
   renderSettings: RenderSettingsSchema,
   scenes: z.array(SceneSchema),
   chapters: z.array(ChapterDocSchema).default([]),

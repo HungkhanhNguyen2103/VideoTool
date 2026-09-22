@@ -12,6 +12,7 @@
 - `scenesCount`/`durationSec` in `ProjectSummary` are never stored; they are computed from `scenes` at query time (`repo.listProjectSummaries`), and are `null` when `scenes` is empty.
 - `version` starts at 1 on create and on duplicate (a duplicate is a new document, not a revision), then increments on every scene/chapter mutation. Scene asset metadata defaults to `assetType: 'image'` and `assetFileId: null` when legacy documents are read.
 - Scene asset mutations are public service APIs: `patchProjectScene` targets one scene, `setProjectScenesAssetType` updates all scenes, and `applySceneAssets` applies deduplicated file references in one atomic update.
+- Scene schema defaults now also include `audioFileId: null`, `sfxPrompt: ''`, and `sfxFileId: null`; project defaults include `renderEngine: 'ffmpeg'`, `voiceoverVoice: 'Truc Ly'`, `renderFileId: null`, `bgmMood: ''`, and `bgmFileId: null`.
 - Duplicating a project never carries `assetFileId` references into the new project; file metadata and disk files remain owned by the source project.
 - Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 

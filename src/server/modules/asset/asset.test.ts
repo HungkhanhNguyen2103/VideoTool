@@ -35,9 +35,9 @@ const projectInput = {
 async function seedProjectWithScenes() {
   const project = await createProject(projectInput);
   await replaceProjectScenes(project.id, [
-    { id: 'scene-1', narration: 'Opening', visualPrompt: 'A door', durationSec: 5, assetType: 'image', assetFileId: null },
-    { id: 'scene-2', narration: 'Context', visualPrompt: 'A room', durationSec: 5, assetType: 'image', assetFileId: null },
-    { id: 'scene-3', narration: 'Close', visualPrompt: 'A window', durationSec: 5, assetType: 'image', assetFileId: null },
+    { id: 'scene-1', narration: 'Opening', visualPrompt: 'A door', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
+    { id: 'scene-2', narration: 'Context', visualPrompt: 'A room', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
+    { id: 'scene-3', narration: 'Close', visualPrompt: 'A window', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
   ]);
   return getProject(project.id);
 }
