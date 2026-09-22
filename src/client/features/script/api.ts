@@ -40,7 +40,7 @@ export function generateScript(projectId: string): Promise<{ jobId: string }> {
 export async function patchChapter(
   projectId: string,
   chapterId: string,
-  body: { status?: 'approved' | 'needs-fix'; paragraphs?: string[]; title?: string },
+  body: { status?: 'pending' | 'approved' | 'needs-fix'; paragraphs?: string[]; title?: string },
 ): Promise<ChapterDoc[]> {
   const response = await apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}`, ChaptersResponseSchema, {
     method: 'PATCH', body,

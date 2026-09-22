@@ -245,6 +245,19 @@ describe('script contracts', () => {
     expect((await response.json() as { chapters: Array<{ status: string }> }).chapters[0]!.status).toBe('approved');
   });
 
+  it('accepts pending status when a review decision is toggled off', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/chapters/chapter-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'pending' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json() as { chapters: Array<{ status: string }> }).chapters[0]!.status).toBe('pending');
+  });
+
   it('returns history newest-first and restores a selected snapshot', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');

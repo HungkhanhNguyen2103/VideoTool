@@ -6,7 +6,7 @@ import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, res
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 
 const PatchChapterSchema = z.object({
-  status: z.enum(['approved', 'needs-fix']).optional(),
+  status: z.enum(['pending', 'approved', 'needs-fix']).optional(),
   paragraphs: z.array(z.string()).optional(),
   title: z.string().optional(),
 }).refine((value) => Object.keys(value).length > 0, 'At least one chapter field is required.');
