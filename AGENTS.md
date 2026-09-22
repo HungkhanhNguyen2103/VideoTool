@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 5 Task 5 complete (FFmpeg renderer/filter builders + Remotion stub) · implementation continues sequentially_
+_Last updated: 2026-09-22 · Phase 5 Task 6 complete (voiceover, SFX/BGM, and render services) · implementation continues sequentially_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (101 tests pass, 2 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 5 Task 5 complete (FFmpeg renderer/filter bui
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
-| video | partial | Phase 5 Task 5 complete: FFmpeg renderer/filter builders + Remotion stub; services/routes pending |
+| video | partial | Phase 5 Task 6 complete: FFmpeg renderer plus voiceover, SFX/BGM, and render orchestration; routes/handlers/client pending |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
@@ -79,6 +79,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 5 Task 3 adds a plain-fetch VieNeu client with one retry, timeout/error mapping, FFmpeg mastering fallback, and ffprobe duration measurement; no TTS SDK or runtime dependency was added.
 - 2026-09-22: Phase 5 Task 4 adds resilient Freesound search/download adapters; missing API key, no result, malformed response, and download failure all return null without throwing.
 - 2026-09-22: Phase 5 Task 5 adds pure FFmpeg scene/concat/BGM builders, temporary-file cleanup, project-owned path resolution, and a documented Remotion 501 stub; the BGM second pass intentionally re-encodes the full video.
+- 2026-09-22: Phase 5 Task 6 keeps generated binaries in file-store, patches scene/project metadata through project APIs, continues batch voiceovers after per-scene failures, and rejects renders with one-based `SCENES_NOT_READY` numbers.
 - 2026-09-22: Phase 5 Task 1 adds render/audio/SFX/BGM defaults, TTS/FFmpeg/Freesound config, five file purposes, audio MIME support, and ownership-checked `resolveFilePath`; no new dependency or boundary rule was added.
 - 2026-09-22: Phase 5 Prompt 1 combined design spec includes VieNeu TTS, FFmpeg rendering, Freesound SFX/BGM, atomic file/project ownership, and a Remotion stub; implementation is blocked pending spec review.
 - 2026-09-22: Final Phase 4 review fixes pass 101 tests (2 stub files skipped): ZIP enumeration/extraction failures map or skip safely, Studio uses dark design tokens and MIME-based previews with mismatch notice, and duplicated projects clear file references; browser Studio comparison remains a documented headless-environment gap.
