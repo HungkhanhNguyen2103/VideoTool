@@ -63,6 +63,28 @@ export function IconSprite() {
         <circle cx="12" cy="12" r="9" />
         <path d="M12 8v5M12 16h.01" />
       </symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4" />
+      </symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24">
+        <path d="M4 20h4L19 9l-4-4L4 16z" />
+      </symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24">
+        <path d="M5 21V4M5 4h11l-2 4 2 4H5" />
+      </symbol>
+      <symbol id="i-save" viewBox="0 0 24 24">
+        <path d="M5 3h11l3 3v15H5z" />
+        <path d="M8 3v5h7V3M8 21v-7h8v7" />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="M6 9l6 6 6-6" />
+      </symbol>
+      <symbol id="i-arrow-left" viewBox="0 0 24 24">
+        <path d="M19 12H5M11 6l-6 6 6 6" />
+      </symbol>
+      <symbol id="i-history" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" />
+      </symbol>
       <symbol id="i-check" viewBox="0 0 24 24">
         <path d="M5 12l5 5L20 7" />
       </symbol>

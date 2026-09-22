@@ -8,6 +8,15 @@ import { Icon } from '../../shared/ui/Icon';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import * as api from './api';
+import {
+  approveAllTargets,
+  chapterMetaText,
+  chaptersSummaryText,
+  historyVersionLabel,
+  selectedRegenTargets,
+  toggleApproveStatus,
+  toggleFlagStatus,
+} from './chapter-actions';
 import styles from './ReviewScriptPage.module.css';
 
 const statusTone = { approved: 'green', 'needs-fix': 'amber', generating: 'indigo', pending: 'muted' } as const;
@@ -38,21 +47,34 @@ export function ReviewScriptPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
   const [regen, setRegen] = useState<{ id: string; instruction: string; level: 'light' | 'medium' | 'rewrite'; preview: string; controller: AbortController } | null>(null);
+  const [regenInstruction, setRegenInstruction] = useState('');
+  const [regenLevel, setRegenLevel] = useState<'light' | 'medium' | 'rewrite'>('medium');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
   const lifecycleRef = useRef(0);
-  const [regenDraft, setRegenDraft] = useState<{ id: string; instruction: string; level: 'light' | 'medium' | 'rewrite' } | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [history, setHistory] = useState<api.ChapterSnapshot[]>([]);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const progress = useJobProgress(jobId);
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
+  const historyQuery = useQuery({ queryKey: ['projects', 'chapters', 'history', projectId], queryFn: () => api.getChapterHistory(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
   const approvedCount = chapters.filter((chapter) => chapter.status === 'approved').length;
   const allApproved = chapters.length > 0 && approvedCount === chapters.length;
   const { steps } = getReviewStepperState(chapters.length, approvedCount, jobId);
   const selectedChapters = useMemo(() => chapters.filter((chapter) => selected.has(chapter.id)), [chapters, selected]);
+  const selectedRegenIds = selectedRegenTargets(chapters, selected);
+  const regenerateAllIds = approveAllTargets(chapters);
+  const allSelected = chapters.length > 0 && selectedChapters.length === chapters.length;
+  const hasGenerating = Boolean(regen) || chapters.some((chapter) => chapter.status === 'generating');
+  const hasApprovableChapters = chapters.some((chapter) => chapter.status !== 'generating' && chapter.status !== 'approved');
+  const history = historyQuery.data ?? [];
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
+    setSelected(new Set());
+    setExpanded(new Set());
+    setEditing(null);
+    setRegenInstruction('');
+    setRegenLevel('medium');
     return () => {
       if (lifecycleRef.current === lifecycle) lifecycleRef.current += 1;
       regenControllerRef.current?.abort();
@@ -60,8 +82,17 @@ export function ReviewScriptPage() {
   }, [projectId]);
 
   useEffect(() => {
+    if (!chapters.length) return;
+    setExpanded((current) => current.size ? current : new Set([chapters[0]!.id]));
+  }, [chapters]);
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = selectedChapters.length > 0 && !allSelected;
+  }, [allSelected, selectedChapters.length]);
+
+  useEffect(() => {
     if (progress?.status === 'done') {
-      void projectQuery.refetch();
+      void refresh();
       setJobId(null);
       toast('Đã tạo xong bản nháp kịch bản.');
     } else if (progress?.status === 'failed' || progress?.status === 'cancelled') {
@@ -74,17 +105,30 @@ export function ReviewScriptPage() {
     try { setJobId((await api.generateScript(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo kịch bản.'); }
   }
 
-  async function refresh() { await projectQuery.refetch(); }
+  async function refresh() { await Promise.all([projectQuery.refetch(), historyQuery.refetch()]); }
 
   async function patch(chapterId: string, body: Parameters<typeof api.patchChapter>[2]) {
     try { await api.patchChapter(projectId, chapterId, body); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật chương.'); }
   }
 
-  function startEdit(chapter: ChapterDoc) { setEditing(chapter.id); setEditParagraphs([...chapter.paragraphs]); }
+  function startEdit(chapter: ChapterDoc) {
+    setEditing(chapter.id);
+    setExpanded((current) => new Set(current).add(chapter.id));
+    setEditParagraphs([...chapter.paragraphs]);
+  }
+
+  function toggleExpanded(chapterId: string) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(chapterId)) next.delete(chapterId);
+      else next.add(chapterId);
+      return next;
+    });
+  }
 
   async function saveEdit(chapterId: string) { await patch(chapterId, { paragraphs: editParagraphs }); setEditing(null); }
 
-  async function regenerate(chapter: ChapterDoc, instruction = '', level: 'light' | 'medium' | 'rewrite' = 'medium') {
+  async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel) {
     if (regenControllerRef.current) return;
     const controller = new AbortController();
     regenControllerRef.current = controller;
@@ -101,30 +145,40 @@ export function ReviewScriptPage() {
     }
   }
 
-  async function regenerateSelected() {
+  async function regenerateChapterIds(chapterIds: readonly string[]) {
     if (regenControllerRef.current) return;
     const lifecycle = lifecycleRef.current;
-    for (const chapter of selectedChapters) {
+    const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));
+    for (const chapterId of chapterIds) {
       if (lifecycleRef.current !== lifecycle) return;
-      await regenerate(chapter, '', 'medium');
+      const chapter = chapterById.get(chapterId);
+      if (!chapter) continue;
+      await regenerate(chapter);
     }
   }
 
-  function openRegen(chapter: ChapterDoc) { setRegenDraft({ id: chapter.id, instruction: '', level: 'medium' }); }
+  async function regenerateSelected() { await regenerateChapterIds(selectedRegenIds); }
 
-  async function approveSelected() {
-    if (regenControllerRef.current || selectedChapters.some((chapter) => chapter.status === 'generating')) return;
-    await Promise.all(selectedChapters.map((chapter) => api.patchChapter(projectId, chapter.id, { status: 'approved' })));
-    await refresh();
+  async function regenerateAll() {
+    if (!window.confirm('Tái tạo toàn bộ kịch bản?')) return;
+    await regenerateChapterIds(regenerateAllIds);
   }
 
-  async function loadHistory() {
-    try { setHistory(await api.getChapterHistory(projectId)); setHistoryOpen(true); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tải lịch sử.'); }
+  async function approveAll() {
+    try {
+      for (const chapterId of regenerateAllIds) {
+        await api.patchChapter(projectId, chapterId, { status: 'approved' });
+      }
+      await refresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể duyệt tất cả chương.');
+      await refresh();
+    }
   }
 
   async function restore(index: number) {
     if (!window.confirm('Khôi phục phiên bản này?')) return;
-    try { await api.restoreChapters(projectId, index); await refresh(); setHistoryOpen(false); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể khôi phục.'); }
+    try { await api.restoreChapters(projectId, index); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể khôi phục.'); }
   }
 
   async function finalize() {
@@ -156,30 +210,79 @@ export function ReviewScriptPage() {
           <Button variant="amber" onClick={() => void generate()}>Tạo kịch bản</Button>
         </section>
       ) : (
-        <section className={styles.panel}>
-          {jobId && progress && progress.status !== 'done' && (
-            <div className={styles.chapter} role="status"><strong>Đang tạo kịch bản… {Math.round(progress.progress)}%</strong><div className={styles.logs}>{progress.logs.map((line, index) => <div key={`${index}-${line}`}>{line}</div>)}</div></div>
-          )}
-          <div className={styles.toolbar}><strong>{chapters.length} chương</strong><div className={styles.actions}><Button size="sm" onClick={() => void loadHistory()}>Lịch sử</Button>{selectedChapters.length > 0 && <><Button size="sm" disabled={Boolean(regen) || selectedChapters.some((chapter) => chapter.status === 'generating')} onClick={() => void approveSelected()}>Duyệt tất cả</Button><Button size="sm" variant="indigoline" disabled={Boolean(regen) || selectedChapters.some((chapter) => chapter.status === 'generating')} onClick={() => void regenerateSelected()}>Tái tạo đã chọn</Button></>}</div></div>
-          {chapters.map((chapter) => {
-            const busy = regen?.id === chapter.id || chapter.status === 'generating';
-            const isEditing = editing === chapter.id;
-            return <article className={styles.chapter} key={chapter.id}>
-              <div className={styles.chapterTop}>
-                <input type="checkbox" checked={selected.has(chapter.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(chapter.id); else next.delete(chapter.id); return next; })} aria-label={`Chọn chương ${chapter.no}`} />
-                <span className={styles.chapterNo}>{String(chapter.no).padStart(2, '0')}</span><span className={styles.chapterTitle}>{chapter.title}</span><span className={styles.chapterMeta}>{chapter.scenesCount ?? '—'} cảnh · {chapter.durationSec ?? '—'}s</span><span className={styles.spacer} /><Badge tone={statusTone[chapter.status]}>{statusLabel[chapter.status]}</Badge>
+        <div className={styles.reviewGrid}>
+          <section className={`${styles.panel} ${styles.chapters}`} aria-labelledby="chapters-title">
+            {jobId && progress && progress.status !== 'done' && (
+              <div className={styles.generationStatus} role="status"><strong>Đang tạo kịch bản… {Math.round(progress.progress)}%</strong><div className={styles.logs}>{progress.logs.map((line, index) => <div key={`${index}-${line}`}>{line}</div>)}</div></div>
+            )}
+            <div className={styles.panelHead}>
+              <div>
+                <h2 className={styles.panelTitle} id="chapters-title"><Icon name="list" />Kịch bản theo chương</h2>
+                <div className={styles.summary}>{chaptersSummaryText(chapters)}</div>
               </div>
-              <div className={styles.body}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.actions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}>Lưu</Button></div></> : chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</div>
-              {regen?.id === chapter.id && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div><Button size="sm" variant="red" onClick={() => regen.controller.abort()}>Hủy</Button></div>}
-              {!isEditing && <div className={styles.actions}><Button size="sm" disabled={busy} onClick={() => void patch(chapter.id, { status: 'needs-fix' })}>Cần sửa</Button><Button size="sm" disabled={busy} onClick={() => startEdit(chapter)}>Sửa</Button><Button size="sm" variant="indigoline" disabled={busy} onClick={() => openRegen(chapter)}>Tái tạo</Button><Button size="sm" variant={chapter.status === 'approved' ? 'amber' : 'ghost'} disabled={busy} onClick={() => void patch(chapter.id, { status: 'approved' })}>{chapter.status === 'approved' ? 'Đã duyệt' : 'Duyệt'}</Button></div>}
-              {regenDraft?.id === chapter.id && !regen && <div className={styles.regen}><label>Yêu cầu tái tạo<textarea className={styles.textarea} value={regenDraft.instruction} onChange={(event) => setRegenDraft({ ...regenDraft, instruction: event.target.value })} placeholder="Ví dụ: làm ngắn gọn hơn" /></label><label>Mức độ<select value={regenDraft.level} onChange={(event) => setRegenDraft({ ...regenDraft, level: event.target.value as 'light' | 'medium' | 'rewrite' })}><option value="light">Nhẹ</option><option value="medium">Vừa</option><option value="rewrite">Viết lại</option></select></label><div className={styles.actions}><Button size="sm" onClick={() => setRegenDraft(null)}>Hủy</Button><Button size="sm" variant="indigoline" onClick={() => { const draft = regenDraft; setRegenDraft(null); void regenerate(chapter, draft.instruction, draft.level); }}>Bắt đầu</Button></div></div>}
-            </article>;
-          })}
-        </section>
+              <div className={styles.actions}>
+                <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
+                <Button variant="red" disabled={Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
+              </div>
+            </div>
+            <label className={styles.selectAll}><input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={(event) => setSelected(event.target.checked ? new Set(chapters.map((chapter) => chapter.id)) : new Set())} />Chọn tất cả chương</label>
+            <div className={styles.chapterList}>
+              {chapters.map((chapter) => {
+                const isCurrentRegen = regen?.id === chapter.id;
+                const busy = Boolean(isCurrentRegen) || chapter.status === 'generating';
+                const isEditing = editing === chapter.id;
+                const isExpanded = expanded.has(chapter.id);
+                const meta = chapterMetaText(chapter);
+                return <article className={styles.chapter} data-selected={selected.has(chapter.id)} key={chapter.id}>
+                  <div className={styles.chapterTop}>
+                    <input type="checkbox" checked={selected.has(chapter.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(chapter.id); else next.delete(chapter.id); return next; })} aria-label={`Chọn chương ${chapter.no}`} />
+                    <button type="button" className={styles.chapterToggle} aria-expanded={isExpanded || isEditing} aria-controls={`chapter-body-${chapter.id}`} onClick={() => toggleExpanded(chapter.id)}>
+                      <span className={styles.chapterNo}>{String(chapter.no).padStart(2, '0')}</span><span className={styles.chapterTitle}>{chapter.title}</span>{meta && <span className={styles.chapterMeta}>{meta}</span>}<Icon name="chevron" className={styles.chapterChevron} />
+                    </button>
+                    <Badge tone={statusTone[chapter.status]}>{statusLabel[chapter.status]}</Badge><span className={styles.spacer} />
+                    <div className={styles.actions}>
+                      {isCurrentRegen ? <Button size="sm" variant="red" onClick={() => regen.controller.abort()}>Hủy</Button> : <>
+                        <Button size="icon" active={chapter.status === 'needs-fix'} aria-label={`Đánh dấu cần sửa chương ${chapter.no}`} aria-pressed={chapter.status === 'needs-fix'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleFlagStatus(chapter.status) })}><Icon name="flag" /></Button>
+                        <Button disabled={busy} onClick={() => startEdit(chapter)}><Icon name="edit" />Sửa</Button>
+                        <Button variant="indigoline" disabled={busy} onClick={() => void regenerate(chapter)}><Icon name="refresh" />Tái tạo</Button>
+                        <Button variant={chapter.status === 'approved' ? 'green' : 'ghost'} aria-pressed={chapter.status === 'approved'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleApproveStatus(chapter.status) })}><Icon name="check" />{chapter.status === 'approved' ? 'Đã duyệt' : 'Duyệt'}</Button>
+                      </>}
+                    </div>
+                  </div>
+                  <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</div>
+                  {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}
+                </article>;
+              })}
+            </div>
+          </section>
+
+          <aside className={styles.side}>
+            <section className={styles.panel} aria-labelledby="regen-title">
+              <h2 className={`${styles.panelTitle} ${styles.panelTitleIndigo}`} id="regen-title"><Icon name="sparkles" />Yêu cầu tái tạo</h2>
+              <div className={styles.selectedCount}>{selectedChapters.length ? `Áp dụng cho ${selectedChapters.length} chương đã chọn` : 'Chưa chọn chương nào'}</div>
+              <label className="sr-only" htmlFor="regen-instruction">Yêu cầu cho lần tái tạo</label>
+              <textarea id="regen-instruction" className={styles.textarea} rows={5} value={regenInstruction} onChange={(event) => setRegenInstruction(event.target.value)} placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…" />
+              <fieldset className={styles.segmented}>
+                <legend>Mức thay đổi</legend>
+                {([['light', 'Nhẹ'], ['medium', 'Vừa'], ['rewrite', 'Viết lại']] as const).map(([value, label]) => <label key={value}><input type="radio" name="regen-level" value={value} checked={regenLevel === value} onChange={() => setRegenLevel(value)} /><span>{label}</span></label>)}
+              </fieldset>
+              <Button variant="indigo" size="lg" className={styles.blockButton} disabled={Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />{selectedChapters.length ? `Tái tạo ${selectedRegenIds.length} chương đã chọn` : 'Tái tạo chương đầu tiên'}</Button>
+            </section>
+
+            <section className={styles.panel} aria-labelledby="history-title">
+              <h2 className={styles.panelTitle} id="history-title"><Icon name="history" />Lịch sử phiên bản</h2>
+              <ul className={styles.historyList}>
+                <li className={styles.historyItem}><div><div className={styles.historyName}>Bản {history.length + 1}</div><div className={styles.historyNote}>Bản đang mở · {projectQuery.data?.updatedAt ? new Date(projectQuery.data.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'vừa xong'}</div></div><Badge tone="green">Hiện tại</Badge></li>
+                {history.map((snapshot, index) => <li className={styles.historyItem} key={`${snapshot.takenAt.toISOString()}-${index}`}><div><div className={styles.historyName}>{historyVersionLabel(index, history.length)}</div><div className={styles.historyNote}>Bản lưu tự động · {snapshot.takenAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div></div><Button size="sm" onClick={() => void restore(index)}><Icon name="history" />Khôi phục</Button></li>)}
+              </ul>
+              {historyQuery.isLoading && <p className={styles.muted}>Đang tải lịch sử…</p>}
+              {historyQuery.error && <p className={styles.error}>Không thể tải lịch sử.</p>}
+            </section>
+          </aside>
+        </div>
       )}
 
-      {historyOpen && <aside className={styles.history} aria-label="Lịch sử phiên bản"><div className={styles.historyHead}><strong>Lịch sử phiên bản</strong><Button size="sm" onClick={() => setHistoryOpen(false)}>Đóng</Button></div><ul className={styles.historyList}>{history.map((snapshot, index) => <li className={styles.historyItem} key={`${snapshot.takenAt.toISOString()}-${index}`}><span>{snapshot.takenAt.toLocaleString('vi-VN')}</span><Button size="sm" onClick={() => void restore(index)}>Khôi phục</Button></li>)}</ul></aside>}
-      <footer className={styles.footer}><Button variant="amber" disabled={!allApproved || Boolean(regen) || Boolean(jobId)} onClick={() => void finalize()}>Chốt & chia cảnh</Button></footer>
+      <footer className={styles.footer}><Button variant="amber" disabled={!allApproved || hasGenerating || Boolean(jobId)} onClick={() => void finalize()}>Chốt & chia cảnh</Button></footer>
     </div>
   );
 }
