@@ -10,7 +10,7 @@
 - `titleSearch` is always `normalizeTitle(title)` (title-search.ts): NFD, strip diacritics, `đ`->`d`, lowercase. Kept in sync on create and duplicate; if `title` is ever updated in place, `titleSearch` must be recomputed in the same write.
 - `status` starts at `draft` on create. `duplicateProject` maps `rendered` -> `assets` (a copy has no video file); every other status is copied as-is.
 - `scenesCount`/`durationSec` in `ProjectSummary` are never stored; they are computed from `scenes` at query time (`repo.listProjectSummaries`), and are `null` when `scenes` is empty.
-- `version` starts at 1 on create and on duplicate (a duplicate is a new document, not a revision). No endpoint updates a project in place yet (Phase 1 has no PATCH), so the optimistic-lock compare-and-swap described in `AGENTS.md` section 8 is not exercised until Phase 3 adds scene edits.
+- `version` starts at 1 on create and on duplicate (a duplicate is a new document, not a revision), then increments on every scene/chapter mutation. Scene asset metadata defaults to `assetType: 'image'` and `assetFileId: null` when legacy documents are read.
 - Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 
 ## Flow

@@ -22,6 +22,7 @@ export const FileSummarySchema = z.object({
   ext: z.string(),
   sizeBytes: z.number().int().nonnegative(),
   purpose: z.enum(FILE_PURPOSES),
+  storedPath: z.string(),
   createdAt: z.string(),
 });
 export type FileSummary = z.infer<typeof FileSummarySchema>;

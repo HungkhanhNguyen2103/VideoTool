@@ -171,6 +171,8 @@ export async function finalizeScript(projectId: string): Promise<void> {
       narration,
       visualPrompt: '',
       durationSec: chapterDurations[index]!,
+      assetType: 'image' as const,
+      assetFileId: null,
     })));
     return { ...chapter, scenesCount: paragraphs.length, durationSec: chapterDurations.reduce((sum, value) => sum + value, 0) };
   });

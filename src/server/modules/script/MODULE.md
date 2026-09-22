@@ -35,6 +35,7 @@ needs-fix ──edit/regen──> pending or generating
 ## Finalization
 - Every chapter must be `approved`.
 - Paragraphs become ordered scenes with fresh ULIDs, empty `visualPrompt`, deterministic integer duration distribution, and at least one scene per chapter.
+- Finalized scenes explicitly start with `assetType: 'image'` and `assetFileId: null` for the Phase 4 Studio workflow.
 - Chapter metadata/history is persisted before the final scene write; `replaceProjectScenes(projectId, scenes, 'assets')` atomically updates scenes and project status.
 
 ## AI abstraction

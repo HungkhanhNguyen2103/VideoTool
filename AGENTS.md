@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Prompt 1 complete (script module + final review fixes) · latest implementation commit: `857c9c2 fix(script): address final review regressions`_
+_Last updated: 2026-09-22 · Phase 4 Task 1 of 6 complete (asset contracts) · latest implementation commit: pending Task 1 commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -27,7 +27,7 @@ _Last updated: 2026-09-22 · Phase 3 Prompt 1 complete (script module + final re
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
-| asset | stub | Phase 4 |
+| asset | partial | Phase 4 Task 1 complete: SceneDoc asset defaults and FileSummary.storedPath contract; service/routes/UI pending |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
@@ -70,6 +70,7 @@ Unknown `/api/*` returns JSON 404.
 - Orphaned files after partial failures or project deletion are not garbage-collected; deferred to Phase 6+ by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: Phase 4 Task 1 adds defaulted `SceneDoc.assetType` (`image`) and `assetFileId` (`null`) for legacy reads, plus additive `FileSummary.storedPath` for client previews; no migration or `assetUrl` field is used.
 - 2026-09-22: final review fixes normalize legacy project reads through `ProjectDocSchema` defaults, target only the regenerated chapter during generating/error transitions, force paragraph edits back to `pending`, reject empty scripts/finalizations, and abort/serialize client regeneration streams across unmount/project changes.
 - 2026-09-22: review regression coverage uses a controlled concurrent chapter edit during an aborted stream; the unrelated chapter must survive while the target chapter becomes `needs-fix`.
 - 2026-09-22: Phase 2 Task 6 will test a dependency-free job-event state transition helper in the existing Node Vitest environment; EventSource lifecycle wiring is manually verified because the hook has no Phase 2 consumer and adding jsdom/testing-library would expand dependencies.
