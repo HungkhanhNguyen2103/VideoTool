@@ -14,6 +14,10 @@
 - Repository methods only query the `files` collection.
 - ZIP import validates scenes and delegates replacement to the project module; it replaces, never merges, scenes.
 
+## Service surface
+- `createFileStoreService(filesDir)` injects the disk root for production and isolated tests.
+- `storeFile` writes a generated `{id}.{ext}` path before inserting metadata; `deleteFile` tolerates missing disk files.
+
 ## Known pitfalls
 - There is no garbage collection for orphaned files after partial failures or project deletion; defer to Phase 6+.
 - Do not add this directory to `eslint.config.js` module boundaries.

@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + file contracts/repository implemented) · latest implementation commit: `bfb91d8 feat(job): stream log events over SSE`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + file-store service implemented) · latest implementation commit: `9befa63 feat(file-store): add contracts and repository`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
