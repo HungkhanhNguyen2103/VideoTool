@@ -15,6 +15,12 @@ export function fileUrlForSummary(file: Pick<FileSummary, 'storedPath'>): string
   return `/files/${encodeURIComponent(file.storedPath)}`;
 }
 
+export function mediaTypeForMime(mimeType: string): 'image' | 'video' | null {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  return null;
+}
+
 export function getProject(id: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(id)}`, ProjectDetailSchema);
 }

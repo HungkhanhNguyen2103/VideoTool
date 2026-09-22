@@ -109,13 +109,16 @@ export function StudioPage() {
         {scenes.map((scene, index) => {
           const file = scene.assetFileId ? filesById.get(scene.assetFileId) : undefined;
           const src = file ? api.fileUrlForSummary(file) : null;
+          const actualType = file ? api.mediaTypeForMime(file.mimeType) : null;
+          const previewType = actualType ?? scene.assetType;
+          const typeMismatch = actualType !== null && actualType !== scene.assetType;
           const editing = editingScene === scene.id;
           const sceneBusy = busy === `scene:${scene.id}`;
           return <article className={styles.card} key={scene.id}>
             <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><strong>{scene.narration.slice(0, 80)}{scene.narration.length > 80 ? '…' : ''}</strong><span className={styles.muted}>{scene.durationSec}s</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={busy !== null} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
             <div className={styles.body}>
               <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{editing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={sceneBusy} onClick={() => { void patchScene(scene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{scene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startEdit(scene)}>Edit</Button></div>}</div>
-              <div className={styles.preview}>{src ? scene.assetType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} /> : <span className={styles.placeholder}>No asset yet</span>}</div>
+              <div className={styles.preview}>{src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
             </div>
           </article>;
         })}

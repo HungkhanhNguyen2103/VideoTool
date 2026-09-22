@@ -8,17 +8,18 @@
 ## Invariants
 - `_id` is a ULID string, never an ObjectId.
 - `titleSearch` is always `normalizeTitle(title)` (title-search.ts): NFD, strip diacritics, `đ`->`d`, lowercase. Kept in sync on create and duplicate; if `title` is ever updated in place, `titleSearch` must be recomputed in the same write.
-- `status` starts at `draft` on create. `duplicateProject` maps `rendered` -> `assets` (a copy has no video file); every other status is copied as-is.
+- `status` starts at `draft` on create. `duplicateProject` clears scene asset references because files are not copied, maps `rendered` -> `assets` (a copy has no video file), and copies every other status as-is.
 - `scenesCount`/`durationSec` in `ProjectSummary` are never stored; they are computed from `scenes` at query time (`repo.listProjectSummaries`), and are `null` when `scenes` is empty.
 - `version` starts at 1 on create and on duplicate (a duplicate is a new document, not a revision), then increments on every scene/chapter mutation. Scene asset metadata defaults to `assetType: 'image'` and `assetFileId: null` when legacy documents are read.
 - Scene asset mutations are public service APIs: `patchProjectScene` targets one scene, `setProjectScenesAssetType` updates all scenes, and `applySceneAssets` applies deduplicated file references in one atomic update.
+- Duplicating a project never carries `assetFileId` references into the new project; file metadata and disk files remain owned by the source project.
 - Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 
 ## Flow
 - `POST /api/project` -> `routes.ts` parses the body with `CreateProjectRequestSchema` (validation + Vietnamese messages live in `contracts/project.ts`, copied from `docs/prototypes/khoi-tao-du-an/app.js`) -> `service.createProject` builds the `ProjectDoc` and inserts it -> `service.toDetail` shapes the response (`ProjectDetail`, dates as ISO strings).
 - `GET /api/project` -> `ListProjectsQuerySchema` (optional `q`, `status`) -> `repo.listProjectSummaries` runs an aggregation: `$match` (status + accent-insensitive `titleSearch` regex, query escaped by `escapeRegex`), `$sort` by `updatedAt desc`, `$limit` 200, `$project` computing `scenesCount`/`durationSec`.
 - `GET /api/project/:id` -> `service.getProject` -> `NotFound` (404) if missing.
-- `POST /api/project/:id/duplicate` -> `service.duplicateProject`: loads the source doc, clones it under a new id/title/timestamps, resets `version`, applies the `rendered -> assets` status rule.
+- `POST /api/project/:id/duplicate` -> `service.duplicateProject`: loads the source doc, clones it under a new id/title/timestamps, clears scene asset references, resets `version`, and applies the `rendered -> assets` status rule.
 - `DELETE /api/project/:id` -> `service.deleteProject` -> `NotFound` (404) if nothing was deleted.
 
 ## Known pitfalls

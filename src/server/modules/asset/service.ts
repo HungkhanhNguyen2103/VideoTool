@@ -52,7 +52,13 @@ export async function importAssetsFromZip(
 
   const skipped: string[] = [];
   const updates = new Map<string, string>();
-  for (const entry of zip.getEntries()) {
+  let entries: ReturnType<AdmZip['getEntries']>;
+  try {
+    entries = zip.getEntries();
+  } catch {
+    throw new AppError('ZIP file is invalid.', 422, 'INVALID_ZIP');
+  }
+  for (const entry of entries) {
     const filename = entry.entryName;
     if (entry.isDirectory || filename.includes('/') || filename.includes('\\')) continue;
     const match = filename.match(SCENE_FILE_PATTERN);
@@ -68,11 +74,18 @@ export async function importAssetsFromZip(
       skipped.push(filename);
       continue;
     }
+    let buffer: Buffer;
+    try {
+      buffer = entry.getData();
+    } catch {
+      skipped.push(filename);
+      continue;
+    }
     const summary = await storeFile({
       projectId,
       originalName: filename,
       mimeType: MIME_BY_EXTENSION[extension]!,
-      buffer: entry.getData(),
+      buffer,
       purpose: 'reference',
     });
     updates.set(scene.id, summary.id);

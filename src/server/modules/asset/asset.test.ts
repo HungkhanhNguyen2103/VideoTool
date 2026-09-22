@@ -12,12 +12,13 @@ import { createApp } from '../../app';
 import {
   applySceneAssets,
   createProject,
+  duplicateProject,
   getProject,
   patchProjectScene,
   replaceProjectScenes,
   setProjectScenesAssetType,
 } from '../project';
-import { exportScenesJson, importAssetsFromZip } from './index';
+import { configureAssetModule, exportScenesJson, importAssetsFromZip } from './index';
 
 const projectInput = {
   title: 'Asset contract project',
@@ -46,6 +47,7 @@ let filesDir = '';
 let server: Server | null = null;
 beforeAll(async () => { filesDir = await mkdtemp(path.join(os.tmpdir(), 'video-tool-asset-')); });
 beforeEach(async () => {
+  configureAssetModule(filesDir);
   await getCollection('projects').deleteMany({});
   await getCollection('files').deleteMany({});
 });
@@ -69,6 +71,17 @@ function validZip(): Buffer {
   const zip = new AdmZip();
   zip.addFile('SCENE_001_Opening.png', Buffer.from('png-data'));
   return zip.toBuffer();
+}
+
+function zipWithCorruptCentralDirectory(): Buffer {
+  const zip = new AdmZip();
+  zip.addFile('SCENE_001_Broken.png', Buffer.from('broken'));
+  const buffer = zip.toBuffer();
+  const centralSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+  const offset = buffer.lastIndexOf(centralSignature);
+  if (offset < 0) throw new Error('Expected a central directory header.');
+  buffer.writeUInt32LE(0, offset);
+  return buffer;
 }
 
 describe('asset contracts', () => {
@@ -233,6 +246,43 @@ describe('asset contracts', () => {
     const second = await getProject(project.id);
     expect(secondImport).toEqual({ updated: 1, skipped: [] });
     expect(second.scenes[0]!.assetFileId).not.toBe(firstId);
+  });
+
+  it('skips an entry whose payload cannot be extracted and continues importing', async () => {
+    const project = await seedProjectWithScenes();
+    const zip = new AdmZip();
+    zip.addFile('SCENE_001_Broken.png', Buffer.from('broken'));
+    zip.addFile('SCENE_002_Valid.png', Buffer.from('valid'));
+    const buffer = zip.toBuffer();
+    const localSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+    const centralSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+    const localOffset = buffer.indexOf(localSignature);
+    const centralOffset = buffer.indexOf(centralSignature);
+    buffer.writeUInt16LE(99, localOffset + 8);
+    buffer.writeUInt16LE(99, centralOffset + 10);
+
+    const result = await importAssetsFromZip(project.id, buffer);
+
+    expect(result.updated).toBe(1);
+    expect(result.skipped).toEqual(['SCENE_001_Broken.png']);
+    expect((await getProject(project.id)).scenes[0]!.assetFileId).toBeNull();
+    expect((await getProject(project.id)).scenes[1]!.assetFileId).toEqual(expect.any(String));
+  });
+
+  it('maps a malformed central directory to INVALID_ZIP', async () => {
+    const project = await seedProjectWithScenes();
+
+    await expect(importAssetsFromZip(project.id, zipWithCorruptCentralDirectory()))
+      .rejects.toMatchObject({ code: 'INVALID_ZIP', status: 422 });
+  });
+
+  it('clears asset references when duplicating a project', async () => {
+    const project = await seedProjectWithScenes();
+    await applySceneAssets(project.id, [{ sceneId: 'scene-1', assetFileId: 'file-1' }]);
+
+    const duplicate = await duplicateProject(project.id);
+
+    expect(duplicate.scenes.map((scene) => scene.assetFileId)).toEqual([null, null, null]);
   });
 
   it('returns no updates for an empty ZIP and rejects malformed ZIP data', async () => {

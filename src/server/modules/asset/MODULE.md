@@ -24,13 +24,13 @@
 - Re-import overwrites a scene reference and leaves the old file orphaned; cleanup is deferred.
 - Together AI, voice, and video rendering are out of scope for this phase.
 - `assetUrl` is derived on the client from `FileSummary.storedPath`; it is not stored on scenes and `project` does not import file-store.
-- Integration tests cover mixed ZIP skips, type mismatches, duplicate/re-import replacement, malformed ZIPs, route validation, and the 200 MB Multer limit.
-- The Studio client uses `FileSummary.storedPath` for previews, XHR upload progress, and no DOM test dependency; browser rendering remains an acceptance check.
+- Integration tests cover mixed ZIP skips, type mismatches, duplicate/re-import replacement, malformed ZIP enumeration/extraction, route validation, the 200 MB Multer limit, and MIME-based preview classification.
+- The Studio client uses `FileSummary.storedPath` for previews, XHR upload progress, and no DOM test dependency; browser rendering remains an acceptance check. It selects media elements by stored MIME and flags a scene/file type mismatch.
 - `FlowSceneExport` is canonicalized in `contracts/asset.ts` so the client shares the route shape without importing this server module.
 
 ## Acceptance
 
-- `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 97 passed and 2 stub files skipped.
+- `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 101 passed and 2 stub files skipped.
 - `mongodb-memory-server` ran successfully; asset ZIP tests use a temporary files directory and cover the 200 MB limit.
 - Flow export/import, project scene mutation ownership, route error mapping, and Studio API/client behavior are implemented.
 - `eslint.config.js` and package dependencies were unchanged in Phase 4; no Together AI integration was added.

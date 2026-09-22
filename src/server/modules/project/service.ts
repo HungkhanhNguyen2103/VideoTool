@@ -91,7 +91,9 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     title,
     titleSearch: normalizeTitle(title),
     status: src.status === 'rendered' ? 'assets' : src.status,
-    scenes: src.scenes.map((scene) => ({ ...scene })),
+    // A duplicate does not copy files; clear references so scenes cannot point
+    // at metadata and disk content owned by the source project.
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null })),
     version: 1,
     createdAt: now,
     updatedAt: now,
