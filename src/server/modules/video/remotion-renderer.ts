@@ -68,12 +68,24 @@ export class RemotionRenderer implements VideoRenderer {
       if (appendLog) await appendLog('Remotion render started.');
 
       let lastBucket = -1;
+      let progressLogChain = Promise.resolve();
+      let progressLogError: unknown;
+      const queueProgressLog = (message: string) => {
+        if (!appendLog) return;
+        progressLogChain = progressLogChain.then(async () => {
+          try {
+            await appendLog(message);
+          } catch (error) {
+            progressLogError ??= error;
+          }
+        });
+      };
       const onProgress = (progress: { progress: number }) => {
         if (!appendLog) return;
         const bucket = Math.floor(Math.max(0, Math.min(1, progress.progress)) * 10);
         if (bucket > lastBucket) {
           lastBucket = bucket;
-          void appendLog(`Remotion render progress ${bucket * 10}%.`);
+          queueProgressLog(`Remotion render progress ${bucket * 10}%.`);
         }
       };
       const renderOptions: RenderMediaOptions = {
@@ -85,6 +97,8 @@ export class RemotionRenderer implements VideoRenderer {
         onProgress,
       };
       await this.renderMedia(renderOptions);
+      await progressLogChain;
+      if (progressLogError) throw progressLogError;
       const output = await this.readOutput(staged.outputPath);
       if (appendLog) await appendLog('Remotion render complete.');
       return output as Buffer;

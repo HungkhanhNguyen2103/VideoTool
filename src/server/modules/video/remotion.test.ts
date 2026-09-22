@@ -14,6 +14,7 @@ import { stageRemotionRender } from './remotion-staging';
 import { RemotionRenderer } from './remotion-renderer';
 import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
 import { ensureBrowser } from '@remotion/renderer';
+import type { RenderMediaOptions } from '@remotion/renderer';
 
 const renderResourceLock = path.join(tmpdir(), 'video-tool-render-resource.lock');
 
@@ -75,6 +76,11 @@ describe('Remotion contracts and frame math', () => {
   it('keeps numeric audio volumes exactly aligned with the FFmpeg strings', () => {
     expect(SFX_VOLUME_NUMBER).toBe(0.31622777);
     expect(BGM_VOLUME_NUMBER).toBe(0.1);
+  });
+
+  it('mutes embedded audio from source video scenes', async () => {
+    const source = await readFile('src/remotion/SceneSequence.tsx', 'utf8');
+    expect(source).toMatch(/<OffthreadVideo[\s\S]*muted/);
   });
 });
 
@@ -198,6 +204,41 @@ describe('Remotion renderer orchestration', () => {
       expect(selectComposition.mock.calls[0]?.[0].inputProps).toEqual(renderMedia.mock.calls[0]?.[0].inputProps);
       expect(logs.some((message) => message.includes('render'))).toBe(true);
       expect(await readdir(path.join(bundleDir, 'public', 'renders'))).toHaveLength(0);
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('turns progress log write failures into controlled render failures', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-log-failure-source-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-log-failure-bundle-'));
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
+      const bundle = vi.fn().mockResolvedValue(bundleDir);
+      const selectComposition = vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
+        options.onProgress?.({
+          renderedFrames: 15,
+          encodedFrames: 15,
+          encodedDoneIn: 1,
+          renderedDoneIn: 1,
+          renderEstimatedTime: 1,
+          progress: 0.5,
+          stitchStage: 'encoding',
+        });
+        return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
+      });
+      const renderer = new RemotionRenderer({ resolver, bundle, selectComposition, renderMedia });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, scenes: [scene] } as never;
+      const appendLog = vi.fn(async (message: string) => {
+        if (message.includes('progress')) throw new Error('log write failed');
+      });
+
+      await expect(renderer.renderFullVideo(project, appendLog)).rejects.toMatchObject({ code: 'REMOTION_RENDER_FAILED', status: 502 });
+      expect(appendLog).toHaveBeenCalledWith('Remotion render progress 50%.');
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });
