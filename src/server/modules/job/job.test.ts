@@ -286,4 +286,33 @@ describe('job routes', () => {
     expect(text).toContain(`data: ${JSON.stringify({ status: 'cancelled', progress: 0, error: null })}`);
     expect(text).toContain('\n\n');
   });
+
+  it('emits existing logs before closing a terminal stream', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    await appendJobLog(job.id, 'first');
+    await appendJobLog(job.id, 'second');
+    await cancelJob(job.id);
+    const base = await startServer();
+    const text = await (await fetch(`${base}/api/job/${job.id}/events`)).text();
+    expect(text.indexOf('data: "first"')).toBeGreaterThan(-1);
+    expect(text.indexOf('data: "second"')).toBeGreaterThan(text.indexOf('data: "first"'));
+    expect(text).toContain('event: log');
+  });
+
+  it('emits a log appended after connect on the next poll without replaying it', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    const base = await startServer();
+    const response = await fetch(`${base}/api/job/${job.id}/events`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    await appendJobLog(job.id, 'later');
+    let firstText = '';
+    for (let attempt = 0; attempt < 4 && !firstText.includes('data: "later"'); attempt += 1) {
+      const next = await reader.read();
+      firstText += new TextDecoder().decode(next.value);
+    }
+    expect(firstText).toContain('data: "later"');
+    await cancelJob(job.id);
+    await reader.cancel();
+  });
 });

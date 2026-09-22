@@ -32,6 +32,7 @@
 ## HTTP surface
 - `POST /api/job/:id/cancel` returns the current summary after requesting cancellation.
 - `GET /api/job/:id/events` sends the current `{ status, progress, error }` immediately, then deltas and 15-second heartbeats until terminal.
+- The same SSE stream sends existing and newly appended log lines as named `log` events, tracked by an index so each line is emitted once.
 
 ## Worker integration
 - `worker/main.ts` calls `recoverStaleJobs` every poll tick and drains claims while checking its closing flag between jobs.

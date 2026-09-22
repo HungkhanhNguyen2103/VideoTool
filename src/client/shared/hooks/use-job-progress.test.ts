@@ -7,15 +7,17 @@ describe('job progress state transition', () => {
       status: 'queued',
       progress: 0,
       error: null,
+      logs: [],
     });
   });
 
   it('replaces progress with the latest valid event', () => {
-    const previous = { status: 'running', progress: 10, error: null };
+    const previous = { status: 'running', progress: 10, error: null, logs: ['working'] };
     expect(applyJobEvent(previous, { status: 'done', progress: 100, error: null })).toEqual({
       status: 'done',
       progress: 100,
       error: null,
+      logs: ['working'],
     });
   });
 });

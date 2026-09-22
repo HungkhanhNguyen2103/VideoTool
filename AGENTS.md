@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs started) · latest implementation commit: `e61e19f docs(phase2): record queue acceptance verification`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs + SSE streaming implemented) · latest implementation commit: `a34ecc1 feat(job): add logs field and appendLog to job module`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 2, Prompt 2 in progress (job logs started) ·
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
-| job | partial | Prompt 1 complete; append-only logs/repository/service context implemented, SSE/client streaming remains in progress |
+| job | partial | Prompt 1 complete; append-only logs, SSE named log events, and client accumulation implemented; file-store work remains |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
@@ -73,6 +73,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: client hook lifecycle wiring is manually verified in this phase; state transitions use a dependency-free helper test instead of adding jsdom/testing-library dependencies before the hook has a consumer.
 - 2026-09-22: Phase 2 Prompt 1 acceptance uses `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, a forbidden-route/boundary scan, and a built-worker idle/startup/shutdown smoke run; no push was performed.
 - 2026-09-22: job logs are append-only persisted strings and handlers write them through `JobContext.appendLog`; log SSE events will reuse the existing one-second progress poll.
+- 2026-09-22: SSE log events use `lastLogIndex` on the existing poll, flush existing logs on connect, and the client accumulates them separately from main state events.
 - 2026-09-22: search input in RecentProjects is debounced 300ms client-side before hitting the server (the prototype searches an in-memory array on every keystroke; a real HTTP call per keystroke would be wasteful).
 - 2026-09-22: tabs 2/3/4 (Duyệt & Tái Tạo / Studio / SEO) are all disabled without a current project, not just tab 2 as literally specified, because their routes need `:projectId`.
 - 2026-09-22: CSS Modules per component, global tokens+resets+small utility classes (`.label`, `.ic`, `.mono`, `.muted`, `.spacer`, `.sr-only`) in `styles/tokens.css` (loaded once); `.btn`/`.badge` variants live in the shared `ui/Button`, `ui/Badge` components instead of global classes.

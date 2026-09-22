@@ -6,6 +6,7 @@ export {
   computeBackoffMs,
   enqueueJob,
   getJob,
+  getJobWithLogs,
   recoverStaleJobs,
 } from './service';
 export type { EnqueueJobInput, JobContext, JobHandler } from './service';

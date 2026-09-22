@@ -77,6 +77,12 @@ export async function getJob(id: string): Promise<JobSummary> {
   return toSummary(job);
 }
 
+export async function getJobWithLogs(id: string): Promise<{ summary: JobSummary; logs: string[] }> {
+  const job = await findJobById(id);
+  if (!job) throw new NotFound('Không tìm thấy job.');
+  return { summary: toSummary(job), logs: job.logs };
+}
+
 export async function cancelJob(id: string): Promise<JobSummary> {
   const existing = await findJobById(id);
   if (!existing) throw new NotFound('Không tìm thấy job.');
