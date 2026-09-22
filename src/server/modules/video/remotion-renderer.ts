@@ -1,6 +1,7 @@
 import { readFile, rm } from 'node:fs/promises';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { AppError } from '../../shared/errors';
+import { logger } from '../../shared/logger';
 import { createFileStoreService } from '../file-store';
 import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
 import { stageRemotionRender, type StagedRemotionRender } from './remotion-staging';
@@ -106,8 +107,16 @@ export class RemotionRenderer implements VideoRenderer {
       throw asRenderFailure(error);
     } finally {
       if (staged) {
-        await staged.cleanup().catch(() => undefined);
-        await rm(staged.outputPath, { force: true }).catch(() => undefined);
+        try {
+          await staged.cleanup();
+        } catch (error) {
+          logger.warn('Remotion render staging cleanup failed.', error);
+        }
+        try {
+          await rm(staged.outputPath, { force: true });
+        } catch (error) {
+          logger.warn('Remotion render output cleanup failed.', error);
+        }
       }
     }
   }

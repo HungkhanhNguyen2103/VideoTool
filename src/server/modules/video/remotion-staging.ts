@@ -1,6 +1,7 @@
 import { copyFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { newId } from '../../shared/ids';
+import { logger } from '../../shared/logger';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { resolveRemotionAssets, type RenderFileResolver } from './remotion-props';
 
@@ -39,7 +40,11 @@ export async function stageRemotionRender(options: StageRemotionRenderOptions): 
     }
     return { renderId, renderDir, outputPath, inputProps: resolved.inputProps, cleanup };
   } catch (error) {
-    await cleanup();
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      logger.warn('Remotion staging cleanup failed.', cleanupError);
+    }
     throw error;
   }
 }
