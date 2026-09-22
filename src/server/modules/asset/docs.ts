@@ -1,16 +1,10 @@
+import { ASSET_TYPES, type AssetType, type FlowSceneExport } from '../../../contracts/asset';
 import type { ProjectDetail } from '../../../contracts/project';
 
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'] as const;
 export const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm'] as const;
-export type AssetType = 'image' | 'video';
-
-export type FlowSceneExport = {
-  sceneId: number;
-  sceneNumber: number;
-  title: string;
-  prompt: string;
-  assetType: AssetType;
-};
+export { ASSET_TYPES };
+export type { AssetType, FlowSceneExport };
 
 export const MIME_BY_EXTENSION: Record<string, string> = {
   png: 'image/png',

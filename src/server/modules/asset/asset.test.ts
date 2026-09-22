@@ -224,6 +224,7 @@ describe('asset contracts', () => {
     const firstId = first.scenes[0]!.assetFileId;
     expect(firstImport.updated).toBe(1);
     expect(firstId).toEqual(expect.any(String));
+    if (!firstId) throw new Error('Expected an imported file id.');
     expect(await getCollection<{ _id: string; originalName: string }>('files').findOne({ _id: firstId })).toMatchObject({ originalName: 'SCENE_001_Last.png' });
 
     const replacementZip = new AdmZip();
