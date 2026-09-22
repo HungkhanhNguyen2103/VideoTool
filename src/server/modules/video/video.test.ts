@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -63,6 +63,21 @@ const projectInput = {
 
 let filesDir = '';
 let server: Server | null = null;
+const renderResourceLock = path.join(tmpdir(), 'video-tool-render-resource.lock');
+
+async function acquireRenderResourceLock(): Promise<() => Promise<void>> {
+  const started = Date.now();
+  while (true) {
+    try {
+      const handle = await open(renderResourceLock, 'wx');
+      return async () => { await handle.close(); await rm(renderResourceLock, { force: true }); };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if (Date.now() - started > 120_000) throw new Error('Timed out waiting for the render resource lock.');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
 
 beforeAll(async () => {
   await startTestMongo();
@@ -426,6 +441,8 @@ describe('video routes and worker handlers', () => {
 
 describe('real FFmpeg integration', () => {
   it.skipIf(!ffmpegAvailable || !ffprobeAvailable)(`renders a scene and BGM mix with installed binaries${binarySkipReason ? ` [skipped: ${binarySkipReason}]` : ''}`, async () => {
+    const releaseRenderLock = await acquireRenderResourceLock();
+    try {
     const imagePath = path.join(filesDir, 'fixture.png');
     const bgmPath = path.join(filesDir, 'fixture.mp3');
     await writeFile(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'));
@@ -459,5 +476,8 @@ describe('real FFmpeg integration', () => {
     const probed = spawnSync(ffprobePath, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', shortOutputPath], { encoding: 'utf8' });
     expect(probed.status).toBe(0);
     expect(Number.parseFloat(probed.stdout.trim())).toBeGreaterThanOrEqual(1.8);
+    } finally {
+      await releaseRenderLock();
+    }
   });
 });

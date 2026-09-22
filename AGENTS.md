@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 5 Prompt 2 Task 5 of 7 complete (Studio Remotion selector)_
+_Last updated: 2026-09-22 · Phase 5 Prompt 2 Task 6 of 7 complete (Chromium integration, isolation scan, and full verification)_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (138 tests pass, 1 stub test file skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,7 +28,7 @@ _Last updated: 2026-09-22 · Phase 5 Prompt 2 Task 5 of 7 complete (Studio Remot
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, and public render-engine mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
-| video | partial | Phase 5 Prompt 1 complete; Prompt 2 Tasks 1–5 add the isolated composition, cached/staged Remotion renderer, atomic engine route, matching process wiring, and Studio engine selector. Conditional browser/build-isolation verification remains in Task 6 |
+| video | partial | Phase 5 Prompt 1 complete; Prompt 2 Tasks 1–6 add the isolated composition, cached/staged Remotion renderer, atomic engine route, matching process wiring, Studio selector, real Chromium render, and build-isolation scan. Task 7 records final acceptance docs |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
@@ -78,7 +78,7 @@ Unknown `/api/*` returns JSON 404.
 - A brief empty-list state can appear while TanStack Query fetches a newly selected status filter; the settled result is correct (`3/3` in the acceptance run). This is a loading-state polish item, not a data or API failure.
 - The client hook's EventSource open/change/unmount lifecycle is not DOM-automated by design; its pure state transition is covered by Node tests and the hook is not consumed until Phase 4/5.
 - Browser visual acceptance of Studio at 1440px remains pending in this headless environment; API and build checks are green.
-- Conditional Chromium integration and post-build isolation scan remain in Prompt 2 Task 6; Studio now exposes mutually exclusive FFmpeg/Remotion choices, disables them while busy, refreshes project state on success, and preserves the prior state on failure.
+- Task 6 verified a real one-second image-only Remotion MP4 with local Chrome Headless Shell and no staged render leftovers; the artifact scan found no composition imports in server/worker/client outputs. Studio exposes mutually exclusive FFmpeg/Remotion choices, disables them while busy, refreshes project state on success, and preserves the prior state on failure.
 - Live VieNeu and Freesound calls are not made in automated tests; provider adapters are covered with mocks, and an empty `FREESOUND_API_KEY` intentionally disables optional audio generation.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 
@@ -91,6 +91,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 5 Prompt 2 Task 3 caches one Remotion bundle per renderer process, stages generated media under bundle-output `public/renders/<renderId>/`, validates purpose/MIME/extension before copy, and awaits cleanup on every render path.
 - 2026-09-22: Phase 5 Prompt 2 Task 4 mounts `PATCH /api/project/:id/render-engine` in the video router and passes the same configured Remotion public root through web `createApp` and worker startup.
 - 2026-09-22: Phase 5 Prompt 2 Task 5 keeps the Studio engine selector typed through `contracts/project`, uses the new PATCH API, disables choices during mutations, and refreshes the persisted project after success.
+- 2026-09-22: Phase 5 Prompt 2 Task 6 runs the Chromium integration under an explicit temp-file render lock so it cannot contend with the existing FFmpeg integration; the lock is test-only and leaves no file behind.
 - 2026-09-22: Phase 5 Prompt 2 caches the Remotion bundle for the worker process lifetime, uses Remotion's default host-aware concurrency, and keeps SFX/BGM numeric volumes derived from the existing FFmpeg string constants.
 - 2026-09-22: Phase 5 Prompt 2 places render-engine selection in the video router while the project service owns the atomic `renderEngine` mutation.
 - 2026-09-22: Phase 5 Task 3 adds a plain-fetch VieNeu client with one retry, timeout/error mapping, FFmpeg mastering fallback, and ffprobe duration measurement; no TTS SDK or runtime dependency was added.

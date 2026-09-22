@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -13,9 +13,24 @@ import { buildRemotionInputProps } from './remotion-props';
 import { stageRemotionRender } from './remotion-staging';
 import { RemotionRenderer } from './remotion-renderer';
 import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
+import { ensureBrowser } from '@remotion/renderer';
 
-const remotionBundlerMock = vi.hoisted(() => ({ bundle: vi.fn() }));
-vi.mock('@remotion/bundler', () => remotionBundlerMock);
+const renderResourceLock = path.join(tmpdir(), 'video-tool-render-resource.lock');
+
+async function acquireRenderResourceLock(): Promise<() => Promise<void>> {
+  const started = Date.now();
+  while (true) {
+    try {
+      const handle = await open(renderResourceLock, 'wx');
+      return async () => { await handle.close(); await rm(renderResourceLock, { force: true }); };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if (Date.now() - started > 120_000) throw new Error('Timed out waiting for the render resource lock.');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
+
 
 describe('Remotion contracts and frame math', () => {
   it('rounds each scene duration and accumulates frame offsets', () => {
@@ -194,22 +209,86 @@ describe('Remotion bundle lifecycle', () => {
   it('caches a successful bundle and retries after a rejection or configuration change', async () => {
     const dirOne = await mkdtemp(path.join(tmpdir(), 'remotion-bundle-one-'));
     const dirTwo = await mkdtemp(path.join(tmpdir(), 'remotion-bundle-two-'));
-    remotionBundlerMock.bundle.mockReset().mockResolvedValue('C:/bundle-one');
+    const bundleMock = vi.fn().mockResolvedValue('C:/bundle-one');
     try {
-      configureRemotionBundle(dirOne);
+      configureRemotionBundle(dirOne, bundleMock as never);
       await expect(getRemotionBundle()).resolves.toBe('C:\\bundle-one');
       await expect(getRemotionBundle()).resolves.toBe('C:\\bundle-one');
-      expect(remotionBundlerMock.bundle).toHaveBeenCalledOnce();
+      expect(bundleMock).toHaveBeenCalledOnce();
 
-      configureRemotionBundle(dirTwo);
-      remotionBundlerMock.bundle.mockRejectedValueOnce(new Error('bundle failed'));
+      configureRemotionBundle(dirTwo, bundleMock as never);
+      bundleMock.mockRejectedValueOnce(new Error('bundle failed'));
       await expect(getRemotionBundle()).rejects.toThrow('bundle failed');
-      remotionBundlerMock.bundle.mockResolvedValueOnce('C:/bundle-two');
+      bundleMock.mockResolvedValueOnce('C:/bundle-two');
       await expect(getRemotionBundle()).resolves.toBe('C:\\bundle-two');
-      expect(remotionBundlerMock.bundle).toHaveBeenCalledTimes(3);
+      expect(bundleMock).toHaveBeenCalledTimes(3);
     } finally {
+      configureRemotionBundle('./data/remotion-public');
       await rm(dirOne, { recursive: true, force: true });
       await rm(dirTwo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Remotion acceptance checks', () => {
+  it('renders a short image preview when Chromium is available, otherwise skips with a reason', async (context) => {
+    let browserStatus: Awaited<ReturnType<typeof ensureBrowser>>;
+    try {
+      browserStatus = await Promise.race([
+        ensureBrowser(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Chromium probe timed out')), 5000)),
+      ]);
+    } catch (error) {
+      context.skip(`Chromium unavailable or unlaunchable: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    if (browserStatus.type === 'no-browser' || browserStatus.type === 'version-mismatch') {
+      context.skip(`Chromium unavailable: ${browserStatus.type}`);
+      return;
+    }
+
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-integration-source-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-integration-bundle-'));
+    const releaseRenderLock = await acquireRenderResourceLock();
+    try {
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+      await writeFile(path.join(sourceDir, 'fixture.png'), png);
+      const resolver = async () => ({ absolutePath: path.join(sourceDir, 'fixture.png'), mimeType: 'image/png', purpose: 'reference' as const });
+      const renderer = new RemotionRenderer({ remotionPublicDir: bundleDir, resolver });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 320, height: 180 }, bgmFileId: null } as never;
+
+      let output: Buffer;
+      try {
+        output = await renderer.renderScenePreview(project, scene);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/chrom|browser|puppeteer|executable/i.test(message)) {
+          context.skip(`Chromium unavailable or unlaunchable: ${message}`);
+          return;
+        }
+        throw error;
+      }
+      expect(output.byteLength).toBeGreaterThan(0);
+      expect(await readdir(path.join(bundleDir, 'public', 'renders')).catch(() => [])).toHaveLength(0);
+    } finally {
+      await releaseRenderLock();
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it('keeps Remotion composition code out of built server, worker, and client artifacts', async (context) => {
+    const artifactPaths = ['dist/server.js', 'dist/worker.js'];
+    const clientArtifacts = await readdir('dist/client/assets').catch(() => []);
+    artifactPaths.push(...clientArtifacts.filter((file) => file.endsWith('.js')).map((file) => path.join('dist/client/assets', file)));
+    if (artifactPaths.length === 2) {
+      context.skip('Build artifacts are absent; run npm run build before the isolation scan.');
+      return;
+    }
+    const contents = await Promise.all(artifactPaths.map((file) => readFile(file, 'utf8')));
+    for (const content of contents) {
+      expect(content).not.toMatch(/src[\\/]remotion|VideoComposition|registerRoot|@remotion[\\/]/i);
     }
   });
 });
