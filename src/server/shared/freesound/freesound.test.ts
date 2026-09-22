@@ -5,14 +5,20 @@ import { extractSearchQueries, normalizeKeyword } from './keyword-map';
 afterEach(() => vi.restoreAllMocks());
 
 describe('Freesound keyword mapping', () => {
-  it('maps Vietnamese sound words and strips the tiếng prefix', () => {
-    expect(normalizeKeyword('Tiếng Tích Tắc Đồng Hồ')).toBe('tieng tich tac dong ho');
-    expect(extractSearchQueries('tiếng tích tắc đồng hồ')).toContain('ticking clock');
-    expect(extractSearchQueries('SFX tiếng gió')).toContain('wind');
+  it('maps Vietnamese phrases using the reference dictionary before fallback cleaning', () => {
+    expect(normalizeKeyword('Tiếng Tích Tắc Đồng Hồ')).toBe('clock ticking');
+    expect(normalizeKeyword('tiếng súng')).toBe('gunshot');
+    expect(extractSearchQueries('tiếng tích tắc đồng hồ')).toEqual(['clock ticking']);
+    expect(extractSearchQueries('SFX tiếng gió')).toEqual(['wind blowing']);
+  });
+
+  it('splits prompts, adds the two-word prefix, and deduplicates in first-seen order', () => {
+    expect(extractSearchQueries('sound effect forest ambience room, forest ambience room|forest ambience room'))
+      .toEqual(['forest ambience room', 'forest ambience']);
   });
 
   it('keeps a cleaned generic fallback query', () => {
-    expect(extractSearchQueries('  sound effect   forest ambience  ')).toContain('forest ambience');
+    expect(extractSearchQueries('  sound effect   forest ambience  ')).toEqual(['forest ambience']);
   });
 });
 
@@ -34,7 +40,7 @@ describe('Freesound client', () => {
     await expect(client.searchAndDownloadSfx('tiếng gió')).resolves.toEqual(Buffer.from('mp3'));
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]![0])).toContain('freesound.org/apiv2/search/text');
-    expect(String(fetchMock.mock.calls[0]![0])).toContain('query=wind');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('query=wind+blowing');
   });
 
   it('returns null for no results and download failures', async () => {

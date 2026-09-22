@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 5 Task 10 complete (Phase 5 Prompt 1 acceptance) · ready for the next reviewed prompt_
+_Last updated: 2026-09-22 · Phase 5 Prompt 1 Freesound dictionary correction complete · ready for the next reviewed prompt_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (137 tests pass, 1 stub test file skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -84,7 +84,8 @@ Unknown `/api/*` returns JSON 404.
 ### Decisions log (newest first, keep the last 15)
 - 2026-09-22: Phase 5 Task 2 keeps audio, SFX, BGM, and final-render writes in `project`; BGM mood/file and render file/status each update atomically with one version increment.
 - 2026-09-22: Phase 5 Task 3 adds a plain-fetch VieNeu client with one retry, timeout/error mapping, FFmpeg mastering fallback, and ffprobe duration measurement; no TTS SDK or runtime dependency was added.
-- 2026-09-22: Phase 5 Task 4 adds resilient Freesound search/download adapters; missing API key, no result, malformed response, and download failure all return null without throwing.
+- 2026-09-22: Phase 5 Task 4 adds resilient Freesound search/download adapters and ports the Vietnamese keyword dictionary/reference query extraction verbatim; missing API key, no result, malformed response, and download failure all return null without throwing.
+- 2026-09-22: Phase 5 Prompt 1 follow-up corrects Freesound matching order, delimiter splitting, two-word fallback queries, and first-seen deduplication to match the reference implementation exactly.
 - 2026-09-22: Phase 5 Task 5 adds pure FFmpeg scene/concat/BGM builders, temporary-file cleanup, project-owned path resolution, and a documented Remotion 501 stub; the BGM second pass intentionally re-encodes the full video.
 - 2026-09-22: Phase 5 Task 6 keeps generated binaries in file-store, patches scene/project metadata through project APIs, continues batch voiceovers after per-scene failures, and rejects renders with one-based `SCENES_NOT_READY` numbers.
 - 2026-09-22: Phase 5 Task 7 mounts video routes explicitly under `/api/project`; project-wide voiceover/render work is queued as `generate-voiceover` and `render-full-video`, and handlers check cooperative cancellation before work.

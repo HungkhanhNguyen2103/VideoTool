@@ -1,60 +1,57 @@
-const KEYWORD_MAP: Record<string, string> = {
-  'am thanh': 'sound',
-  'anh sang': 'light',
-  'bat lua': 'lighter',
-  'bien': 'ocean',
-  'buoc chan': 'footsteps',
-  'chim': 'bird',
-  'cho': 'dog',
-  'chuong': 'bell',
-  'cua': 'door',
-  'dien thoai': 'phone',
-  'dong ho': 'clock',
-  'dong co': 'engine',
-  'gio': 'wind',
-  'khoc': 'crying',
-  'lua': 'fire',
-  'may bay': 'airplane',
-  'meo': 'cat',
-  'mua': 'rain',
-  'nuoc': 'water',
-  'rung': 'forest',
-  'sam': 'thunder',
-  'sung': 'gun',
-  'tich tac': 'ticking',
-  'tich tac dong ho': 'ticking clock',
-  'tho': 'breathing',
-  'vot tay': 'applause',
-  'xe': 'car',
-  'cuoi': 'laughter',
+export const KEYWORD_MAP: Record<string, string> = {
+  "tiếng tích tắc đồng hồ": "clock ticking",
+  "đồng hồ": "clock ticking",
+  "tích tắc": "clock ticking",
+  "tiếng lật trang sách": "page turn flip",
+  "lật sách": "page turn",
+  "tiếng chuông": "bell chime",
+  "tiếng gõ phím": "typing keyboard",
+  "tiếng súng": "gunshot",
+  "tiếng bước chân": "footsteps",
+  "tiếng gió": "wind blowing",
+  "tiếng mưa": "rain falling",
+  "tiếng tiền rơi": "coins drop",
+  "tiếng cười": "laughing",
+  "tiếng thở dài": "sigh",
+  "đóng tài liệu": "paper folder close",
+  "tiếng kịch tính": "dramatic sting hit",
 };
 
-export function normalizeKeyword(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/gi, 'd')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]+/g, ' ')
-    .replace(/\s+/g, ' ')
+export function normalizeKeyword(term: string): string {
+  if (!term) return "";
+  const lower = term.toLowerCase().trim();
+
+  for (const [vi, en] of Object.entries(KEYWORD_MAP)) {
+    if (lower.includes(vi)) {
+      return en;
+    }
+  }
+
+  return lower
+    .replace(/^tiếng\s+/i, "")
+    .replace(/\b(sfx|sound effect|sound|value)\b/gi, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-export function extractSearchQueries(prompt: string): string[] {
-  let cleaned = normalizeKeyword(prompt)
-    .replace(/\b(?:sfx|sound effect|sound|value)\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^tieng\s+/, '');
-  cleaned = cleaned.replace(/^tieng\s+/, '').trim();
-  if (!cleaned) return [];
+export function extractSearchQueries(sfxPrompt: string): string[] {
+  if (!sfxPrompt) return [];
 
-  let translated = cleaned;
-  for (const [source, target] of Object.entries(KEYWORD_MAP).sort(([a], [b]) => b.length - a.length)) {
-    translated = translated.replace(new RegExp(`(?:^|\\s)${source.replace(/ /g, '\\s+')}(?=\\s|$)`, 'g'), ` ${target}`);
+  const rawParts = sfxPrompt.split(/[,;\n|]+/);
+  const queries: string[] = [];
+
+  for (const part of rawParts) {
+    const cleaned = normalizeKeyword(part);
+    if (cleaned && cleaned.length >= 2) {
+      queries.push(cleaned);
+
+      const words = cleaned.split(" ");
+      if (words.length > 2) {
+        queries.push(words.slice(0, 2).join(" "));
+      }
+    }
   }
-  translated = translated.replace(/\s+/g, ' ').trim();
-  const candidates = [translated, cleaned];
-  if (cleaned.split(' ').length > 2) candidates.push(cleaned.split(' ').slice(-2).join(' '));
-  return [...new Set(candidates.filter(Boolean))];
+
+  return Array.from(new Set(queries));
 }

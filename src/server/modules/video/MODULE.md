@@ -23,7 +23,7 @@ The BGM pass intentionally runs a second FFmpeg pass over the full video: it cop
 
 The scene graph scales/pads visuals, adds temporal last-frame padding for short video assets, creates silent stereo 48 kHz inputs when audio is absent, and mixes voice/SFX at the fixed levels above. Voiceover mastering uses the shared high-pass/loudness filter with an unmastered fallback; duration is `ceil(ffprobeSeconds + 0.3)`.
 
-The orchestration services call VieNeu and Freesound adapters, store generated voiceover/SFX/BGM/render files through the configured file-store service, and mutate scene/project references only through the public project API. Voiceover batches run sequentially and continue after an individual failure; a failed scene keeps its previous reference and duration.
+The orchestration services call VieNeu and Freesound adapters, store generated voiceover/SFX/BGM/render files through the configured file-store service, and mutate scene/project references only through the public project API. Freesound keyword normalization and query extraction use the Vietnamese reference dictionary verbatim, including its matching order, delimiter splitting, two-word fallback prefix, and first-seen deduplication. Voiceover batches run sequentially and continue after an individual failure; a failed scene keeps its previous reference and duration.
 
 The router is mounted explicitly at `/api/project`. Project-wide voiceover and render requests enqueue jobs; single-scene voiceover regeneration, SFX/BGM generation, and preview rendering remain synchronous. Worker handlers check cancellation before invoking the service and forward `appendLog` for progress events.
 
