@@ -30,6 +30,7 @@ const projectInput = {
   targetDurationSec: 60,
   chapterCount: null,
   voiceId: null,
+  aiProvider: 'deepseek' as const,
   renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
 };
 

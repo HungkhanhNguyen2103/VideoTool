@@ -6,7 +6,7 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
-- Design/plan only: implementation is pending review of `docs/superpowers/specs/2026-09-22-phase3-script-design.md` and `docs/superpowers/plans/2026-09-22-phase3-script-implementation.md`.
+- Task 1 complete: shared contracts and project-owned chapter/history persistence are implemented; AI/service/routes/client work remains.
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
 
 ## Flow

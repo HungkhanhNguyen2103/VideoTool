@@ -1,4 +1,5 @@
-import type { CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectSummary } from '../../../contracts/project';
+import type { CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary } from '../../../contracts/project';
+import type { ChapterDoc, ChapterSnapshot } from '../../../contracts/script';
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
@@ -29,8 +30,10 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     targetDurationSec: doc.targetDurationSec,
     chapterCount: doc.chapterCount,
     voiceId: doc.voiceId,
+    aiProvider: doc.aiProvider,
     renderSettings: doc.renderSettings,
     scenes: doc.scenes,
+    chapters: doc.chapters,
     version: doc.version,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
@@ -51,9 +54,12 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     targetDurationSec: input.targetDurationSec,
     chapterCount: input.chapterCount,
     voiceId: input.voiceId,
+    aiProvider: input.aiProvider ?? 'deepseek',
     renderSettings: input.renderSettings,
     status: 'draft',
     scenes: [],
+    chapters: [],
+    chapterHistory: [],
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -100,11 +106,54 @@ export async function deleteProject(id: string): Promise<void> {
   if (deletedCount === 0) throw new NotFound('Không tìm thấy dự án.');
 }
 
-export async function replaceProjectScenes(id: string, scenes: SceneDoc[]): Promise<ProjectDetail> {
+export async function replaceProjectScenes(id: string, scenes: SceneDoc[], newStatus?: ProjectStatus): Promise<void> {
+  await updateProject(id, { scenes, ...(newStatus ? { status: newStatus } : {}) });
+}
+
+export async function replaceProjectChapters(
+  id: string,
+  chapters: ChapterDoc[],
+  snapshot: ChapterSnapshot | null,
+  newStatus?: ProjectStatus,
+): Promise<ProjectDetail> {
+  await updateProject(id, { chapters, ...(newStatus ? { status: newStatus } : {}) }, snapshot);
+  return getProject(id);
+}
+
+export async function patchProjectChapter(
+  id: string,
+  chapterId: string,
+  patch: Partial<Pick<ChapterDoc, 'paragraphs' | 'status' | 'title'>>,
+  snapshot: ChapterSnapshot | null = null,
+): Promise<ProjectDetail> {
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  for (const [field, value] of Object.entries(patch)) set[`chapters.$[elem].${field}`] = value;
+  const update: Record<string, unknown> = { $set: set };
+  if (snapshot) update.$push = { chapterHistory: { $each: [snapshot], $position: 0, $slice: 10 } };
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id },
-    { $set: { scenes, updatedAt: new Date() }, $inc: { version: 1 } },
+    { ...update, $inc: { version: 1 } },
+    { arrayFilters: [{ 'elem.id': chapterId }] },
   );
-  if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
+  if (result.matchedCount === 0 || result.modifiedCount === 0) throw new NotFound('Không tìm thấy chương.');
   return getProject(id);
+}
+
+export async function restoreProjectChapters(id: string, chapters: ChapterDoc[], snapshot: ChapterSnapshot): Promise<ProjectDetail> {
+  await updateProject(id, { chapters }, snapshot);
+  return getProject(id);
+}
+
+export async function getProjectHistory(id: string): Promise<ChapterSnapshot[]> {
+  const project = await findProjectById(id);
+  if (!project) throw new NotFound('Không tìm thấy dự án.');
+  return project.chapterHistory;
+}
+
+async function updateProject(id: string, fields: Record<string, unknown>, snapshot: ChapterSnapshot | null = null): Promise<void> {
+  const $set = { ...fields, updatedAt: new Date() };
+  const update: Record<string, unknown> = { $set, $inc: { version: 1 } };
+  if (snapshot) update.$push = { chapterHistory: { $each: [snapshot], $position: 0, $slice: 10 } };
+  const result = await getCollection<ProjectDoc>('projects').updateOne({ _id: id }, update as never);
+  if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
 }

@@ -25,6 +25,7 @@ const DEFAULT_VALUES: CreateProjectRequest = {
   targetDurationSec: 180,
   chapterCount: null,
   voiceId: null,
+  aiProvider: 'deepseek',
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 },
 };
 

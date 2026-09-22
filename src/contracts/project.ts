@@ -1,7 +1,11 @@
 import { z } from 'zod';
+import { ChapterDocSchema } from './script';
 
 export const PROJECT_STATUSES = ['draft', 'script', 'assets', 'rendered'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
+export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export const SCRIPT_PRESET_IDS = ['documentary', 'explainer'] as const;
 export type ScriptPresetId = (typeof SCRIPT_PRESET_IDS)[number];
@@ -43,6 +47,7 @@ const CreateProjectRequestBase = z.object({
   targetDurationSec: z.number(),
   chapterCount: z.number().nullable(),
   voiceId: z.string().nullable(),
+  aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
   renderSettings: RenderSettingsSchema,
 });
 
@@ -93,7 +98,8 @@ export const CreateProjectRequestSchema = CreateProjectRequestBase.transform((va
     });
   }
 });
-export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
+export type CreateProjectRequest = z.input<typeof CreateProjectRequestSchema>;
+export type CreateProject = z.output<typeof CreateProjectRequestSchema>;
 
 export const SceneSchema = z.object({
   id: z.string(),
@@ -124,8 +130,10 @@ export const ProjectDetailSchema = z.object({
   targetDurationSec: z.number().int(),
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),
+  aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
   renderSettings: RenderSettingsSchema,
   scenes: z.array(SceneSchema),
+  chapters: z.array(ChapterDocSchema).default([]),
   version: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),

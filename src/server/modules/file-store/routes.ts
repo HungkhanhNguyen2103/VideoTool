@@ -73,5 +73,6 @@ fileStoreRouter.post('/:id/import-zip', uploadZip, async (req, res) => {
       parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
     );
   }
-  res.json(await replaceProjectScenes(projectId, parsed.data));
+  await replaceProjectScenes(projectId, parsed.data);
+  res.json(await getProject(projectId));
 });

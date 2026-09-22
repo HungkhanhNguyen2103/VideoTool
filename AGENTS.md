@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 3 Prompt 1 design spec + implementation plan committed; implementation pending review · latest implementation commit: `e192b86 docs(phase2): finalize prompt 2 review evidence`_
+_Last updated: 2026-09-22 · Phase 3 Task 1 of 8 done (contracts + project-owned chapter persistence) · latest implementation commit: pending Task 1 commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -24,8 +24,8 @@ _Last updated: 2026-09-22 · Phase 3 Prompt 1 design spec + implementation plan 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
-| project | done | server: contracts + service/repo/routes; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | stub | Phase 3 Prompt 1 design spec committed; implementation pending review |
+| project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
+| script | partial | Phase 3 Task 1 complete: shared chapter/AI contracts and project-owned chapter/history writes; service/AI/routes/client implementation remains |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -97,9 +97,12 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: `react-hook-form` + `@hookform/resolvers@5` added (resolver supports zod 4; not yet exercised in code).
 - 2026-09-21: `video-tool` is its own git repo (`.git` at its root, intentional). Commit only here, never push.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
+- 2026-09-22: shared chapter/snapshot schemas live in `contracts/script.ts` and are re-used by project/script to preserve the one-way `script -> project` boundary.
+- 2026-09-22: `replaceProjectScenes(projectId, scenes, newStatus?)` applies scenes and optional project status in one atomic update; script finalization will use `newStatus: 'assets'`.
+- 2026-09-22: `CreateProjectRequest` is the zod input type so the defaulted `aiProvider` stays optional for existing callers; project service persists `deepseek` when omitted.
 
 ### Next step
-Phase 3 Prompt 1: review `docs/superpowers/specs/2026-09-22-phase3-script-design.md` and `docs/superpowers/plans/2026-09-22-phase3-script-implementation.md`; after approval, execute the plan task-by-task before coding beyond the approved scope.
+Phase 3 Task 2: implement the provider-neutral AI clients, then continue the approved plan task-by-task.
 
 ## 2. Stack
 
