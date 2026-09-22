@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 2, Prompt 2 of 2 done (file store + reference upload + ZIP import) · latest implementation commit: `b0a3b5c test(file-store): clean temporary directories after suite`_
+_Last updated: 2026-09-22 · Phase 2, Prompt 2 of 2 done (file store + reference upload + ZIP import) · latest implementation commit: `f309434 fix(project): keep scene replacement writes in service`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.

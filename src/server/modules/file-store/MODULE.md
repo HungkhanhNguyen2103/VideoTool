@@ -27,3 +27,4 @@
 ## Acceptance
 - File-store service and route tests use `mongodb-memory-server` plus unique temp directories, all removed in suite teardown.
 - Final verification: typecheck, lint, 52 tests passed (4 stub files skipped), production build, unchanged `eslint.config.js`, dependency allowlist check, and worker startup/SIGINT smoke test.
+- Final review: project scene replacement ownership is enforced in `project/service.ts`; no Critical or Important findings remain. A later-appended-log duplicate-count assertion remains a low-risk follow-up.
