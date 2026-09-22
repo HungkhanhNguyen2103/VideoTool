@@ -30,6 +30,7 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 - FFmpeg and ffprobe are external prerequisites selected by `FFMPEG_PATH`/`FFPROBE_PATH`, falling back to binaries on `PATH`.
 - Real-binary integration tests are conditional on those executables being available; pure builder and Remotion tests do not require them.
 - Scene transitions, subtitles, partial rerenders, auto-ducking, and orphan-file cleanup are intentionally deferred.
+- VieNeu/Freesound live-provider calls and browser Studio visual checks remain environment-dependent acceptance gaps; adapter tests use mocks.
 
 ## Acceptance
 
@@ -38,3 +39,4 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 - Task 7 route/worker tests cover job payloads, synchronous regeneration/preview content type, provider no-op responses, and cancellation checks.
 - Task 8 ran the real scene+BGM integration with `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; no binary tests were skipped. Project acceptance is 133 passing tests, typecheck/lint/build green, and worker startup plus SIGINT shutdown logs verified.
 - Task 9 adds typed Studio API helpers and controls for voiceover, SFX, BGM, previews, render readiness, engine selection badges, and SSE job progress/logs; generated media remains resolved from `FileSummary` purpose/MIME metadata.
+- Phase 5 Prompt 1 acceptance: 135 tests pass, 1 existing stub test file is skipped, `npm run typecheck`, `npm run lint`, and `npm run build` pass, and the built worker starts and logs clean SIGINT shutdown. No dependency or `eslint.config.js` boundary change was made.

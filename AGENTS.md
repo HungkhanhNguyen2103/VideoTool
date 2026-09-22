@@ -13,7 +13,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 _Last updated: 2026-09-22 · Phase 5 Task 9 complete (Studio voiceover, SFX/BGM, preview, render controls) · implementation continues sequentially_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (133 tests pass, 1 stub test file skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (135 tests pass, 1 stub test file skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -64,10 +64,10 @@ Unknown `/api/*` returns JSON 404.
 | Route | State |
 |---|---|
 | `/production/init` | implemented and browser-verified: NewProjectForm (react-hook-form + zodResolver, error summary, focus-first-invalid, duration chips, aspect->resolution) + RecentProjects (server-side search/status filter, debounced 300ms, open/duplicate/delete) + ConfirmDeleteDialog (native `<dialog>`) |
-| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor implemented; SEO remains ComingSoonPage placeholder |
+| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO remains ComingSoonPage placeholder |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (133 passed, 1 stub file skipped), and `npm run build` all pass. The built worker logged `worker started` and clean SIGINT shutdown. FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; the real scene+BGM integration test ran (no binary skip). Vite emits a non-blocking client chunk-size warning above 500 kB.
+`npm run typecheck`, `npm run lint`, `npm test` (135 passed, 1 stub file skipped), and `npm run build` all pass. The built worker logged `worker started` and clean SIGINT shutdown. FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; the real scene+BGM integration test ran (no binary skip). Vite emits a non-blocking client chunk-size warning above 500 kB.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
@@ -78,6 +78,7 @@ Unknown `/api/*` returns JSON 404.
 - A brief empty-list state can appear while TanStack Query fetches a newly selected status filter; the settled result is correct (`3/3` in the acceptance run). This is a loading-state polish item, not a data or API failure.
 - The client hook's EventSource open/change/unmount lifecycle is not DOM-automated by design; its pure state transition is covered by Node tests and the hook is not consumed until Phase 4/5.
 - Browser visual acceptance of Studio at 1440px remains pending in this headless environment; API and build checks are green.
+- Live VieNeu and Freesound calls are not made in automated tests; provider adapters are covered with mocks, and an empty `FREESOUND_API_KEY` intentionally disables optional audio generation.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 
 ### Decisions log (newest first, keep the last 15)
@@ -90,7 +91,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 5 Task 8 runs the real scene+BGM FFmpeg integration because `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe` are installed; no binary tests were skipped. Full acceptance is 133 passing tests with the existing stub file skipped.
 - 2026-09-22: Phase 5 Task 9 keeps Studio media URLs derived from MIME-checked `FileSummary` records, revokes preview object URLs on replacement/unmount, and exposes project readiness/job logs without adding client dependencies.
 - 2026-09-22: Phase 5 Task 1 adds render/audio/SFX/BGM defaults, TTS/FFmpeg/Freesound config, five file purposes, audio MIME support, and ownership-checked `resolveFilePath`; no new dependency or boundary rule was added.
-- 2026-09-22: Phase 5 Prompt 1 combined design spec includes VieNeu TTS, FFmpeg rendering, Freesound SFX/BGM, atomic file/project ownership, and a Remotion stub; implementation is blocked pending spec review.
+- 2026-09-22: Phase 5 Prompt 1 combined design spec includes VieNeu TTS, FFmpeg rendering, Freesound SFX/BGM, atomic file/project ownership, and a Remotion stub; implementation proceeded after the approved review.
 - 2026-09-22: Final Phase 4 review fixes pass 101 tests (2 stub files skipped): ZIP enumeration/extraction failures map or skip safely, Studio uses dark design tokens and MIME-based previews with mismatch notice, and duplicated projects clear file references; browser Studio comparison remains a documented headless-environment gap.
 - 2026-09-22: Phase 4 acceptance before final review passed 97 tests; the follow-up regression pass added malformed ZIP, duplicate-project, and MIME preview coverage without adding dependencies.
 - 2026-09-22: Phase 4 Task 5 keeps `FlowSceneExport` in `contracts/asset.ts` so client code shares the route contract without importing the server asset module; Studio ZIP upload uses dependency-free XHR progress and preview URLs use validated `storedPath`.
@@ -142,7 +143,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Next phase: Phase 5 video/render module and remaining asset-generation decisions.
+Phase 5 Prompt 1 is complete and ready for the next reviewed prompt; browser Studio visual acceptance and live provider calls remain environment-dependent gaps.
 
 ## 2. Stack
 
