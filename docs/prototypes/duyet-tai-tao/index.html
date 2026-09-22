@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Tool — Duyệt &amp; Tái Tạo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Icon sprite: dùng <svg class="ic"><use href="#i-..."/></svg> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21v-7M8 3h8l-1 6 3 3H6l3-3z"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+</svg>
+
+<div class="app">
+
+  <!-- ===== Menu tổng ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand__logo"><svg class="ic ic--lg" aria-hidden="true"><use href="#i-film"/></svg></span>
+      <span class="brand__name">Video Tool</span>
+    </div>
+    <nav class="menu" aria-label="Menu tổng">
+      <div class="label">Menu</div>
+      <a class="menu__item is-active" href="#" aria-current="page">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-film"/></svg>
+        <span>Sản Xuất &amp; Kịch Bản</span>
+      </a>
+      <button class="menu__item" type="button" disabled aria-disabled="true">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-lock"/></svg>
+        <span class="menu__text">Menu 2</span><span class="pill">Sắp có</span>
+      </button>
+      <button class="menu__item" type="button" disabled aria-disabled="true">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-lock"/></svg>
+        <span class="menu__text">Menu 3</span><span class="pill">Sắp có</span>
+      </button>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <!-- ===== Tiêu đề dự án ===== -->
+    <header class="project-head">
+      <div>
+        <div class="label">Dự án đang mở</div>
+        <h1 id="project-title"></h1>
+      </div>
+      <div class="chip chip--meta"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg><span id="project-meta"></span></div>
+    </header>
+
+    <!-- ===== Tab điều hướng trong Menu 1 ===== -->
+    <nav class="tabs" aria-label="Các bước sản xuất">
+      <a class="tab" href="#" data-tab="1. Khởi Tạo Dự Án"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg><span>1. Khởi Tạo Dự Án</span></a>
+      <a class="tab is-active" href="#" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg><span>2. Duyệt &amp; Tái Tạo</span></a>
+      <a class="tab" href="#" data-tab="3. Studio Phân Cảnh &amp; Xuất Video"><svg class="ic" aria-hidden="true"><use href="#i-video"/></svg><span>3. Studio Phân Cảnh &amp; Xuất Video</span></a>
+      <a class="tab" href="#" data-tab="4. SEO &amp; Đóng Gói Kênh"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg><span>4. SEO &amp; Đóng Gói Kênh</span></a>
+    </nav>
+
+    <!-- ===== Các bước viết kịch bản ===== -->
+    <section class="panel" aria-label="Các bước viết kịch bản">
+      <ol class="stepper" id="stepper"></ol>
+    </section>
+
+    <div class="review-grid">
+
+      <!-- ===== Danh sách chương ===== -->
+      <section class="panel chapters" aria-labelledby="chapters-title">
+        <div class="panel__head">
+          <div>
+            <h2 class="ptitle" id="chapters-title"><svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>Kịch bản theo chương</h2>
+            <div class="mono muted" id="chapters-summary"></div>
+          </div>
+          <div class="row">
+            <button type="button" class="btn btn--ghost" id="approve-all"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Duyệt tất cả</button>
+            <button type="button" class="btn btn--red" id="regen-all"><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg>Tái tạo toàn bộ</button>
+          </div>
+        </div>
+        <label class="select-all"><input type="checkbox" id="select-all"><span>Chọn tất cả chương</span></label>
+        <div class="chapter-list" id="chapter-list"></div>
+      </section>
+
+      <div class="side">
+        <!-- ===== Yêu cầu tái tạo ===== -->
+        <section class="panel" aria-labelledby="regen-title">
+          <h2 class="ptitle ptitle--indigo" id="regen-title"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Yêu cầu tái tạo</h2>
+          <div class="chip chip--amber" id="selected-count" aria-live="polite"></div>
+          <label class="sr-only" for="instruction">Yêu cầu cho lần tái tạo</label>
+          <textarea id="instruction" class="textarea" rows="5" placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…"></textarea>
+          <fieldset class="segmented">
+            <legend class="label">Mức thay đổi</legend>
+            <label><input type="radio" name="level" value="light"><span>Nhẹ</span></label>
+            <label><input type="radio" name="level" value="medium" checked><span>Vừa</span></label>
+            <label><input type="radio" name="level" value="rewrite"><span>Viết lại</span></label>
+          </fieldset>
+          <button type="button" class="btn btn--indigo btn--lg btn--block" id="regen-selected"><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg><span id="regen-selected-label">Tái tạo chương đã chọn</span></button>
+        </section>
+
+        <!-- ===== Lịch sử phiên bản ===== -->
+        <section class="panel" aria-labelledby="history-title">
+          <h2 class="ptitle" id="history-title"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg>Lịch sử phiên bản</h2>
+          <ul class="versions" id="version-list"></ul>
+        </section>
+      </div>
+    </div>
+
+    <!-- ===== Thanh chốt kịch bản ===== -->
+    <section class="panel actionbar" aria-label="Thao tác chốt kịch bản">
+      <div class="actionbar__progress">
+        <span class="strong" id="approved-text"></span>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Tiến độ duyệt" id="approved-bar"><span></span></div>
+      </div>
+      <span class="muted" id="finalize-hint"></span>
+      <div class="spacer"></div>
+      <button type="button" class="btn btn--ghost btn--lg" id="back-draft"><svg class="ic" aria-hidden="true"><use href="#i-arrow-left"/></svg>Quay lại nháp kịch bản</button>
+      <button type="button" class="btn btn--amber btn--lg" id="finalize">Chốt &amp; chia cảnh<svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+    </section>
+
+  </main>
+</div>
+
+<!-- Xác nhận tái tạo toàn bộ -->
+<dialog id="confirm-dialog" aria-labelledby="confirm-title">
+  <form method="dialog">
+    <h2 id="confirm-title">Tái tạo toàn bộ kịch bản?</h2>
+    <p>Nội dung tất cả chương sẽ được viết lại. Bản hiện tại vẫn được giữ trong lịch sử phiên bản để khôi phục.</p>
+    <div class="dialog__actions">
+      <button type="submit" value="cancel" class="btn btn--ghost">Hủy</button>
+      <button type="submit" value="ok" class="btn btn--red">Tái tạo toàn bộ</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -10,15 +10,18 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 1, step 2 of 7 done (server foundation) · previous commit: `63f11e1 chore: add react-hook-form and resolvers, update status`_
+_Last updated: 2026-09-22 · Phase 1, step 3 of 7 done (project module) · previous commit: `704a5cb feat(server): add config, errors, ids, logger, db client, app, main and worker skeleton`_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint pass. Verified on Linux in a scratch copy with `npm ci`.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
+- `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
+- `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
+- All verified on Linux in a scratch copy with `npm ci` (no dependency on the real, DB-backed endpoints below).
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
-| project | stub | files exist but empty (Phase 1 step 3) |
+| project | partial | contracts + service/repo/routes implemented; no automated tests (by request); DB-backed behaviour unverified, see gaps |
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
@@ -27,7 +30,15 @@ _Last updated: 2026-09-22 · Phase 1, step 2 of 7 done (server foundation) · pr
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
 ### Endpoints implemented
-`GET /api/health` (implemented, **unverified**: needs a real MongoDB, see gaps). Unknown `/api/*` returns JSON 404.
+All implemented; none run against a real MongoDB yet (**unverified**, see gaps):
+- `GET /api/health` -> `{ ok: true, db: true }`
+- `GET /api/project` (query: `q`, `status`) -> `ProjectSummary[]`
+- `POST /api/project` -> 201 `ProjectDetail`
+- `GET /api/project/:id` -> `ProjectDetail` or 404
+- `POST /api/project/:id/duplicate` -> 201 `ProjectDetail`
+- `DELETE /api/project/:id` -> 204 or 404
+
+Unknown `/api/*` returns JSON 404.
 
 ### Client screens
 | Route | State |
@@ -39,10 +50,15 @@ State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (i
 `npm run typecheck`, `npm run lint`, `npm test`. `npm run dev` / `build` unverified (client entry still `export {}`; nothing has been run against a real MongoDB yet).
 
 ### Known gaps / TODO
-- Everything except the server foundation. `docs/prototypes/` (source of truth for UI copy and tokens) is not in the repo yet.
-- Anything that needs MongoDB is unverified: the Linux verification sandbox cannot download `mongod` (HTTP 403), so DB tests must be run on Windows.
+- The client (tokens, layout, router, ProjectInitPage and its hooks/components) — Phase 1 steps 5-7, not started.
+- Project module has no automated tests, by explicit request (2026-09-22 decision below); verification of the 5 project endpoints + `/api/health` against a real MongoDB is manual: run `npm run dev` on Windows and check them by hand. Please report back anything that misbehaves.
+- No endpoint updates a project in place yet, so the `version` optimistic-lock compare-and-swap is written into `ProjectDoc`/`AGENTS.md` but not exercised by any code path (arrives with scene edits in Phase 3).
+- The Linux verification sandbox cannot download `mongod` (HTTP 403) or the `mongodb-memory-server` binary, so nothing DB-backed can be checked here at all, tested or not.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: No automated tests for the `project` module in Phase 1 (user decision): skipped `test-utils/mongo.ts`, `factories.ts` and `project.test.ts`; user verifies manually on Windows and reports bugs.
+- 2026-09-22: `docs/prototypes/khoi-tao-du-an/` and `duyet-tai-tao/` added to the repo under `docs/prototypes/` (were missing at repo creation).
+- 2026-09-22: Search/list validation lives in one `superRefine` per contract schema (`contracts/project.ts`) instead of per-field zod checks, so each field surfaces exactly one Vietnamese message, matching the prototype's `validate()` behaviour.
 - 2026-09-22: `NODE_ENV=production` (in `.env`) makes web serve `dist/client`; default is development (no cross-platform way to set it in `npm start`).
 - 2026-09-22: API error body is `{ error: { code, message, fields? } }` (`contracts/common.ts`); server messages are Vietnamese because they surface in the UI.
 - 2026-09-22: `react-hook-form` + `@hookform/resolvers@5` added (resolver supports zod 4; not yet exercised in code).
@@ -50,7 +66,7 @@ State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (i
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 1 step 3: `contracts/project.ts`, the `project` module, test-utils and server tests, then the checkpoint.
+**Checkpoint reached (Phase 1 step 3 done).** Waiting for Hung to run `npm run dev` on Windows against a real MongoDB and confirm the 6 endpoints behave, then "continue" to Phase 1 step 5 (client foundation: tokens.css, Layout, router, api-client, providers).
 
 ## 2. Stack
 
@@ -79,7 +95,8 @@ video-tool/
 ├── AGENTS.md                      this file
 ├── package.json, tsconfig.{base,server,client}.json
 ├── tsup.config.ts, vite.config.ts, vitest.config.ts, eslint.config.js
-├── .env.example                   PORT, MONGODB_URI, MONGODB_DB, FILES_DIR, WORKER_POLL_MS, AI_*_API_KEY
+├── .env.example                   PORT, NODE_ENV, MONGODB_URI, MONGODB_DB, FILES_DIR, WORKER_POLL_MS, AI_*_API_KEY
+├── docs/prototypes/                vanilla HTML/CSS/JS prototypes (khoi-tao-du-an/, duyet-tai-tao/): source of truth for layout, VN copy, tokens, behaviour
 ├── migrations/                    numbered scripts, only when reshaping existing documents
 ├── data/files/<projectId>/        assets/<sceneId>.<kind>.<ext>, output/<renderId>.mp4   (gitignored)
 └── src/
@@ -97,11 +114,13 @@ video-tool/
     ├── worker/                    main.ts (claim loop), registry.ts (job type -> handler, explicit map)
     ├── client/
     │   ├── index.html main.tsx
-    │   ├── app/                   App.tsx router.tsx Layout.tsx
+    │   ├── styles/tokens.css      design tokens (CSS variables), copied from the prototypes' :root block
+    │   ├── app/                   App.tsx router.tsx Layout.tsx, pages/ (ComingSoonPage, etc.)
     │   ├── features/              project/ script/ asset/ video/   (same names as server modules)
-    │   │   └── <feature>/         api.ts hooks.ts <Feature>Page.tsx components/
+    │   │   └── project/           api.ts hooks.ts store.ts ProjectInitPage.tsx components/
+    │   │   └── <other feature>/   api.ts hooks.ts <Feature>Page.tsx components/
     │   └── shared/                api-client.ts, hooks/use-job-progress.ts (SSE), ui/
-    └── test-utils/                mongo.ts (in-memory DB), factories.ts, fake-ai.ts
+    └── test-utils/                mongo.ts (in-memory DB), factories.ts, fake-ai.ts  (Phase 1: not created; see Status)
 ```
 
 Every module has the same base files:
@@ -175,7 +194,7 @@ Manual edit of one scene goes through `PATCH /api/project/:projectId/scenes/:sce
 
 | Collection | Key fields |
 |---|---|
-| `projects` | `_id`, `schemaVersion`, `title`, `brief`, `status` (draft, script_ready, assets_ready, rendered), `scriptPresetId`, `renderSettings {fps,width,height}`, `scenes[]`, `version`, `createdAt`, `updatedAt` |
+| `projects` | `_id`, `schemaVersion`, `title`, `titleSearch` (accent-stripped, lowercased `title`), `language` (`vi`\|`en`), `brief`, `referencesText`, `scriptPresetId`, `targetDurationSec`, `chapterCount` (int 1-20 or `null`), `voiceId` (string or `null`), `status` (`draft`\|`script`\|`assets`\|`rendered`), `renderSettings {aspect,width,height,fps}`, `scenes[]`, `version`, `createdAt`, `updatedAt` |
 | `assets` | `_id`, `projectId`, `sceneId`, `kind` (image, voice, music, subtitle), `status` (pending, running, done, failed), `path`, `inputHash`, `error`, `meta`, `updatedAt`. Unique `{sceneId, kind}` |
 | `script_runs` | `_id`, `projectId`, `presetId`, `promptVersion`, `model`, `rawOutput`, `scenesBefore`, `createdAt` |
 | `renders` | `_id`, `projectId`, `status`, `settings`, `timelineHash`, `outputPath`, `progress`, `error`, `createdAt` |

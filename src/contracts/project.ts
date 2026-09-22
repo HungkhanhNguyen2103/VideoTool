@@ -1,1 +1,139 @@
-export {};
+import { z } from 'zod';
+
+export const PROJECT_STATUSES = ['draft', 'script', 'assets', 'rendered'] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const SCRIPT_PRESET_IDS = ['documentary', 'explainer'] as const;
+export type ScriptPresetId = (typeof SCRIPT_PRESET_IDS)[number];
+
+export const ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const;
+export type AspectRatio = (typeof ASPECT_RATIOS)[number];
+
+/** Resolutions allowed per aspect ratio. Source of truth for the `renderSettings` cross-field check. */
+export const ASPECT_RESOLUTIONS: Record<AspectRatio, readonly (readonly [number, number])[]> = {
+  '16:9': [
+    [1920, 1080],
+    [1280, 720],
+  ],
+  '9:16': [
+    [1080, 1920],
+    [720, 1280],
+  ],
+  '1:1': [[1080, 1080]],
+};
+
+export const RenderSettingsSchema = z.object({
+  aspect: z.enum(ASPECT_RATIOS),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  fps: z.union([z.literal(24), z.literal(30), z.literal(60)]),
+});
+export type RenderSettings = z.infer<typeof RenderSettingsSchema>;
+
+/**
+ * Validation rules and Vietnamese messages copied from
+ * docs/prototypes/khoi-tao-du-an/app.js (`validate()`), one message per field.
+ */
+const CreateProjectRequestBase = z.object({
+  title: z.string(),
+  brief: z.string(),
+  language: z.enum(['vi', 'en']),
+  referencesText: z.string(),
+  scriptPresetId: z.enum(SCRIPT_PRESET_IDS),
+  targetDurationSec: z.number(),
+  chapterCount: z.number().nullable(),
+  voiceId: z.string().nullable(),
+  renderSettings: RenderSettingsSchema,
+});
+
+export const CreateProjectRequestSchema = CreateProjectRequestBase.transform((val) => ({
+  ...val,
+  title: val.title.trim(),
+  brief: val.brief.trim(),
+  referencesText: val.referencesText.trim(),
+})).superRefine((val, ctx) => {
+  if (!val.title) {
+    ctx.addIssue({ code: 'custom', path: ['title'], message: 'Vui lòng nhập tên dự án.' });
+  } else if (val.title.length > 120) {
+    ctx.addIssue({ code: 'custom', path: ['title'], message: 'Tên dự án tối đa 120 ký tự.' });
+  }
+
+  if (val.brief.length < 10) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['brief'],
+      message: `Brief cần tối thiểu 10 ký tự (hiện có ${val.brief.length}).`,
+    });
+  }
+
+  if (!Number.isInteger(val.targetDurationSec) || val.targetDurationSec < 30 || val.targetDurationSec > 3600) {
+    ctx.addIssue({ code: 'custom', path: ['targetDurationSec'], message: 'Nhập số nguyên từ 30 đến 3600 giây.' });
+  }
+
+  if (
+    val.chapterCount !== null &&
+    (!Number.isInteger(val.chapterCount) || val.chapterCount < 1 || val.chapterCount > 20)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['chapterCount'],
+      message: 'Nhập số nguyên từ 1 đến 20, hoặc để trống.',
+    });
+  }
+
+  const allowedResolutions = ASPECT_RESOLUTIONS[val.renderSettings.aspect];
+  const resolutionOk = allowedResolutions.some(
+    ([w, h]) => w === val.renderSettings.width && h === val.renderSettings.height,
+  );
+  if (!resolutionOk) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['renderSettings', 'height'],
+      message: 'Độ phân giải không khớp với khổ hình đã chọn.',
+    });
+  }
+});
+export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
+
+export const SceneSchema = z.object({
+  id: z.string(),
+  narration: z.string(),
+  visualPrompt: z.string(),
+  durationSec: z.number().int().nonnegative(),
+});
+export type Scene = z.infer<typeof SceneSchema>;
+
+export const ProjectSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.enum(PROJECT_STATUSES),
+  scenesCount: z.number().int().nonnegative().nullable(),
+  durationSec: z.number().int().nonnegative().nullable(),
+  updatedAt: z.string(),
+});
+export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
+
+export const ProjectDetailSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.enum(PROJECT_STATUSES),
+  language: z.enum(['vi', 'en']),
+  brief: z.string(),
+  referencesText: z.string(),
+  scriptPresetId: z.enum(SCRIPT_PRESET_IDS),
+  targetDurationSec: z.number().int(),
+  chapterCount: z.number().int().nullable(),
+  voiceId: z.string().nullable(),
+  renderSettings: RenderSettingsSchema,
+  scenes: z.array(SceneSchema),
+  version: z.number().int(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ProjectDetail = z.infer<typeof ProjectDetailSchema>;
+
+export const ListProjectsQuerySchema = z.object({
+  q: z.string().trim().min(1).optional(),
+  status: z.enum(PROJECT_STATUSES).optional(),
+});
+export type ListProjectsQuery = z.infer<typeof ListProjectsQuerySchema>;

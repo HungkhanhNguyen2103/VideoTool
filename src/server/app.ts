@@ -2,6 +2,7 @@ import path from 'node:path';
 import express, { type Express } from 'express';
 import { getDb } from './db/client';
 import { errorHandler } from './error-handler';
+import { projectRouter } from './modules/project';
 import { NotFound } from './shared/errors';
 
 export type AppOptions = {
@@ -21,7 +22,7 @@ export function createApp(options: AppOptions): Express {
     res.json({ ok: true, db: true });
   });
 
-  // Business routes are mounted explicitly here, one line per module.
+  app.use('/api/project', projectRouter);
 
   app.use('/api', (_req, _res, next) => next(new NotFound('Không tìm thấy đường dẫn.')));
 

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Tool — Khởi Tạo Dự Án</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21v-7M8 3h8l-1 6 3 3H6l3-3z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></symbol>
+</svg>
+
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand__logo"><svg class="ic ic--lg" aria-hidden="true"><use href="#i-film"/></svg></span>
+      <span class="brand__name">Video Tool</span>
+    </div>
+    <nav class="menu" aria-label="Menu tổng">
+      <div class="label">Menu</div>
+      <a class="menu__item is-active" href="#" aria-current="page">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-film"/></svg>
+        <span>Sản Xuất &amp; Kịch Bản</span>
+      </a>
+      <button class="menu__item" type="button" disabled aria-disabled="true">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-lock"/></svg>
+        <span class="menu__text">Menu 2</span><span class="pill">Sắp có</span>
+      </button>
+      <button class="menu__item" type="button" disabled aria-disabled="true">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-lock"/></svg>
+        <span class="menu__text">Menu 3</span><span class="pill">Sắp có</span>
+      </button>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <header class="project-head">
+      <div>
+        <div class="label">Dự án đang mở</div>
+        <h1 id="project-title"></h1>
+      </div>
+      <div class="chip chip--meta"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg><span id="project-meta"></span></div>
+    </header>
+
+    <nav class="tabs" aria-label="Các bước sản xuất">
+      <a class="tab is-active" href="#" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg><span>1. Khởi Tạo Dự Án</span></a>
+      <a class="tab" href="../duyet-tai-tao/index.html" data-tab-link="next"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg><span>2. Duyệt &amp; Tái Tạo</span></a>
+      <a class="tab" href="#" data-tab="3. Studio Phân Cảnh &amp; Xuất Video"><svg class="ic" aria-hidden="true"><use href="#i-video"/></svg><span>3. Studio Phân Cảnh &amp; Xuất Video</span></a>
+      <a class="tab" href="#" data-tab="4. SEO &amp; Đóng Gói Kênh"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg><span>4. SEO &amp; Đóng Gói Kênh</span></a>
+    </nav>
+
+    <div class="init-grid">
+
+      <!-- ================= Tạo dự án mới ================= -->
+      <section class="panel form-panel" aria-labelledby="form-title">
+        <h2 class="ptitle" id="form-title"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Tạo dự án mới</h2>
+
+        <form id="project-form" novalidate>
+
+          <div class="form-error" id="form-error" role="alert" hidden></div>
+
+          <fieldset class="section">
+            <legend class="label">Thông tin cơ bản</legend>
+            <div class="grid grid--2-1">
+              <div class="field" data-field="title">
+                <label for="title">Tên dự án <span class="req" aria-hidden="true">*</span></label>
+                <input class="input" id="title" name="title" type="text" autocomplete="off" required
+                       aria-describedby="title-err" placeholder="VD: Tên video của bạn">
+                <p class="field__error" id="title-err"></p>
+              </div>
+              <div class="field">
+                <label for="language">Ngôn ngữ</label>
+                <select class="input" id="language" name="language">
+                  <option value="vi" selected>Tiếng Việt</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="section">
+            <legend class="label">Nội dung</legend>
+            <div class="field" data-field="brief">
+              <label for="brief">Chủ đề / brief <span class="req" aria-hidden="true">*</span></label>
+              <textarea class="input textarea" id="brief" name="brief" rows="5" required
+                        aria-describedby="brief-err brief-hint"
+                        placeholder="Mô tả chủ đề, góc nhìn, đối tượng người xem…"></textarea>
+              <div class="field__row">
+                <p class="field__error" id="brief-err"></p>
+                <p class="hint mono" id="brief-hint"><span id="brief-count">0</span> ký tự (tối thiểu 10)</p>
+              </div>
+            </div>
+
+            <div class="field" data-field="refs">
+              <label for="refs-text">Tư liệu tham khảo <span class="optional">(không bắt buộc)</span></label>
+              <textarea class="input textarea" id="refs-text" name="refsText" rows="3"
+                        placeholder="Dán đoạn văn bản tư liệu vào đây…"></textarea>
+              <div class="files">
+                <input class="sr-only" type="file" id="refs-files" multiple accept=".txt,.md,.pdf,.docx">
+                <label class="btn btn--ghost btn--sm" for="refs-files"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>Chọn file</label>
+                <span class="hint">.txt, .md, .pdf, .docx • tối đa 10 file, mỗi file 10 MB</span>
+              </div>
+              <ul class="file-chips" id="file-chips" aria-label="File tư liệu đã chọn"></ul>
+              <p class="field__error" id="refs-err"></p>
+            </div>
+          </fieldset>
+
+          <fieldset class="section">
+            <legend class="label">Cấu hình kịch bản</legend>
+            <div class="grid grid--3">
+              <div class="field">
+                <label for="preset">Preset kịch bản</label>
+                <select class="input" id="preset" name="preset">
+                  <option value="documentary" selected>Phim tài liệu (documentary)</option>
+                  <option value="explainer">Giải thích (explainer)</option>
+                </select>
+              </div>
+              <div class="field" data-field="duration">
+                <label for="duration">Thời lượng mục tiêu (giây)</label>
+                <input class="input mono" id="duration" name="duration" type="number" min="30" max="3600" step="1" value="180"
+                       aria-describedby="duration-err duration-hint">
+                <p class="hint" id="duration-hint"></p>
+                <p class="field__error" id="duration-err"></p>
+              </div>
+              <div class="field" data-field="chapters">
+                <label for="chapters">Số chương dự kiến <span class="optional">(tùy chọn)</span></label>
+                <input class="input mono" id="chapters" name="chapters" type="number" min="1" max="20" step="1"
+                       placeholder="AI tự quyết" aria-describedby="chapters-err">
+                <p class="field__error" id="chapters-err"></p>
+              </div>
+            </div>
+            <div class="quick" role="group" aria-label="Chọn nhanh thời lượng">
+              <button type="button" class="chip-btn" data-duration="60">1 phút</button>
+              <button type="button" class="chip-btn" data-duration="180">3 phút</button>
+              <button type="button" class="chip-btn" data-duration="300">5 phút</button>
+              <button type="button" class="chip-btn" data-duration="600">10 phút</button>
+            </div>
+          </fieldset>
+
+          <fieldset class="section">
+            <legend class="label">Cấu hình video</legend>
+            <div class="grid grid--4">
+              <fieldset class="field segmented" aria-label="Khổ hình">
+                <legend>Khổ hình</legend>
+                <label><input type="radio" name="aspect" value="16:9" checked><span>16:9</span></label>
+                <label><input type="radio" name="aspect" value="9:16"><span>9:16</span></label>
+                <label><input type="radio" name="aspect" value="1:1"><span>1:1</span></label>
+              </fieldset>
+              <div class="field">
+                <label for="resolution">Độ phân giải</label>
+                <select class="input mono" id="resolution" name="resolution"></select>
+              </div>
+              <div class="field">
+                <label for="fps">FPS</label>
+                <select class="input mono" id="fps" name="fps">
+                  <option value="24">24</option>
+                  <option value="30" selected>30</option>
+                  <option value="60">60</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="voice">Giọng đọc mặc định</label>
+                <select class="input" id="voice" name="voice">
+                  <option value="">Chưa chọn (chọn sau ở Studio)</option>
+                  <option value="voice-1">[Giọng đọc 1]</option>
+                  <option value="voice-2">[Giọng đọc 2]</option>
+                </select>
+              </div>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <span class="hint">Có thể đổi các cấu hình này sau.</span>
+            <div class="spacer"></div>
+            <button type="submit" class="btn btn--ghost btn--lg" value="draft" id="btn-draft">Chỉ lưu nháp</button>
+            <button type="submit" class="btn btn--amber btn--lg" value="outline" id="btn-outline">
+              <span id="btn-outline-label">Tạo dàn ý</span><svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- ================= Dự án gần đây ================= -->
+      <section class="panel recent" aria-labelledby="recent-title">
+        <div class="panel__head">
+          <div>
+            <h2 class="ptitle" id="recent-title"><svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>Dự án gần đây</h2>
+            <div class="mono muted" id="recent-count"></div>
+          </div>
+          <button type="button" class="btn btn--indigoline" id="open-zip"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>Nhập từ ZIP</button>
+        </div>
+
+        <div class="filters">
+          <div class="search">
+            <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+            <label class="sr-only" for="search">Tìm dự án</label>
+            <input class="input" id="search" type="search" placeholder="Tìm theo tên…" autocomplete="off">
+          </div>
+          <label class="sr-only" for="status-filter">Lọc theo trạng thái</label>
+          <select class="input" id="status-filter">
+            <option value="all">Tất cả trạng thái</option>
+            <option value="draft">Nháp</option>
+            <option value="script">Đã có kịch bản</option>
+            <option value="assets">Đã có asset</option>
+            <option value="rendered">Đã render</option>
+          </select>
+        </div>
+
+        <ul class="projects" id="project-list"></ul>
+        <div class="empty" id="project-empty" hidden></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<!-- Xác nhận xóa -->
+<dialog id="dlg-delete" aria-labelledby="dlg-delete-title">
+  <form method="dialog">
+    <h2 id="dlg-delete-title">Xóa dự án?</h2>
+    <p id="dlg-delete-text"></p>
+    <div class="dialog__actions">
+      <button type="submit" value="cancel" class="btn btn--ghost">Hủy</button>
+      <button type="submit" value="ok" class="btn btn--red">Xóa dự án</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Nhập từ ZIP -->
+<dialog id="dlg-zip" aria-labelledby="dlg-zip-title" class="dialog--wide">
+  <h2 id="dlg-zip-title">Nhập dự án từ ZIP</h2>
+  <p class="muted">Kéo thả file ZIP vào khung bên dưới. Danh sách file sẽ được xem trước trước khi nhập.</p>
+
+  <label class="dropzone" id="dropzone" for="zip-file">
+    <svg class="ic ic--xl" aria-hidden="true"><use href="#i-upload"/></svg>
+    <span class="dropzone__title">Thả file .zip vào đây</span>
+    <span class="hint">hoặc bấm để chọn file</span>
+    <input class="sr-only" type="file" id="zip-file" accept=".zip,application/zip">
+  </label>
+
+  <div class="zip-preview" id="zip-preview" hidden aria-live="polite"></div>
+
+  <div class="dialog__actions">
+    <button type="button" class="btn btn--ghost" id="zip-cancel">Hủy</button>
+    <button type="button" class="btn btn--amber" id="zip-import" disabled>Nhập dự án</button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

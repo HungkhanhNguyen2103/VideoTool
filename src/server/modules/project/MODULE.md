@@ -6,10 +6,21 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
-- (fill in)
+- `_id` is a ULID string, never an ObjectId.
+- `titleSearch` is always `normalizeTitle(title)` (title-search.ts): NFD, strip diacritics, `đ`->`d`, lowercase. Kept in sync on create and duplicate; if `title` is ever updated in place, `titleSearch` must be recomputed in the same write.
+- `status` starts at `draft` on create. `duplicateProject` maps `rendered` -> `assets` (a copy has no video file); every other status is copied as-is.
+- `scenesCount`/`durationSec` in `ProjectSummary` are never stored; they are computed from `scenes` at query time (`repo.listProjectSummaries`), and are `null` when `scenes` is empty.
+- `version` starts at 1 on create and on duplicate (a duplicate is a new document, not a revision). No endpoint updates a project in place yet (Phase 1 has no PATCH), so the optimistic-lock compare-and-swap described in `AGENTS.md` section 8 is not exercised until Phase 3 adds scene edits.
+- Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 
 ## Flow
-- (fill in)
+- `POST /api/project` -> `routes.ts` parses the body with `CreateProjectRequestSchema` (validation + Vietnamese messages live in `contracts/project.ts`, copied from `docs/prototypes/khoi-tao-du-an/app.js`) -> `service.createProject` builds the `ProjectDoc` and inserts it -> `service.toDetail` shapes the response (`ProjectDetail`, dates as ISO strings).
+- `GET /api/project` -> `ListProjectsQuerySchema` (optional `q`, `status`) -> `repo.listProjectSummaries` runs an aggregation: `$match` (status + accent-insensitive `titleSearch` regex, query escaped by `escapeRegex`), `$sort` by `updatedAt desc`, `$limit` 200, `$project` computing `scenesCount`/`durationSec`.
+- `GET /api/project/:id` -> `service.getProject` -> `NotFound` (404) if missing.
+- `POST /api/project/:id/duplicate` -> `service.duplicateProject`: loads the source doc, clones it under a new id/title/timestamps, resets `version`, applies the `rendered -> assets` status rule.
+- `DELETE /api/project/:id` -> `service.deleteProject` -> `NotFound` (404) if nothing was deleted.
 
 ## Known pitfalls
-- (fill in)
+- `contracts/project.ts` validates the whole payload in one `superRefine` so each field surfaces exactly one Vietnamese message (matching the prototype's `validate()`), instead of zod's default per-check messages; don't add plain `.min()/.max()` messages on those fields; they should be silently added to the same `superRefine`.
+- `escapeRegex` is required on every user-supplied `q` before building the `$regex` filter; skipping it would let a search string break out of the intended match (ReDoS/incorrect matches).
+- No automated tests were written for this module in Phase 1 (by explicit request); it has only been checked with `npm run typecheck`/`lint` and a throwaway (uncommitted) script exercising `CreateProjectRequestSchema` and `title-search.ts`. Anything that needs a real MongoDB (`GET /api/health`, the four project endpoints end-to-end) is **unverified** — verify manually with `npm run dev` before relying on it.
