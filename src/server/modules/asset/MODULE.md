@@ -25,3 +25,4 @@
 - Together AI, voice, and video rendering are out of scope for this phase.
 - `assetUrl` is derived on the client from `FileSummary.storedPath`; it is not stored on scenes and `project` does not import file-store.
 - Integration tests cover mixed ZIP skips, type mismatches, duplicate/re-import replacement, malformed ZIPs, route validation, and the 200 MB Multer limit.
+- The Studio client uses `FileSummary.storedPath` for previews, XHR upload progress, and no DOM test dependency; browser rendering remains an acceptance check.

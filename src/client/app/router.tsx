@@ -3,6 +3,7 @@ import { ProjectInitPage } from '../features/project/ProjectInitPage';
 import { Layout } from './Layout';
 import { ComingSoonPage } from './pages/ComingSoonPage';
 import { ReviewScriptPage } from '../features/script/ReviewScriptPage';
+import { StudioPage } from '../features/asset/StudioPage';
 
 export const router = createBrowserRouter([
   {
@@ -17,7 +18,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'production/:projectId/studio',
-        element: <ComingSoonPage title="3. Studio Phân Cảnh & Xuất Video" phase={4} />,
+        element: <StudioPage />,
       },
       {
         path: 'production/:projectId/seo',

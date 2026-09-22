@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 4 Task 4 of 6 complete (asset integration tests) · latest implementation commit: pending Task 4 commit_
+_Last updated: 2026-09-22 · Phase 4 Task 5 of 6 complete (asset client Studio) · latest implementation commit: pending Task 5 commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -27,7 +27,7 @@ _Last updated: 2026-09-22 · Phase 4 Task 4 of 6 complete (asset integration tes
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
-| asset | partial | Phase 4 Task 4 complete: contracts, project scene APIs, Flow export, ZIP import/routes, and edge-case integration tests; Studio UI pending |
+| asset | partial | Phase 4 Task 5 complete: contracts, project scene APIs, Flow export, ZIP import/routes/tests, and Studio UI; final acceptance pending |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
@@ -54,7 +54,7 @@ Unknown `/api/*` returns JSON 404.
 | Route | State |
 |---|---|
 | `/production/init` | implemented and browser-verified: NewProjectForm (react-hook-form + zodResolver, error summary, focus-first-invalid, duration chips, aspect->resolution) + RecentProjects (server-side search/status filter, debounced 300ms, open/duplicate/delete) + ConfirmDeleteDialog (native `<dialog>`) |
-| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio/SEO remain ComingSoonPage placeholders |
+| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor implemented; SEO remains ComingSoonPage placeholder |
 
 ### Run and verify
 `npm run typecheck`, `npm run lint`, `npm test` (81 passed, 3 stub files skipped), and `npm run build` all pass. The built worker was started with `node --env-file=.env dist/worker.js`, logged `worker started`, and logged clean SIGINT shutdown. Multipart upload/delete/list and ZIP success/422 cases are covered by the file-store route suite.
@@ -70,6 +70,7 @@ Unknown `/api/*` returns JSON 404.
 - Orphaned files after partial failures or project deletion are not garbage-collected; deferred to Phase 6+ by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: Phase 4 Task 5 keeps `FlowSceneExport` in `contracts/asset.ts` so client code shares the route contract without importing the server asset module; Studio ZIP upload uses dependency-free XHR progress and preview URLs use validated `storedPath`.
 - 2026-09-22: Phase 4 Task 4 treats `skipped[]` as an unordered membership list because `adm-zip` may enumerate entries in archive order; tests assert exact membership/count, not incidental order.
 - 2026-09-22: Phase 4 Task 3 adds configured asset orchestration over `createFileStoreService`, root-level Flow ZIP parsing, image/video MIME/type checks, 200 MB upload middleware, and explicit `/api/project` route mounting; `eslint.config.js` remains unchanged.
 - 2026-09-22: Phase 4 Task 2 keeps all scene writes in `project`; `applySceneAssets` deduplicates last-value-wins and applies dynamic array-filter `$set` paths in one versioned update.
