@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 4 complete · latest implementation commit: final-review fixes (hash recorded in follow-up docs commit)_
+_Last updated: 2026-09-22 · Phase 4 complete · latest implementation commit: `0bcaa04 fix(asset): harden zip import and studio references`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (101 tests pass, 2 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
