@@ -1,7 +1,14 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
+import AdmZip from 'adm-zip';
 import { FileSummarySchema } from '../../../contracts/file';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
+import { createApp } from '../../app';
 import {
   applySceneAssets,
   createProject,
@@ -10,6 +17,7 @@ import {
   replaceProjectScenes,
   setProjectScenesAssetType,
 } from '../project';
+import { exportScenesJson, importAssetsFromZip } from './index';
 
 const projectInput = {
   title: 'Asset contract project',
@@ -34,7 +42,34 @@ async function seedProjectWithScenes() {
 }
 
 beforeAll(() => startTestMongo());
-afterAll(() => closeTestMongo());
+let filesDir = '';
+let server: Server | null = null;
+beforeAll(async () => { filesDir = await mkdtemp(path.join(os.tmpdir(), 'video-tool-asset-')); });
+beforeEach(async () => {
+  await getCollection('projects').deleteMany({});
+  await getCollection('files').deleteMany({});
+});
+afterEach(async () => {
+  const current = server;
+  server = null;
+  if (current) await new Promise<void>((resolve) => current.close(() => resolve()));
+});
+afterAll(async () => {
+  await closeTestMongo();
+  if (filesDir) await rm(filesDir, { recursive: true, force: true });
+});
+
+async function startAssetServer(): Promise<string> {
+  const app = createApp({ filesDir, clientDir: null });
+  await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
+  return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+}
+
+function validZip(): Buffer {
+  const zip = new AdmZip();
+  zip.addFile('SCENE_001_Opening.png', Buffer.from('png-data'));
+  return zip.toBuffer();
+}
 
 describe('asset contracts', () => {
   it('defaults asset fields when reading a legacy scene document', async () => {
@@ -100,5 +135,56 @@ describe('asset contracts', () => {
     expect(updated.scenes[1]!.assetFileId).toBe('file-two');
     expect(updated.scenes[2]!.assetFileId).toBeNull();
     expect(updated.version).toBe(project.version + 1);
+  });
+
+  it('exports Flow scenes with one-based numbering and prompts', async () => {
+    const project = await seedProjectWithScenes();
+
+    const exported = exportScenesJson(project);
+
+    expect(exported).toEqual([
+      expect.objectContaining({ sceneId: 1, sceneNumber: 1, prompt: 'A door', assetType: 'image' }),
+      expect.objectContaining({ sceneId: 2, sceneNumber: 2, prompt: 'A room', assetType: 'image' }),
+      expect.objectContaining({ sceneId: 3, sceneNumber: 3, prompt: 'A window', assetType: 'image' }),
+    ]);
+  });
+
+  it('imports a valid root-level image and applies its file reference', async () => {
+    const project = await seedProjectWithScenes();
+
+    const result = await importAssetsFromZip(project.id, validZip());
+
+    expect(result).toEqual({ updated: 1, skipped: [] });
+    const updated = await getProject(project.id);
+    expect(updated.scenes[0]!.assetFileId).toEqual(expect.any(String));
+    expect(await getCollection<{ projectId: string; originalName: string }>('files').findOne({ projectId: project.id })).toMatchObject({ originalName: 'SCENE_001_Opening.png' });
+  });
+
+  it('exports JSON through the route with an attachment filename', async () => {
+    const project = await seedProjectWithScenes();
+    const base = await startAssetServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/export-json`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="scenes-export.json"');
+    expect(await response.json()).toHaveLength(3);
+  });
+
+  it('imports a ZIP through the route and rejects non-ZIP MIME types', async () => {
+    const project = await seedProjectWithScenes();
+    const base = await startAssetServer();
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(validZip())], { type: 'application/zip' }), 'assets.zip');
+
+    const imported = await fetch(`${base}/api/project/${project.id}/scenes/import-assets`, { method: 'POST', body: form });
+    expect(imported.status).toBe(200);
+    expect(await imported.json()).toEqual({ updated: 1, skipped: [] });
+
+    const invalidForm = new FormData();
+    invalidForm.append('file', new Blob(['not a zip'], { type: 'text/plain' }), 'assets.txt');
+    const rejected = await fetch(`${base}/api/project/${project.id}/scenes/import-assets`, { method: 'POST', body: invalidForm });
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
   });
 });

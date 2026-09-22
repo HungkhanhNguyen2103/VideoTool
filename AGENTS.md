@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 4 Task 2 of 6 complete (asset contracts + project scene mutation APIs) · latest implementation commit: pending Task 2 commit_
+_Last updated: 2026-09-22 · Phase 4 Task 3 of 6 complete (asset service/routes) · latest implementation commit: pending Task 3 commit_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -27,7 +27,7 @@ _Last updated: 2026-09-22 · Phase 4 Task 2 of 6 complete (asset contracts + pro
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence and atomic scene/status replacement; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
-| asset | partial | Phase 4 Task 2 complete: SceneDoc asset defaults, FileSummary.storedPath, and project scene mutation APIs; service/routes/UI pending |
+| asset | partial | Phase 4 Task 3 complete: SceneDoc asset defaults, project scene mutation APIs, Flow export, ZIP import, and asset routes; integration tests/UI pending |
 | video | stub | Phase 5 |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
@@ -70,6 +70,7 @@ Unknown `/api/*` returns JSON 404.
 - Orphaned files after partial failures or project deletion are not garbage-collected; deferred to Phase 6+ by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-22: Phase 4 Task 3 adds configured asset orchestration over `createFileStoreService`, root-level Flow ZIP parsing, image/video MIME/type checks, 200 MB upload middleware, and explicit `/api/project` route mounting; `eslint.config.js` remains unchanged.
 - 2026-09-22: Phase 4 Task 2 keeps all scene writes in `project`; `applySceneAssets` deduplicates last-value-wins and applies dynamic array-filter `$set` paths in one versioned update.
 - 2026-09-22: Phase 4 Task 1 adds defaulted `SceneDoc.assetType` (`image`) and `assetFileId` (`null`) for legacy reads, plus additive `FileSummary.storedPath` for client previews; no migration or `assetUrl` field is used.
 - 2026-09-22: final review fixes normalize legacy project reads through `ProjectDocSchema` defaults, target only the regenerated chapter during generating/error transitions, force paragraph edits back to `pending`, reject empty scripts/finalizations, and abort/serialize client regeneration streams across unmount/project changes.

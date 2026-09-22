@@ -16,8 +16,11 @@
 
 - Export scenes as numbered JSON for the external Google Flow tool.
 - Import Flow's root-level `SCENE_{N}_{anything}.{ext}` ZIP entries and attach stored file IDs to matching scenes.
+- Image MIME mapping is `png -> image/png`, `jpg|jpeg -> image/jpeg`, `webp -> image/webp`; video mapping is `mp4 -> video/mp4`, `mov -> video/quicktime`, `webm -> video/webm`.
+- Asset ZIP uploads are limited to 200 MB and unsupported, malformed, nested, out-of-range, or asset-type-mismatched entries are reported in `skipped[]` without aborting valid entries.
 
 ## Known pitfalls
 
 - Re-import overwrites a scene reference and leaves the old file orphaned; cleanup is deferred.
 - Together AI, voice, and video rendering are out of scope for this phase.
+- `assetUrl` is derived on the client from `FileSummary.storedPath`; it is not stored on scenes and `project` does not import file-store.

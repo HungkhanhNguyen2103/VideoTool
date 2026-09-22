@@ -7,6 +7,7 @@ import { jobRouter } from './modules/job';
 import { enqueueJob } from './modules/job';
 import { configureFileStore, fileStoreRouter } from './modules/file-store';
 import { createScriptRouter } from './modules/script';
+import { assetRouter, configureAssetModule } from './modules/asset';
 import { NotFound } from './shared/errors';
 
 export type AppOptions = {
@@ -21,6 +22,7 @@ export function createApp(options: AppOptions): Express {
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
   configureFileStore(options.filesDir);
+  configureAssetModule(options.filesDir);
 
   app.get('/api/health', async (_req, res) => {
     await getDb().command({ ping: 1 });
@@ -30,6 +32,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api/project', projectRouter);
   app.use('/api/project', createScriptRouter({ enqueueJob }));
   app.use('/api/project', fileStoreRouter);
+  app.use('/api/project', assetRouter);
   app.use('/api/job', jobRouter);
 
   app.use('/api', (_req, _res, next) => next(new NotFound('Không tìm thấy đường dẫn.')));
