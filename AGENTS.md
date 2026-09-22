@@ -10,19 +10,21 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 1, step 6 of 7 done (client + Khởi Tạo Dự Án page) · previous commit: `66ce5d7 feat(project): implement contracts, docs, repo, service, routes for the project module`_
+_Last updated: 2026-09-22 · Phase 1, step 7 of 7 done (Windows/MongoDB/browser acceptance) · latest implementation commit: `f1cc75c feat(client): add client foundation and the Khởi Tạo Dự Án page`_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback (`npm test`: 7 tests pass, 5 stub test files skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
-- All verified on Linux in a scratch copy with `npm ci`. The client has **not** been opened in a browser (no display in this sandbox) and no request has hit a real MongoDB, see gaps.
+- Windows acceptance verified against the installed MongoDB 8.0 service at `127.0.0.1:27017`: `GET /api/health` returned `{ ok: true, db: true }`, project CRUD persisted in MongoDB, and the current-project fallback survived a reload.
+- Browser acceptance verified at `http://localhost:5173/production/init` with a 1440px viewport: invalid submit focused the first field and made no DB write; draft/outline creation, reload persistence, accent-insensitive search, status filtering, duplicate, confirmed delete, and delete fallback all worked.
+- `npm run typecheck`, `npm run lint`, `npm test` (7 passed, 5 skipped), and `npm run build` all pass on Windows. The client bundle contains no server environment/API-key identifiers.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
-| project | partial | server: contracts + service/repo/routes; client: ProjectInitPage + form/list/dialog. No automated tests (by request); DB-backed and browser behaviour unverified, see gaps |
+| project | done | server: contracts + service/repo/routes; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | stub | Phase 3 |
 | asset | stub | Phase 4 |
 | video | stub | Phase 5 |
@@ -31,7 +33,7 @@ _Last updated: 2026-09-22 · Phase 1, step 6 of 7 done (client + Khởi Tạo D�
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
 ### Endpoints implemented
-All implemented; none run against a real MongoDB yet (**unverified**, see gaps):
+All implemented and exercised against the live MongoDB service on Windows:
 - `GET /api/health` -> `{ ok: true, db: true }`
 - `GET /api/project` (query: `q`, `status`) -> `ProjectSummary[]`
 - `POST /api/project` -> 201 `ProjectDetail`
@@ -44,18 +46,19 @@ Unknown `/api/*` returns JSON 404.
 ### Client screens
 | Route | State |
 |---|---|
-| `/production/init` | implemented: NewProjectForm (react-hook-form + zodResolver, error summary, focus-first-invalid, duration chips, aspect->resolution) + RecentProjects (server-side search/status filter, debounced 300ms, open/duplicate/delete) + ConfirmDeleteDialog (native `<dialog>`). **Unverified in a real browser** |
+| `/production/init` | implemented and browser-verified: NewProjectForm (react-hook-form + zodResolver, error summary, focus-first-invalid, duration chips, aspect->resolution) + RecentProjects (server-side search/status filter, debounced 300ms, open/duplicate/delete) + ConfirmDeleteDialog (native `<dialog>`) |
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ComingSoonPage placeholder, names the delivering phase |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test`, `npm run build` (all verified, see above). `npm run dev` against a real MongoDB is **not yet verified** — please run it on Windows and open `http://localhost:5173`.
+`npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` all pass on Windows. `npm run dev` was exercised with the installed MongoDB service; API is on `3000`, Vite is reachable at `http://localhost:5173`, and the worker starts with the same environment.
 
 ### Known gaps / TODO
-- Never opened in an actual browser (this sandbox has no display): please run `npm run dev` on Windows and compare `/production/init` with `docs/prototypes/khoi-tao-du-an/index.html` at 1440px, and report anything that looks or behaves differently. No automated tests either, by request; report bugs and they'll be fixed.
+- Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.
+- No automated tests were added for the `project` module by explicit request; acceptance coverage is manual on Windows plus the existing suite.
 - File upload for reference files and "Nhập từ ZIP" are intentionally disabled UI (Phase 2+), matching the prompt.
 - Tabs 2/3/4 are all gated on "there is a current project" (disabled otherwise) — the prompt only specified this rule for tab 2; extended it to 3/4 too since their routes require a `:projectId`. Flag if you want tab 1's gate rule only.
 - No endpoint updates a project in place yet, so the `version` optimistic-lock compare-and-swap is written into `ProjectDoc`/`AGENTS.md` but not exercised by any code path (arrives with scene edits in Phase 3).
-- The Linux verification sandbox cannot download `mongod` (HTTP 403) or the `mongodb-memory-server` binary, and has no display for a real browser check, so nothing DB-backed or visual can be checked here.
+- A brief empty-list state can appear while TanStack Query fetches a newly selected status filter; the settled result is correct (`3/3` in the acceptance run). This is a loading-state polish item, not a data or API failure.
 
 ### Decisions log (newest first, keep the last 15)
 - 2026-09-22: search input in RecentProjects is debounced 300ms client-side before hitting the server (the prototype searches an in-memory array on every keystroke; a real HTTP call per keystroke would be wasteful).
@@ -64,6 +67,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: No automated tests for the `project` module in Phase 1 (user decision): skipped `test-utils/mongo.ts`, `factories.ts` and `project.test.ts`; user verifies manually on Windows and reports bugs.
 - 2026-09-22: `docs/prototypes/khoi-tao-du-an/` and `duyet-tai-tao/` added to the repo under `docs/prototypes/` (were missing at repo creation).
 - 2026-09-22: Search/list validation lives in one `superRefine` per contract schema (`contracts/project.ts`) instead of per-field zod checks, so each field surfaces exactly one Vietnamese message, matching the prototype's `validate()` behaviour.
+- 2026-09-22: Chapters remain an embedded scene/chapter concern for Phase 1; a dedicated chapters model is deferred to Phase 3 (`chapters model (Phase 3)`).
 - 2026-09-22: `NODE_ENV=production` (in `.env`) makes web serve `dist/client`; default is development (no cross-platform way to set it in `npm start`).
 - 2026-09-22: API error body is `{ error: { code, message, fields? } }` (`contracts/common.ts`); server messages are Vietnamese because they surface in the UI.
 - 2026-09-22: `react-hook-form` + `@hookform/resolvers@5` added (resolver supports zod 4; not yet exercised in code).
@@ -71,7 +75,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-21: verification runs in a Linux scratch copy because the committed `node_modules` is Windows-built.
 
 ### Next step
-Phase 1 step 7: polish + docs (fill in any remaining gaps found from manual testing, final acceptance checklist pass). Please run `npm run dev` on Windows, compare against both prototypes at 1440px, and report anything broken or off — this Status will be corrected in the same commit as any fix.
+Phase 2: implement the `job` module and worker loop, SSE progress, `file-store`, reference-file upload, and ZIP import backend. Keep file generation/rendering behind jobs and preserve the current module boundaries.
 
 ## 2. Stack
 
