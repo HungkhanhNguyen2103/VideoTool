@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
@@ -37,6 +38,14 @@ vi.mock('../../shared/tts', () => ({
 vi.mock('../../shared/freesound', () => ({
   getFreesoundClient: () => ({ searchAndDownloadSfx: mocks.searchAndDownloadSfx, searchAndDownloadBgm: mocks.searchAndDownloadBgm }),
 }));
+
+const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+const ffmpegAvailable = spawnSync(ffmpegPath, ['-version'], { stdio: 'ignore' }).status === 0;
+const ffprobeAvailable = spawnSync(ffprobePath, ['-version'], { stdio: 'ignore' }).status === 0;
+const binarySkipReason = !ffmpegAvailable && !ffprobeAvailable
+  ? `missing FFmpeg (${ffmpegPath}) and ffprobe (${ffprobePath})`
+  : !ffmpegAvailable ? `missing FFmpeg (${ffmpegPath})` : !ffprobeAvailable ? `missing ffprobe (${ffprobePath})` : '';
 
 const projectInput = {
   title: 'Video mutation project',
@@ -332,5 +341,30 @@ describe('video routes and worker handlers', () => {
 
     expect(mocks.synthesize).not.toHaveBeenCalled();
     expect(context.isCancelled).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('real FFmpeg integration', () => {
+  it.skipIf(!ffmpegAvailable || !ffprobeAvailable)(`renders a scene and BGM mix with installed binaries${binarySkipReason ? ` [skipped: ${binarySkipReason}]` : ''}`, async () => {
+    const imagePath = path.join(filesDir, 'fixture.png');
+    const bgmPath = path.join(filesDir, 'fixture.mp3');
+    await writeFile(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'));
+    const generatedBgm = spawnSync(ffmpegPath, ['-y', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=1', '-ac', '2', '-ar', '48000', bgmPath], { encoding: 'utf8' });
+    expect(generatedBgm.status).toBe(0);
+    const project = await seedProject();
+    await setProjectBgm(project.id, 'test', 'bgm-1');
+    const renderer = new FfmpegRenderer({
+      ffmpegPath,
+      resolveFilePath: async (_projectId, fileId) => fileId === 'bgm-1'
+        ? { absolutePath: bgmPath, mimeType: 'audio/mpeg', purpose: 'bgm' }
+        : { absolutePath: imagePath, mimeType: 'image/png', purpose: 'reference' },
+    });
+
+    const latest = await getProject(project.id);
+    const preview = await renderer.renderScenePreview(latest, latest.scenes[0]!);
+    const full = await renderer.renderFullVideo(latest, async () => undefined);
+
+    expect(preview.byteLength).toBeGreaterThan(100);
+    expect(full.byteLength).toBeGreaterThan(100);
   });
 });

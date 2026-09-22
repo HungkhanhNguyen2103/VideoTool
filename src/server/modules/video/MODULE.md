@@ -36,3 +36,4 @@ The router is mounted explicitly at `/api/project`. Project-wide voiceover and r
 - Task 5 pure renderer tests cover scaling/padding/fps, silent inputs, voice/SFX mixing, exact volume constants, concat/BGM arguments, and the Remotion 501 error.
 - Task 6 service tests cover voiceover storage/duration, failure preservation, batch continuation, SFX/BGM no-op and storage, render readiness, and atomic final render metadata.
 - Task 7 route/worker tests cover job payloads, synchronous regeneration/preview content type, provider no-op responses, and cancellation checks.
+- Task 8 ran the real scene+BGM integration with `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`; no binary tests were skipped. Project acceptance is 133 passing tests, typecheck/lint/build green, and worker startup plus SIGINT shutdown logs verified.
