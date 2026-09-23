@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Script Task 7 regression coverage verified_
+_Last updated: 2026-09-23 · Phase 6 script presets and visual prompts accepted_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -27,12 +27,13 @@ _Last updated: 2026-09-23 · Script Task 7 regression coverage verified_
 - Script Task 5 exposes `POST /api/project/:id/scenes/generate-visual-prompts` with finalized-scene readiness validation and registers `generate-visual-prompts` explicitly in the worker; route/worker focused tests (45) plus typecheck and lint pass.
 - Script Task 6 adds the Studio `Tạo visual prompt` action, typed client API, and enqueue-gap-safe project-job predicate; the focused asset API tests, typecheck, and lint pass.
 - Script Task 7 pins the mechanical documentary/explainer distinction, exact visual-batch index/count retry contract, rerun style seeding, cancellation/race behavior, and route/worker/client regressions; the focused suite has 106 passed, typecheck/lint pass, and the full suite has 252 passed with 1 skipped.
+- Phase 6 acceptance is complete: typecheck, lint, 252 tests passed with 1 skipped, and the production build passed. Presets copy to `dist/presets/`; the project-owned atomic empty-only mutation, sequential retry/cancellation job, and Studio action are covered. Mocked providers made no network calls; live provider and 1440px browser comparison remain documented gaps.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | done | Phase 3 Prompt 1 complete; Tasks 4–5 add sequential visual-prompt orchestration, finalized-scene enqueue route, and explicit worker registration over the typed AI boundary and project-owned empty-only mutation. Studio wiring remains in later tasks. |
+| script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets, sequential visual-prompt orchestration, finalized-scene enqueue route, explicit worker registration, and regression coverage over the typed AI boundary and project-owned empty-only mutation. |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
@@ -174,7 +175,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Script-presets/visual-prompts Task 7 is complete. Task 8 records final acceptance and build evidence.
+Script-presets/visual-prompts Phase 6 is complete and accepted. See `docs/superpowers/acceptance/2026-09-23-phase6-script-presets-visual-prompts-acceptance.md` for command evidence and remaining environment gaps.
 
 ## 2. Stack
 
