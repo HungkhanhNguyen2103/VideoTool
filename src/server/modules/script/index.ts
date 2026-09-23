@@ -3,3 +3,7 @@ export type { ScriptJobPayload } from './handler';
 export { generateScript, regenerateChapter, finalizeScript } from './service';
 export { createScriptRouter } from './routes';
 export type { BuiltPrompt, VisualPromptPromptInput, VisualPromptSceneInput } from './ai/build-prompt';
+export { generateVisualPrompts } from './visual-prompts';
+export type { VisualPromptJobContext, VisualPromptJobResult } from './visual-prompts';
+export { handleGenerateVisualPrompts } from './visual-prompt-handler';
+export type { VisualPromptJobPayload } from './visual-prompt-handler';

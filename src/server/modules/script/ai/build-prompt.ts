@@ -80,7 +80,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
       `Brief: ${project.brief}`,
       `Language: ${language(project)}`,
       `Chapter ${chapter.no}: ${chapter.title}`,
-      `Previous style note: ${styleNote}`,
+      `Previous style note: ${styleNote.slice(0, 500)}`,
       `This chapter contains exactly ${scenes.length} scenes. Return exactly ${scenes.length} prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.`,
       'Scenes:',
       ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}`),

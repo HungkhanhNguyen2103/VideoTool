@@ -52,6 +52,12 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('1');
     expect(result.user).not.toContain('internal-id');
   });
+
+  it('bounds a supplied continuity note before placing it in a visual batch prompt', () => {
+    const result = buildVisualPromptPrompt({ project, chapter, styleNote: 'x'.repeat(501), scenes: [] });
+    expect(result.user).toContain(`Previous style note: ${'x'.repeat(500)}\n\n`);
+    expect(result.user).not.toContain('x'.repeat(501));
+  });
 });
 
 describe('script AI parsers', () => {

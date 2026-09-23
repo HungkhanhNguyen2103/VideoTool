@@ -10,7 +10,10 @@
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
 - Versioned Markdown files in `ai/presets/*.md` are the only preset source; `ai/presets/loader.ts` validates and loads them, and production builds copy them beside the bundled server and worker.
 - Initial generation and chapter regeneration compose selected preset guidance in `ai/build-prompt.ts`; the prompt version is `script-prompt-v1/<id>@<version>`. The service uses `ai/parse-output.ts` for both response types, preserving the existing 422 `SCRIPT_PARSE_ERROR` contract and final scene shape.
-- The AI boundary also defines a visual batch prompt and schema for the next task. It sends ordered scene indexes, narration, existing prompt references, and a bounded continuity note without exposing internal scene IDs. Exact returned index-set validation and writes belong to the visual orchestration task.
+- Visual-prompt generation slices finalized scenes by chapter count, assigns stable project-global one-based indexes, and sends every scene's narration and current prompt as reference. Internal scene IDs never enter the AI request.
+- Each visual batch must pass schema and exact index-set validation before a chapter write. A parse, schema, or index failure gets one retry with the validation error; provider and project-write failures are isolated to their chapter. Successful batches write only empty prompts through `project.applyEmptySceneVisualPrompts`.
+- The running continuity note is the previous successful batch's bounded `styleNote`; skipped full chapters can seed it from existing prompts, capped at 500 characters. Progress is rounded by chapter, and the result records updated scenes, prefilled skipped scenes, and failed chapter numbers.
+- The structural `VisualPromptJobContext` does not import `job`. The handler parses `{ projectId }` and checks cancellation before orchestration. Orchestration checks before each call and after each response, discarding in-flight output when cancelled so the worker's post-handler check marks the job cancelled.
 
 ## Flow
 - Generate chapters asynchronously through the `generate-script` job.
@@ -44,6 +47,7 @@ needs-fix ──edit/regen──> pending or generating
 ## AI abstraction
 - `src/server/shared/ai/` owns the `AiClient` interface, DeepSeek/OpenAI-compatible adapter, Claude adapter, and provider factory.
 - Provider keys remain server/worker-only; the client receives only project/provider metadata and job/SSE results.
+- `generateVisualPrompts(projectId, context)` returns `{ updatedScenes, skippedScenes, failedChapters }`; `handleGenerateVisualPrompts(job, context)` is the public job handler for later worker registration.
 
 ## Known pitfalls
 - Keep the shared chapter schema in `contracts/script.ts` to avoid a project-to-script import cycle.
@@ -58,6 +62,7 @@ needs-fix ──edit/regen──> pending or generating
 - The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; ReviewScriptPage's stepper state and shared theme-token usage are covered by pure Node tests, while full page rendering remains untested without a DOM dependency.
 
 ## Acceptance
+- Task 4 focused orchestration/prompt-boundary suite: 31 tests passed. Typecheck and lint passed; the full suite passed with 231 tests and the pre-existing project todo skipped. Mongo-backed tests used `mongodb-memory-server` and mocked provider chat calls.
 - Task 2 focused AI boundary suite: 33 tests passed; typecheck, lint, and full suite (216 passed, 1 skipped) passed on Windows. This task did not run a production build.
 - `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 81 passed and 3 stub files skipped.
 - `mongodb-memory-server` ran successfully; no fallback was required.
