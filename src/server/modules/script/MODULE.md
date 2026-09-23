@@ -11,8 +11,8 @@
 - Versioned Markdown files in `ai/presets/*.md` are the only preset source; `ai/presets/loader.ts` validates and loads them, and production builds copy them beside the bundled server and worker.
 - Initial generation and chapter regeneration compose selected preset guidance in `ai/build-prompt.ts`; the prompt version is `script-prompt-v1/<id>@<version>`. The service uses `ai/parse-output.ts` for both response types, preserving the existing 422 `SCRIPT_PARSE_ERROR` contract and final scene shape.
 - Visual-prompt generation slices finalized scenes by chapter count, assigns stable project-global one-based indexes, and sends every scene's narration and current prompt as reference. Internal scene IDs never enter the AI request.
-- Each visual batch must pass schema and exact index-set validation before a chapter write. A parse, schema, or index failure gets one retry with the validation error; provider and project-write failures are isolated to their chapter. Successful batches write only empty prompts through `project.applyEmptySceneVisualPrompts`.
-- The running continuity note is the previous successful batch's bounded `styleNote`; skipped full chapters can seed it from existing prompts, capped at 500 characters. Progress is rounded by chapter, and the result records updated scenes, prefilled skipped scenes, and failed chapter numbers.
+- Each visual batch must pass schema and exact index-set validation before a chapter write. A parse, schema, or index failure gets one retry with the validation error; provider and project-write failures are isolated to their chapter. Successful batches write only empty prompts through the public `project.applyEmptySceneVisualPromptsWithResult` companion, whose atomic pre-image IDs provide exact update counts.
+- The running continuity note starts as an ordered excerpt of all existing non-empty project prompts, capped at 500 characters. Only a successful chapter response replaces it with that batch's bounded `styleNote`; failed and skipped chapters preserve it. Progress is rounded by chapter, and the result records updated scenes, prefilled skipped scenes, and failed chapter numbers.
 - The structural `VisualPromptJobContext` does not import `job`. The handler parses `{ projectId }` and checks cancellation before orchestration. Orchestration checks before each call and after each response, discarding in-flight output when cancelled so the worker's post-handler check marks the job cancelled.
 
 ## Flow
@@ -62,6 +62,7 @@ needs-fix ──edit/regen──> pending or generating
 - The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; ReviewScriptPage's stepper state and shared theme-token usage are covered by pure Node tests, while full page rendering remains untested without a DOM dependency.
 
 ## Acceptance
+- Task 4 review round 1: focused visual-prompt/project tests passed 50/50; typecheck, lint, and full suite passed with 241 tests and one pre-existing skipped project todo. Coverage includes a corrected validation retry, cancellation gates, project-write isolation, style seeding after a failure, and atomic same-value/count races.
 - Task 4 focused orchestration/prompt-boundary suite: 31 tests passed. Typecheck and lint passed; the full suite passed with 231 tests and the pre-existing project todo skipped. Mongo-backed tests used `mongodb-memory-server` and mocked provider chat calls.
 - Task 2 focused AI boundary suite: 33 tests passed; typecheck, lint, and full suite (216 passed, 1 skipped) passed on Windows. This task did not run a production build.
 - `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 81 passed and 3 stub files skipped.

@@ -1,12 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
+import { Collection } from 'mongodb';
 import { CreateProjectRequestSchema, ProjectDetailSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/script';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
-import { applyEmptySceneVisualPrompts, createProject, getProject, getProjectHistory, replaceProjectChapters, replaceProjectScenes } from '../project';
+import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes } from '../project';
 import { finalizeScript, generateScript, patchChapter, regenerateChapter } from './service';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
@@ -57,6 +58,63 @@ async function projectWithFinalizedScenes() {
 }
 
 describe('empty scene visual prompts', () => {
+  it('returns exact changed IDs from the atomic pre-image while preserving the wrapper contract', async () => {
+    const project = await projectWithFinalizedScenes();
+    const result = await applyEmptySceneVisualPromptsWithResult(project.id, [
+      { sceneId: 'scene-1', visualPrompt: 'Generated 1' },
+      { sceneId: 'scene-2', visualPrompt: 'Generated 2' },
+      { sceneId: 'scene-3', visualPrompt: 'Must stay manual' },
+      { sceneId: 'scene-1', visualPrompt: 'Final 1' },
+    ]);
+    expect(result.updatedSceneIds).toEqual(['scene-1', 'scene-2']);
+    expect(result.project.version).toBe(project.version + 1);
+    expect(result.project.scenes.map((scene) => scene.visualPrompt)).toEqual(['Final 1', 'Generated 2', 'Manual prompt']);
+    const noOp = await applyEmptySceneVisualPromptsWithResult(project.id, [{ sceneId: 'scene-1', visualPrompt: 'Another' }]);
+    expect(noOp.updatedSceneIds).toEqual([]);
+    expect(noOp.project.version).toBe(result.project.version);
+  });
+
+  it('returns only the scene still empty at the atomic write when a manual edit races with it', async () => {
+    const project = await projectWithFinalizedScenes();
+    const original = Collection.prototype.findOneAndUpdate;
+    const spy = vi.spyOn(Collection.prototype, 'findOneAndUpdate').mockImplementationOnce(async function (this: Collection, ...args) {
+      await patchProjectScene(project.id, 'scene-1', { visualPrompt: 'Generated 1' });
+      return original.apply(this, args);
+    });
+    try {
+      const result = await applyEmptySceneVisualPromptsWithResult(project.id, [
+        { sceneId: 'scene-1', visualPrompt: 'Generated 1' },
+        { sceneId: 'scene-2', visualPrompt: 'Generated 2' },
+      ]);
+      expect(result.updatedSceneIds).toEqual(['scene-2']);
+      expect(result.project.scenes.map((scene) => scene.visualPrompt)).toEqual(['Generated 1', 'Generated 2', 'Manual prompt']);
+      expect(result.project.version).toBe(project.version + 2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('returns no changed IDs and no extra version bump when the atomic predicate no longer matches', async () => {
+    const project = await projectWithFinalizedScenes();
+    const original = Collection.prototype.findOneAndUpdate;
+    const spy = vi.spyOn(Collection.prototype, 'findOneAndUpdate').mockImplementationOnce(async function (this: Collection, ...args) {
+      await patchProjectScene(project.id, 'scene-1', { visualPrompt: 'Manual 1' });
+      await patchProjectScene(project.id, 'scene-2', { visualPrompt: 'Manual 2' });
+      return original.apply(this, args);
+    });
+    try {
+      const result = await applyEmptySceneVisualPromptsWithResult(project.id, [
+        { sceneId: 'scene-1', visualPrompt: 'Generated 1' },
+        { sceneId: 'scene-2', visualPrompt: 'Generated 2' },
+      ]);
+      expect(result.updatedSceneIds).toEqual([]);
+      expect(result.project.version).toBe(project.version + 2);
+      expect(result.project.scenes.map((scene) => scene.visualPrompt)).toEqual(['Manual 1', 'Manual 2', 'Manual prompt']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('applies two targets in one version increment and keeps the last duplicate value', async () => {
     const project = await projectWithFinalizedScenes();
     const updated = await applyEmptySceneVisualPrompts(project.id, [

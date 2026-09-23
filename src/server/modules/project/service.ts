@@ -197,10 +197,17 @@ export async function applyEmptySceneVisualPrompts(
   projectId: string,
   updates: Array<{ sceneId: string; visualPrompt: string }>,
 ): Promise<ProjectDetail> {
+  return (await applyEmptySceneVisualPromptsWithResult(projectId, updates)).project;
+}
+
+export async function applyEmptySceneVisualPromptsWithResult(
+  projectId: string,
+  updates: Array<{ sceneId: string; visualPrompt: string }>,
+): Promise<{ project: ProjectDetail; updatedSceneIds: string[] }> {
   const project = await getProject(projectId);
   const latest = new Map<string, string>();
   for (const update of updates) latest.set(update.sceneId, update.visualPrompt);
-  if (latest.size === 0) return project;
+  if (latest.size === 0) return { project, updatedSceneIds: [] };
 
   const scenesById = new Map(project.scenes.map((scene) => [scene.id, scene]));
   for (const sceneId of latest.keys()) {
@@ -208,7 +215,7 @@ export async function applyEmptySceneVisualPrompts(
   }
 
   const emptyTargets = [...latest].filter(([sceneId]) => scenesById.get(sceneId)!.visualPrompt === '');
-  if (emptyTargets.length === 0) return project;
+  if (emptyTargets.length === 0) return { project, updatedSceneIds: [] };
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
   const arrayFilters: Record<string, unknown>[] = [];
@@ -218,13 +225,15 @@ export async function applyEmptySceneVisualPrompts(
     arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.visualPrompt`]: '' });
   }
 
-  const result = await getCollection<ProjectDoc>('projects').updateOne(
+  const previous = await getCollection<ProjectDoc>('projects').findOneAndUpdate(
     { _id: projectId, scenes: { $elemMatch: { id: { $in: emptyTargets.map(([sceneId]) => sceneId) }, visualPrompt: '' } } },
     { $set: set, $inc: { version: 1 } },
-    { arrayFilters },
+    { arrayFilters, returnDocument: 'before' },
   );
-  if (result.matchedCount === 0) return getProject(projectId);
-  return getProject(projectId);
+  const updatedSceneIds = previous
+    ? emptyTargets.filter(([sceneId]) => previous.scenes.some((scene) => scene.id === sceneId && scene.visualPrompt === '')).map(([sceneId]) => sceneId)
+    : [];
+  return { project: await getProject(projectId), updatedSceneIds };
 }
 
 export async function replaceProjectChapters(

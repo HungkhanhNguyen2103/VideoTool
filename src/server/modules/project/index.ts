@@ -3,6 +3,7 @@ export { projectRouter } from './routes';
 export { ensureProjectIndexes } from './indexes';
 export {
   applyEmptySceneVisualPrompts,
+  applyEmptySceneVisualPromptsWithResult,
   createProject,
   deleteProject,
   duplicateProject,

@@ -1,7 +1,7 @@
 import type { ProjectDetail } from '../../../contracts/project';
 import { getAiClient } from '../../shared/ai';
 import { AppError } from '../../shared/errors';
-import { applyEmptySceneVisualPrompts, getProject } from '../project';
+import { applyEmptySceneVisualPromptsWithResult, getProject } from '../project';
 import { buildVisualPromptPrompt, type VisualPromptSceneInput } from './ai/build-prompt';
 import { parseVisualPromptBatch } from './ai/parse-output';
 
@@ -38,7 +38,7 @@ function chapterScenes(project: ProjectDetail): VisualPromptSceneInput[][] {
   return chapters;
 }
 
-function excerpt(scenes: readonly VisualPromptSceneInput[]): string {
+function excerpt(scenes: readonly { visualPrompt: string }[]): string {
   return scenes.map((scene) => scene.visualPrompt.trim()).filter(Boolean).join(' | ').slice(0, 500);
 }
 
@@ -66,7 +66,7 @@ export async function generateVisualPrompts(
   const scenesByChapter = chapterScenes(project);
   const client = getAiClient(project.aiProvider);
   const result: VisualPromptJobResult = { updatedScenes: 0, skippedScenes: 0, failedChapters: [] };
-  let styleNote = '';
+  let styleNote = excerpt(project.scenes);
   let cancelled = false;
 
   for (const [chapterIndex, chapter] of project.chapters.entries()) {
@@ -76,7 +76,6 @@ export async function generateVisualPrompts(
     result.skippedScenes += prefilled;
 
     if (prefilled === scenes.length) {
-      if (!styleNote) styleNote = excerpt(scenes);
       await context.appendLog(`Chapter ${chapter.no}: all visual prompts already filled; skipped.`);
     } else {
       try {
@@ -106,12 +105,9 @@ export async function generateVisualPrompts(
 
         const idsByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene.sceneId]));
         const updates = batch.prompts.map((item) => ({ sceneId: idsByIndex.get(item.sceneIndex)!, visualPrompt: item.visualPrompt }));
-        const beforeWrite = await getProject(projectId);
         if (await context.isCancelled()) { cancelled = true; break; }
-        const updated = await applyEmptySceneVisualPrompts(projectId, updates);
-        const beforeById = new Map(beforeWrite.scenes.map((scene) => [scene.id, scene.visualPrompt]));
-        const afterById = new Map(updated.scenes.map((scene) => [scene.id, scene.visualPrompt]));
-        const changed = updates.filter((item) => beforeById.get(item.sceneId) === '' && afterById.get(item.sceneId) === item.visualPrompt).length;
+        const { updatedSceneIds } = await applyEmptySceneVisualPromptsWithResult(projectId, updates);
+        const changed = updatedSceneIds.length;
         result.updatedScenes += changed;
         result.skippedScenes += scenes.length - prefilled - changed;
         styleNote = batch.styleNote;

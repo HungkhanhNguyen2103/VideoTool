@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Script Task 4 visual prompt orchestration verified_
+_Last updated: 2026-09-23 · Script Task 4 review fixes verified_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (231 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -23,7 +23,7 @@ _Last updated: 2026-09-23 · Script Task 4 visual prompt orchestration verified_
 - Phase 3 final review fixes are covered by 81 passing tests: legacy project reads apply defaults for new script fields, chapter regeneration preserves concurrent edits, paragraph edits reset approval, empty scripts cannot be saved/finalized, and the client prevents overlapping regeneration streams with lifecycle abort cleanup.
 - Versioned documentary/explainer preset loading and the production Markdown copy step are implemented and verified.
 - Script generation and regeneration use preset-aware, versioned prompts in the script `ai/` boundary. Generated chapters, regenerated paragraphs, and visual batches share JSON parsing with 422 `SCRIPT_PARSE_ERROR` behavior.
-- Script Task 4 processes finalized scenes sequentially by chapter with stable project-global scene indexes. It validates the exact returned index set, retries one parse/schema/index failure, writes through the project-owned empty-only mutation, preserves existing prompts, carries a bounded style note, reports per-chapter progress, isolates chapter failures, and discards responses when cancellation is observed.
+- Script Task 4 processes finalized scenes sequentially by chapter with stable project-global scene indexes. It validates the exact returned index set, retries one parse/schema/index failure, writes through the project-owned empty-only mutation, preserves existing prompts, seeds a bounded style note from existing project prompts, reports per-chapter progress, isolates chapter failures, and discards responses when cancellation is observed. The project-owned companion returns atomic pre-image changed IDs for exact job counts while the original wrapper still returns `ProjectDetail`.
 
 ### Modules
 | Module | State | Notes |
@@ -91,6 +91,7 @@ Unknown `/api/*` returns JSON 404.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-23: Task 4 review fixes seed visual style from all existing non-empty prompts at job start; failed and skipped chapters preserve that context. `project.applyEmptySceneVisualPromptsWithResult` uses a single `findOneAndUpdate` pre-image to report exactly which empty prompts the atomic write filled; the original `ProjectDetail` wrapper delegates to it.
 - 2026-09-23: Script Task 4 maps each chapter to a stable slice of the finalized project scene array, validates complete global-index echoes before any write, and retries only parse/schema/index failures once. It carries a maximum 500-character continuity note, counts only empty scenes filled by the project mutation, and stops on cooperative cancellation without writing an in-flight response.
 - 2026-09-23: Script Task 3 makes `project.applyEmptySceneVisualPrompts` the sole added writer for AI visual prompts. It validates scene IDs, deduplicates last-value-wins, and uses a top-level empty-target predicate plus per-target array filters so manual edits win; no schema migration is needed. Mongo-backed script integration tests cover the public API while `project.test.ts` remains a todo.
 - 2026-09-22: Phase 5 Task 2 keeps audio, SFX, BGM, and final-render writes in `project`; BGM mood/file and render file/status each update atomically with one version increment.
