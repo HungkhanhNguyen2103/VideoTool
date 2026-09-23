@@ -41,3 +41,13 @@ export const ChapterSnapshotSchema = z.object({
   chapters: z.array(ChapterDocSchema),
 });
 export type ChapterSnapshot = z.input<typeof ChapterSnapshotSchema>;
+
+export const NARRATION_WORDS_PER_MINUTE = 150;
+
+export function countNarrationWords(text: string): number {
+  return text.match(/\S+/gu)?.length ?? 0;
+}
+
+export function estimateNarrationDurationSec(text: string): number {
+  return Math.max(1, Math.round(countNarrationWords(text) / NARRATION_WORDS_PER_MINUTE * 60));
+}

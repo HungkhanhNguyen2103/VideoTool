@@ -1,5 +1,6 @@
 import type { ProjectDetail } from '../../../../contracts/project';
-import type { ChapterDoc } from '../../../../contracts/script';
+import type { ChapterDoc, OpenLoop } from '../../../../contracts/script';
+import { NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
 import { loadScriptPreset, type ScriptPreset } from './presets/loader';
 
 export type BuiltPrompt = { system: string; user: string; promptVersion: string };
@@ -13,6 +14,12 @@ export type VisualPromptPromptInput = {
   project: ProjectDetail;
   chapter: ChapterDoc;
   scenes: readonly VisualPromptSceneInput[];
+  styleNote: string;
+};
+export type ChapterExpansionPromptInput = {
+  project: ProjectDetail;
+  chapter: Pick<ChapterDoc, 'no' | 'title' | 'role' | 'beat' | 'targetWords' | 'endsOnTension'>;
+  openLoops: readonly (OpenLoop | string)[];
   styleNote: string;
 };
 
@@ -45,6 +52,64 @@ export function buildScriptPrompt(project: ProjectDetail): BuiltPrompt {
       `Language: ${language(project)}`,
       `Chapter count: ${project.chapterCount ?? 'choose a suitable count'}`,
       `Target duration seconds: ${project.targetDurationSec}`,
+    ].join('\n'),
+    promptVersion: version(preset),
+  };
+}
+
+export function buildOutlinePrompt(project: ProjectDetail): BuiltPrompt {
+  const preset = loadScriptPreset(project.scriptPresetId);
+  const count = project.chapterCount ? `exactly ${project.chapterCount} chapters` : 'choose between 1 and 20 chapters';
+  const shape = project.scriptPresetId === 'hubris-trap'
+    ? 'Include motif with hunter, perfectPlan, blindSpot, and selfDestruction.'
+    : 'Do not include motif.';
+  const weighting = project.scriptPresetId === 'explainer'
+    ? 'Use a flatter explanatory progression rather than a dramatic five-act weighting.'
+    : 'Shape the outline around five-act weighting: 8% / 15% / 55% / 12% / 10%.';
+  return {
+    system: systemMessage(preset, `Return one JSON outline object with chapters, openLoops, and the preset-specific motif rule. Each chapter must have no, title, role, beat, positive targetWords, and endsOnTension. ${shape} ${weighting}`),
+    user: [
+      `Project title: ${project.title}`,
+      `Brief: ${project.brief}`,
+      `References: ${project.referencesText || '(none)'}`,
+      `Language: ${language(project)}`,
+      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words`,
+      `Create ${count}.`,
+    ].join('\n'),
+    promptVersion: version(preset),
+  };
+}
+
+export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput): BuiltPrompt {
+  const { project, chapter, openLoops, styleNote } = input;
+  const preset = loadScriptPreset(project.scriptPresetId);
+  return {
+    system: systemMessage(preset, 'Return one JSON object with paragraphs (string array) and styleNote (string, at most 500 characters).'),
+    user: [
+      `Language: ${language(project)}`,
+      `Chapter ${chapter.no}: ${chapter.title}`,
+      `Role: ${chapter.role || '(unspecified)'}`,
+      `Beat: ${chapter.beat || '(unspecified)'}`,
+      `Target words: ${chapter.targetWords ?? '(unspecified)'}`,
+      `Ends on tension: ${chapter.endsOnTension ? 'yes' : 'no'}`,
+      `Open loops: ${openLoops.map((loop) => typeof loop === 'string' ? loop : loop.question).join(' | ') || '(none)'}`,
+      `Existing style note: ${styleNote.slice(0, 500) || '(none)'}`,
+    ].join('\n\n'),
+    promptVersion: version(preset),
+  };
+}
+
+export function buildManualScriptPrompt(project: ProjectDetail): BuiltPrompt {
+  const preset = loadScriptPreset(project.scriptPresetId);
+  return {
+    system: systemMessage(preset, 'Return one complete script document with chapters containing no, title, role, beat, positive targetWords, endsOnTension, and paragraphs; also include openLoops and the preset-specific motif rule.'),
+    user: [
+      `Write the complete script document for project: ${project.title}`,
+      `Brief: ${project.brief}`,
+      `References: ${project.referencesText || '(none)'}`,
+      `Language: ${language(project)}`,
+      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words`,
+      project.chapterCount ? `Use exactly ${project.chapterCount} chapters.` : 'Choose between 1 and 20 chapters.',
     ].join('\n'),
     promptVersion: version(preset),
   };

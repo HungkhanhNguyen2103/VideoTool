@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ProjectDetailSchema } from '../../../../contracts/project';
 import { ChapterDocSchema } from '../../../../contracts/script';
 import { loadScriptPreset } from './presets/loader';
-import { buildRegenerationPrompt, buildScriptPrompt, buildVisualPromptPrompt } from './build-prompt';
-import { parseGeneratedChapters, parseRegeneratedParagraphs, parseVisualPromptBatch } from './parse-output';
+import { buildChapterExpansionPrompt, buildManualScriptPrompt, buildOutlinePrompt, buildRegenerationPrompt, buildScriptPrompt, buildVisualPromptPrompt } from './build-prompt';
+import { parseChapterExpansion, parseGeneratedChapters, parseManualScriptDocument, parseRegeneratedParagraphs, parseScriptOutline, parseVisualPromptBatch } from './parse-output';
 
 const project = ProjectDetailSchema.parse({
   id: 'project-1', title: 'River History', brief: 'Explain the history of the river.',
@@ -77,6 +77,49 @@ describe('script AI prompt boundary', () => {
 });
 
 describe('script AI parsers', () => {
+  it('parses an outline with chapter metadata and open loops', () => {
+    const result = parseScriptOutline(JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Open with a mystery', targetWords: 300, endsOnTension: true }],
+      openLoops: [{ question: 'What happened?', plantedInChapter: 1, resolvedInChapter: 1 }],
+    }), 'documentary');
+    expect(result.chapters[0]!.targetWords).toBe(300);
+  });
+
+  it('requires the four hubris motif fields and rejects motif for other presets', () => {
+    const motif = { hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The scheme turns inward' };
+    const chapter = { no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false };
+    expect(parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], motif }), 'hubris-trap')).toMatchObject({ motif });
+    expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [] }), 'hubris-trap')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], motif }), 'documentary')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+  });
+
+  it('parses expansion and manual document as distinct response shapes', () => {
+    expect(parseChapterExpansion('{"paragraphs":["Expanded scene"],"styleNote":"Muted palette"}')).toEqual({ paragraphs: ['Expanded scene'], styleNote: 'Muted palette' });
+    expect(parseManualScriptDocument(JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 2, endsOnTension: false, paragraphs: ['Expanded scene'] }],
+      openLoops: [],
+    }), 'explainer').chapters[0]!.paragraphs).toEqual(['Expanded scene']);
+    expect(() => parseChapterExpansion(JSON.stringify({ paragraphs: ['x'], styleNote: 'x'.repeat(501) }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(() => parseManualScriptDocument('{"paragraphs":["x"]}', 'explainer')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+  });
+
+  it('builds the three new prompt shapes with their required inputs', () => {
+    const outline = buildOutlinePrompt(project);
+    expect(outline.user).toContain('Total narration word budget: 300 words');
+    expect(outline.user).toContain('exactly 2 chapters');
+    expect(outline.system).toContain('five-act');
+
+    const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, openLoops: ['What happens next?'], styleNote: 'Muted palette' });
+    expect(expansion.user).toContain('Target words: 300');
+    expect(expansion.user).toContain('What happens next?');
+    expect(expansion.user).toContain('Muted palette');
+    expect(expansion.system).toContain('paragraphs');
+
+    const manual = buildManualScriptPrompt(project);
+    expect(manual.system).toContain('paragraphs');
+    expect(manual.user).toContain('complete script document');
+    expect(manual.system).not.toBe(manual.user);
+  });
   it.each([JSON.stringify(generated), `\`\`\`json\n${JSON.stringify(generated)}\n\`\`\``])('accepts generated chapters in raw or fenced JSON', (raw) => {
     expect(parseGeneratedChapters(raw)).toEqual(generated);
   });
