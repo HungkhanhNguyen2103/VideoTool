@@ -71,7 +71,7 @@ describe('chapterMetaText', () => {
     expect(chapterMetaText(chapter('c1', 'pending'))).toBeNull();
   });
   it('renders paragraph count and a word-based estimate during review', () => {
-    expect(chapterMetaText(chapter('c1', 'pending', { paragraphs: ['one', 'two words'] }))).toBe('2 cảnh · 1s');
+    expect(chapterMetaText(chapter('c1', 'pending', { paragraphs: ['one', 'two words'] }))).toBe('2 cảnh · 2s');
   });
 });
 
@@ -85,7 +85,7 @@ describe('chaptersSummaryText', () => {
       chapter('c1', 'approved', { paragraphs: ['one', 'two words'] }),
       chapter('c2', 'approved', { paragraphs: ['three four'] }),
     ];
-    expect(chaptersSummaryText(chapters)).toBe('2 chương • 3 cảnh • 2s');
+    expect(chaptersSummaryText(chapters)).toBe('2 chương • 3 cảnh • 3s');
   });
   it('reports zero chapters without summing anything', () => {
     expect(chaptersSummaryText([])).toBe('0 chương');
@@ -98,6 +98,7 @@ describe('word-based review duration helpers', () => {
     expect(chapterWordCount(chapter('c1', 'pending', { paragraphs: [' one\n two ', 'three'] }))).toBe(3);
     expect(chapterEstimatedDurationSec(chapter('c1', 'pending'))).toBeNull();
     expect(chapterEstimatedDurationSec(chapter('c1', 'pending', { paragraphs: ['one'] }))).toBe(1);
+    expect(chapterEstimatedDurationSec(chapter('c1', 'pending', { paragraphs: ['one', 'two words'] }))).toBe(2);
     expect(chapterEstimatedDurationSec(chapter('c1', 'pending', { paragraphs: [Array.from({ length: 150 }, () => 'word').join(' ')] }))).toBe(60);
   });
 });

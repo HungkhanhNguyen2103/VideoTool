@@ -35,7 +35,7 @@ export function chapterWordCount(chapter: Pick<ChapterDoc, 'paragraphs'>): numbe
 
 export function chapterEstimatedDurationSec(chapter: Pick<ChapterDoc, 'paragraphs'>): number | null {
   if (chapter.paragraphs.length === 0) return null;
-  return estimateNarrationDurationSec(chapter.paragraphs.join(' '));
+  return chapter.paragraphs.reduce((sum, paragraph) => sum + estimateNarrationDurationSec(paragraph), 0);
 }
 
 /** Review metadata estimates duration from current narration until finalization persists scene values. */
