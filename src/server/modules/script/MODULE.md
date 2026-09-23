@@ -9,6 +9,8 @@
 - Phase 3 Prompt 1 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration/finalization service, explicit worker handler, project routes/SSE, edge coverage, typed client streaming API, and ReviewScriptPage are implemented and verified.
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
 - Versioned Markdown files in `ai/presets/*.md` are the only preset source; `ai/presets/loader.ts` validates and loads them, and production builds copy them beside the bundled server and worker.
+- Initial generation and chapter regeneration compose selected preset guidance in `ai/build-prompt.ts`; the prompt version is `script-prompt-v1/<id>@<version>`. The service uses `ai/parse-output.ts` for both response types, preserving the existing 422 `SCRIPT_PARSE_ERROR` contract and final scene shape.
+- The AI boundary also defines a visual batch prompt and schema for the next task. It sends ordered scene indexes, narration, existing prompt references, and a bounded continuity note without exposing internal scene IDs. Exact returned index-set validation and writes belong to the visual orchestration task.
 
 ## Flow
 - Generate chapters asynchronously through the `generate-script` job.
@@ -56,6 +58,7 @@ needs-fix ──edit/regen──> pending or generating
 - The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; ReviewScriptPage's stepper state and shared theme-token usage are covered by pure Node tests, while full page rendering remains untested without a DOM dependency.
 
 ## Acceptance
+- Task 2 focused AI boundary suite: 33 tests passed; typecheck, lint, and full suite (216 passed, 1 skipped) passed on Windows. This task did not run a production build.
 - `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass; Vitest reports 81 passed and 3 stub files skipped.
 - `mongodb-memory-server` ran successfully; no fallback was required.
 - Built worker logged startup and graceful SIGINT shutdown.

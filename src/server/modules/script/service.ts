@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import type { ProjectDetail } from '../../../contracts/project';
 import type { ChapterDoc, ChapterSnapshot } from '../../../contracts/script';
 import { getAiClient } from '../../shared/ai';
@@ -13,30 +12,8 @@ import {
   restoreProjectChapters,
 } from '../project';
 import type { SceneDoc } from '../project';
-import { buildRegenerationPrompt, buildScriptPrompt } from './prompts';
-
-const GeneratedChapterSchema = z.object({
-  no: z.number().int().positive(),
-  title: z.string(),
-  paragraphs: z.array(z.string()).min(1),
-  scenesCount: z.null(),
-  durationSec: z.null(),
-});
-
-const RegeneratedParagraphsSchema = z.union([
-  z.array(z.string()).min(1),
-  z.object({ paragraphs: z.array(z.string()).min(1) }).transform((value) => value.paragraphs),
-]);
-
-function parseJson(text: string): unknown {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return JSON.parse(fenced?.[1] ?? trimmed);
-}
-
-function scriptParseError(): AppError {
-  return new AppError('AI returned invalid script structure.', 422, 'SCRIPT_PARSE_ERROR');
-}
+import { buildRegenerationPrompt, buildScriptPrompt } from './ai/build-prompt';
+import { parseGeneratedChapters, parseRegeneratedParagraphs } from './ai/parse-output';
 
 function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
   return { takenAt: new Date(), chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })) };
@@ -91,15 +68,8 @@ export async function generateScript(projectId: string, appendLog: (message: str
   ]);
   await appendLog('Parsing AI response…');
 
-  let parsed: unknown;
-  try {
-    parsed = parseJson(raw);
-  } catch {
-    throw scriptParseError();
-  }
-  const chapters = z.array(GeneratedChapterSchema).safeParse(parsed);
-  if (!chapters.success || chapters.data.length === 0) throw scriptParseError();
-  const saved: ChapterDoc[] = chapters.data.map((chapter, index) => ({
+  const chapters = parseGeneratedChapters(raw);
+  const saved: ChapterDoc[] = chapters.map((chapter, index) => ({
     ...chapter,
     id: newId(),
     no: index + 1,
@@ -135,15 +105,8 @@ export async function regenerateChapter(
       onChunk(chunk);
     }
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    let parsed: unknown;
-    try {
-      parsed = parseJson(raw);
-    } catch {
-      throw scriptParseError();
-    }
-    const paragraphs = RegeneratedParagraphsSchema.safeParse(parsed);
-    if (!paragraphs.success) throw scriptParseError();
-    const updated: ChapterDoc = { ...chapter, paragraphs: paragraphs.data, status: 'pending' };
+    const paragraphs = parseRegeneratedParagraphs(raw);
+    const updated: ChapterDoc = { ...chapter, paragraphs, status: 'pending' };
     const result = await patchProjectChapter(projectId, chapterId, { paragraphs: updated.paragraphs, status: updated.status });
     return result.chapters.find((item) => item.id === chapterId) ?? updated;
   } catch (error) {

@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Phase 5 Prompt 2 complete; versioned script preset loading and production preset packaging implemented and verified_
+_Last updated: 2026-09-23 · Script Task 2 prompt/parser migration verified_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (194 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (216 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -22,12 +22,13 @@ _Last updated: 2026-09-23 · Phase 5 Prompt 2 complete; versioned script preset 
 - `npm run typecheck`, `npm run lint`, `npm test` (101 passed, 2 skipped), and `npm run build` all pass on Windows. The client bundle contains no server environment/API-key identifiers.
 - Phase 3 final review fixes are covered by 81 passing tests: legacy project reads apply defaults for new script fields, chapter regeneration preserves concurrent edits, paragraph edits reset approval, empty scripts cannot be saved/finalized, and the client prevents overlapping regeneration streams with lifecycle abort cleanup.
 - Versioned documentary/explainer preset loading and the production Markdown copy step are implemented and verified.
+- Script generation and regeneration now use preset-aware, versioned prompts in the script `ai/` boundary. Generated chapters, regenerated paragraphs, and future visual batches share JSON parsing with 422 `SCRIPT_PARSE_ERROR` behavior; the visual batch builder/schema is ready for orchestration.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, and public render-engine mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | done | Phase 3 Prompt 1 complete: provider-neutral AI clients, chapter generation/regeneration/history/finalization, `generate-script` worker, routes/SSE, typed client API and ReviewScriptPage; verified with 81 tests, typecheck, lint, build and worker smoke test |
+| script | done | Phase 3 Prompt 1 complete; Task 2 migrates live script prompts and parsers to the typed `ai/` boundary, adds preset prompt versions and visual batch schema/builder, while retaining existing generation, regeneration, and finalization behavior |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
