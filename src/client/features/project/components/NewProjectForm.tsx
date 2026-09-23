@@ -204,6 +204,7 @@ export function NewProjectForm() {
               <select className={styles.input} id="preset" {...register('scriptPresetId')}>
                 <option value="documentary">Phim tài liệu (documentary)</option>
                 <option value="explainer">Giải thích (explainer)</option>
+                <option value="hubris-trap">Kẻ đi săn kiêu ngạo (Hubris Trap)</option>
               </select>
             </div>
             <div className={styles.field}>

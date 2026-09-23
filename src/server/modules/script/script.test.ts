@@ -173,6 +173,33 @@ describe('script contracts', () => {
     expect(snapshot.chapters[0]).toEqual(chapter);
   });
 
+  it('defaults narrative metadata and project outline fields for legacy-shaped data', () => {
+    const chapter = ChapterDocSchema.parse({
+      id: 'chapter-legacy',
+      no: 1,
+      title: 'Legacy',
+      paragraphs: ['Old paragraph'],
+      status: 'pending',
+      scenesCount: null,
+      durationSec: null,
+    });
+    expect(chapter).toMatchObject({ role: null, beat: '', targetWords: null, endsOnTension: false });
+
+    const detail = ProjectDetailSchema.parse({
+      id: 'project-legacy',
+      ...projectInput,
+      status: 'draft',
+      scenes: [],
+      chapters: [chapter],
+      aiProvider: 'deepseek',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    expect(detail.openLoops).toEqual([]);
+    expect(detail.motif).toBeNull();
+  });
+
   it('defaults a new project to DeepSeek and exposes chapters in project detail', () => {
     const input = CreateProjectRequestSchema.parse(projectInput);
     expect(input.aiProvider).toBe('deepseek');

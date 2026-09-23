@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Phase 6 script presets and visual prompts accepted_
+_Last updated: 2026-09-23 · Phase 7 Task 1 narrative contracts and hubris-trap preset verified_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -28,12 +28,13 @@ _Last updated: 2026-09-23 · Phase 6 script presets and visual prompts accepted_
 - Script Task 6 adds the Studio `Tạo visual prompt` action, typed client API, and enqueue-gap-safe project-job predicate; the focused asset API tests, typecheck, and lint pass.
 - Script Task 7 pins the mechanical documentary/explainer distinction, exact visual-batch index/count retry contract, rerun style seeding, cancellation/race behavior, and route/worker/client regressions; the focused suite has 106 passed, typecheck/lint pass, and the full suite has 252 passed with 1 skipped.
 - Phase 6 acceptance is complete: typecheck, lint, 252 tests passed with 1 skipped, and the production build passed. Presets copy to `dist/presets/`; the project-owned atomic empty-only mutation, sequential retry/cancellation job, and Studio action are covered. Mocked providers made no network calls; live provider and 1440px browser comparison remain documented gaps.
+- Phase 7 Task 1 adds additive chapter narrative metadata, project `openLoops`/`motif` defaults, the `hubris-trap` preset, and its New Project option; focused tests pass 52/52, typecheck/lint pass, and the full suite passes 255 tests with the pre-existing project todo skipped.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets, sequential visual-prompt orchestration, finalized-scene enqueue route, explicit worker registration, and regression coverage over the typed AI boundary and project-owned empty-only mutation. |
+| script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets and visual-prompt orchestration; Phase 7 Task 1 adds additive narrative metadata and the `hubris-trap` preset. |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ChapterDocSchema } from './script';
+import { ChapterDocSchema, HubrisMotifSchema, OpenLoopSchema } from './script';
 
 export const PROJECT_STATUSES = ['draft', 'script', 'assets', 'rendered'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -10,7 +10,7 @@ export type RenderEngine = (typeof RENDER_ENGINES)[number];
 export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
-export const SCRIPT_PRESET_IDS = ['documentary', 'explainer'] as const;
+export const SCRIPT_PRESET_IDS = ['documentary', 'explainer', 'hubris-trap'] as const;
 export type ScriptPresetId = (typeof SCRIPT_PRESET_IDS)[number];
 
 export const ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const;
@@ -152,6 +152,8 @@ export const ProjectDetailSchema = z.object({
   renderSettings: RenderSettingsSchema,
   scenes: z.array(SceneSchema),
   chapters: z.array(ChapterDocSchema).default([]),
+  openLoops: z.array(OpenLoopSchema).default([]),
+  motif: HubrisMotifSchema.nullable().default(null),
   version: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),

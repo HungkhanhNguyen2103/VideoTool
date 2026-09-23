@@ -20,7 +20,7 @@ afterAll(async () => {
 });
 
 describe('loadScriptPreset', () => {
-  it.each(['documentary', 'explainer'] as const)('loads the %s preset with its authored sections', (id) => {
+  it.each(['documentary', 'explainer', 'hubris-trap'] as const)('loads the %s preset with its authored sections', (id) => {
     const preset = loadScriptPreset(id);
 
     expect(preset.id).toBe(id);
@@ -70,7 +70,7 @@ describe('script preset packaging', () => {
 
     const destination = path.join(root, 'dist/presets');
     const copied = await readdir(destination);
-    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md']);
+    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md']);
     expect(await readFile(path.join(destination, 'documentary.md'), 'utf8')).toContain('id: documentary');
 
     const secondRun = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });

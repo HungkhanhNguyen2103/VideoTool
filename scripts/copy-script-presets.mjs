@@ -7,6 +7,7 @@ const source = join(root, 'src/server/modules/script/ai/presets');
 const destination = join(root, 'dist/presets');
 
 await mkdir(destination, { recursive: true });
-for (const name of ['documentary.md', 'explainer.md']) {
+const names = (await readdir(source)).filter((name) => name.endsWith('.md')).sort();
+for (const name of names) {
   await cp(join(source, name), join(destination, name));
 }

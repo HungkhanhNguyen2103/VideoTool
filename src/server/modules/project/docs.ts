@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS } from '../../../contracts/project';
-import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/script';
+import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 
 export const SceneDocSchema = z.object({
   id: z.string(),
@@ -45,6 +45,8 @@ export const ProjectDocSchema = z.object({
   /** Embedded scenes, in order. Empty until the `script` module writes them (Phase 3). */
   scenes: z.array(SceneDocSchema),
   chapters: z.array(ChapterDocSchema).default([]),
+  openLoops: z.array(OpenLoopSchema).default([]),
+  motif: HubrisMotifSchema.nullable().default(null),
   chapterHistory: z.array(ChapterSnapshotSchema).default([]),
   /** Optimistic lock: bump on every write, compare-and-swap on update. */
   version: z.number().int(),
