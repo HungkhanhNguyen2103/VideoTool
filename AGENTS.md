@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Phase 7 Task 6 word-based review and finalization durations verified_
+_Last updated: 2026-09-23 · Phase 7 acceptance verified: outline generation, manual mode, provider controls, and word-based durations_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -31,12 +31,13 @@ _Last updated: 2026-09-23 · Phase 7 Task 6 word-based review and finalization d
 - Phase 7 Task 1 adds additive chapter narrative metadata, project `openLoops`/`motif` defaults, the `hubris-trap` preset, and its New Project option; focused tests pass 52/52, typecheck/lint pass, and the full suite passes 255 tests with the pre-existing project todo skipped.
 - Phase 7 Task 6 uses shared 150-WPM word counting for review estimates and finalization scene durations; the legacy even-split assertions were rewritten to exact per-scene `[1, 1, 2]` values. Focused duration tests pass 65/65, typecheck/lint pass, and the full suite passes 276 tests with the pre-existing project todo skipped.
 - Phase 7 Task 7 adds client provider selection, automatic/manual generation controls, typed manual prompt/import APIs, preserved pasted text on import errors, and narrative metadata display. Client-focused tests pass 29/29; typecheck, lint, build, and full regression pass.
+- Phase 7 acceptance adds the final regression matrix for preset distinction, motif/count validation, sequential outline expansion, provider/manual routes, cancellation/failure isolation, client controls, and word-based duration parity. The full suite passes 282 tests across 22 files with the pre-existing project todo skipped; typecheck, lint, build, packaging, secret-scan, and module-boundary checks all pass.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets and visual-prompt orchestration; Phase 7 Tasks 1–6 add narrative metadata, outline/expansion generation, manual/provider routes, and word-based duration estimates. |
+| script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets and visual-prompt orchestration; Phase 7 adds narrative metadata, outline/expansion generation, manual/provider routes, client controls, and word-based duration estimates. |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |

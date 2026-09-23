@@ -120,6 +120,16 @@ describe('script AI parsers', () => {
     expect(manual.user).toContain('complete script document');
     expect(manual.system).not.toBe(manual.user);
   });
+
+  it('keeps hubris-trap outline guidance distinct from flatter explainer weighting', () => {
+    const hubris = buildOutlinePrompt({ ...project, scriptPresetId: 'hubris-trap' });
+    const explainer = buildOutlinePrompt({ ...project, scriptPresetId: 'explainer' });
+
+    expect(hubris.system).toContain('hunter, perfectPlan, blindSpot, and selfDestruction');
+    expect(hubris.system).toContain('8% / 15% / 55% / 12% / 10%');
+    expect(explainer.system).toContain('flatter explanatory progression');
+    expect(explainer.system).not.toContain('8% / 15% / 55% / 12% / 10%');
+  });
   it.each([JSON.stringify(generated), `\`\`\`json\n${JSON.stringify(generated)}\n\`\`\``])('accepts generated chapters in raw or fenced JSON', (raw) => {
     expect(parseGeneratedChapters(raw)).toEqual(generated);
   });
