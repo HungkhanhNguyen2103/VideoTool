@@ -1,6 +1,7 @@
 export { handleGenerateScript } from './handler';
 export type { ScriptJobPayload } from './handler';
 export { generateScript, regenerateChapter, finalizeScript, saveGeneratedScript } from './service';
+export type { ScriptGenerationJobContext } from './service';
 export { createScriptRouter } from './routes';
 export type { BuiltPrompt, VisualPromptPromptInput, VisualPromptSceneInput } from './ai/build-prompt';
 export { generateVisualPrompts } from './visual-prompts';

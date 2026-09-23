@@ -258,37 +258,45 @@ describe('script contracts', () => {
   });
 
   it('generates chapters, logs milestones, and sets project status to script', async () => {
-    aiMock.chat.mockResolvedValue(JSON.stringify([
-      { no: 1, title: 'Opening', paragraphs: ['First', 'Second'], scenesCount: null, durationSec: null },
-      { no: 2, title: 'Context', paragraphs: ['Third'], scenesCount: null, durationSec: null },
-    ]));
+    aiMock.chat
+      .mockResolvedValueOnce(JSON.stringify({
+        chapters: [
+      { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: true },
+      { no: 2, title: 'Context', role: 'resolution', beat: 'Close', targetWords: 1, endsOnTension: false },
+        ], openLoops: [],
+      }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['First'], styleNote: 'Style 1' }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Second'], styleNote: 'Style 2' }));
     const project = await createProject(projectInput);
     const logs: string[] = [];
 
-    await generateScript(project.id, async (message) => { logs.push(message); });
+    await generateScript(project.id, {
+      appendLog: async (message) => { logs.push(message); },
+      isCancelled: async () => false,
+      reportProgress: async () => undefined,
+    });
 
     const saved = await getProject(project.id);
     expect(saved.status).toBe('script');
     expect(saved.chapters).toHaveLength(2);
-    expect(saved.chapters[0]!).toMatchObject({ no: 1, status: 'pending', scenesCount: null, durationSec: null });
+    expect(saved.chapters[0]!).toMatchObject({ no: 1, status: 'pending', paragraphs: ['First'], scenesCount: null, durationSec: null });
     expect(saved.chapters[0]!.id).toHaveLength(26);
     expect(await getProjectHistory(project.id)).toEqual([]);
     expect(logs).toEqual([
       'Loading project and AI client…',
-      'Sending request to AI…',
-      'Parsing AI response…',
+      'Sending outline request to AI…',
+      'Expanding chapter 1/2…',
+      'Expanding chapter 2/2…',
       'Script saved — 2 chapters.',
     ]);
-    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([
-      expect.objectContaining({ content: expect.stringContaining(projectInput.brief) }),
-    ]));
+    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]));
   });
 
   it('maps invalid AI JSON to SCRIPT_PARSE_ERROR without writing chapters', async () => {
     aiMock.chat.mockResolvedValue('{not valid json');
     const project = await createProject(projectInput);
 
-    await expect(generateScript(project.id, vi.fn())).rejects.toMatchObject({ code: 'SCRIPT_PARSE_ERROR', status: 422 });
+    await expect(generateScript(project.id, { appendLog: vi.fn(), isCancelled: async () => false, reportProgress: vi.fn() })).rejects.toMatchObject({ code: 'SCRIPT_PARSE_ERROR', status: 422 });
     expect((await getProject(project.id)).chapters).toEqual([]);
   });
 
@@ -296,7 +304,7 @@ describe('script contracts', () => {
     aiMock.chat.mockResolvedValue('[]');
     const project = await createProject(projectInput);
 
-    await expect(generateScript(project.id, vi.fn())).rejects.toMatchObject({ code: 'SCRIPT_PARSE_ERROR', status: 422 });
+    await expect(generateScript(project.id, { appendLog: vi.fn(), isCancelled: async () => false, reportProgress: vi.fn() })).rejects.toMatchObject({ code: 'SCRIPT_PARSE_ERROR', status: 422 });
     expect((await getProject(project.id)).chapters).toEqual([]);
     expect((await getProject(project.id)).status).toBe('draft');
   });

@@ -13,8 +13,9 @@ import {
   restoreProjectChapters,
 } from '../project';
 import type { SceneDoc } from '../project';
-import { buildRegenerationPrompt, buildScriptPrompt } from './ai/build-prompt';
-import { parseGeneratedChapters, parseRegeneratedParagraphs } from './ai/parse-output';
+import { buildChapterExpansionPrompt, buildOutlinePrompt, buildRegenerationPrompt } from './ai/build-prompt';
+import { parseChapterExpansion, parseRegeneratedParagraphs, parseScriptOutline, validateScriptOutlineChapterCount } from './ai/parse-output';
+import { countNarrationWords } from '../../../contracts/script';
 
 function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
   return { takenAt: new Date(), chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })) };
@@ -51,6 +52,12 @@ export async function getChapterHistory(projectId: string): Promise<ChapterSnaps
 export type GeneratedScriptChapter = Pick<ChapterDoc, 'no' | 'title' | 'paragraphs' | 'scenesCount' | 'durationSec'> &
   Partial<Pick<ChapterDoc, 'role' | 'beat' | 'targetWords' | 'endsOnTension'>>;
 
+export type ScriptGenerationJobContext = {
+  reportProgress: (pct: number, result?: unknown) => Promise<void>;
+  isCancelled: () => Promise<boolean>;
+  appendLog: (message: string) => Promise<void>;
+};
+
 export async function saveGeneratedScript(
   projectId: string,
   chapters: GeneratedScriptChapter[],
@@ -80,21 +87,62 @@ export async function restoreChapters(projectId: string, index: number): Promise
   return updated.chapters;
 }
 
-export async function generateScript(projectId: string, appendLog: (message: string) => Promise<void>): Promise<void> {
+export async function generateScript(projectId: string, context: ScriptGenerationJobContext): Promise<void> {
   const project = await getProject(projectId);
-  await appendLog('Loading project and AI client…');
+  await context.appendLog('Loading project and AI client…');
   const aiClient = getAiClient(project.aiProvider);
-  const prompt = buildScriptPrompt(project);
-  await appendLog('Sending request to AI…');
-  const raw = await aiClient.chat([
-    { role: 'system', content: prompt.system },
-    { role: 'user', content: prompt.user },
+  if (await context.isCancelled()) return;
+  const outlinePrompt = buildOutlinePrompt(project);
+  await context.appendLog('Sending outline request to AI…');
+  const outlineRaw = await aiClient.chat([
+    { role: 'system', content: outlinePrompt.system },
+    { role: 'user', content: outlinePrompt.user },
   ]);
-  await appendLog('Parsing AI response…');
+  if (await context.isCancelled()) return;
+  const outline = validateScriptOutlineChapterCount(parseScriptOutline(outlineRaw, project.scriptPresetId), project.chapterCount);
+  const saved = await saveGeneratedScript(projectId, outline.chapters.map((chapter) => ({
+    ...chapter,
+    paragraphs: [],
+    scenesCount: null,
+    durationSec: null,
+  })), outline.openLoops, 'motif' in outline ? outline.motif : null);
+  await context.reportProgress(0, { chapters: saved.chapters.length });
 
-  const chapters = parseGeneratedChapters(raw);
-  const saved = await saveGeneratedScript(projectId, chapters);
-  await appendLog(`Script saved — ${saved.chapters.length} chapters.`);
+  let styleNote = '';
+  for (const [index, chapter] of saved.chapters.entries()) {
+    if (await context.isCancelled()) return;
+    try {
+      const input = { project, chapter, openLoops: outline.openLoops, styleNote };
+      const prompt = buildChapterExpansionPrompt(input);
+      await context.appendLog(`Expanding chapter ${index + 1}/${saved.chapters.length}…`);
+      const raw = await aiClient.chat([
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ]);
+      if (await context.isCancelled()) return;
+      let expansion = parseChapterExpansion(raw);
+      if (chapter.targetWords !== null && countNarrationWords(expansion.paragraphs.join(' ')) < chapter.targetWords * 0.8) {
+        const retryPrompt = {
+          ...prompt,
+          user: `${prompt.user}\n\nPrevious response was ${countNarrationWords(expansion.paragraphs.join(' '))} words; target is ${chapter.targetWords}. Retry once and reach at least 80% of the target.`,
+        };
+        const retryRaw = await aiClient.chat([
+          { role: 'system', content: retryPrompt.system },
+          { role: 'user', content: retryPrompt.user },
+        ]);
+        if (await context.isCancelled()) return;
+        expansion = parseChapterExpansion(retryRaw);
+      }
+      if (await context.isCancelled()) return;
+      await patchProjectChapter(projectId, chapter.id, { paragraphs: expansion.paragraphs, status: 'pending' });
+      styleNote = expansion.styleNote;
+    } catch (error) {
+      await patchProjectChapter(projectId, chapter.id, { status: 'needs-fix' });
+      await context.appendLog(`Chapter ${index + 1} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
+    await context.reportProgress(Math.round(((index + 1) / saved.chapters.length) * 100));
+  }
+  await context.appendLog(`Script saved — ${saved.chapters.length} chapters.`);
 }
 
 export async function regenerateChapter(

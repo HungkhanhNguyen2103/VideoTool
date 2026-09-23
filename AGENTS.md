@@ -27,7 +27,7 @@ _Last updated: 2026-09-23 · Phase 7 Task 1 narrative contracts and hubris-trap 
 - Script Task 5 exposes `POST /api/project/:id/scenes/generate-visual-prompts` with finalized-scene readiness validation and registers `generate-visual-prompts` explicitly in the worker; route/worker focused tests (45) plus typecheck and lint pass.
 - Script Task 6 adds the Studio `Tạo visual prompt` action, typed client API, and enqueue-gap-safe project-job predicate; the focused asset API tests, typecheck, and lint pass.
 - Script Task 7 pins the mechanical documentary/explainer distinction, exact visual-batch index/count retry contract, rerun style seeding, cancellation/race behavior, and route/worker/client regressions; the focused suite has 106 passed, typecheck/lint pass, and the full suite has 252 passed with 1 skipped.
-- Phase 6 acceptance is complete: typecheck, lint, 252 tests passed with 1 skipped, and the production build passed. Presets copy to `dist/presets/`; the project-owned atomic empty-only mutation, sequential retry/cancellation job, and Studio action are covered. Mocked providers made no network calls; live provider and 1440px browser comparison remain documented gaps.
+- Phase 6 Task 4 is complete: the generate-script worker now persists a validated outline and expands chapters sequentially with progress, cancellation, one short-response retry, and later-chapter continuation after failures. Later Phase 6 route/UI/acceptance work remains.
 - Phase 7 Task 1 adds additive chapter narrative metadata, project `openLoops`/`motif` defaults, the `hubris-trap` preset, and its New Project option; focused tests pass 52/52, typecheck/lint pass, and the full suite passes 255 tests with the pre-existing project todo skipped.
 
 ### Modules
@@ -176,7 +176,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Script-presets/visual-prompts Phase 6 is complete and accepted. See `docs/superpowers/acceptance/2026-09-23-phase6-script-presets-visual-prompts-acceptance.md` for command evidence and remaining environment gaps.
+Script-presets/visual-prompts Phase 6 is in progress. Tasks 1–4 are committed on `main`; route/UI/acceptance tasks remain before the phase acceptance document is finalized.
 
 ## 2. Stack
 

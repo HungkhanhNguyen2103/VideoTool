@@ -20,7 +20,7 @@
 - `POST /api/project/:id/scenes/generate-visual-prompts` is script-owned because it enqueues preset-aware narration-to-visual work. It accepts only projects with non-empty scenes, positive `scenesCount` on every chapter, and a chapter-count sum equal to the scene array length; otherwise it returns `SCENES_NOT_READY` without creating a job. The exact `generate-visual-prompts` handler is registered in `src/worker/registry.ts`.
 
 ## Flow
-- Generate chapters asynchronously through the `generate-script` job.
+- Generate chapters asynchronously through the `generate-script` job: persist a validated outline first, then expand chapters sequentially with one short-response retry and cooperative cancellation.
 - Regenerate one chapter through inline SSE so token chunks can be cancelled by the client.
 - Snapshot chapter state before mutations and retain the newest ten snapshots.
 - Normalize legacy project documents on read so new `aiProvider`, `chapters`, and `chapterHistory` fields receive schema defaults.

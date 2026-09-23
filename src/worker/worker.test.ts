@@ -63,7 +63,7 @@ describe('script job registration', () => {
       status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
       progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled, appendLog });
-    expect(mocks.generateScript).toHaveBeenCalledWith('project-2', appendLog);
+    expect(mocks.generateScript).toHaveBeenCalledWith('project-2', expect.objectContaining({ reportProgress: expect.any(Function), isCancelled, appendLog }));
   });
 
   it('does not start generation when the job is already cancelled', async () => {
