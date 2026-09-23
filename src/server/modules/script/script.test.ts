@@ -196,7 +196,10 @@ describe('script contracts', () => {
   it('imports a manual document through the shared save path without calling the AI client', async () => {
     const project = await createProject(projectInput);
     const raw = JSON.stringify({
-      chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 4, endsOnTension: true, paragraphs: ['Manual paragraph'] }],
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 4, endsOnTension: true, paragraphs: ['Manual paragraph'] },
+        { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 4, endsOnTension: false, paragraphs: ['Manual conclusion'] },
+      ],
       openLoops: [],
     });
     const baseUrl = await startScriptServer();
@@ -208,6 +211,22 @@ describe('script contracts', () => {
     expect(body.chapters[0]).toMatchObject({ title: 'Opening', paragraphs: ['Manual paragraph'], status: 'pending' });
     expect(aiMock.chat).not.toHaveBeenCalled();
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('rejects a manual chapter-count mismatch without changing the project', async () => {
+    const project = await createProject(projectInput);
+    const raw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Only chapter', role: 'hook', beat: 'Open', targetWords: 4, endsOnTension: false, paragraphs: ['Manual paragraph'] }],
+      openLoops: [],
+    });
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw }),
+    });
+    const body = await response.json();
+    expect(response.status).toBe(422);
+    expect(body.error.code).toBe('SCRIPT_PARSE_ERROR');
+    expect(await getProject(project.id)).toEqual(project);
   });
 
   it('rejects malformed manual text without changing the project', async () => {

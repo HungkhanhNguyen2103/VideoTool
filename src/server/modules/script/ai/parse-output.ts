@@ -27,7 +27,10 @@ export function parseScriptOutline(raw: string, presetId: ScriptPresetId): Scrip
   return validate(raw, schemaForScriptPreset(presetId));
 }
 
-export function validateScriptOutlineChapterCount(outline: ScriptOutline, requestedChapterCount: number | null): ScriptOutline {
+export function validateScriptOutlineChapterCount<T extends { chapters: readonly unknown[] }>(
+  outline: T,
+  requestedChapterCount: number | null,
+): T {
   const count = outline.chapters.length;
   const valid = requestedChapterCount === null ? count >= 1 && count <= 20 : count === requestedChapterCount;
   if (!valid) throw new AppError('AI returned an invalid chapter count.', 422, 'SCRIPT_PARSE_ERROR');

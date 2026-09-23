@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getProject, setProjectAiProvider } from '../project';
 import { AppError } from '../../shared/errors';
 import { buildManualScriptPrompt } from './ai/build-prompt';
-import { parseManualScriptDocument } from './ai/parse-output';
+import { parseManualScriptDocument, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
@@ -64,6 +64,7 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): R
     const body = ManualImportSchema.parse(req.body);
     const project = await getProject(req.params.id);
     const document = parseManualScriptDocument(body.raw, project.scriptPresetId);
+    validateScriptOutlineChapterCount(document, project.chapterCount);
     const saved = await saveGeneratedScript(project.id, document.chapters, document.openLoops, 'motif' in document ? document.motif : null);
     res.json(saved);
   });
