@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { fileUrlForSummary, filesByPurpose, generateAllVoiceovers, generateBgm, generateSceneSfx, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setRenderEngine } from './api';
+import { fileUrlForSummary, filesByPurpose, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setRenderEngine } from './api';
 
 const project = {
   id: 'project-1',
@@ -50,6 +50,21 @@ describe('asset API helpers', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/project/project%2F1/scenes/scene%2F1/generate-sfx', expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/project/project%2F1/generate-bgm', expect.objectContaining({ body: JSON.stringify({ mood: 'calm' }) }));
     expect(fetchMock).toHaveBeenNthCalledWith(5, '/api/project/project%2F1/render', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('queues visual prompt generation through the project route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-1' }), { status: 201, headers: { 'content-type': 'application/json' } }));
+
+    await expect(generateVisualPrompts('project/1')).resolves.toEqual({ jobId: 'job-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-visual-prompts', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('keeps a queued project job active through the enqueue-to-progress gap', () => {
+    expect(isProjectJobActive(null, null)).toBe(false);
+    expect(isProjectJobActive('job-1', null)).toBe(true);
+    expect(isProjectJobActive('job-1', { status: 'done' })).toBe(false);
+    expect(isProjectJobActive('job-1', { status: 'failed' })).toBe(false);
+    expect(isProjectJobActive('job-1', { status: 'cancelled' })).toBe(false);
   });
 
   it('updates the render engine with the exact PATCH route and body', async () => {
