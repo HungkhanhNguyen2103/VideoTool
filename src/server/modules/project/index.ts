@@ -2,6 +2,7 @@
 export { projectRouter } from './routes';
 export { ensureProjectIndexes } from './indexes';
 export {
+  applyEmptySceneVisualPrompts,
   createProject,
   deleteProject,
   duplicateProject,

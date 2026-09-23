@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Script Task 2 prompt/parser migration verified_
+_Last updated: 2026-09-23 · Script Task 3 project-owned visual prompt mutation verified_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (216 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (221 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -27,7 +27,7 @@ _Last updated: 2026-09-23 · Script Task 2 prompt/parser migration verified_
 ### Modules
 | Module | State | Notes |
 |---|---|---|
-| project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, and public render-engine mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
+| project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete; Task 2 migrates live script prompts and parsers to the typed `ai/` boundary, adds preset prompt versions and visual batch schema/builder, while retaining existing generation, regeneration, and finalization behavior |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
@@ -90,6 +90,7 @@ Unknown `/api/*` returns JSON 404.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-09-23: Script Task 3 makes `project.applyEmptySceneVisualPrompts` the sole added writer for AI visual prompts. It validates scene IDs, deduplicates last-value-wins, and uses a top-level empty-target predicate plus per-target array filters so manual edits win; no schema migration is needed. Mongo-backed script integration tests cover the public API while `project.test.ts` remains a todo.
 - 2026-09-22: Phase 5 Task 2 keeps audio, SFX, BGM, and final-render writes in `project`; BGM mood/file and render file/status each update atomically with one version increment.
 - 2026-09-22: Phase 5 Prompt 2 chooses copy-based Remotion staging into the effective bundle `public/` directory because `bundle()` snapshots its source public directory; this preserves bundle-once behavior without coupling renders to Express uptime.
 - 2026-09-22: Phase 5 Prompt 2 implementation is split into seven sequential TDD tasks: scaffold/build isolation, project mutation, renderer/staging, route wiring, Studio selector, conditional integration, and acceptance docs.

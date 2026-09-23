@@ -6,7 +6,7 @@ import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/scri
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
-import { createProject, getProject, getProjectHistory, replaceProjectChapters } from '../project';
+import { applyEmptySceneVisualPrompts, createProject, getProject, getProjectHistory, replaceProjectChapters, replaceProjectScenes } from '../project';
 import { finalizeScript, generateScript, patchChapter, regenerateChapter } from './service';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
@@ -45,6 +45,60 @@ async function startScriptServer(): Promise<string> {
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
   return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
 }
+
+async function projectWithFinalizedScenes() {
+  const project = await createProject(projectInput);
+  await replaceProjectScenes(project.id, [
+    { id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
+    { id: 'scene-2', narration: 'Two', visualPrompt: '', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
+    { id: 'scene-3', narration: 'Three', visualPrompt: 'Manual prompt', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
+  ], 'assets');
+  return getProject(project.id);
+}
+
+describe('empty scene visual prompts', () => {
+  it('applies two targets in one version increment and keeps the last duplicate value', async () => {
+    const project = await projectWithFinalizedScenes();
+    const updated = await applyEmptySceneVisualPrompts(project.id, [
+      { sceneId: 'scene-1', visualPrompt: 'First value' },
+      { sceneId: 'scene-2', visualPrompt: 'Second value' },
+      { sceneId: 'scene-1', visualPrompt: 'Last value' },
+    ]);
+    expect(updated.version).toBe(project.version + 1);
+    expect(updated.scenes.map((scene) => scene.visualPrompt)).toEqual(['Last value', 'Second value', 'Manual prompt']);
+  });
+
+  it('rejects a missing scene before changing any valid scene', async () => {
+    const project = await projectWithFinalizedScenes();
+    await expect(applyEmptySceneVisualPrompts(project.id, [
+      { sceneId: 'scene-1', visualPrompt: 'Generated' },
+      { sceneId: 'missing', visualPrompt: 'Invalid' },
+    ])).rejects.toMatchObject({ code: 'not_found' });
+    expect(await getProject(project.id)).toEqual(project);
+  });
+
+  it('preserves a non-empty manual prompt while updating an empty target', async () => {
+    const project = await projectWithFinalizedScenes();
+    const updated = await applyEmptySceneVisualPrompts(project.id, [
+      { sceneId: 'scene-1', visualPrompt: 'Generated' },
+      { sceneId: 'scene-3', visualPrompt: 'Overwrite attempt' },
+    ]);
+    expect(updated.scenes.map((scene) => scene.visualPrompt)).toEqual(['Generated', '', 'Manual prompt']);
+    expect(updated.version).toBe(project.version + 1);
+  });
+
+  it('does not change the project or version when every target is non-empty', async () => {
+    const project = await projectWithFinalizedScenes();
+    const updated = await applyEmptySceneVisualPrompts(project.id, [{ sceneId: 'scene-3', visualPrompt: 'Overwrite attempt' }]);
+    expect(updated).toEqual(project);
+    expect(await getProject(project.id)).toEqual(project);
+  });
+
+  it('returns the current project unchanged for an empty update list', async () => {
+    const project = await projectWithFinalizedScenes();
+    expect(await applyEmptySceneVisualPrompts(project.id, [])).toEqual(project);
+  });
+});
 
 describe('script contracts', () => {
   it('accepts chapters and snapshots with stable chapter metadata', () => {

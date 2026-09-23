@@ -193,6 +193,40 @@ export async function applySceneAssets(
   return getProject(id);
 }
 
+export async function applyEmptySceneVisualPrompts(
+  projectId: string,
+  updates: Array<{ sceneId: string; visualPrompt: string }>,
+): Promise<ProjectDetail> {
+  const project = await getProject(projectId);
+  const latest = new Map<string, string>();
+  for (const update of updates) latest.set(update.sceneId, update.visualPrompt);
+  if (latest.size === 0) return project;
+
+  const scenesById = new Map(project.scenes.map((scene) => [scene.id, scene]));
+  for (const sceneId of latest.keys()) {
+    if (!scenesById.has(sceneId)) throw new NotFound('Không tìm thấy cảnh.');
+  }
+
+  const emptyTargets = [...latest].filter(([sceneId]) => scenesById.get(sceneId)!.visualPrompt === '');
+  if (emptyTargets.length === 0) return project;
+
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  const arrayFilters: Record<string, unknown>[] = [];
+  for (const [index, [sceneId, visualPrompt]] of emptyTargets.entries()) {
+    const identifier = `scene${index}`;
+    set[`scenes.$[${identifier}].visualPrompt`] = visualPrompt;
+    arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.visualPrompt`]: '' });
+  }
+
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: projectId, scenes: { $elemMatch: { id: { $in: emptyTargets.map(([sceneId]) => sceneId) }, visualPrompt: '' } } },
+    { $set: set, $inc: { version: 1 } },
+    { arrayFilters },
+  );
+  if (result.matchedCount === 0) return getProject(projectId);
+  return getProject(projectId);
+}
+
 export async function replaceProjectChapters(
   id: string,
   chapters: ChapterDoc[],
