@@ -1,5 +1,5 @@
 import type { ProjectDetail } from '../../../contracts/project';
-import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
+import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
 import { getAiClient } from '../../shared/ai';
 import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
@@ -186,12 +186,6 @@ export async function regenerateChapter(
   }
 }
 
-function sceneDurations(target: number, count: number): number[] {
-  const base = Math.floor(target / count);
-  const remainder = target - base * count;
-  return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0));
-}
-
 export async function finalizeScript(projectId: string): Promise<void> {
   const project: ProjectDetail = await getProject(projectId);
   if (project.chapters.length === 0) {
@@ -201,14 +195,10 @@ export async function finalizeScript(projectId: string): Promise<void> {
     throw new AppError('All chapters must be approved before finalizing.', 422, 'NOT_ALL_APPROVED');
   }
   const snapshot = snapshotOf(project.chapters);
-  const paragraphCount = project.chapters.reduce((sum, chapter) => sum + Math.max(chapter.paragraphs.length, 1), 0);
-  const durations = sceneDurations(project.targetDurationSec, paragraphCount);
-  let durationIndex = 0;
   const scenes: SceneDoc[] = [];
   const finalizedChapters = project.chapters.map((chapter) => {
     const paragraphs = chapter.paragraphs.length ? chapter.paragraphs : [''];
-    const chapterDurations = durations.slice(durationIndex, durationIndex + paragraphs.length);
-    durationIndex += paragraphs.length;
+    const chapterDurations = paragraphs.map(estimateNarrationDurationSec);
     scenes.push(...paragraphs.map((narration, index) => ({
       id: newId(),
       narration,

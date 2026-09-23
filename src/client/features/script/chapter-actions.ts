@@ -1,3 +1,4 @@
+import { countNarrationWords, estimateNarrationDurationSec } from '../../../contracts/script';
 import type { ChapterDoc, ChapterStatus } from '../../../contracts/script';
 
 type ReviewDecisionStatus = Exclude<ChapterStatus, 'generating'>;
@@ -28,18 +29,28 @@ export function selectedRegenTargets(chapters: readonly ChapterDoc[], selected: 
   return fallback ? [fallback.id] : [];
 }
 
-/** Scene/duration metadata is only meaningful after finalizeScript() computes it. */
-export function chapterMetaText(chapter: Pick<ChapterDoc, 'scenesCount' | 'durationSec'>): string | null {
-  if (chapter.scenesCount == null || chapter.durationSec == null) return null;
-  return `${chapter.scenesCount} cảnh · ${chapter.durationSec}s`;
+export function chapterWordCount(chapter: Pick<ChapterDoc, 'paragraphs'>): number {
+  return chapter.paragraphs.reduce((sum, paragraph) => sum + countNarrationWords(paragraph), 0);
+}
+
+export function chapterEstimatedDurationSec(chapter: Pick<ChapterDoc, 'paragraphs'>): number | null {
+  if (chapter.paragraphs.length === 0) return null;
+  return estimateNarrationDurationSec(chapter.paragraphs.join(' '));
+}
+
+/** Review metadata estimates duration from current narration until finalization persists scene values. */
+export function chapterMetaText(chapter: Pick<ChapterDoc, 'paragraphs'>): string | null {
+  const durationSec = chapterEstimatedDurationSec(chapter);
+  if (durationSec == null) return null;
+  return `${chapter.paragraphs.length} cảnh · ${durationSec}s`;
 }
 
 export function chaptersSummaryText(chapters: readonly ChapterDoc[]): string {
   const total = chapters.length;
-  const allKnown = total > 0 && chapters.every((chapter) => chapter.scenesCount != null && chapter.durationSec != null);
+  const allKnown = total > 0 && chapters.every((chapter) => chapter.paragraphs.length > 0);
   if (!allKnown) return `${total} chương`;
-  const totalScenes = chapters.reduce((sum, chapter) => sum + (chapter.scenesCount ?? 0), 0);
-  const totalSeconds = chapters.reduce((sum, chapter) => sum + (chapter.durationSec ?? 0), 0);
+  const totalScenes = chapters.reduce((sum, chapter) => sum + chapter.paragraphs.length, 0);
+  const totalSeconds = chapters.reduce((sum, chapter) => sum + (chapterEstimatedDurationSec(chapter) ?? 0), 0);
   return `${total} chương • ${totalScenes} cảnh • ${totalSeconds}s`;
 }
 

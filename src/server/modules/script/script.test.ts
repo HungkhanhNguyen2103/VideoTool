@@ -493,8 +493,8 @@ describe('script contracts', () => {
   it('finalizes approved chapters into scenes and sets status assets', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [
-      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One', 'Two'], status: 'approved', scenesCount: null, durationSec: null },
-      { id: 'chapter-2', no: 2, title: 'Context', paragraphs: ['Three'], status: 'approved', scenesCount: null, durationSec: null },
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One', 'Two words'], status: 'approved', scenesCount: null, durationSec: null },
+      { id: 'chapter-2', no: 2, title: 'Context', paragraphs: ['Three four five six'], status: 'approved', scenesCount: null, durationSec: null },
     ], null, 'script');
 
     await finalizeScript(project.id);
@@ -503,7 +503,8 @@ describe('script contracts', () => {
     expect(saved.status).toBe('assets');
     expect(saved.scenes).toHaveLength(3);
     expect(saved.scenes.every((scene) => scene.visualPrompt === '')).toBe(true);
-    expect(saved.scenes.reduce((sum, scene) => sum + scene.durationSec, 0)).toBe(60);
+    expect(saved.scenes.map((scene) => scene.durationSec)).toEqual([1, 1, 2]);
+    expect(saved.scenes.reduce((sum, scene) => sum + scene.durationSec, 0)).toBe(4);
     expect(saved.chapters.map((chapter) => chapter.scenesCount)).toEqual([2, 1]);
     expect(await getProjectHistory(project.id)).toHaveLength(1);
   });
@@ -691,12 +692,13 @@ describe('script contracts', () => {
     expect(await response.json()).toMatchObject({ error: { code: 'INVALID_HISTORY_INDEX' } });
   });
 
-  it('distributes a non-even target duration without losing seconds', async () => {
+  it('estimates each finalized scene from narration words instead of target duration', async () => {
     const project = await createProject({ ...projectInput, targetDurationSec: 61 });
-    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One', 'Two', 'Three'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One', 'Two words', 'Four words here now'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
     await finalizeScript(project.id);
     const saved = await getProject(project.id);
-    expect(saved.scenes.map((scene) => scene.durationSec)).toEqual([21, 20, 20]);
+    expect(saved.scenes.map((scene) => scene.durationSec)).toEqual([1, 1, 2]);
+    expect(saved.chapters[0]!.durationSec).toBe(4);
     expect(saved.chapters[0]!.scenesCount).toBe(3);
   });
 

@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Phase 7 Task 1 narrative contracts and hubris-trap preset verified_
+_Last updated: 2026-09-23 · Phase 7 Task 6 word-based review and finalization durations verified_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -29,12 +29,13 @@ _Last updated: 2026-09-23 · Phase 7 Task 1 narrative contracts and hubris-trap 
 - Script Task 7 pins the mechanical documentary/explainer distinction, exact visual-batch index/count retry contract, rerun style seeding, cancellation/race behavior, and route/worker/client regressions; the focused suite has 106 passed, typecheck/lint pass, and the full suite has 252 passed with 1 skipped.
 - Phase 6 Task 4 is complete: the generate-script worker now persists a validated outline and expands chapters sequentially with progress, cancellation, one short-response retry, and later-chapter continuation after failures. Later Phase 6 route/UI/acceptance work remains.
 - Phase 7 Task 1 adds additive chapter narrative metadata, project `openLoops`/`motif` defaults, the `hubris-trap` preset, and its New Project option; focused tests pass 52/52, typecheck/lint pass, and the full suite passes 255 tests with the pre-existing project todo skipped.
+- Phase 7 Task 6 uses shared 150-WPM word counting for review estimates and finalization scene durations; the legacy even-split assertions were rewritten to exact per-scene `[1, 1, 2]` values. Focused duration tests pass 65/65, typecheck/lint pass, and the full suite passes 276 tests with the pre-existing project todo skipped.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets and visual-prompt orchestration; Phase 7 Task 1 adds additive narrative metadata and the `hubris-trap` preset. |
+| script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets and visual-prompt orchestration; Phase 7 Tasks 1–6 add narrative metadata, outline/expansion generation, manual/provider routes, and word-based duration estimates. |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |

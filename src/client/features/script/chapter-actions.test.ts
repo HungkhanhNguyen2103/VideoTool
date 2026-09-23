@@ -4,6 +4,8 @@ import {
   approveAllTargets,
   chapterMetaText,
   chaptersSummaryText,
+  chapterEstimatedDurationSec,
+  chapterWordCount,
   historyVersionLabel,
   runRegenerationQueue,
   selectedRegenTargets,
@@ -66,29 +68,37 @@ describe('selectedRegenTargets', () => {
 
 describe('chapterMetaText', () => {
   it('omits scene/duration text while unavailable', () => {
-    expect(chapterMetaText({ scenesCount: null, durationSec: null })).toBeNull();
-    expect(chapterMetaText({ scenesCount: 4, durationSec: null })).toBeNull();
-    expect(chapterMetaText({ scenesCount: null, durationSec: 20 })).toBeNull();
+    expect(chapterMetaText(chapter('c1', 'pending'))).toBeNull();
   });
-  it('renders both figures once finalizeScript() has computed them', () => {
-    expect(chapterMetaText({ scenesCount: 4, durationSec: 20 })).toBe('4 cảnh · 20s');
+  it('renders paragraph count and a word-based estimate during review', () => {
+    expect(chapterMetaText(chapter('c1', 'pending', { paragraphs: ['one', 'two words'] }))).toBe('2 cảnh · 1s');
   });
 });
 
 describe('chaptersSummaryText', () => {
   it('falls back to a chapter count while any chapter lacks scene/duration data', () => {
-    const chapters = [chapter('c1', 'pending', { scenesCount: 4, durationSec: 20 }), chapter('c2', 'pending')];
+    const chapters = [chapter('c1', 'pending', { paragraphs: ['one'] }), chapter('c2', 'pending')];
     expect(chaptersSummaryText(chapters)).toBe('2 chương');
   });
-  it('sums scenes and duration once every chapter has been finalized', () => {
+  it('sums paragraph counts and word-based durations from narration', () => {
     const chapters = [
-      chapter('c1', 'approved', { scenesCount: 4, durationSec: 20 }),
-      chapter('c2', 'approved', { scenesCount: 3, durationSec: 15 }),
+      chapter('c1', 'approved', { paragraphs: ['one', 'two words'] }),
+      chapter('c2', 'approved', { paragraphs: ['three four'] }),
     ];
-    expect(chaptersSummaryText(chapters)).toBe('2 chương • 7 cảnh • 35s');
+    expect(chaptersSummaryText(chapters)).toBe('2 chương • 3 cảnh • 2s');
   });
   it('reports zero chapters without summing anything', () => {
     expect(chaptersSummaryText([])).toBe('0 chương');
+  });
+});
+
+describe('word-based review duration helpers', () => {
+  it('counts whitespace words and applies the one-second minimum', () => {
+    expect(chapterWordCount(chapter('c1', 'pending'))).toBe(0);
+    expect(chapterWordCount(chapter('c1', 'pending', { paragraphs: [' one\n two ', 'three'] }))).toBe(3);
+    expect(chapterEstimatedDurationSec(chapter('c1', 'pending'))).toBeNull();
+    expect(chapterEstimatedDurationSec(chapter('c1', 'pending', { paragraphs: ['one'] }))).toBe(1);
+    expect(chapterEstimatedDurationSec(chapter('c1', 'pending', { paragraphs: [Array.from({ length: 150 }, () => 'word').join(' ')] }))).toBe(60);
   });
 });
 
