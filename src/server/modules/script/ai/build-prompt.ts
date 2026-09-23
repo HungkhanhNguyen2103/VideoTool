@@ -41,6 +41,7 @@ export function buildScriptPrompt(project: ProjectDetail): BuiltPrompt {
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
       `References: ${project.referencesText || '(none)'}`,
+      `Script preset: ${project.scriptPresetId}`,
       `Language: ${language(project)}`,
       `Chapter count: ${project.chapterCount ?? 'choose a suitable count'}`,
       `Target duration seconds: ${project.targetDurationSec}`,

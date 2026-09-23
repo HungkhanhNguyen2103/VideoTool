@@ -21,6 +21,7 @@ describe('script AI prompt boundary', () => {
     const preset = loadScriptPreset(id);
     const result = buildScriptPrompt(input);
     expect(result.promptVersion).toBe(`script-prompt-v1/${id}@${preset.version}`);
+    expect(result.user).toContain(`Script preset: ${id}`);
     expect(result.system.indexOf('professional video script writer')).toBeLessThan(result.system.indexOf(preset.system));
     expect(result.system.indexOf(preset.system)).toBeLessThan(result.system.indexOf(preset.instructions));
     expect(result.system).toContain('JSON');
