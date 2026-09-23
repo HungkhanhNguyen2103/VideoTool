@@ -112,7 +112,8 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
   for (const [index, chapter] of saved.chapters.entries()) {
     if (await context.isCancelled()) return;
     try {
-      const input = { project, chapter, openLoops: outline.openLoops, styleNote };
+      const openLoops = outline.openLoops.filter((loop) => loop.plantedInChapter === chapter.no || loop.resolvedInChapter === chapter.no);
+      const input = { project, chapter, openLoops, styleNote };
       const prompt = buildChapterExpansionPrompt(input);
       await context.appendLog(`Expanding chapter ${index + 1}/${saved.chapters.length}…`);
       const raw = await aiClient.chat([

@@ -111,4 +111,30 @@ describe('sequential script generation', () => {
 
     expect((await getProject(project.id)).chapters[0]!.paragraphs).toEqual([]);
   });
+
+  it('passes only chapter-relevant open loops to each expansion prompt', async () => {
+    const threeChapterOutline = JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: true },
+        { no: 2, title: 'Middle', role: 'rising', beat: 'Develop', targetWords: 1, endsOnTension: true },
+        { no: 3, title: 'End', role: 'resolution', beat: 'Close', targetWords: 1, endsOnTension: false },
+      ],
+      openLoops: [
+        { question: 'Relevant to the opening?', plantedInChapter: 1, resolvedInChapter: 2 },
+        { question: 'Only for the ending?', plantedInChapter: 3, resolvedInChapter: 3 },
+      ],
+    });
+    aiMock.chat
+      .mockResolvedValueOnce(threeChapterOutline)
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['One'], styleNote: 'Style one' }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Two'], styleNote: 'Style two' }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Three'], styleNote: 'Style three' }));
+    const project = await createProject({ ...projectInput, chapterCount: 3, targetDurationSec: 12 });
+
+    await generateScript(project.id, context());
+
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('Relevant to the opening?');
+    expect(aiMock.chat.mock.calls[2]![0][1].content).not.toContain('Only for the ending?');
+    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Only for the ending?');
+  });
 });
