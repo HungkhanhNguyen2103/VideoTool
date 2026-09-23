@@ -159,6 +159,70 @@ describe('empty scene visual prompts', () => {
 });
 
 describe('script contracts', () => {
+  it('owns the provider patch route and does not enqueue a job', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'claude' }),
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).aiProvider).toBe('claude');
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('rejects an invalid provider before any project mutation', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'other' }),
+    });
+    expect(response.status).toBe(400);
+    expect((await getProject(project.id)).aiProvider).toBe('deepseek');
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('returns a flattened manual prompt without enqueuing a job', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-prompt`);
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v1/documentary@2' });
+    expect(body.prompt).toContain('SYSTEM');
+    expect(body.prompt).toContain('USER');
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('imports a manual document through the shared save path without calling the AI client', async () => {
+    const project = await createProject(projectInput);
+    const raw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 4, endsOnTension: true, paragraphs: ['Manual paragraph'] }],
+      openLoops: [],
+    });
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw }),
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.chapters[0]).toMatchObject({ title: 'Opening', paragraphs: ['Manual paragraph'], status: 'pending' });
+    expect(aiMock.chat).not.toHaveBeenCalled();
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('rejects malformed manual text without changing the project', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: '{bad json' }),
+    });
+    const body = await response.json();
+    expect(response.status).toBe(422);
+    expect(body.error.code).toBe('SCRIPT_PARSE_ERROR');
+    expect(await getProject(project.id)).toEqual(project);
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
   it('changes the AI provider through one project-owned versioned mutation', async () => {
     const project = await createProject(projectInput);
     const updated = await setProjectAiProvider(project.id, 'claude');

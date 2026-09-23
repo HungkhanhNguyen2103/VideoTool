@@ -49,8 +49,8 @@ export async function getChapterHistory(projectId: string): Promise<ChapterSnaps
   return getProjectHistory(projectId);
 }
 
-export type GeneratedScriptChapter = Pick<ChapterDoc, 'no' | 'title' | 'paragraphs' | 'scenesCount' | 'durationSec'> &
-  Partial<Pick<ChapterDoc, 'role' | 'beat' | 'targetWords' | 'endsOnTension'>>;
+export type GeneratedScriptChapter = Pick<ChapterDoc, 'no' | 'title' | 'paragraphs'> &
+  Partial<Pick<ChapterDoc, 'scenesCount' | 'durationSec' | 'role' | 'beat' | 'targetWords' | 'endsOnTension'>>;
 
 export type ScriptGenerationJobContext = {
   reportProgress: (pct: number, result?: unknown) => Promise<void>;
@@ -70,6 +70,8 @@ export async function saveGeneratedScript(
     id: newId(),
     no: index + 1,
     status: 'pending',
+    scenesCount: chapter.scenesCount ?? null,
+    durationSec: chapter.durationSec ?? null,
     role: chapter.role ?? null,
     beat: chapter.beat ?? '',
     targetWords: chapter.targetWords ?? null,

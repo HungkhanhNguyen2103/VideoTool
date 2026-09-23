@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject } from '../project';
+import { getProject, setProjectAiProvider } from '../project';
 import { AppError } from '../../shared/errors';
-import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters } from './service';
+import { buildManualScriptPrompt } from './ai/build-prompt';
+import { parseManualScriptDocument } from './ai/parse-output';
+import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 
@@ -18,6 +20,8 @@ const RegenerateChapterSchema = z.object({
 });
 
 const RestoreSchema = z.object({ index: z.number().int().nonnegative() });
+const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']) }).strict();
+const ManualImportSchema = z.object({ raw: z.string() }).strict();
 
 function writeEvent(res: { write: (chunk: string) => boolean }, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -40,6 +44,28 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): R
     const project = await getProject(req.params.id);
     const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id } });
     res.status(201).json({ jobId: job.id });
+  });
+
+  router.patch('/:id/ai-provider', async (req, res) => {
+    const body = ProviderSchema.parse(req.body);
+    res.json(await setProjectAiProvider(req.params.id, body.provider));
+  });
+
+  router.get('/:id/generate-script/manual-prompt', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const prompt = buildManualScriptPrompt(project);
+    res.json({
+      prompt: `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`,
+      promptVersion: prompt.promptVersion,
+    });
+  });
+
+  router.post('/:id/generate-script/manual-import', async (req, res) => {
+    const body = ManualImportSchema.parse(req.body);
+    const project = await getProject(req.params.id);
+    const document = parseManualScriptDocument(body.raw, project.scriptPresetId);
+    const saved = await saveGeneratedScript(project.id, document.chapters, document.openLoops, 'motif' in document ? document.motif : null);
+    res.json(saved);
   });
 
   router.post('/:id/scenes/generate-visual-prompts', async (req, res) => {
