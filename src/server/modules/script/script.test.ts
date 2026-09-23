@@ -7,8 +7,8 @@ import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/scri
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
-import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes } from '../project';
-import { finalizeScript, generateScript, patchChapter, regenerateChapter } from './service';
+import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, setProjectAiProvider } from '../project';
+import { finalizeScript, generateScript, patchChapter, regenerateChapter, saveGeneratedScript } from './service';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
@@ -159,6 +159,31 @@ describe('empty scene visual prompts', () => {
 });
 
 describe('script contracts', () => {
+  it('changes the AI provider through one project-owned versioned mutation', async () => {
+    const project = await createProject(projectInput);
+    const updated = await setProjectAiProvider(project.id, 'claude');
+    expect(updated.aiProvider).toBe('claude');
+    expect(updated.version).toBe(project.version + 1);
+    expect((await getProject(project.id)).aiProvider).toBe('claude');
+  });
+
+  it('saves generated chapter metadata and outline fields through the shared path', async () => {
+    const project = await createProject(projectInput);
+    const updated = await saveGeneratedScript(project.id, [{
+      no: 1, title: 'Opening', paragraphs: ['A mystery'], scenesCount: null, durationSec: null,
+      role: 'hook', beat: 'Open with a mystery', targetWords: 3, endsOnTension: true,
+    }], [{ question: 'What happened?', plantedInChapter: 1, resolvedInChapter: 1 }], {
+      hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The plan turns inward',
+    });
+    expect(updated.version).toBe(project.version + 1);
+    expect(updated.status).toBe('script');
+    expect(updated.chapters).toHaveLength(1);
+    expect(updated.chapters[0]).toMatchObject({ no: 1, status: 'pending', role: 'hook', targetWords: 3, endsOnTension: true });
+    expect(updated.chapters[0]!.id).not.toBe('');
+    expect(updated.openLoops[0]!.question).toBe('What happened?');
+    expect(updated.motif?.hunter).toBe('A rival');
+  });
+
   it('accepts chapters and snapshots with stable chapter metadata', () => {
     const chapter = ChapterDocSchema.parse({
       id: 'chapter-1',

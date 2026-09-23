@@ -14,11 +14,13 @@ export {
   patchProjectScene,
   patchProjectChapter,
   replaceProjectChapters,
+  replaceProjectScript,
   replaceProjectScenes,
   restoreProjectChapters,
   setProjectScenesAssetType,
   setProjectBgm,
   setProjectRenderEngine,
+  setProjectAiProvider,
   setProjectRenderFile,
 } from './service';
 export { SceneDocSchema } from './docs';

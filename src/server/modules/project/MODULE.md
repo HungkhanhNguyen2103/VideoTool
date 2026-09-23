@@ -17,6 +17,8 @@
 - Duplicating a project never carries `assetFileId`, `audioFileId`, or `sfxFileId` scene references, and clears project `bgmFileId`/`renderFileId`; prompts, mood, and render settings remain. File metadata and disk files remain owned by the source project.
 - `setProjectBgm` atomically updates `bgmMood` and `bgmFileId`; `setProjectRenderFile` atomically updates `renderFileId` and `status: 'rendered'`. Both increment `version` once.
 - `setProjectRenderEngine` atomically updates the engine selection and increments `version` once; consumers call it through the public module index.
+- `setProjectAiProvider` atomically updates the AI provider and increments `version` once; script routes own the HTTP surface while calling this public project mutation.
+- `replaceProjectScript` atomically replaces generated chapters, open loops, motif, optional status, and optional history snapshot in one versioned project update.
 - Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 
 ## Flow

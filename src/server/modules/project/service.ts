@@ -1,5 +1,5 @@
-import type { CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary } from '../../../contracts/project';
-import type { ChapterDoc, ChapterSnapshot } from '../../../contracts/script';
+import type { AiProvider, CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary } from '../../../contracts/project';
+import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
@@ -168,6 +168,11 @@ export async function setProjectRenderEngine(id: string, renderEngine: ProjectDe
   return getProject(id);
 }
 
+export async function setProjectAiProvider(id: string, aiProvider: AiProvider): Promise<ProjectDetail> {
+  await updateProject(id, { aiProvider });
+  return getProject(id);
+}
+
 export async function applySceneAssets(
   id: string,
   assetUpdates: Array<{ sceneId: string; assetFileId: string }>,
@@ -247,6 +252,18 @@ export async function replaceProjectChapters(
   newStatus?: ProjectStatus,
 ): Promise<ProjectDetail> {
   await updateProject(id, { chapters, ...(newStatus ? { status: newStatus } : {}) }, snapshot);
+  return getProject(id);
+}
+
+export async function replaceProjectScript(
+  id: string,
+  chapters: ChapterDoc[],
+  openLoops: OpenLoop[],
+  motif: HubrisMotif | null,
+  snapshot: ChapterSnapshot | null,
+  newStatus?: ProjectStatus,
+): Promise<ProjectDetail> {
+  await updateProject(id, { chapters, openLoops, motif, ...(newStatus ? { status: newStatus } : {}) }, snapshot);
   return getProject(id);
 }
 

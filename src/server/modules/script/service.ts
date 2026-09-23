@@ -1,5 +1,5 @@
 import type { ProjectDetail } from '../../../contracts/project';
-import type { ChapterDoc, ChapterSnapshot } from '../../../contracts/script';
+import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
 import { getAiClient } from '../../shared/ai';
 import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
@@ -8,6 +8,7 @@ import {
   getProjectHistory,
   patchProjectChapter,
   replaceProjectChapters,
+  replaceProjectScript,
   replaceProjectScenes,
   restoreProjectChapters,
 } from '../project';
@@ -47,6 +48,29 @@ export async function getChapterHistory(projectId: string): Promise<ChapterSnaps
   return getProjectHistory(projectId);
 }
 
+export type GeneratedScriptChapter = Pick<ChapterDoc, 'no' | 'title' | 'paragraphs' | 'scenesCount' | 'durationSec'> &
+  Partial<Pick<ChapterDoc, 'role' | 'beat' | 'targetWords' | 'endsOnTension'>>;
+
+export async function saveGeneratedScript(
+  projectId: string,
+  chapters: GeneratedScriptChapter[],
+  openLoops: OpenLoop[] = [],
+  motif: HubrisMotif | null = null,
+  snapshot: ChapterSnapshot | null = null,
+): Promise<ProjectDetail> {
+  const saved: ChapterDoc[] = chapters.map((chapter, index) => ({
+    ...chapter,
+    id: newId(),
+    no: index + 1,
+    status: 'pending',
+    role: chapter.role ?? null,
+    beat: chapter.beat ?? '',
+    targetWords: chapter.targetWords ?? null,
+    endsOnTension: chapter.endsOnTension ?? false,
+  }));
+  return replaceProjectScript(projectId, saved, openLoops, motif, snapshot, 'script');
+}
+
 export async function restoreChapters(projectId: string, index: number): Promise<ChapterDoc[]> {
   const project = await getProject(projectId);
   const history = await getChapterHistory(projectId);
@@ -69,14 +93,8 @@ export async function generateScript(projectId: string, appendLog: (message: str
   await appendLog('Parsing AI response…');
 
   const chapters = parseGeneratedChapters(raw);
-  const saved: ChapterDoc[] = chapters.map((chapter, index) => ({
-    ...chapter,
-    id: newId(),
-    no: index + 1,
-    status: 'pending',
-  }));
-  await replaceProjectChapters(projectId, saved, null, 'script');
-  await appendLog(`Script saved — ${saved.length} chapters.`);
+  const saved = await saveGeneratedScript(projectId, chapters);
+  await appendLog(`Script saved — ${saved.chapters.length} chapters.`);
 }
 
 export async function regenerateChapter(
