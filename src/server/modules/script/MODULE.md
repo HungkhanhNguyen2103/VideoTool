@@ -8,6 +8,7 @@
 ## Invariants
 - Phase 3 Prompt 1 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration/finalization service, explicit worker handler, project routes/SSE, edge coverage, typed client streaming API, and ReviewScriptPage are implemented and verified.
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
+- Versioned Markdown files in `ai/presets/*.md` are the only preset source; `ai/presets/loader.ts` validates and loads them, and production builds copy them beside the bundled server and worker.
 
 ## Flow
 - Generate chapters asynchronously through the `generate-script` job.

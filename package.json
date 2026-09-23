@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "concurrently -n web,api,worker -c cyan,green,yellow \"vite\" \"tsx watch --env-file=.env src/server/main.ts\" \"tsx watch --env-file=.env src/worker/main.ts\"",
-    "build": "vite build && tsup",
+    "build": "vite build && node scripts/copy-script-presets.mjs && tsup",
     "start": "node --env-file=.env dist/server.js",
     "start:worker": "node --env-file=.env dist/worker.js",
     "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json",

@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-22 · Phase 5 Prompt 2 complete (Remotion render engine implemented, verified, and documented)_
+_Last updated: 2026-09-23 · Phase 5 Prompt 2 complete; versioned script preset loading and production preset packaging implemented and verified_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (184 tests pass; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (194 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -21,6 +21,7 @@ _Last updated: 2026-09-22 · Phase 5 Prompt 2 complete (Remotion render engine i
 - Browser acceptance verified at `http://localhost:5173/production/init` with a 1440px viewport: invalid submit focused the first field and made no DB write; draft/outline creation, reload persistence, accent-insensitive search, status filtering, duplicate, confirmed delete, and delete fallback all worked.
 - `npm run typecheck`, `npm run lint`, `npm test` (101 passed, 2 skipped), and `npm run build` all pass on Windows. The client bundle contains no server environment/API-key identifiers.
 - Phase 3 final review fixes are covered by 81 passing tests: legacy project reads apply defaults for new script fields, chapter regeneration preserves concurrent edits, paragraph edits reset approval, empty scripts cannot be saved/finalized, and the client prevents overlapping regeneration streams with lifecycle abort cleanup.
+- Versioned documentary/explainer preset loading and the production Markdown copy step are implemented and verified.
 
 ### Modules
 | Module | State | Notes |
@@ -313,7 +314,7 @@ Concurrency patterns:
 
 Applies to every `modules/*/ai/` folder. Code, prompt text and JSON format are separate on purpose:
 
-- `presets/*.md`: prompt text (data). Has `id` + `version`. Edited often, no code change needed.
+- `presets/*.md`: the only preset source of truth (prompt text data), with validated `id` + `version`; the production build copies these Markdown files to `dist/presets/`.
 - `output-schema.ts`: zod schema of the JSON the AI returns. Shape chosen for the AI (may use snake_case). One source of truth -> derive TS type, validator and JSON Schema (`z.toJSONSchema`).
 - `build-prompt.ts`: typed pure function `(input) => { system, user, jsonSchema, promptVersion }`. No `{{var}}` string templates.
 - `parse-output.ts`: the only place that knows both the AI shape and the system model (`AiScriptOutput` -> `SceneDoc[]`: rename fields, generate ids, estimate duration).
