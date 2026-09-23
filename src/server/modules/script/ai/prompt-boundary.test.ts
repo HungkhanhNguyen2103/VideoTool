@@ -30,6 +30,16 @@ describe('script AI prompt boundary', () => {
     }
   });
 
+  it('keeps documentary and explainer guidance mechanically distinct', () => {
+    const documentary = buildScriptPrompt({ ...project, scriptPresetId: 'documentary' });
+    const explainer = buildScriptPrompt({ ...project, scriptPresetId: 'explainer' });
+
+    expect(documentary.system).toContain('open a chapter with a hook');
+    expect(documentary.system).not.toContain('one self-contained beat');
+    expect(explainer.system).toContain('one self-contained beat');
+    expect(explainer.system).not.toContain('open a chapter with a hook');
+  });
+
   it('regenerates one chapter with preset guidance and no whole-project brief', () => {
     const result = buildRegenerationPrompt(project, chapter, 'Shorten this', 'light');
     expect(result.promptVersion).toBe('script-prompt-v1/documentary@2');
@@ -39,6 +49,12 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('Shorten this');
     expect(result.user).toContain('light');
     expect(result.user).not.toContain(project.brief);
+  });
+
+  it('carries the selected explainer preset version into regeneration', () => {
+    const result = buildRegenerationPrompt({ ...project, scriptPresetId: 'explainer' }, chapter, 'Clarify this', 'rewrite');
+    expect(result.promptVersion).toBe('script-prompt-v1/explainer@1');
+    expect(result.system).toContain(loadScriptPreset('explainer').instructions);
   });
 
   it('builds visual batch prompt with scene indexes but no internal IDs', () => {

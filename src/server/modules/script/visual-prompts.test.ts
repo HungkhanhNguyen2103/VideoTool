@@ -72,7 +72,7 @@ describe('generateVisualPrompts', () => {
   });
 
   it.each([
-    ['missing', [1]], ['duplicate', [1, 1]], ['extra', [1, 2, 3]], ['out of range', [1, 99]],
+    ['missing', [1]], ['count mismatch', []], ['duplicate', [1, 1]], ['extra', [1, 2, 3]], ['out of range', [1, 99]],
   ])('retries a %s index batch once and leaves that chapter untouched when retry is invalid', async (_name, indexes) => {
     const project = await projectWithScenes(['', '', '']);
     aiMock.chat.mockResolvedValueOnce(batch(indexes, 'bad')).mockResolvedValueOnce(batch(indexes, 'still bad'))

@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Script Task 6 Studio visual-prompt action verified_
+_Last updated: 2026-09-23 · Script Task 7 regression coverage verified_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -26,6 +26,7 @@ _Last updated: 2026-09-23 · Script Task 6 Studio visual-prompt action verified_
 - Script Task 4 processes finalized scenes sequentially by chapter with stable project-global scene indexes. It validates the exact returned index set, retries one parse/schema/index failure, writes through the project-owned empty-only mutation, preserves existing prompts, seeds a bounded style note from existing project prompts, reports per-chapter progress, isolates chapter failures, and discards responses when cancellation is observed. The project-owned companion returns atomic pre-image changed IDs for exact job counts while the original wrapper still returns `ProjectDetail`.
 - Script Task 5 exposes `POST /api/project/:id/scenes/generate-visual-prompts` with finalized-scene readiness validation and registers `generate-visual-prompts` explicitly in the worker; route/worker focused tests (45) plus typecheck and lint pass.
 - Script Task 6 adds the Studio `Tạo visual prompt` action, typed client API, and enqueue-gap-safe project-job predicate; the focused asset API tests, typecheck, and lint pass.
+- Script Task 7 pins the mechanical documentary/explainer distinction, exact visual-batch index/count retry contract, rerun style seeding, cancellation/race behavior, and route/worker/client regressions; the focused suite has 106 passed, typecheck/lint pass, and the full suite has 252 passed with 1 skipped.
 
 ### Modules
 | Module | State | Notes |
@@ -96,6 +97,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-23: Task 4 review fixes seed visual style from all existing non-empty prompts at job start; failed and skipped chapters preserve that context. `project.applyEmptySceneVisualPromptsWithResult` uses a single `findOneAndUpdate` pre-image to report exactly which empty prompts the atomic write filled; the original `ProjectDetail` wrapper delegates to it.
 - 2026-09-23: Script Task 4 maps each chapter to a stable slice of the finalized project scene array, validates complete global-index echoes before any write, and retries only parse/schema/index failures once. It carries a maximum 500-character continuity note, counts only empty scenes filled by the project mutation, and stops on cooperative cancellation without writing an in-flight response.
 - 2026-09-23: Script Task 6 adds the Studio visual-prompt enqueue action and tests `isProjectJobActive` for no job, the enqueue-to-progress gap, and terminal job states; the action stays disabled while a project job is active.
+- 2026-09-23: Script Task 7 regression coverage asserts documentary contains `open a chapter with a hook` without explainer's `one self-contained beat`, and vice versa; it also covers the visual count-mismatch retry alongside missing, duplicate, extra, and out-of-range indexes.
 - 2026-09-23: Script Task 3 makes `project.applyEmptySceneVisualPrompts` the sole added writer for AI visual prompts. It validates scene IDs, deduplicates last-value-wins, and uses a top-level empty-target predicate plus per-target array filters so manual edits win; no schema migration is needed. Mongo-backed script integration tests cover the public API while `project.test.ts` remains a todo.
 - 2026-09-22: Phase 5 Task 2 keeps audio, SFX, BGM, and final-render writes in `project`; BGM mood/file and render file/status each update atomically with one version increment.
 - 2026-09-22: Phase 5 Prompt 2 chooses copy-based Remotion staging into the effective bundle `public/` directory because `bundle()` snapshots its source public directory; this preserves bundle-once behavior without coupling renders to Express uptime.
@@ -172,7 +174,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Script-presets/visual-prompts Task 6 is complete. Task 7 adds end-to-end visual-prompt job coverage; Task 8 records final acceptance.
+Script-presets/visual-prompts Task 7 is complete. Task 8 records final acceptance and build evidence.
 
 ## 2. Stack
 
