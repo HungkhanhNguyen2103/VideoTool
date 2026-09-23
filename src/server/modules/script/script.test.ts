@@ -390,6 +390,70 @@ describe('script contracts', () => {
     expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({ type: 'generate-script', payload: { projectId: project.id } });
   });
 
+  it('enqueues a visual-prompt job with the exact type and payload for finalized scenes', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'approved', scenesCount: 1, durationSec: 60,
+    }], null, 'assets');
+    await replaceProjectScenes(project.id, [{
+      id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 60,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+    }], 'assets');
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/generate-visual-prompts`, { method: 'POST' });
+    expect(response.status).toBe(201);
+    const body = await response.json() as { jobId: string };
+    expect(body.jobId).toEqual(expect.any(String));
+    expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({
+      type: 'generate-visual-prompts', payload: { projectId: project.id },
+    });
+  });
+
+  it('rejects an unfinalized empty project without enqueueing visual prompts', async () => {
+    const project = await createProject(projectInput);
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/generate-visual-prompts`, { method: 'POST' });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'SCENES_NOT_READY' } });
+    expect(await getCollection<JobRecord>('jobs').countDocuments({ type: 'generate-visual-prompts' })).toBe(0);
+  });
+
+  it('rejects visual-prompt generation when a chapter has no scene count', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'approved', scenesCount: null, durationSec: null,
+    }], null, 'script');
+    await replaceProjectScenes(project.id, [{
+      id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 60,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+    }], 'assets');
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/generate-visual-prompts`, { method: 'POST' });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'SCENES_NOT_READY' } });
+    expect(await getCollection<JobRecord>('jobs').countDocuments({ type: 'generate-visual-prompts' })).toBe(0);
+  });
+
+  it('rejects visual-prompt generation when chapter scene counts do not sum to scenes', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'approved', scenesCount: 2, durationSec: 60,
+    }], null, 'script');
+    await replaceProjectScenes(project.id, [{
+      id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 60,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+    }], 'assets');
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/generate-visual-prompts`, { method: 'POST' });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'SCENES_NOT_READY' } });
+    expect(await getCollection<JobRecord>('jobs').countDocuments({ type: 'generate-visual-prompts' })).toBe(0);
+  });
+
   it('patches a chapter and returns the refreshed chapter list', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');

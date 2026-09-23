@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWorkerLoop } from './main';
 
-const mocks = vi.hoisted(() => ({ generateScript: vi.fn() }));
+const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn() }));
 vi.mock('../server/modules/script/service', () => ({ generateScript: mocks.generateScript }));
+vi.mock('../server/modules/script/visual-prompts', () => ({ generateVisualPrompts: mocks.generateVisualPrompts }));
 import { jobHandlers } from './registry';
 
 describe('worker poll loop', () => {
@@ -74,5 +75,33 @@ describe('script job registration', () => {
       progress: 0, result: null, error: null, cancelRequested: true, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });
     expect(mocks.generateScript).not.toHaveBeenCalled();
+  });
+
+  it('registers visual-prompt generation and maps its payload/context', async () => {
+    mocks.generateVisualPrompts.mockResolvedValue({ updatedScenes: 1, skippedScenes: 0, failedChapters: [] });
+    const appendLog = vi.fn();
+    const isCancelled = vi.fn().mockResolvedValue(false);
+    const reportProgress = vi.fn();
+    const handler = jobHandlers['generate-visual-prompts'];
+    expect(handler).toBeDefined();
+    await handler!({
+      _id: 'job-visual-1', schemaVersion: 1, type: 'generate-visual-prompts', projectId: 'project-1',
+      payload: { projectId: 'project-2' }, status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(),
+      lockedBy: 'worker', lockedAt: new Date(), progress: 0, result: null, error: null, cancelRequested: false,
+      logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress, isCancelled, appendLog });
+    expect(mocks.generateVisualPrompts).toHaveBeenCalledWith('project-2', expect.objectContaining({ reportProgress, isCancelled, appendLog }));
+  });
+
+  it('does not start visual-prompt generation when the job is already cancelled', async () => {
+    mocks.generateVisualPrompts.mockReset();
+    const handler = jobHandlers['generate-visual-prompts']!;
+    await handler({
+      _id: 'job-visual-2', schemaVersion: 1, type: 'generate-visual-prompts', projectId: 'project-1',
+      payload: { projectId: 'project-1' }, status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(),
+      lockedBy: 'worker', lockedAt: new Date(), progress: 0, result: null, error: null, cancelRequested: true,
+      logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });
+    expect(mocks.generateVisualPrompts).not.toHaveBeenCalled();
   });
 });

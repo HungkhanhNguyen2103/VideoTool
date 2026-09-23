@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { getProject } from '../project';
+import { AppError } from '../../shared/errors';
 import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
@@ -22,12 +23,33 @@ function writeEvent(res: { write: (chunk: string) => boolean }, event: string, d
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+function assertVisualPromptSourceReady(project: Awaited<ReturnType<typeof getProject>>): void {
+  const hasValidChapterCounts = project.chapters.every(
+    (chapter) => Number.isInteger(chapter.scenesCount) && (chapter.scenesCount ?? 0) > 0,
+  );
+  const sceneCount = project.chapters.reduce((sum, chapter) => sum + (chapter.scenesCount ?? 0), 0);
+  if (project.scenes.length === 0 || !hasValidChapterCounts || sceneCount !== project.scenes.length) {
+    throw new AppError('Finalized scenes are required before generating visual prompts.', 422, 'SCENES_NOT_READY');
+  }
+}
+
 export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): Router {
   const router = Router();
 
   router.post('/:id/generate-script', async (req, res) => {
     const project = await getProject(req.params.id);
     const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id } });
+    res.status(201).json({ jobId: job.id });
+  });
+
+  router.post('/:id/scenes/generate-visual-prompts', async (req, res) => {
+    const project = await getProject(req.params.id);
+    assertVisualPromptSourceReady(project);
+    const job = await options.enqueueJob({
+      type: 'generate-visual-prompts',
+      projectId: project.id,
+      payload: { projectId: project.id },
+    });
     res.status(201).json({ jobId: job.id });
   });
 

@@ -14,6 +14,7 @@
 - Each visual batch must pass schema and exact index-set validation before a chapter write. A parse, schema, or index failure gets one retry with the validation error; provider and project-write failures are isolated to their chapter. Successful batches write only empty prompts through the public `project.applyEmptySceneVisualPromptsWithResult` companion, whose atomic pre-image IDs provide exact update counts.
 - The running continuity note starts as an ordered excerpt of all existing non-empty project prompts, capped at 500 characters. Only a successful chapter response replaces it with that batch's bounded `styleNote`; failed and skipped chapters preserve it. Progress is rounded by chapter, and the result records updated scenes, prefilled skipped scenes, and failed chapter numbers.
 - The structural `VisualPromptJobContext` does not import `job`. The handler parses `{ projectId }` and checks cancellation before orchestration. Orchestration checks before each call and after each response, discarding in-flight output when cancelled so the worker's post-handler check marks the job cancelled.
+- `POST /api/project/:id/scenes/generate-visual-prompts` is script-owned because it enqueues preset-aware narration-to-visual work. It accepts only projects with non-empty scenes, positive `scenesCount` on every chapter, and a chapter-count sum equal to the scene array length; otherwise it returns `SCENES_NOT_READY` without creating a job. The exact `generate-visual-prompts` handler is registered in `src/worker/registry.ts`.
 
 ## Flow
 - Generate chapters asynchronously through the `generate-script` job.
@@ -62,6 +63,7 @@ needs-fix ──edit/regen──> pending or generating
 - The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; ReviewScriptPage's stepper state and shared theme-token usage are covered by pure Node tests, while full page rendering remains untested without a DOM dependency.
 
 ## Acceptance
+- Task 5 route/worker focused tests: 45 passed; `npm run typecheck` and `npm run lint` passed. The endpoint enqueue test asserts the exact job type/payload, three readiness-invalid cases assert no enqueue, and worker tests cover context mapping and pre-cancelled jobs.
 - Task 4 review round 1: focused visual-prompt/project tests passed 50/50; typecheck, lint, and full suite passed with 241 tests and one pre-existing skipped project todo. Coverage includes a corrected validation retry, cancellation gates, project-write isolation, style seeding after a failure, and atomic same-value/count races.
 - Task 4 focused orchestration/prompt-boundary suite: 31 tests passed. Typecheck and lint passed; the full suite passed with 231 tests and the pre-existing project todo skipped. Mongo-backed tests used `mongodb-memory-server` and mocked provider chat calls.
 - Task 2 focused AI boundary suite: 33 tests passed; typecheck, lint, and full suite (216 passed, 1 skipped) passed on Windows. This task did not run a production build.

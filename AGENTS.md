@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-23 · Script Task 4 review fixes verified_
+_Last updated: 2026-09-23 · Script Task 5 route/worker wiring verified_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -24,12 +24,13 @@ _Last updated: 2026-09-23 · Script Task 4 review fixes verified_
 - Versioned documentary/explainer preset loading and the production Markdown copy step are implemented and verified.
 - Script generation and regeneration use preset-aware, versioned prompts in the script `ai/` boundary. Generated chapters, regenerated paragraphs, and visual batches share JSON parsing with 422 `SCRIPT_PARSE_ERROR` behavior.
 - Script Task 4 processes finalized scenes sequentially by chapter with stable project-global scene indexes. It validates the exact returned index set, retries one parse/schema/index failure, writes through the project-owned empty-only mutation, preserves existing prompts, seeds a bounded style note from existing project prompts, reports per-chapter progress, isolates chapter failures, and discards responses when cancellation is observed. The project-owned companion returns atomic pre-image changed IDs for exact job counts while the original wrapper still returns `ProjectDetail`.
+- Script Task 5 exposes `POST /api/project/:id/scenes/generate-visual-prompts` with finalized-scene readiness validation and registers `generate-visual-prompts` explicitly in the worker; route/worker focused tests (45) plus typecheck and lint pass.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
 | project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
-| script | done | Phase 3 Prompt 1 complete; Task 4 adds sequential visual-prompt orchestration and a structural job handler over the typed AI boundary and project-owned empty-only mutation. Route/worker/client wiring remains in later tasks. |
+| script | done | Phase 3 Prompt 1 complete; Tasks 4–5 add sequential visual-prompt orchestration, finalized-scene enqueue route, and explicit worker registration over the typed AI boundary and project-owned empty-only mutation. Studio wiring remains in later tasks. |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
