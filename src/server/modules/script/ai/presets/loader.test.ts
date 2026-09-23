@@ -40,7 +40,7 @@ describe('loadScriptPreset', () => {
     expect(() => loadScriptPreset('documentary', directory)).toThrow(expect.objectContaining({ code: 'SCRIPT_PRESET_INVALID' }));
   });
 
-  it.each(['0', '-1', '1.5', 'nope'])('rejects invalid version %s', async (version) => {
+  it.each(['0', '-1', '1.5', 'nope', '9'.repeat(400)])('rejects invalid version %s', async (version) => {
     const directory = await createPresetDirectory({ 'documentary.md': `---\nid: documentary\nversion: ${version}\n---\n## System\nrole\n## Instructions\nrules` });
 
     expect(() => loadScriptPreset('documentary', directory)).toThrow(expect.objectContaining({ code: 'SCRIPT_PRESET_INVALID' }));

@@ -46,6 +46,10 @@ export function loadScriptPreset(
 
   const versionText = frontmatter[2]!;
   if (!/^[1-9][0-9]*$/.test(versionText)) throw invalidPreset('version must be a positive integer');
+  const version = Number(versionText);
+  if (!Number.isFinite(version) || !Number.isInteger(version)) {
+    throw invalidPreset('version must be a finite integer');
+  }
 
   const body = markdown.slice(frontmatter[0].length);
   const extractSection = (name: 'System' | 'Instructions'): string => {
@@ -57,7 +61,7 @@ export function loadScriptPreset(
 
   return {
     id,
-    version: Number(versionText),
+    version,
     system: extractSection('System'),
     instructions: extractSection('Instructions'),
   };
