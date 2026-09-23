@@ -4,6 +4,7 @@ import {
   approveAllTargets,
   chapterMetaText,
   chaptersSummaryText,
+  generationModeForChapters,
   chapterEstimatedDurationSec,
   chapterWordCount,
   historyVersionLabel,
@@ -11,6 +12,7 @@ import {
   selectedRegenTargets,
   toggleApproveStatus,
   toggleFlagStatus,
+  manualTextAfterImport,
 } from './chapter-actions';
 
 function chapter(id: string, status: ChapterStatus, extra: Partial<ChapterDoc> = {}): ChapterDoc {
@@ -121,5 +123,18 @@ describe('runRegenerationQueue', () => {
     });
 
     expect(started).toEqual(['chapter-1']);
+  });
+});
+
+describe('manual generation state helpers', () => {
+  it('allows the selected mode only before chapters exist', () => {
+    expect(generationModeForChapters(0, 'manual')).toBe('manual');
+    expect(generationModeForChapters(0, 'automatic')).toBe('automatic');
+    expect(generationModeForChapters(2, 'manual')).toBe('automatic');
+  });
+
+  it('preserves pasted text after failed import and clears it after success', () => {
+    expect(manualTextAfterImport('pasted document', false)).toBe('pasted document');
+    expect(manualTextAfterImport('pasted document', true)).toBe('');
   });
 });

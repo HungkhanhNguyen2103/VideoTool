@@ -2,6 +2,15 @@ import { countNarrationWords, estimateNarrationDurationSec } from '../../../cont
 import type { ChapterDoc, ChapterStatus } from '../../../contracts/script';
 
 type ReviewDecisionStatus = Exclude<ChapterStatus, 'generating'>;
+export type ScriptGenerationMode = 'automatic' | 'manual';
+
+export function generationModeForChapters(chapterCount: number, requested: ScriptGenerationMode): ScriptGenerationMode {
+  return chapterCount > 0 ? 'automatic' : requested;
+}
+
+export function manualTextAfterImport(raw: string, succeeded: boolean): string {
+  return succeeded ? '' : raw;
+}
 
 /** Pure state-transition and targeting logic for the review page, kept apart from
  * rendering so it can be unit-tested without React or fetch. */

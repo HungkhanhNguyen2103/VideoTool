@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseSseFrames } from './api';
+import { describe, expect, it, vi } from 'vitest';
+import { getManualScriptPrompt, importManualScript, parseSseFrames, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -14,5 +14,24 @@ describe('script SSE parser', () => {
   it('ignores heartbeat comments and parses default message events', () => {
     const result = parseSseFrames(': heartbeat\n\ndata: {"status":"running"}\n\n');
     expect(result.frames).toEqual([{ event: 'message', data: '{"status":"running"}' }]);
+  });
+});
+
+describe('script generation API', () => {
+  it('uses the provider PATCH route and manual prompt/import contracts', async () => {
+    const project = { id: 'project-1', title: 'Project', status: 'draft', language: 'vi', brief: 'A sufficiently long brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null, aiProvider: 'claude', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: [], chapters: [], openLoops: [], motif: null, version: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      const body = url.endsWith('manual-prompt') ? { prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v1/documentary@2' } : project;
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    await expect(setAiProvider('project/1', 'claude')).resolves.toMatchObject({ aiProvider: 'claude' });
+    await expect(getManualScriptPrompt('project/1')).resolves.toEqual({ prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v1/documentary@2' });
+    await expect(importManualScript('project/1', 'raw text')).resolves.toMatchObject({ id: 'project-1' });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/ai-provider', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ provider: 'claude' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/generate-script/manual-prompt', expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/project/project%2F1/generate-script/manual-import', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raw: 'raw text' }) }));
   });
 });

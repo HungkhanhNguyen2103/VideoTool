@@ -28,6 +28,7 @@ export function parseSseFrames(input: string): { frames: SseFrame[]; remainder: 
 const ChaptersResponseSchema = z.object({ chapters: z.array(ChapterDocSchema) });
 const JobResponseSchema = z.object({ jobId: z.string() });
 const HistoryResponseSchema = z.array(z.object({ takenAt: z.coerce.date(), chapters: z.array(ChapterDocSchema) }));
+const ManualPromptResponseSchema = z.object({ prompt: z.string(), promptVersion: z.string() });
 
 export function getProject(id: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(id)}`, ProjectDetailSchema);
@@ -35,6 +36,18 @@ export function getProject(id: string): Promise<ProjectDetail> {
 
 export function generateScript(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script`, JobResponseSchema, { method: 'POST' });
+}
+
+export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, { method: 'PATCH', body: { provider } });
+}
+
+export function getManualScriptPrompt(projectId: string): Promise<{ prompt: string; promptVersion: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script/manual-prompt`, ManualPromptResponseSchema);
+}
+
+export function importManualScript(projectId: string, raw: string): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script/manual-import`, ProjectDetailSchema, { method: 'POST', body: { raw } });
 }
 
 export async function patchChapter(

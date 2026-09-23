@@ -30,6 +30,7 @@ _Last updated: 2026-09-23 · Phase 7 Task 6 word-based review and finalization d
 - Phase 6 Task 4 is complete: the generate-script worker now persists a validated outline and expands chapters sequentially with progress, cancellation, one short-response retry, and later-chapter continuation after failures. Later Phase 6 route/UI/acceptance work remains.
 - Phase 7 Task 1 adds additive chapter narrative metadata, project `openLoops`/`motif` defaults, the `hubris-trap` preset, and its New Project option; focused tests pass 52/52, typecheck/lint pass, and the full suite passes 255 tests with the pre-existing project todo skipped.
 - Phase 7 Task 6 uses shared 150-WPM word counting for review estimates and finalization scene durations; the legacy even-split assertions were rewritten to exact per-scene `[1, 1, 2]` values. Focused duration tests pass 65/65, typecheck/lint pass, and the full suite passes 276 tests with the pre-existing project todo skipped.
+- Phase 7 Task 7 adds client provider selection, automatic/manual generation controls, typed manual prompt/import APIs, preserved pasted text on import errors, and narrative metadata display. Client-focused tests pass 29/29; typecheck, lint, build, and full regression pass.
 
 ### Modules
 | Module | State | Notes |

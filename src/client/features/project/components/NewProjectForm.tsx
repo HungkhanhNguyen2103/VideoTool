@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ASPECT_RATIOS,
   ASPECT_RESOLUTIONS,
+  AI_PROVIDERS,
   type CreateProjectRequest,
   CreateProjectRequestSchema,
 } from '../../../../contracts/project';
@@ -205,6 +206,12 @@ export function NewProjectForm() {
                 <option value="documentary">Phim tài liệu (documentary)</option>
                 <option value="explainer">Giải thích (explainer)</option>
                 <option value="hubris-trap">Kẻ đi săn kiêu ngạo (Hubris Trap)</option>
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="ai-provider">Nhà cung cấp AI</label>
+              <select className={styles.input} id="ai-provider" {...register('aiProvider')}>
+                {AI_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider === 'deepseek' ? 'DeepSeek' : 'Claude'}</option>)}
               </select>
             </div>
             <div className={styles.field}>

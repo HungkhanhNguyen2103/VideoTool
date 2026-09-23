@@ -12,7 +12,9 @@ import {
   approveAllTargets,
   chapterMetaText,
   chaptersSummaryText,
+  generationModeForChapters,
   historyVersionLabel,
+  manualTextAfterImport,
   runRegenerationQueue,
   selectedRegenTargets,
   toggleApproveStatus,
@@ -50,6 +52,11 @@ export function ReviewScriptPage() {
   const [regen, setRegen] = useState<{ id: string; instruction: string; level: 'light' | 'medium' | 'rewrite'; preview: string; controller: AbortController } | null>(null);
   const [regenInstruction, setRegenInstruction] = useState('');
   const [regenLevel, setRegenLevel] = useState<'light' | 'medium' | 'rewrite'>('medium');
+  const [generationMode, setGenerationMode] = useState<'automatic' | 'manual'>('automatic');
+  const [manualRaw, setManualRaw] = useState('');
+  const [manualPrompt, setManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
+  const [manualBusy, setManualBusy] = useState(false);
+  const [providerBusy, setProviderBusy] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
   const lifecycleRef = useRef(0);
@@ -69,6 +76,8 @@ export function ReviewScriptPage() {
   const hasGenerating = Boolean(regen) || chapters.some((chapter) => chapter.status === 'generating');
   const hasApprovableChapters = chapters.some((chapter) => chapter.status !== 'generating' && chapter.status !== 'approved');
   const history = historyQuery.data ?? [];
+  const effectiveGenerationMode = generationModeForChapters(chapters.length, generationMode);
+  const controlsBusy = Boolean(jobId) || hasGenerating || manualBusy || providerBusy;
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -107,6 +116,35 @@ export function ReviewScriptPage() {
 
   async function generate() {
     try { setJobId((await api.generateScript(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo kịch bản.'); }
+  }
+
+  async function changeProvider(provider: 'deepseek' | 'claude') {
+    setProviderBusy(true);
+    try { await api.setAiProvider(projectId, provider); await projectQuery.refetch(); toast('Đã đổi nhà cung cấp AI.'); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi nhà cung cấp AI.'); } finally { setProviderBusy(false); }
+  }
+
+  async function loadManualPrompt() {
+    setManualBusy(true);
+    try { setManualPrompt(await api.getManualScriptPrompt(projectId)); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tải prompt thủ công.'); } finally { setManualBusy(false); }
+  }
+
+  async function copyManualPrompt() {
+    if (!manualPrompt) return;
+    try { await navigator.clipboard.writeText(manualPrompt.prompt); toast('Đã sao chép prompt.'); } catch { toast('Không thể sao chép prompt.'); }
+  }
+
+  async function importManual() {
+    setManualBusy(true);
+    try {
+      await api.importManualScript(projectId, manualRaw);
+      setManualRaw(manualTextAfterImport(manualRaw, true));
+      setManualPrompt(null);
+      await refresh();
+      toast('Đã nhập bản thảo thủ công.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể nhập bản thảo thủ công.');
+      setManualRaw(manualTextAfterImport(manualRaw, false));
+    } finally { setManualBusy(false); }
   }
 
   async function refresh() { await Promise.all([projectQuery.refetch(), historyQuery.refetch()]); }
@@ -213,7 +251,22 @@ export function ReviewScriptPage() {
         <section className={styles.panel} aria-labelledby="generate-title">
           <h2 id="generate-title">Nháp kịch bản</h2>
           <p className={styles.muted}>AI sẽ viết kịch bản theo brief và preset của dự án.</p>
-          <Button variant="amber" onClick={() => void generate()}>Tạo kịch bản</Button>
+          <label className={styles.inlineField} htmlFor="review-provider">Nhà cung cấp AI
+            <select className={styles.input} id="review-provider" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+              <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
+            </select>
+          </label>
+          <fieldset className={styles.modeControls}>
+            <legend>Phương thức tạo</legend>
+            <label><input type="radio" name="generation-mode" value="automatic" checked={effectiveGenerationMode === 'automatic'} disabled={controlsBusy} onChange={() => setGenerationMode('automatic')} />Tự động</label>
+            <label><input type="radio" name="generation-mode" value="manual" checked={effectiveGenerationMode === 'manual'} disabled={controlsBusy} onChange={() => setGenerationMode('manual')} />Thủ công</label>
+          </fieldset>
+          {effectiveGenerationMode === 'automatic' ? <Button variant="amber" disabled={controlsBusy} onClick={() => void generate()}>Tạo kịch bản</Button> : <div className={styles.manualBox}>
+            <div className={styles.actions}><Button variant="indigoline" disabled={manualBusy || controlsBusy} onClick={() => void loadManualPrompt()}>Lấy prompt</Button>{manualPrompt && <Button disabled={manualBusy || controlsBusy} onClick={() => void copyManualPrompt()}>Sao chép</Button>}</div>
+            {manualPrompt && <p className={styles.muted}>Prompt {manualPrompt.promptVersion}</p>}
+            <textarea className={styles.textarea} value={manualRaw} onChange={(event) => setManualRaw(event.target.value)} placeholder="Dán JSON bản thảo hoàn chỉnh vào đây…" aria-label="Bản thảo thủ công" />
+            <Button variant="amber" disabled={manualBusy || controlsBusy || !manualRaw.trim()} onClick={() => void importManual()}>Nhập bản thảo</Button>
+          </div>}
         </section>
       ) : (
         <div className={styles.reviewGrid}>
@@ -227,6 +280,11 @@ export function ReviewScriptPage() {
                 <div className={styles.summary}>{chaptersSummaryText(chapters)}</div>
               </div>
               <div className={styles.actions}>
+                <label className={styles.compactField} htmlFor="review-provider-existing">AI
+                  <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+                    <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
+                  </select>
+                </label>
                 <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
                 <Button variant="red" disabled={Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>
@@ -255,7 +313,7 @@ export function ReviewScriptPage() {
                       </>}
                     </div>
                   </div>
-                  <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</div>
+                  <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
                   {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}
                 </article>;
               })}
