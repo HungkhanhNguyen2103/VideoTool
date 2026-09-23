@@ -13,6 +13,7 @@ import {
   chapterMetaText,
   chaptersSummaryText,
   historyVersionLabel,
+  runRegenerationQueue,
   selectedRegenTargets,
   toggleApproveStatus,
   toggleFlagStatus,
@@ -52,6 +53,7 @@ export function ReviewScriptPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
   const lifecycleRef = useRef(0);
+  const initialExpansionProjectIdRef = useRef<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const progress = useJobProgress(jobId);
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
@@ -75,6 +77,7 @@ export function ReviewScriptPage() {
     setEditing(null);
     setRegenInstruction('');
     setRegenLevel('medium');
+    initialExpansionProjectIdRef.current = null;
     return () => {
       if (lifecycleRef.current === lifecycle) lifecycleRef.current += 1;
       regenControllerRef.current?.abort();
@@ -82,8 +85,9 @@ export function ReviewScriptPage() {
   }, [projectId]);
 
   useEffect(() => {
-    if (!chapters.length) return;
-    setExpanded((current) => current.size ? current : new Set([chapters[0]!.id]));
+    if (!chapters.length || projectQuery.data?.id !== projectId || initialExpansionProjectIdRef.current === projectId) return;
+    initialExpansionProjectIdRef.current = projectId;
+    setExpanded(new Set([chapters[0]!.id]));
   }, [chapters]);
 
   useEffect(() => {
@@ -128,33 +132,35 @@ export function ReviewScriptPage() {
 
   async function saveEdit(chapterId: string) { await patch(chapterId, { paragraphs: editParagraphs }); setEditing(null); }
 
-  async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel) {
-    if (regenControllerRef.current) return;
+  async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel): Promise<boolean> {
+    if (regenControllerRef.current) return false;
     const controller = new AbortController();
+    let aborted = false;
     regenControllerRef.current = controller;
     setRegen({ id: chapter.id, instruction, level, preview: '', controller });
     try {
       await api.regenerateChapter(projectId, chapter.id, { instruction, level }, (chunk) => setRegen((current) => current ? { ...current, preview: current.preview + chunk } : current), controller.signal);
       await refresh();
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
+      aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
+      if (!aborted) toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
       await refresh();
     } finally {
       if (regenControllerRef.current === controller) regenControllerRef.current = null;
       setRegen((current) => current?.controller === controller ? null : current);
     }
+    return aborted || controller.signal.aborted;
   }
 
   async function regenerateChapterIds(chapterIds: readonly string[]) {
     if (regenControllerRef.current) return;
     const lifecycle = lifecycleRef.current;
     const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));
-    for (const chapterId of chapterIds) {
-      if (lifecycleRef.current !== lifecycle) return;
+    await runRegenerationQueue(chapterIds, async (chapterId) => {
+      if (lifecycleRef.current !== lifecycle) return true;
       const chapter = chapterById.get(chapterId);
-      if (!chapter) continue;
-      await regenerate(chapter);
-    }
+      return chapter ? regenerate(chapter) : false;
+    });
   }
 
   async function regenerateSelected() { await regenerateChapterIds(selectedRegenIds); }
@@ -266,7 +272,7 @@ export function ReviewScriptPage() {
                 <legend>Mức thay đổi</legend>
                 {([['light', 'Nhẹ'], ['medium', 'Vừa'], ['rewrite', 'Viết lại']] as const).map(([value, label]) => <label key={value}><input type="radio" name="regen-level" value={value} checked={regenLevel === value} onChange={() => setRegenLevel(value)} /><span>{label}</span></label>)}
               </fieldset>
-              <Button variant="indigo" size="lg" className={styles.blockButton} disabled={Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />{selectedChapters.length ? `Tái tạo ${selectedRegenIds.length} chương đã chọn` : 'Tái tạo chương đầu tiên'}</Button>
+              <Button variant="indigo" size="lg" className={styles.blockButton} disabled={Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />Tái tạo chương đã chọn</Button>
             </section>
 
             <section className={styles.panel} aria-labelledby="history-title">

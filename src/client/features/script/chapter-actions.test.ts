@@ -5,6 +5,7 @@ import {
   chapterMetaText,
   chaptersSummaryText,
   historyVersionLabel,
+  runRegenerationQueue,
   selectedRegenTargets,
   toggleApproveStatus,
   toggleFlagStatus,
@@ -96,5 +97,18 @@ describe('historyVersionLabel', () => {
     expect(historyVersionLabel(0, 3)).toBe('Bản 3');
     expect(historyVersionLabel(1, 3)).toBe('Bản 2');
     expect(historyVersionLabel(2, 3)).toBe('Bản 1');
+  });
+});
+
+describe('runRegenerationQueue', () => {
+  it('stops before remaining chapters when a regeneration reports an abort', async () => {
+    const started: string[] = [];
+
+    await runRegenerationQueue(['chapter-1', 'chapter-2', 'chapter-3'], async (chapterId) => {
+      started.push(chapterId);
+      return chapterId === 'chapter-1';
+    });
+
+    expect(started).toEqual(['chapter-1']);
   });
 });

@@ -13,7 +13,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 _Last updated: 2026-09-22 · Phase 5 Prompt 2 complete (Remotion render engine implemented, verified, and documented)_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (179 tests pass; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (184 tests pass; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -68,10 +68,11 @@ Unknown `/api/*` returns JSON 404.
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO remains ComingSoonPage placeholder |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (179 passed; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
+`npm run typecheck`, `npm run lint`, `npm test` (184 passed; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
 - The post-review Remotion parity fix mutes embedded audio on source video scenes, and progress log writes are serialized and surfaced as controlled render failures instead of unhandled rejections; the focused Remotion suite passes 13/13.
 - Remotion cleanup failures are logged without replacing the primary staging/render error.
 - ReviewScriptPage now derives its production stepper from chapter/job state and uses the shared dark-theme tokens; four focused regression tests cover the state matrix and CSS token references.
+- ReviewScriptPage records chapter-history snapshots only for actual paragraph/title edits, leaves decision-only changes out of content history, stops a regeneration batch after cancellation, and preserves an explicitly collapsed list across refetches.
 
 ### Known gaps / TODO
 - Directly opening the prototype `file:///.../docs/prototypes/khoi-tao-du-an/index.html` was blocked by the browser automation URL policy, so the comparison used the fully read prototype source and matched the shared 1440px layout measurements (232px sidebar, 430px recent-project panel, no horizontal overflow). A direct visual side-by-side comparison remains unverified.

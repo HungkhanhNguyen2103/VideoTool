@@ -48,3 +48,10 @@ export function chaptersSummaryText(chapters: readonly ChapterDoc[]): string {
 export function historyVersionLabel(index: number, total: number): string {
   return `Bản ${total - index}`;
 }
+
+/** Runs one regeneration at a time and stops the batch as soon as one is aborted. */
+export async function runRegenerationQueue<T>(items: readonly T[], regenerate: (item: T) => Promise<boolean>): Promise<void> {
+  for (const item of items) {
+    if (await regenerate(item)) return;
+  }
+}

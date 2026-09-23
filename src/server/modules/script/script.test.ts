@@ -190,6 +190,51 @@ describe('script contracts', () => {
     expect((await getProject(project.id)).chapters[0]).toMatchObject({ paragraphs: ['Edited'], status: 'pending' });
   });
 
+  it('keeps changed paragraph edits pending when a status is submitted alongside them', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['Edited'], status: 'approved' });
+
+    expect((await getProject(project.id)).chapters[0]).toMatchObject({ paragraphs: ['Edited'], status: 'pending' });
+  });
+
+  it('keeps decision-only patches out of content history while recording a changed paragraph edit', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { status: 'needs-fix' });
+    expect(await getProjectHistory(project.id)).toEqual([]);
+
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['Edited'] });
+    expect(await getProjectHistory(project.id)).toEqual([
+      expect.objectContaining({ chapters: [expect.objectContaining({ paragraphs: ['Old'], status: 'needs-fix' })] }),
+    ]);
+  });
+
+  it('does not reset approval or create a snapshot when submitted content is unchanged', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['Old'] });
+    await patchChapter(project.id, 'chapter-1', { title: 'Opening' });
+
+    expect((await getProject(project.id)).chapters[0]).toMatchObject({ title: 'Opening', paragraphs: ['Old'], status: 'approved' });
+    expect(await getProjectHistory(project.id)).toEqual([]);
+  });
+
+  it('records a content snapshot when a title changes', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { title: 'New opening' });
+
+    expect((await getProject(project.id)).chapters[0]).toMatchObject({ title: 'New opening', status: 'approved' });
+    expect(await getProjectHistory(project.id)).toEqual([
+      expect.objectContaining({ chapters: [expect.objectContaining({ title: 'Opening' })] }),
+    ]);
+  });
+
   it('finalizes approved chapters into scenes and sets status assets', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [

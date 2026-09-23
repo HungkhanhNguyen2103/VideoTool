@@ -42,6 +42,10 @@ function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
   return { takenAt: new Date(), chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })) };
 }
 
+function paragraphsEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((paragraph, index) => paragraph === right[index]);
+}
+
 export async function patchChapter(
   projectId: string,
   chapterId: string,
@@ -50,8 +54,15 @@ export async function patchChapter(
   const project = await getProject(projectId);
   const chapter = project.chapters.find((item) => item.id === chapterId);
   if (!chapter) throw new NotFound('Không tìm thấy chương.');
-  const normalizedPatch = patch.paragraphs ? { ...patch, status: 'pending' as const } : patch;
-  const updated = await patchProjectChapter(projectId, chapterId, normalizedPatch, snapshotOf(project.chapters));
+  const paragraphsChanged = patch.paragraphs !== undefined && !paragraphsEqual(patch.paragraphs, chapter.paragraphs);
+  const titleChanged = patch.title !== undefined && patch.title !== chapter.title;
+  const normalizedPatch = {
+    ...(paragraphsChanged ? { paragraphs: patch.paragraphs, status: 'pending' as const } : {}),
+    ...(titleChanged ? { title: patch.title } : {}),
+    ...(!paragraphsChanged && patch.status !== undefined ? { status: patch.status } : {}),
+  };
+  if (Object.keys(normalizedPatch).length === 0) return project.chapters;
+  const updated = await patchProjectChapter(projectId, chapterId, normalizedPatch, paragraphsChanged || titleChanged ? snapshotOf(project.chapters) : null);
   return updated.chapters;
 }
 
