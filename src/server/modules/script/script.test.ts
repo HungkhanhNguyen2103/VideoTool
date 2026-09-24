@@ -215,6 +215,22 @@ describe('script contracts', () => {
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
   });
 
+  it('rejects a manual document missing outline continuity fields before any write', async () => {
+    const project = await createProject(projectInput);
+    const raw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Only chapter', role: 'hook', beat: 'Open', targetWords: 4, endsOnTension: false, paragraphs: ['Manual paragraph'] }],
+      openLoops: [],
+    });
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw }),
+    });
+
+    expect(response.status).toBe(422);
+    expect((await response.json()).error.code).toBe('SCRIPT_PARSE_ERROR');
+    expect(await getProject(project.id)).toEqual(project);
+  });
+
   it('rejects a manual chapter-count mismatch without changing the project', async () => {
     const project = await createProject(projectInput);
     const raw = JSON.stringify({

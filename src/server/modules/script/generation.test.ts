@@ -56,10 +56,29 @@ describe('sequential script generation', () => {
     expect(saved.chapters.map((chapter) => chapter.paragraphs)).toEqual([[words(8)], ['still short']]);
     expect(saved.chapters.map((chapter) => chapter.status)).toEqual(['pending', 'pending']);
     expect(saved.openLoops[0]!.question).toBe('What caused it?');
+    expect(saved.coreQuestion).toBe('What is at stake?');
+    expect(saved.openingHook).toBe('A compelling opening.');
     expect(aiMock.chat).toHaveBeenCalledTimes(5);
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Retry style');
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('What caused it?');
     expect(ctx.reportProgress).toHaveBeenCalled();
+  });
+
+  it('persists outline core question and opening hook', async () => {
+    aiMock.chat
+      .mockResolvedValueOnce(JSON.stringify({
+        chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: false }],
+        openLoops: [], coreQuestion: 'Why did the river change?', openingHook: 'At dawn, the river ran backward.',
+      }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['One'], styleNote: 'Style' }));
+    const project = await createProject({ ...projectInput, chapterCount: 1 });
+
+    await generateScript(project.id, context());
+
+    await expect(getProject(project.id)).resolves.toMatchObject({
+      coreQuestion: 'Why did the river change?',
+      openingHook: 'At dawn, the river ran backward.',
+    });
   });
 
   it('marks a failed chapter needs-fix and continues with later chapters', async () => {

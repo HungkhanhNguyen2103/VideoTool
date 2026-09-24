@@ -2,6 +2,7 @@ import type { ProjectDetail } from '../../../../contracts/project';
 import type { ChapterDoc, OpenLoop } from '../../../../contracts/script';
 import { NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
 import { loadScriptPreset, type ScriptPreset } from './presets/loader';
+import { SCRIPT_PRESET_CONFIG } from './presets/config';
 
 export type BuiltPrompt = { system: string; user: string; promptVersion: string };
 export type VisualPromptSceneInput = {
@@ -63,11 +64,14 @@ export function buildOutlinePrompt(project: ProjectDetail): BuiltPrompt {
   const shape = project.scriptPresetId === 'hubris-trap'
     ? 'Include motif with hunter, perfectPlan, blindSpot, and selfDestruction.'
     : 'Do not include motif.';
-  const weighting = project.scriptPresetId === 'explainer'
+  const weightingConfig = SCRIPT_PRESET_CONFIG[project.scriptPresetId];
+  const weighting = weightingConfig.weightingStrictness === 'none'
     ? 'Use a flatter explanatory progression rather than a dramatic five-act weighting.'
-    : 'Shape the outline around five-act weighting: 8% / 15% / 55% / 12% / 10%.';
+    : weightingConfig.weightingStrictness === 'soft'
+      ? `Use five-act weighting as a guideline: ${weightingConfig.actWeighting!.join('% / ')}%; deviate if pacing calls for it.`
+      : `Follow five-act weighting closely as a requirement: ${weightingConfig.actWeighting!.join('% / ')}%.`;
   return {
-    system: systemMessage(preset, `Return one JSON outline object with chapters, openLoops, and the preset-specific motif rule. Each chapter must have no, title, role, beat, positive targetWords, and endsOnTension. ${shape} ${weighting}`),
+    system: systemMessage(preset, `Return one JSON outline object with non-empty coreQuestion, openingHook, chapters, openLoops, and the preset-specific motif rule. coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. Each chapter must have no, title, role, beat, positive targetWords, and endsOnTension. ${shape} ${weighting}`),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -102,7 +106,7 @@ export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput):
 export function buildManualScriptPrompt(project: ProjectDetail): BuiltPrompt {
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, 'Return one complete script document with chapters containing no, title, role, beat, positive targetWords, endsOnTension, and paragraphs; also include openLoops and the preset-specific motif rule.'),
+    system: systemMessage(preset, 'Return one complete script document with non-empty coreQuestion and openingHook at the document root, plus chapters containing no, title, role, beat, positive targetWords, endsOnTension, and paragraphs; also include openLoops and the preset-specific motif rule. coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one.'),
     user: [
       `Write the complete script document for project: ${project.title}`,
       `Brief: ${project.brief}`,

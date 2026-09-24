@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProjectDetailSchema } from '../../../../contracts/project';
 import { ChapterDocSchema } from '../../../../contracts/script';
 import { loadScriptPreset } from './presets/loader';
+import { SCRIPT_PRESET_CONFIG } from './presets/config';
 import { buildChapterExpansionPrompt, buildManualScriptPrompt, buildOutlinePrompt, buildRegenerationPrompt, buildScriptPrompt, buildVisualPromptPrompt } from './build-prompt';
 import { parseChapterExpansion, parseGeneratedChapters, parseManualScriptDocument, parseRegeneratedParagraphs, parseScriptOutline, parseVisualPromptBatch } from './parse-output';
 
@@ -131,6 +132,29 @@ describe('script AI parsers', () => {
     expect(hubris.system).toContain('8% / 15% / 55% / 12% / 10%');
     expect(explainer.system).toContain('flatter explanatory progression');
     expect(explainer.system).not.toContain('8% / 15% / 55% / 12% / 10%');
+  });
+
+  it('uses configured soft, strict, and no act-weighting guidance for outline prompts', () => {
+    const ratio = `${SCRIPT_PRESET_CONFIG.documentary.actWeighting!.join('% / ')}%`;
+    const documentary = buildOutlinePrompt({ ...project, scriptPresetId: 'documentary' });
+    const hubris = buildOutlinePrompt({ ...project, scriptPresetId: 'hubris-trap' });
+    const explainer = buildOutlinePrompt({ ...project, scriptPresetId: 'explainer' });
+
+    expect(documentary.system).toContain(ratio);
+    expect(documentary.system).toContain('guideline');
+    expect(hubris.system).toContain(ratio);
+    expect(hubris.system).toContain('requirement');
+    expect(explainer.system).toContain('flatter explanatory progression');
+    expect(explainer.system).not.toContain(ratio);
+  });
+
+  it.each(['coreQuestion', 'openingHook'] as const)('rejects an outline missing %s with SCRIPT_PARSE_ERROR', (field) => {
+    const outline = {
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false }],
+      openLoops: [], coreQuestion: 'Question', openingHook: 'Hook',
+    };
+    delete outline[field];
+    expect(() => parseScriptOutline(JSON.stringify(outline), 'documentary')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));
   });
   it.each([JSON.stringify(generated), `\`\`\`json\n${JSON.stringify(generated)}\n\`\`\``])('accepts generated chapters in raw or fenced JSON', (raw) => {
     expect(parseGeneratedChapters(raw)).toEqual(generated);

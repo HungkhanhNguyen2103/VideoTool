@@ -113,7 +113,7 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
     paragraphs: [],
     scenesCount: null,
     durationSec: null,
-  })), outline.openLoops, 'motif' in outline ? outline.motif : null);
+  })), outline.openLoops, 'motif' in outline ? outline.motif : null, outline.coreQuestion, outline.openingHook);
   await context.reportProgress(0, { chapters: saved.chapters.length });
 
   let styleNote = '';
