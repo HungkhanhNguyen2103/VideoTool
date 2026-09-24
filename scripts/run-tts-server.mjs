@@ -9,7 +9,7 @@ const host = process.env.TTS_SERVER_HOST ?? '127.0.0.1';
 const port = process.env.TTS_SERVER_PORT ?? '8000';
 let shellCommandNotFound = false;
 
-const child = spawn(pythonBin, ['-m', 'uvicorn', 'tts_server:app', '--host', host, '--port', port], {
+const child = spawn(pythonBin, ['-u', '-m', 'uvicorn', 'tts_server:app', '--host', host, '--port', port], {
   cwd: libDir,
   stdio: ['inherit', 'inherit', 'pipe'],
   shell: process.platform === 'win32',
