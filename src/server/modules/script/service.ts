@@ -182,11 +182,21 @@ export async function regenerateChapter(
   const project = await getProject(projectId);
   const chapter = project.chapters.find((item) => item.id === chapterId);
   if (!chapter) throw new NotFound('Không tìm thấy chương.');
+  const chapterIndex = project.chapters.findIndex((item) => item.id === chapterId);
+  const previousChapter = chapter.no === 1 ? undefined : project.chapters[chapterIndex - 1];
+  const nextChapter = project.chapters.find((item) => item.no === chapter.no + 1);
   const snapshot = snapshotOf(project.chapters);
   await patchProjectChapter(projectId, chapterId, { status: 'generating' }, snapshot);
 
   try {
-    const prompt = buildRegenerationPrompt(project, chapter, opts.instruction, opts.level);
+    const prompt = buildRegenerationPrompt(project, chapter, opts.instruction, opts.level, {
+      coreQuestion: project.coreQuestion,
+      openingHook: chapter.no === 1 ? project.openingHook : null,
+      openLoops: project.openLoops.filter((loop) => loop.plantedInChapter === chapter.no || loop.resolvedInChapter === chapter.no),
+      previousChapterSummary: previousChapter?.chapterSummary ?? null,
+      previousAvoidRepeating: previousChapter?.avoidRepeating ?? [],
+      previousPersistentFacts: previousChapter?.persistentFacts ?? [],
+    });
     let raw = '';
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     for await (const chunk of getAiClient(project.aiProvider).stream([
@@ -198,9 +208,25 @@ export async function regenerateChapter(
       onChunk(chunk);
     }
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    const paragraphs = parseRegeneratedParagraphs(raw);
-    const updated: ChapterDoc = { ...chapter, paragraphs, status: 'pending' };
-    const result = await patchProjectChapter(projectId, chapterId, { paragraphs: updated.paragraphs, status: updated.status });
+    const regenerated = parseRegeneratedParagraphs(raw);
+    const updated: ChapterDoc = {
+      ...chapter,
+      paragraphs: regenerated.paragraphs,
+      status: 'pending',
+      chapterSummary: regenerated.chapterSummary,
+      avoidRepeating: regenerated.avoidRepeating,
+      persistentFacts: regenerated.persistentFactsNext,
+      reviewStatus: 'clean',
+    };
+    const result = await patchProjectChapter(projectId, chapterId, {
+      paragraphs: updated.paragraphs,
+      status: updated.status,
+      chapterSummary: updated.chapterSummary,
+      avoidRepeating: updated.avoidRepeating,
+      persistentFacts: updated.persistentFacts,
+      reviewStatus: updated.reviewStatus,
+    });
+    if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' });
     return result.chapters.find((item) => item.id === chapterId) ?? updated;
   } catch (error) {
     const aborted = signal.aborted || (error instanceof DOMException && error.name === 'AbortError');

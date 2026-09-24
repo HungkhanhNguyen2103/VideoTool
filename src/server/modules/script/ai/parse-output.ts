@@ -45,7 +45,7 @@ export function parseManualScriptDocument(raw: string, presetId: ScriptPresetId)
   return validate(raw, manualSchemaForScriptPreset(presetId));
 }
 
-export function parseRegeneratedParagraphs(raw: string): string[] {
+export function parseRegeneratedParagraphs(raw: string): z.infer<typeof RegeneratedParagraphsSchema> {
   return validate(raw, RegeneratedParagraphsSchema);
 }
 

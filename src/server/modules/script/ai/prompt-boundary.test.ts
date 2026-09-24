@@ -42,7 +42,10 @@ describe('script AI prompt boundary', () => {
   });
 
   it('regenerates one chapter with preset guidance and no whole-project brief', () => {
-    const result = buildRegenerationPrompt(project, chapter, 'Shorten this', 'light');
+    const result = buildRegenerationPrompt(project, chapter, 'Shorten this', 'light', {
+      coreQuestion: 'Why did the river change?', openingHook: 'At dawn, it reversed.', openLoops: [],
+      previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
+    });
     expect(result.promptVersion).toBe('script-prompt-v1/documentary@2');
     expect(result.system).toContain(loadScriptPreset('documentary').instructions);
     expect(result.user).toContain('Origins');
@@ -53,7 +56,10 @@ describe('script AI prompt boundary', () => {
   });
 
   it('carries the selected explainer preset version into regeneration', () => {
-    const result = buildRegenerationPrompt({ ...project, scriptPresetId: 'explainer' }, chapter, 'Clarify this', 'rewrite');
+    const result = buildRegenerationPrompt({ ...project, scriptPresetId: 'explainer' }, chapter, 'Clarify this', 'rewrite', {
+      coreQuestion: 'Why did the river change?', openingHook: null, openLoops: [],
+      previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
+    });
     expect(result.promptVersion).toBe('script-prompt-v1/explainer@1');
     expect(result.system).toContain(loadScriptPreset('explainer').instructions);
   });
@@ -168,10 +174,11 @@ describe('script AI parsers', () => {
   it.each(['not json', '{}', JSON.stringify([{ ...generated[0], paragraphs: [] }])])('maps invalid chapter output to SCRIPT_PARSE_ERROR', (raw) => {
     expect(() => parseGeneratedChapters(raw)).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));
   });
-  it.each(['["Updated"]', '{"paragraphs":["Updated"]}', '```json\n{"paragraphs":["Updated"]}\n```'])('accepts regenerated paragraphs', (raw) => {
-    expect(parseRegeneratedParagraphs(raw)).toEqual(['Updated']);
+  it('accepts a strict regenerated chapter response', () => {
+    const raw = JSON.stringify({ paragraphs: ['Updated'], chapterSummary: 'Updated summary', avoidRepeating: ['Do not repeat this'], persistentFactsNext: ['Updated fact'] });
+    expect(parseRegeneratedParagraphs(raw)).toEqual({ paragraphs: ['Updated'], chapterSummary: 'Updated summary', avoidRepeating: ['Do not repeat this'], persistentFactsNext: ['Updated fact'] });
   });
-  it.each(['not json', '{"paragraphs":[]}', '{"paragraphs":[3]}'])('rejects invalid regenerated paragraphs', (raw) => {
+  it.each(['not json', '{"paragraphs":[]}', '{"paragraphs":[3]}', '{"paragraphs":["Updated"]}', '["Updated"]'])('rejects invalid regenerated paragraphs', (raw) => {
     expect(() => parseRegeneratedParagraphs(raw)).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));
   });
   it.each(['{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn"}]}', '```json\n{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn"}]}\n```'])('accepts visual batches', (raw) => {

@@ -29,6 +29,17 @@ export type ChapterExpansionPromptInput = {
   styleNote: string;
 };
 
+const PERSISTENT_FACTS_INSTRUCTION = 'persistentFacts is NOT a chapter summary. Keep only facts or narrative state that a later chapter could accidentally contradict, reintroduce as new, or forget while it remains relevant. Drop facts that are no longer useful. Return the COMPLETE next persistentFacts state, not a delta. Maximum 5 items.';
+
+type RegenerationPromptContext = {
+  coreQuestion: string;
+  openingHook: string | null;
+  openLoops: readonly (OpenLoop | string)[];
+  previousChapterSummary: string | null;
+  previousAvoidRepeating: string[];
+  previousPersistentFacts: string[];
+};
+
 function version(preset: ScriptPreset): string {
   return `script-prompt-v1/${preset.id}@${preset.version}`;
 }
@@ -93,7 +104,7 @@ export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput):
   const { project, chapter, coreQuestion, openingHook, previousChapterSummary, previousAvoidRepeating, previousPersistentFacts, openLoops, styleNote } = input;
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, 'Return one JSON object with paragraphs (string array), styleNote (string, at most 500 characters), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). persistentFacts is NOT a chapter summary. Keep only facts or narrative state that a later chapter could accidentally contradict, reintroduce as new, or forget while it remains relevant. Drop facts that are no longer useful. Return the COMPLETE next persistentFacts state, not a delta. Maximum 5 items.'),
+    system: systemMessage(preset, `Return one JSON object with paragraphs (string array), styleNote (string, at most 500 characters), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). ${PERSISTENT_FACTS_INSTRUCTION}`),
     user: [
       `Language: ${language(project)}`,
       `Core question: ${coreQuestion}`,
@@ -134,14 +145,25 @@ export function buildRegenerationPrompt(
   chapter: ChapterDoc,
   instruction: string,
   level: 'light' | 'medium' | 'rewrite',
+  context: RegenerationPromptContext,
 ): BuiltPrompt {
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, 'Rewrite one chapter and return JSON in the form {"paragraphs":["..."]}.'),
+    system: systemMessage(preset, `Rewrite one chapter and return one JSON object with paragraphs (string array), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). ${PERSISTENT_FACTS_INSTRUCTION}`),
     user: [
       `Language: ${language(project)}`,
+      `Core question: ${context.coreQuestion}`,
+      ...(context.openingHook !== null ? [`Opening hook: ${context.openingHook}`] : []),
       `Chapter ${chapter.no}: ${chapter.title}`,
+      `Role: ${chapter.role || '(unspecified)'}`,
+      `Beat: ${chapter.beat || '(unspecified)'}`,
+      `Target words: ${chapter.targetWords ?? '(unspecified)'}`,
+      `Ends on tension: ${chapter.endsOnTension ? 'yes' : 'no'}`,
       `Current paragraphs:\n${chapter.paragraphs.join('\n\n')}`,
+      `Previous chapter summary: ${context.previousChapterSummary ?? '(none)'}`,
+      `Avoid repeating: ${context.previousAvoidRepeating.join(' | ') || '(none)'}`,
+      `Persistent facts: ${context.previousPersistentFacts.join(' | ') || '(none)'}`,
+      `Open loops: ${context.openLoops.map((loop) => typeof loop === 'string' ? loop : loop.question).join(' | ') || '(none)'}`,
       `Instruction: ${instruction || '(none)'}`,
       `Regeneration level: ${level}`,
     ].join('\n\n'),

@@ -7,7 +7,7 @@ import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/scri
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
-import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, setProjectAiProvider } from '../project';
+import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider } from '../project';
 import { finalizeScript, generateScript, patchChapter, regenerateChapter, saveGeneratedScript } from './service';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
@@ -25,6 +25,8 @@ const projectInput = {
   voiceId: null,
   renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
 };
+
+const regeneratedResponse = (paragraphs: string[] = ['New paragraph'], continuity = { chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFactsNext: ['New fact'] }) => JSON.stringify({ paragraphs, ...continuity });
 
 beforeAll(() => startTestMongo());
 beforeEach(async () => {
@@ -442,18 +444,72 @@ describe('script contracts', () => {
   it('streams regeneration chunks, updates the chapter, and snapshots old paragraphs', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    const response = regeneratedResponse();
     aiMock.stream.mockReturnValue((async function* () {
-      yield '{"paragraphs":["New ';
-      yield 'paragraph"]}';
+      yield response.slice(0, 20);
+      yield response.slice(20);
     })());
     const chunks: string[] = [];
 
     const updated = await regenerateChapter(project.id, 'chapter-1', { instruction: 'shorter', level: 'light' }, (chunk) => chunks.push(chunk), new AbortController().signal);
 
-    expect(chunks).toEqual(['{"paragraphs":["New ', 'paragraph"]}']);
-    expect(updated).toMatchObject({ id: 'chapter-1', paragraphs: ['New paragraph'], status: 'pending' });
+    expect(chunks.join('')).toBe(response);
+    expect(updated).toMatchObject({ id: 'chapter-1', paragraphs: ['New paragraph'], status: 'pending', reviewStatus: 'clean', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'] });
     expect(await getProjectHistory(project.id)).toHaveLength(1);
     expect((await getProjectHistory(project.id))[0]!.chapters[0]!.paragraphs).toEqual(['Old']);
+    expect(aiMock.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes regeneration narrative context and marks only the next chapter upstream-changed', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'pending', scenesCount: null, durationSec: null, chapterSummary: 'Previous summary', avoidRepeating: ['Previous avoidance'], persistentFacts: ['Previous fact'] },
+      { id: 'chapter-2', no: 2, title: 'Middle', paragraphs: ['Old middle'], status: 'pending', scenesCount: null, durationSec: null, role: 'rising', beat: 'Escalate', targetWords: 20, endsOnTension: true },
+      { id: 'chapter-3', no: 3, title: 'Ending', paragraphs: ['Old ending'], status: 'pending', scenesCount: null, durationSec: null },
+    ], null, 'script');
+    await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [{ question: 'What changed?', plantedInChapter: 2, resolvedInChapter: 3 }], null, 'Why did the river change?', 'At dawn, it reversed.', null, 'script');
+    aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(['New middle']); })());
+
+    await regenerateChapter(project.id, 'chapter-2', { instruction: 'deepen', level: 'medium' }, vi.fn(), new AbortController().signal);
+
+    const prompt = aiMock.stream.mock.calls[0]![0][1].content as string;
+    expect(prompt).toContain('Core question:');
+    expect(prompt).toContain('Role: rising');
+    expect(prompt).toContain('Beat: Escalate');
+    expect(prompt).toContain('Target words: 20');
+    expect(prompt).toContain('Open loops: What changed?');
+    expect(prompt).toContain('Previous chapter summary: Previous summary');
+    expect(prompt).toContain('Avoid repeating: Previous avoidance');
+    expect(prompt).toContain('Persistent facts: Previous fact');
+    expect(prompt).not.toContain('Opening hook:');
+
+    const saved = await getProject(project.id);
+    expect(saved.chapters[1]).toMatchObject({ reviewStatus: 'clean', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'] });
+    expect(saved.chapters[2]).toMatchObject({ reviewStatus: 'upstream-changed' });
+  });
+
+  it('passes opening hook only to chapter one with empty previous continuity', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [], null, 'Why did it happen?', 'It began at dawn.', null, 'script');
+    aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(); })());
+
+    await regenerateChapter(project.id, 'chapter-1', { instruction: 'rewrite', level: 'rewrite' }, vi.fn(), new AbortController().signal);
+
+    const prompt = aiMock.stream.mock.calls[0]![0][1].content as string;
+    expect(prompt).toContain('Opening hook: It began at dawn.');
+    expect(prompt).toContain('Previous chapter summary: (none)');
+    expect(prompt).toContain('Avoid repeating: (none)');
+    expect(prompt).toContain('Persistent facts: (none)');
+  });
+
+  it('regenerates the last chapter without attempting a nonexistent next-chapter update', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Only', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(); })());
+
+    await expect(regenerateChapter(project.id, 'chapter-1', { instruction: 'rewrite', level: 'light' }, vi.fn(), new AbortController().signal)).resolves.toMatchObject({ reviewStatus: 'clean' });
+    expect(aiMock.stream).toHaveBeenCalledTimes(1);
   });
 
   it('marks an aborted regeneration needs-fix and leaves old paragraphs unchanged', async () => {
@@ -702,7 +758,7 @@ describe('script contracts', () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
     aiMock.stream.mockReturnValue((async function* () {
-      yield '{"paragraphs":["New"]}';
+      yield regeneratedResponse(['New']);
     })());
     const base = await startScriptServer();
 
@@ -711,7 +767,7 @@ describe('script contracts', () => {
     });
     const text = await response.text();
     expect(response.status).toBe(200);
-    expect(text).toContain('event: chunk\ndata: "{\\"paragraphs\\":[\\"New\\"]}"');
+    expect(text).toContain('event: chunk\ndata: "{\\"paragraphs\\":[\\"New\\"],\\"chapterSummary\\":\\"New summary\\"');
     expect(text.match(/event: done/g)).toHaveLength(1);
     expect(text).toContain('"paragraphs":["New"]');
   });

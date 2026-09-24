@@ -45,7 +45,7 @@ needs-fix ──edit/regen──> pending or generating
 ## Regeneration and history
 - Initial generation does not snapshot an empty chapter array.
 - Existing-array mutations snapshot first; project-owned persistence prepends the snapshot and prunes to the newest ten.
-- Regeneration uses inline SSE rather than the job queue because the user needs token-by-token preview and immediate AbortController cancellation; initial generation remains a job because it is a whole-project operation.
+- Regeneration uses inline SSE rather than the job queue because the user needs token-by-token preview and immediate AbortController cancellation; initial generation remains a job because it is a whole-project operation. Its prompt includes the project core question, chapter-relevant open loops, the chapter-one opening hook when applicable, and the previous chapter's persisted continuity state. A successful regeneration replaces the target chapter's continuity state, resets its review status to `clean`, and marks only the next chapter `upstream-changed`; no further chapters are cascaded.
 
 ## Finalization
 - Every chapter must be `approved`.

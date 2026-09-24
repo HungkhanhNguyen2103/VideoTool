@@ -62,10 +62,12 @@ export const GeneratedChapterSchema = z.object({
   durationSec: z.null(),
 });
 
-export const RegeneratedParagraphsSchema = z.union([
-  z.array(z.string()).min(1),
-  z.object({ paragraphs: z.array(z.string()).min(1) }).transform((value) => value.paragraphs),
-]);
+export const RegeneratedParagraphsSchema = z.object({
+  paragraphs: z.array(z.string()).min(1),
+  chapterSummary: z.string().max(250),
+  avoidRepeating: z.array(z.string().max(80)).max(5),
+  persistentFactsNext: z.array(z.string().max(120)).max(5),
+}).strict();
 
 export const VisualPromptBatchSchema = z.object({
   styleNote: z.string().max(500),
