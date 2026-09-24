@@ -20,6 +20,8 @@ const outline = JSON.stringify({
     { no: 2, title: 'Answer', role: 'resolution', beat: 'Resolve the mystery', targetWords: 10, endsOnTension: false },
   ],
   openLoops: [{ question: 'What caused it?', plantedInChapter: 1, resolvedInChapter: 2 }],
+  coreQuestion: 'What is at stake?',
+  openingHook: 'A compelling opening.',
 });
 
 beforeAll(() => startTestMongo());
@@ -88,7 +90,7 @@ describe('sequential script generation', () => {
   it('rejects an explicit chapter-count mismatch before outline persistence', async () => {
     aiMock.chat.mockResolvedValueOnce(JSON.stringify({
       chapters: [{ no: 1, title: 'Only chapter', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: false }],
-      openLoops: [],
+      openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
     }));
     const project = await createProject(projectInput);
 
@@ -123,6 +125,8 @@ describe('sequential script generation', () => {
         { question: 'Relevant to the opening?', plantedInChapter: 1, resolvedInChapter: 2 },
         { question: 'Only for the ending?', plantedInChapter: 3, resolvedInChapter: 3 },
       ],
+      coreQuestion: 'What is at stake?',
+      openingHook: 'A compelling opening.',
     });
     aiMock.chat
       .mockResolvedValueOnce(threeChapterOutline)

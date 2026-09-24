@@ -19,6 +19,7 @@
 - `setProjectRenderEngine` atomically updates the engine selection and increments `version` once; consumers call it through the public module index.
 - `setProjectAiProvider` atomically updates the AI provider and increments `version` once; script routes own the HTTP surface while calling this public project mutation.
 - `replaceProjectScript` atomically replaces generated chapters, open loops, motif, optional status, and optional history snapshot in one versioned project update.
+- Script continuity fields are additive and default safely for legacy reads: project `coreQuestion`/`openingHook` use `''`; chapter `chapterSummary` uses `null`, `avoidRepeating`/`persistentFacts` use `[]`, and `reviewStatus` uses `'clean'`.
 - Delete is a hard delete (`repo.deleteProjectById`); `// TODO(phase-4)` marks where asset/render file cleanup will be added.
 
 ## Flow

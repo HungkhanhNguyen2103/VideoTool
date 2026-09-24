@@ -47,6 +47,8 @@ export const ProjectDocSchema = z.object({
   chapters: z.array(ChapterDocSchema).default([]),
   openLoops: z.array(OpenLoopSchema).default([]),
   motif: HubrisMotifSchema.nullable().default(null),
+  coreQuestion: z.string().default(''),
+  openingHook: z.string().default(''),
   chapterHistory: z.array(ChapterSnapshotSchema).default([]),
   /** Optimistic lock: bump on every write, compare-and-swap on update. */
   version: z.number().int(),

@@ -41,6 +41,8 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     chapters: doc.chapters,
     openLoops: doc.openLoops,
     motif: doc.motif,
+    coreQuestion: doc.coreQuestion,
+    openingHook: doc.openingHook,
     version: doc.version,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
@@ -73,6 +75,8 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     chapters: [],
     openLoops: [],
     motif: null,
+    coreQuestion: '',
+    openingHook: '',
     chapterHistory: [],
     version: 1,
     createdAt: now,
@@ -260,17 +264,19 @@ export async function replaceProjectScript(
   chapters: ChapterDoc[],
   openLoops: OpenLoop[],
   motif: HubrisMotif | null,
-  snapshot: ChapterSnapshot | null,
+  coreQuestion: string = '',
+  openingHook: string = '',
+  snapshot: ChapterSnapshot | null = null,
   newStatus?: ProjectStatus,
 ): Promise<ProjectDetail> {
-  await updateProject(id, { chapters, openLoops, motif, ...(newStatus ? { status: newStatus } : {}) }, snapshot);
+  await updateProject(id, { chapters, openLoops, motif, coreQuestion, openingHook, ...(newStatus ? { status: newStatus } : {}) }, snapshot);
   return getProject(id);
 }
 
 export async function patchProjectChapter(
   id: string,
   chapterId: string,
-  patch: Partial<Pick<ChapterDoc, 'paragraphs' | 'status' | 'title'>>,
+  patch: Partial<Pick<ChapterDoc, 'paragraphs' | 'status' | 'title' | 'chapterSummary' | 'avoidRepeating' | 'persistentFacts' | 'reviewStatus'>>,
   snapshot: ChapterSnapshot | null = null,
 ): Promise<ProjectDetail> {
   const set: Record<string, unknown> = { updatedAt: new Date() };

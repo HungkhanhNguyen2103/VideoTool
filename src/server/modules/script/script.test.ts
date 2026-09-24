@@ -201,6 +201,8 @@ describe('script contracts', () => {
         { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 4, endsOnTension: false, paragraphs: ['Manual conclusion'] },
       ],
       openLoops: [],
+      coreQuestion: 'What is at stake?',
+      openingHook: 'A compelling opening.',
     });
     const baseUrl = await startScriptServer();
     const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
@@ -218,6 +220,8 @@ describe('script contracts', () => {
     const raw = JSON.stringify({
       chapters: [{ no: 1, title: 'Only chapter', role: 'hook', beat: 'Open', targetWords: 4, endsOnTension: false, paragraphs: ['Manual paragraph'] }],
       openLoops: [],
+      coreQuestion: 'What is at stake?',
+      openingHook: 'A compelling opening.',
     });
     const baseUrl = await startScriptServer();
     const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
@@ -257,7 +261,7 @@ describe('script contracts', () => {
       role: 'hook', beat: 'Open with a mystery', targetWords: 3, endsOnTension: true,
     }], [{ question: 'What happened?', plantedInChapter: 1, resolvedInChapter: 1 }], {
       hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The plan turns inward',
-    });
+    }, 'The core question', 'The opening hook');
     expect(updated.version).toBe(project.version + 1);
     expect(updated.status).toBe('script');
     expect(updated.chapters).toHaveLength(1);
@@ -265,6 +269,8 @@ describe('script contracts', () => {
     expect(updated.chapters[0]!.id).not.toBe('');
     expect(updated.openLoops[0]!.question).toBe('What happened?');
     expect(updated.motif?.hunter).toBe('A rival');
+    expect(updated.coreQuestion).toBe('The core question');
+    expect(updated.openingHook).toBe('The opening hook');
   });
 
   it('accepts chapters and snapshots with stable chapter metadata', () => {
@@ -279,6 +285,19 @@ describe('script contracts', () => {
     });
     const snapshot = ChapterSnapshotSchema.parse({ takenAt: new Date(), chapters: [chapter] });
     expect(snapshot.chapters[0]).toEqual(chapter);
+  });
+
+  it('defaults continuity metadata and rejects values outside its bounds', () => {
+    const chapter = ChapterDocSchema.parse({
+      id: 'chapter-continuity', no: 1, title: 'Continuity', paragraphs: ['Paragraph'],
+      status: 'pending', scenesCount: null, durationSec: null,
+    });
+    expect(chapter).toMatchObject({ chapterSummary: null, avoidRepeating: [], persistentFacts: [], reviewStatus: 'clean' });
+    expect(ChapterDocSchema.safeParse({ ...chapter, avoidRepeating: Array.from({ length: 6 }, () => 'Avoid') }).success).toBe(false);
+    expect(ChapterDocSchema.safeParse({ ...chapter, avoidRepeating: ['x'.repeat(81)] }).success).toBe(false);
+    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: Array.from({ length: 6 }, () => 'Fact') }).success).toBe(false);
+    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: ['x'.repeat(121)] }).success).toBe(false);
+    expect(ChapterDocSchema.safeParse({ ...chapter, chapterSummary: 'x'.repeat(251) }).success).toBe(false);
   });
 
   it('defaults narrative metadata and project outline fields for legacy-shaped data', () => {
@@ -340,13 +359,25 @@ describe('script contracts', () => {
     expect(await getProjectHistory(project.id)).toEqual([]);
   });
 
+  it('loads a raw legacy project without continuity fields using safe defaults', async () => {
+    const project = await createProject(projectInput);
+    await getCollection<{ _id: string }>('projects').updateOne(
+      { _id: project.id },
+      { $set: { chapters: [{ id: 'legacy-chapter', no: 1, title: 'Legacy', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }] }, $unset: { coreQuestion: 1, openingHook: 1 } },
+    );
+    const loaded = await getProject(project.id);
+    expect(loaded.coreQuestion).toBe('');
+    expect(loaded.openingHook).toBe('');
+    expect(loaded.chapters[0]).toMatchObject({ chapterSummary: null, avoidRepeating: [], persistentFacts: [], reviewStatus: 'clean' });
+  });
+
   it('generates chapters, logs milestones, and sets project status to script', async () => {
     aiMock.chat
       .mockResolvedValueOnce(JSON.stringify({
         chapters: [
       { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: true },
       { no: 2, title: 'Context', role: 'resolution', beat: 'Close', targetWords: 1, endsOnTension: false },
-        ], openLoops: [],
+        ], openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
       }))
       .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['First'], styleNote: 'Style 1' }))
       .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Second'], styleNote: 'Style 2' }));

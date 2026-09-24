@@ -14,6 +14,8 @@ const OutlineChapterSchema = z.object({
 const OutlineBaseSchema = z.object({
   chapters: z.array(OutlineChapterSchema).min(1),
   openLoops: z.array(OpenLoopSchema),
+  coreQuestion: z.string().min(1),
+  openingHook: z.string().min(1),
 }).strict();
 
 export const DocumentaryScriptOutlineSchema = OutlineBaseSchema;
@@ -33,6 +35,8 @@ const ManualChapterSchema = OutlineChapterSchema.extend({ paragraphs: z.array(z.
 const ManualBaseSchema = z.object({
   chapters: z.array(ManualChapterSchema).min(1),
   openLoops: z.array(OpenLoopSchema),
+  coreQuestion: z.string().min(1),
+  openingHook: z.string().min(1),
 }).strict();
 export const DocumentaryManualScriptDocumentSchema = ManualBaseSchema;
 export const HubrisManualScriptDocumentSchema = ManualBaseSchema.extend({ motif: HubrisMotifSchema }).strict();

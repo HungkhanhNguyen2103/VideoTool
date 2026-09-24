@@ -154,6 +154,8 @@ export const ProjectDetailSchema = z.object({
   chapters: z.array(ChapterDocSchema).default([]),
   openLoops: z.array(OpenLoopSchema).default([]),
   motif: HubrisMotifSchema.nullable().default(null),
+  coreQuestion: z.string().default(''),
+  openingHook: z.string().default(''),
   version: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),

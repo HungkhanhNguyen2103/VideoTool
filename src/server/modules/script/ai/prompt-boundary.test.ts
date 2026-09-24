@@ -81,6 +81,8 @@ describe('script AI parsers', () => {
     const result = parseScriptOutline(JSON.stringify({
       chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Open with a mystery', targetWords: 300, endsOnTension: true }],
       openLoops: [{ question: 'What happened?', plantedInChapter: 1, resolvedInChapter: 1 }],
+      coreQuestion: 'Question',
+      openingHook: 'Hook',
     }), 'documentary');
     expect(result.chapters[0]!.targetWords).toBe(300);
   });
@@ -88,16 +90,16 @@ describe('script AI parsers', () => {
   it('requires the four hubris motif fields and rejects motif for other presets', () => {
     const motif = { hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The scheme turns inward' };
     const chapter = { no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false };
-    expect(parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], motif }), 'hubris-trap')).toMatchObject({ motif });
-    expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [] }), 'hubris-trap')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
-    expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], motif }), 'documentary')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook', motif }), 'hubris-trap')).toMatchObject({ motif });
+    expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook' }), 'hubris-trap')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook', motif }), 'documentary')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
   });
 
   it('parses expansion and manual document as distinct response shapes', () => {
     expect(parseChapterExpansion('{"paragraphs":["Expanded scene"],"styleNote":"Muted palette"}')).toEqual({ paragraphs: ['Expanded scene'], styleNote: 'Muted palette' });
     expect(parseManualScriptDocument(JSON.stringify({
       chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 2, endsOnTension: false, paragraphs: ['Expanded scene'] }],
-      openLoops: [],
+      openLoops: [], coreQuestion: 'Question', openingHook: 'Hook',
     }), 'explainer').chapters[0]!.paragraphs).toEqual(['Expanded scene']);
     expect(() => parseChapterExpansion(JSON.stringify({ paragraphs: ['x'], styleNote: 'x'.repeat(501) }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
     expect(() => parseManualScriptDocument('{"paragraphs":["x"]}', 'explainer')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));

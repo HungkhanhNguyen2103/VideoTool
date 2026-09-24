@@ -50,7 +50,7 @@ export async function getChapterHistory(projectId: string): Promise<ChapterSnaps
 }
 
 export type GeneratedScriptChapter = Pick<ChapterDoc, 'no' | 'title' | 'paragraphs'> &
-  Partial<Pick<ChapterDoc, 'scenesCount' | 'durationSec' | 'role' | 'beat' | 'targetWords' | 'endsOnTension'>>;
+  Partial<Pick<ChapterDoc, 'scenesCount' | 'durationSec' | 'role' | 'beat' | 'targetWords' | 'endsOnTension' | 'chapterSummary' | 'avoidRepeating' | 'persistentFacts' | 'reviewStatus'>>;
 
 export type ScriptGenerationJobContext = {
   reportProgress: (pct: number, result?: unknown) => Promise<void>;
@@ -63,6 +63,8 @@ export async function saveGeneratedScript(
   chapters: GeneratedScriptChapter[],
   openLoops: OpenLoop[] = [],
   motif: HubrisMotif | null = null,
+  coreQuestion = '',
+  openingHook = '',
   snapshot: ChapterSnapshot | null = null,
 ): Promise<ProjectDetail> {
   const saved: ChapterDoc[] = chapters.map((chapter, index) => ({
@@ -76,8 +78,12 @@ export async function saveGeneratedScript(
     beat: chapter.beat ?? '',
     targetWords: chapter.targetWords ?? null,
     endsOnTension: chapter.endsOnTension ?? false,
+    chapterSummary: chapter.chapterSummary ?? null,
+    avoidRepeating: chapter.avoidRepeating ?? [],
+    persistentFacts: chapter.persistentFacts ?? [],
+    reviewStatus: chapter.reviewStatus ?? 'clean',
   }));
-  return replaceProjectScript(projectId, saved, openLoops, motif, snapshot, 'script');
+  return replaceProjectScript(projectId, saved, openLoops, motif, coreQuestion, openingHook, snapshot, 'script');
 }
 
 export async function restoreChapters(projectId: string, index: number): Promise<ChapterDoc[]> {

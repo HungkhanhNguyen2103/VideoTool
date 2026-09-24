@@ -65,7 +65,7 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): R
     const project = await getProject(req.params.id);
     const document = parseManualScriptDocument(body.raw, project.scriptPresetId);
     validateScriptOutlineChapterCount(document, project.chapterCount);
-    const saved = await saveGeneratedScript(project.id, document.chapters, document.openLoops, 'motif' in document ? document.motif : null);
+    const saved = await saveGeneratedScript(project.id, document.chapters, document.openLoops, 'motif' in document ? document.motif : null, document.coreQuestion, document.openingHook);
     res.json(saved);
   });
 
