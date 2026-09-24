@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { loadConfig } from '../../config';
 import { AppError } from '../errors';
 import { logger } from '../logger';
@@ -6,6 +7,8 @@ import type { TtsClient, TtsOptions } from './types';
 type VieneuClientOptions = {
   apiUrl: string;
   defaultVoice: string;
+  defaultRefAudioPath?: string;
+  defaultRefAudioText?: string;
   timeoutMs: number;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -21,8 +24,8 @@ export function createVieneuClient(options: VieneuClientOptions): TtsClient {
     const body = {
       text,
       voice: opts.voice ?? options.defaultVoice,
-      ref_audio_path: opts.refAudioPath ?? null,
-      ref_audio_text: opts.refAudioText ?? null,
+      ref_audio_path: opts.refAudioPath ?? options.defaultRefAudioPath ?? null,
+      ref_audio_text: opts.refAudioText ?? options.defaultRefAudioText ?? null,
       speed: opts.speed ?? 1.0,
       temperature: opts.temperature ?? 0.3,
     };
@@ -57,7 +60,13 @@ let singleton: TtsClient | null = null;
 export function getTtsClient(): TtsClient {
   if (!singleton) {
     const config = loadConfig();
-    singleton = createVieneuClient({ apiUrl: config.TTS_API_URL, defaultVoice: config.TTS_DEFAULT_VOICE, timeoutMs: config.TTS_TIMEOUT_MS });
+    singleton = createVieneuClient({
+      apiUrl: config.TTS_API_URL,
+      defaultVoice: config.TTS_DEFAULT_VOICE,
+      defaultRefAudioPath: path.resolve(config.TTS_REF_AUDIO_PATH),
+      defaultRefAudioText: config.TTS_REF_AUDIO_TEXT,
+      timeoutMs: config.TTS_TIMEOUT_MS,
+    });
   }
   return singleton;
 }

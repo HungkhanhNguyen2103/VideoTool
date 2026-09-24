@@ -20,6 +20,48 @@ describe('VieNeu TTS client', () => {
     }));
   });
 
+  it('falls back to configured reference audio when no per-call override is given', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(Buffer.from('wav'), { status: 200 }));
+    const client = createVieneuClient({
+      apiUrl: 'http://tts.test/api/tts',
+      defaultVoice: 'Truc Ly',
+      defaultRefAudioPath: '/abs/path/audio.WAV',
+      defaultRefAudioText: 'Ai cũng biết Quang Trung là người đánh tan 29 vạn quân Thanh chỉ trong 5 ngày tết.',
+      timeoutMs: 60_000,
+      fetchImpl: fetchMock,
+    });
+
+    await client.synthesize('Xin chào');
+
+    expect(fetchMock).toHaveBeenCalledWith('http://tts.test/api/tts', expect.objectContaining({
+      body: JSON.stringify({
+        text: 'Xin chào', voice: 'Truc Ly', ref_audio_path: '/abs/path/audio.WAV',
+        ref_audio_text: 'Ai cũng biết Quang Trung là người đánh tan 29 vạn quân Thanh chỉ trong 5 ngày tết.', speed: 1.0, temperature: 0.3,
+      }),
+    }));
+  });
+
+  it('prefers per-call reference audio over configured defaults', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(Buffer.from('wav'), { status: 200 }));
+    const client = createVieneuClient({
+      apiUrl: 'http://tts.test/api/tts',
+      defaultVoice: 'Truc Ly',
+      defaultRefAudioPath: '/abs/path/audio.WAV',
+      defaultRefAudioText: 'configured transcript',
+      timeoutMs: 60_000,
+      fetchImpl: fetchMock,
+    });
+
+    await client.synthesize('Xin chào', { refAudioPath: '/override/audio.WAV', refAudioText: 'override transcript' });
+
+    expect(fetchMock).toHaveBeenCalledWith('http://tts.test/api/tts', expect.objectContaining({
+      body: JSON.stringify({
+        text: 'Xin chào', voice: 'Truc Ly', ref_audio_path: '/override/audio.WAV',
+        ref_audio_text: 'override transcript', speed: 1.0, temperature: 0.3,
+      }),
+    }));
+  });
+
   it('retries once after a failed request', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()

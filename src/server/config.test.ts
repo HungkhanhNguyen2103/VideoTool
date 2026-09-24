@@ -13,6 +13,8 @@ describe('loadConfig', () => {
       NODE_ENV: 'development',
       TTS_API_URL: 'http://127.0.0.1:8000/api/tts',
       TTS_DEFAULT_VOICE: 'Truc Ly',
+      TTS_REF_AUDIO_PATH: './lib/speech/audio.WAV',
+      TTS_REF_AUDIO_TEXT: 'Ai cũng biết Quang Trung là người đánh tan 29 vạn quân Thanh chỉ trong 5 ngày tết.',
       TTS_TIMEOUT_MS: 60000,
       FFMPEG_PATH: 'ffmpeg',
       FFPROBE_PATH: 'ffprobe',

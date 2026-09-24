@@ -14,6 +14,8 @@ const EnvSchema = z.object({
   DEFAULT_AI_PROVIDER: z.enum(AI_PROVIDERS).default('deepseek'),
   TTS_API_URL: z.string().url().default('http://127.0.0.1:8000/api/tts'),
   TTS_DEFAULT_VOICE: z.string().default('Truc Ly'),
+  TTS_REF_AUDIO_PATH: z.string().min(1).default('./lib/speech/audio.WAV'),
+  TTS_REF_AUDIO_TEXT: z.string().min(1).default('Ai cũng biết Quang Trung là người đánh tan 29 vạn quân Thanh chỉ trong 5 ngày tết.'),
   TTS_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
