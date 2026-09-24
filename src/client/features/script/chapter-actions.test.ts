@@ -14,6 +14,8 @@ import {
   toggleApproveStatus,
   toggleFlagStatus,
   manualTextAfterImport,
+  buildQaRegenInstruction,
+  findChapterIdByNumber,
   groupQaIssuesByChapter,
   qaSeverityTone,
 } from './chapter-actions';
@@ -161,5 +163,16 @@ describe('final QA helpers', () => {
 
   it('returns no QA groups for an empty issue list', () => {
     expect(groupQaIssuesByChapter([])).toEqual(new Map());
+  });
+
+  it('builds a one-line regeneration instruction from a QA issue and display labels', () => {
+    const issue: QAIssue = { chapter: 2, type: 'REPETITION', severity: 'high', reason: 'Ý này lặp lại.', suggestedAction: 'REMOVE_DUPLICATION' };
+    expect(buildQaRegenInstruction(issue, 'Trùng lặp', 'Loại bỏ trùng lặp')).toBe('Trùng lặp: Ý này lặp lại. (Đề xuất: Loại bỏ trùng lặp)');
+  });
+
+  it('finds a chapter id by chapter number rather than array position', () => {
+    const chapters = [chapter('chapter-8', 'pending', { no: 8 }), chapter('chapter-2', 'approved', { no: 2 }), chapter('chapter-4', 'pending', { no: 4 })];
+    expect(findChapterIdByNumber(chapters, 2)).toBe('chapter-2');
+    expect(findChapterIdByNumber(chapters, 5)).toBeNull();
   });
 });

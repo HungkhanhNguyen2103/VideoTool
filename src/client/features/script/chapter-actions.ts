@@ -19,6 +19,14 @@ export function groupQaIssuesByChapter(issues: readonly QAIssue[]): Map<number, 
   return grouped;
 }
 
+export function buildQaRegenInstruction(issue: QAIssue, typeLabel: string, actionLabel: string): string {
+  return `${typeLabel}: ${issue.reason} (Đề xuất: ${actionLabel})`;
+}
+
+export function findChapterIdByNumber(chapters: readonly ChapterDoc[], chapterNo: number): string | null {
+  return chapters.find((chapter) => chapter.no === chapterNo)?.id ?? null;
+}
+
 export function generationModeForChapters(chapterCount: number, requested: ScriptGenerationMode): ScriptGenerationMode {
   return chapterCount > 0 ? 'automatic' : requested;
 }

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChapterDoc } from '../../../contracts/script';
-import type { QAResult } from './api';
+import type { QAIssue, QAResult } from './api';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { Icon } from '../../shared/ui/Icon';
@@ -13,6 +13,8 @@ import {
   approveAllTargets,
   chapterMetaText,
   chaptersSummaryText,
+  buildQaRegenInstruction,
+  findChapterIdByNumber,
   generationModeForChapters,
   groupQaIssuesByChapter,
   historyVersionLabel,
@@ -73,6 +75,7 @@ export function ReviewScriptPage() {
   const [providerBusy, setProviderBusy] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
+  const regenInstructionRef = useRef<HTMLTextAreaElement>(null);
   const lifecycleRef = useRef(0);
   const initialExpansionProjectIdRef = useRef<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -152,6 +155,15 @@ export function ReviewScriptPage() {
 
   async function runQa() {
     try { setQaResult(null); setQaJobId((await api.runFinalQa(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chạy kiểm tra QA.'); }
+  }
+
+  function applyQaIssue(issue: QAIssue) {
+    const chapterId = findChapterIdByNumber(chapters, issue.chapter);
+    if (!chapterId) { toast('Không tìm thấy chương tương ứng.'); return; }
+    setSelected(new Set([chapterId]));
+    setExpanded((current) => new Set(current).add(chapterId));
+    setRegenInstruction(buildQaRegenInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]));
+    regenInstructionRef.current?.focus();
   }
 
   async function changeProvider(provider: 'deepseek' | 'claude') {
@@ -361,7 +373,7 @@ export function ReviewScriptPage() {
               <h2 className={`${styles.panelTitle} ${styles.panelTitleIndigo}`} id="regen-title"><Icon name="sparkles" />Yêu cầu tái tạo</h2>
               <div className={styles.selectedCount}>{selectedChapters.length ? `Áp dụng cho ${selectedChapters.length} chương đã chọn` : 'Chưa chọn chương nào'}</div>
               <label className="sr-only" htmlFor="regen-instruction">Yêu cầu cho lần tái tạo</label>
-              <textarea id="regen-instruction" className={styles.textarea} rows={5} value={regenInstruction} onChange={(event) => setRegenInstruction(event.target.value)} placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…" />
+              <textarea ref={regenInstructionRef} id="regen-instruction" className={styles.textarea} rows={5} value={regenInstruction} onChange={(event) => setRegenInstruction(event.target.value)} placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…" />
               <fieldset className={styles.segmented}>
                 <legend>Mức thay đổi</legend>
                 {([['light', 'Nhẹ'], ['medium', 'Vừa'], ['rewrite', 'Viết lại']] as const).map(([value, label]) => <label key={value}><input type="radio" name="regen-level" value={value} checked={regenLevel === value} onChange={() => setRegenLevel(value)} /><span>{label}</span></label>)}
@@ -390,6 +402,7 @@ export function ReviewScriptPage() {
                     <div className={styles.qaIssueTop}><strong>{qaTypeLabel[issue.type]}</strong><Badge tone={qaSeverityTone(issue.severity)}>Mức độ: {qaSeverityLabel[issue.severity]}</Badge></div>
                     <div className={styles.qaIssueText}>{issue.reason}</div>
                     <div className={styles.qaIssueAction}>Đề xuất: {qaActionLabel[issue.suggestedAction]}</div>
+                    <Button size="sm" variant="indigoline" onClick={() => applyQaIssue(issue)}>Áp dụng</Button>
                   </article>)}</div>
                 </div>)}
               </div>)}
