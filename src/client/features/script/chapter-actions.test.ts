@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChapterDoc, ChapterStatus } from '../../../contracts/script';
+import type { QAIssue } from './api';
 import {
   approveAllTargets,
   chapterMetaText,
@@ -13,6 +14,8 @@ import {
   toggleApproveStatus,
   toggleFlagStatus,
   manualTextAfterImport,
+  groupQaIssuesByChapter,
+  qaSeverityTone,
 } from './chapter-actions';
 
 function chapter(id: string, status: ChapterStatus, extra: Partial<ChapterDoc> = {}): ChapterDoc {
@@ -136,5 +139,27 @@ describe('manual generation state helpers', () => {
   it('preserves pasted text after failed import and clears it after success', () => {
     expect(manualTextAfterImport('pasted document', false)).toBe('pasted document');
     expect(manualTextAfterImport('pasted document', true)).toBe('');
+  });
+});
+
+describe('final QA helpers', () => {
+  it('maps QA severity to an available badge tone', () => {
+    expect(qaSeverityTone('high')).toBe('amber');
+    expect(qaSeverityTone('medium')).toBe('indigo');
+    expect(qaSeverityTone('low')).toBe('muted');
+  });
+
+  it('groups QA issues in first-appearance chapter order while preserving issue order', () => {
+    const issues: QAIssue[] = [
+      { chapter: 2, type: 'WEAK_HOOK', severity: 'low', reason: 'two-a', suggestedAction: 'SHORTEN' },
+      { chapter: 1, type: 'REPETITION', severity: 'high', reason: 'one-a', suggestedAction: 'REMOVE_DUPLICATION' },
+      { chapter: 2, type: 'FLAT_PACING', severity: 'medium', reason: 'two-b', suggestedAction: 'REGENERATE' },
+    ];
+    const grouped = groupQaIssuesByChapter(issues);
+    expect([...grouped.entries()]).toEqual([[2, [issues[0], issues[2]]], [1, [issues[1]]]]);
+  });
+
+  it('returns no QA groups for an empty issue list', () => {
+    expect(groupQaIssuesByChapter([])).toEqual(new Map());
   });
 });

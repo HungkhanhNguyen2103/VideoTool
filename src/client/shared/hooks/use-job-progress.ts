@@ -4,6 +4,7 @@ export type JobProgressEvent = {
   status: string;
   progress: number;
   error: string | null;
+  result: unknown;
 };
 
 export type JobProgressState = JobProgressEvent & { logs: string[] };
@@ -38,7 +39,7 @@ export function useJobProgress(jobId: string | null): JobProgressState | null {
     const onLog = (event: Event) => {
       try {
         const line = JSON.parse((event as MessageEvent<string>).data) as string;
-        setState((previous) => previous ? { ...previous, logs: [...previous.logs, line] } : { status: 'queued', progress: 0, error: null, logs: [line] });
+        setState((previous) => previous ? { ...previous, logs: [...previous.logs, line] } : { status: 'queued', progress: 0, error: null, result: null, logs: [line] });
       } catch {
         // Ignore malformed log events.
       }

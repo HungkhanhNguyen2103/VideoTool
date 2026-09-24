@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getManualScriptPrompt, importManualScript, parseSseFrames, setAiProvider } from './api';
+import { getManualScriptPrompt, importManualScript, parseSseFrames, runFinalQa, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -33,5 +33,15 @@ describe('script generation API', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/ai-provider', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ provider: 'claude' }) }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/generate-script/manual-prompt', expect.objectContaining({ method: 'GET' }));
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/project/project%2F1/generate-script/manual-import', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raw: 'raw text' }) }));
+  });
+});
+
+describe('final QA API', () => {
+  it('posts to the project QA route and returns the queued job id', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-qa-1' }), { status: 201 }));
+
+    await expect(runFinalQa('project/1')).resolves.toEqual({ jobId: 'job-qa-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/qa', expect.objectContaining({ method: 'POST' }));
+    fetchMock.mockRestore();
   });
 });

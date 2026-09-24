@@ -3,20 +3,22 @@ import { applyJobEvent } from './use-job-progress';
 
 describe('job progress state transition', () => {
   it('returns null before a job id is selected by the hook contract', () => {
-    expect(applyJobEvent(null, { status: 'queued', progress: 0, error: null })).toEqual({
+    expect(applyJobEvent(null, { status: 'queued', progress: 0, error: null, result: null })).toEqual({
       status: 'queued',
       progress: 0,
       error: null,
+      result: null,
       logs: [],
     });
   });
 
   it('replaces progress with the latest valid event', () => {
-    const previous = { status: 'running', progress: 10, error: null, logs: ['working'] };
-    expect(applyJobEvent(previous, { status: 'done', progress: 100, error: null })).toEqual({
+    const previous = { status: 'running', progress: 10, error: null, result: null, logs: ['working'] };
+    expect(applyJobEvent(previous, { status: 'done', progress: 100, error: null, result: { issues: [] } })).toEqual({
       status: 'done',
       progress: 100,
       error: null,
+      result: { issues: [] },
       logs: ['working'],
     });
   });

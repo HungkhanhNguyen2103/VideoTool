@@ -70,6 +70,12 @@
 .historyItem { display: flex; align-items: center; justify-content: space-between; gap: .625rem; min-height: 48px; padding: .375rem .875rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
 .historyName { color: var(--text); font-size: .875rem; font-weight: 600; }
 .historyNote { color: var(--text-3); font-size: .75rem; }
+.qaIssues, .qaIssueList { display: grid; gap: .65rem; }
+.qaGroupTitle { margin: 0; color: var(--text-2); font-size: .8125rem; }
+.qaIssue { display: grid; gap: .4rem; padding: .7rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
+.qaIssueTop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: var(--text); font-size: .8125rem; }
+.qaIssueText, .qaIssueAction { color: var(--text-2); font-size: .75rem; line-height: 1.45; }
+.qaIssueAction { color: var(--text-3); }
 .footer { justify-content: flex-end; position: sticky; bottom: .75rem; padding: .75rem; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--border); border-radius: .7rem; }
 .error { color: var(--red); }
 

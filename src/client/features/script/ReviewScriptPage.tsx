@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ChapterDoc } from '../../../contracts/script';
+import type { QAResult } from './api';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { Icon } from '../../shared/ui/Icon';
@@ -13,10 +14,12 @@ import {
   chapterMetaText,
   chaptersSummaryText,
   generationModeForChapters,
+  groupQaIssuesByChapter,
   historyVersionLabel,
   manualTextAfterImport,
   runRegenerationQueue,
   selectedRegenTargets,
+  qaSeverityTone,
   toggleApproveStatus,
   toggleFlagStatus,
 } from './chapter-actions';
@@ -24,6 +27,15 @@ import styles from './ReviewScriptPage.module.css';
 
 const statusTone = { approved: 'green', 'needs-fix': 'amber', generating: 'indigo', pending: 'muted' } as const;
 const statusLabel = { approved: 'Đã duyệt', 'needs-fix': 'Cần sửa', generating: 'Đang tạo lại', pending: 'Chưa duyệt' } as const;
+const qaTypeLabel: Record<QAResult['issues'][number]['type'], string> = {
+  REPETITION: 'Trùng lặp', CONTRADICTION: 'Mâu thuẫn', DEAD_CHAPTER: 'Chương chết', POSSIBLE_FILLER: 'Có thể lược bỏ',
+  WEAK_HOOK: 'Hook yếu', FLAT_PACING: 'Nhịp phẳng', PREMATURE_REVEAL: 'Tiết lộ sớm', UNRESOLVED_LOOP: 'Nút chưa gỡ',
+  WEAK_PAYOFF: 'Payoff yếu', AWKWARD_TRANSITION: 'Chuyển đoạn gượng', TONE_DRIFT: 'Lệch giọng', CREDIBILITY_RISK: 'Rủi ro độ tin cậy',
+};
+const qaSeverityLabel = { high: 'cao', medium: 'trung bình', low: 'thấp' } as const;
+const qaActionLabel: Record<QAResult['issues'][number]['suggestedAction'], string> = {
+  REMOVE_DUPLICATION: 'Loại bỏ trùng lặp', REGENERATE: 'Tái tạo', SHORTEN: 'Rút gọn', MOVE_REVEAL: 'Dời tiết lộ', REVIEW_FACT: 'Kiểm tra dữ kiện',
+};
 
 type ReviewStepState = 'done' | 'active' | 'todo';
 
@@ -46,6 +58,8 @@ export function ReviewScriptPage() {
   const { projectId = '' } = useParams();
   const navigate = useNavigate();
   const [jobId, setJobId] = useState<string | null>(null);
+  const [qaJobId, setQaJobId] = useState<string | null>(null);
+  const [qaResult, setQaResult] = useState<QAResult | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
@@ -63,6 +77,7 @@ export function ReviewScriptPage() {
   const initialExpansionProjectIdRef = useRef<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const progress = useJobProgress(jobId);
+  const qaProgress = useJobProgress(qaJobId);
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const historyQuery = useQuery({ queryKey: ['projects', 'chapters', 'history', projectId], queryFn: () => api.getChapterHistory(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
@@ -78,6 +93,7 @@ export function ReviewScriptPage() {
   const history = historyQuery.data ?? [];
   const effectiveGenerationMode = generationModeForChapters(chapters.length, generationMode);
   const controlsBusy = Boolean(jobId) || hasGenerating || manualBusy || providerBusy;
+  const qaBusy = Boolean(qaJobId);
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -114,8 +130,28 @@ export function ReviewScriptPage() {
     }
   }, [progress?.status]);
 
+  useEffect(() => {
+    if (qaProgress?.status === 'done') {
+      const result = api.QAResultSchema.safeParse(qaProgress.result);
+      if (result.success) {
+        setQaResult(result.data);
+        toast('Đã hoàn tất kiểm tra QA.');
+      } else {
+        toast('Kết quả QA không hợp lệ.');
+      }
+      setQaJobId(null);
+    } else if (qaProgress?.status === 'failed' || qaProgress?.status === 'cancelled') {
+      toast(qaProgress.error ?? 'Không thể kiểm tra QA.');
+      setQaJobId(null);
+    }
+  }, [qaProgress?.status, qaProgress?.result]);
+
   async function generate() {
     try { setJobId((await api.generateScript(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo kịch bản.'); }
+  }
+
+  async function runQa() {
+    try { setQaResult(null); setQaJobId((await api.runFinalQa(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chạy kiểm tra QA.'); }
   }
 
   async function changeProvider(provider: 'deepseek' | 'claude') {
@@ -341,6 +377,22 @@ export function ReviewScriptPage() {
               </ul>
               {historyQuery.isLoading && <p className={styles.muted}>Đang tải lịch sử…</p>}
               {historyQuery.error && <p className={styles.error}>Không thể tải lịch sử.</p>}
+            </section>
+
+            <section className={styles.panel} aria-labelledby="qa-title">
+              <h2 className={styles.panelTitle} id="qa-title"><Icon name="check" />Kiểm tra cuối (QA)</h2>
+              <Button variant="indigoline" disabled={chapters.length === 0 || qaBusy} onClick={() => void runQa()}>Chạy kiểm tra QA</Button>
+              {qaProgress && (qaProgress.status === 'queued' || qaProgress.status === 'running') && <div className={styles.generationStatus} role="status"><strong>Đang kiểm tra QA… {Math.round(qaProgress.progress)}%</strong></div>}
+              {qaResult && (qaResult.issues.length === 0 ? <p className={styles.muted}>Không phát hiện vấn đề.</p> : <div className={styles.qaIssues}>
+                {[...groupQaIssuesByChapter(qaResult.issues)].map(([chapter, issues]) => <div key={chapter}>
+                  <h3 className={styles.qaGroupTitle}>Chương {chapter}</h3>
+                  <div className={styles.qaIssueList}>{issues.map((issue, index) => <article className={styles.qaIssue} key={`${issue.type}-${index}`}>
+                    <div className={styles.qaIssueTop}><strong>{qaTypeLabel[issue.type]}</strong><Badge tone={qaSeverityTone(issue.severity)}>Mức độ: {qaSeverityLabel[issue.severity]}</Badge></div>
+                    <div className={styles.qaIssueText}>{issue.reason}</div>
+                    <div className={styles.qaIssueAction}>Đề xuất: {qaActionLabel[issue.suggestedAction]}</div>
+                  </article>)}</div>
+                </div>)}
+              </div>)}
             </section>
           </aside>
         </div>

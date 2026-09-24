@@ -1,8 +1,23 @@
 import { countNarrationWords, estimateNarrationDurationSec } from '../../../contracts/script';
 import type { ChapterDoc, ChapterStatus } from '../../../contracts/script';
+import type { QAIssue } from './api';
 
 type ReviewDecisionStatus = Exclude<ChapterStatus, 'generating'>;
 export type ScriptGenerationMode = 'automatic' | 'manual';
+
+export function qaSeverityTone(severity: QAIssue['severity']): 'green' | 'amber' | 'indigo' | 'muted' {
+  return severity === 'high' ? 'amber' : severity === 'medium' ? 'indigo' : 'muted';
+}
+
+export function groupQaIssuesByChapter(issues: readonly QAIssue[]): Map<number, QAIssue[]> {
+  const grouped = new Map<number, QAIssue[]>();
+  for (const issue of issues) {
+    const chapterIssues = grouped.get(issue.chapter);
+    if (chapterIssues) chapterIssues.push(issue);
+    else grouped.set(issue.chapter, [issue]);
+  }
+  return grouped;
+}
 
 export function generationModeForChapters(chapterCount: number, requested: ScriptGenerationMode): ScriptGenerationMode {
   return chapterCount > 0 ? 'automatic' : requested;

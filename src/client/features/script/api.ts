@@ -29,6 +29,19 @@ const ChaptersResponseSchema = z.object({ chapters: z.array(ChapterDocSchema) })
 const JobResponseSchema = z.object({ jobId: z.string() });
 const HistoryResponseSchema = z.array(z.object({ takenAt: z.coerce.date(), chapters: z.array(ChapterDocSchema) }));
 const ManualPromptResponseSchema = z.object({ prompt: z.string(), promptVersion: z.string() });
+const QA_ISSUE_TYPES = ['REPETITION', 'CONTRADICTION', 'DEAD_CHAPTER', 'POSSIBLE_FILLER', 'WEAK_HOOK', 'FLAT_PACING', 'PREMATURE_REVEAL', 'UNRESOLVED_LOOP', 'WEAK_PAYOFF', 'AWKWARD_TRANSITION', 'TONE_DRIFT', 'CREDIBILITY_RISK'] as const;
+const QA_SEVERITIES = ['low', 'medium', 'high'] as const;
+const QA_SUGGESTED_ACTIONS = ['REMOVE_DUPLICATION', 'REGENERATE', 'SHORTEN', 'MOVE_REVEAL', 'REVIEW_FACT'] as const;
+const QAIssueSchema = z.object({
+  chapter: z.number().int().positive(),
+  type: z.enum(QA_ISSUE_TYPES),
+  severity: z.enum(QA_SEVERITIES),
+  reason: z.string().min(1),
+  suggestedAction: z.enum(QA_SUGGESTED_ACTIONS),
+}).strict();
+export const QAResultSchema = z.object({ issues: z.array(QAIssueSchema) }).strict();
+export type QAIssue = z.infer<typeof QAIssueSchema>;
+export type QAResult = z.infer<typeof QAResultSchema>;
 
 export function getProject(id: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(id)}`, ProjectDetailSchema);
@@ -36,6 +49,10 @@ export function getProject(id: string): Promise<ProjectDetail> {
 
 export function generateScript(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script`, JobResponseSchema, { method: 'POST' });
+}
+
+export function runFinalQa(projectId: string): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/qa`, JobResponseSchema, { method: 'POST' });
 }
 
 export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
