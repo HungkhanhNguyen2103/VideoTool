@@ -74,7 +74,7 @@ export function chapterEstimatedDurationSec(chapter: Pick<ChapterDoc, 'paragraph
 export function chapterMetaText(chapter: Pick<ChapterDoc, 'paragraphs'>): string | null {
   const durationSec = chapterEstimatedDurationSec(chapter);
   if (durationSec == null) return null;
-  return `${chapter.paragraphs.length} cảnh · ${durationSec}s`;
+  return `${chapter.paragraphs.length} cảnh · ${durationSec}s · ${chapterWordCount(chapter)} từ`;
 }
 
 export function chaptersSummaryText(chapters: readonly ChapterDoc[]): string {
@@ -83,7 +83,8 @@ export function chaptersSummaryText(chapters: readonly ChapterDoc[]): string {
   if (!allKnown) return `${total} chương`;
   const totalScenes = chapters.reduce((sum, chapter) => sum + chapter.paragraphs.length, 0);
   const totalSeconds = chapters.reduce((sum, chapter) => sum + (chapterEstimatedDurationSec(chapter) ?? 0), 0);
-  return `${total} chương • ${totalScenes} cảnh • ${totalSeconds}s`;
+  const totalWords = chapters.reduce((sum, chapter) => sum + chapterWordCount(chapter), 0);
+  return `${total} chương • ${totalScenes} cảnh • ${totalSeconds}s • ${totalWords} từ`;
 }
 
 /** History snapshots are stored newest-first (see service.ts's `$position: 0` push). Label the

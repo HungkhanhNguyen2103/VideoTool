@@ -78,7 +78,7 @@ describe('chapterMetaText', () => {
     expect(chapterMetaText(chapter('c1', 'pending'))).toBeNull();
   });
   it('renders paragraph count and a word-based estimate during review', () => {
-    expect(chapterMetaText(chapter('c1', 'pending', { paragraphs: ['one', 'two words'] }))).toBe('2 cảnh · 2s');
+    expect(chapterMetaText(chapter('c1', 'pending', { paragraphs: ['one', 'two words'] }))).toBe('2 cảnh · 2s · 3 từ');
   });
 });
 
@@ -92,7 +92,7 @@ describe('chaptersSummaryText', () => {
       chapter('c1', 'approved', { paragraphs: ['one', 'two words'] }),
       chapter('c2', 'approved', { paragraphs: ['three four'] }),
     ];
-    expect(chaptersSummaryText(chapters)).toBe('2 chương • 3 cảnh • 3s');
+    expect(chaptersSummaryText(chapters)).toBe('2 chương • 3 cảnh • 3s • 5 từ');
   });
   it('reports zero chapters without summing anything', () => {
     expect(chaptersSummaryText([])).toBe('0 chương');
