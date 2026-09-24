@@ -9,6 +9,7 @@ import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
 import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider } from '../project';
 import { finalizeScript, generateScript, patchChapter, regenerateChapter, saveGeneratedScript } from './service';
+import { runFinalQa } from './qa';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
@@ -548,6 +549,21 @@ describe('script contracts', () => {
     expect((await getProject(project.id)).chapters[0]).toMatchObject({ paragraphs: ['Edited'], status: 'pending' });
   });
 
+  it('marks the next chapter upstream-changed when a paragraph edit invalidates continuity', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null },
+      { id: 'chapter-2', no: 2, title: 'Close', paragraphs: ['Close'], status: 'approved', scenesCount: null, durationSec: null },
+    ], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['Edited'] });
+
+    expect((await getProject(project.id)).chapters).toEqual([
+      expect.objectContaining({ id: 'chapter-1', status: 'pending', reviewStatus: 'clean' }),
+      expect.objectContaining({ id: 'chapter-2', reviewStatus: 'upstream-changed' }),
+    ]);
+  });
+
   it('keeps changed paragraph edits pending when a status is submitted alongside them', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
@@ -610,6 +626,50 @@ describe('script contracts', () => {
     expect(saved.scenes.reduce((sum, scene) => sum + scene.durationSec, 0)).toBe(4);
     expect(saved.chapters.map((chapter) => chapter.scenesCount)).toEqual([2, 1]);
     expect(await getProjectHistory(project.id)).toHaveLength(1);
+  });
+
+  it('traces generation retry, finalize, regeneration, manual edit/import, and final QA end to end', async () => {
+    const project = await createProject({ ...projectInput, targetDurationSec: 8 });
+    aiMock.chat
+      .mockResolvedValueOnce(JSON.stringify({
+        chapters: [
+          { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 2, endsOnTension: true },
+          { no: 2, title: 'Close', role: 'resolution', beat: 'Resolve', targetWords: 2, endsOnTension: false },
+        ], openLoops: [], coreQuestion: 'What changed?', openingHook: 'At dawn, everything changed.',
+      }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['short'], styleNote: 'First', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['Fact'] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['first', 'chapter'], styleNote: 'First retry', chapterSummary: 'First summary', avoidRepeating: ['repeat'], persistentFactsNext: ['Fact'] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['second', 'chapter'], styleNote: 'Second', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: [] }));
+    await generateScript(project.id, { appendLog: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), reportProgress: vi.fn() });
+
+    await patchChapter(project.id, 'chapter-missing', { status: 'approved' }).catch(() => undefined);
+    const generated = await getProject(project.id);
+    await patchChapter(project.id, generated.chapters[0]!.id, { status: 'approved' });
+    await patchChapter(project.id, generated.chapters[1]!.id, { status: 'approved' });
+    await finalizeScript(project.id);
+    expect((await getProject(project.id)).scenes.map((scene) => scene.durationSec)).toEqual([1, 1, 1, 1]);
+    expect((await getProject(project.id)).scenes[0]).not.toMatchObject({ chapterSummary: expect.anything(), avoidRepeating: expect.anything(), persistentFacts: expect.anything(), reviewStatus: expect.anything() });
+
+    aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(['Regenerated']); })());
+    await regenerateChapter(project.id, generated.chapters[0]!.id, { instruction: 'tighten', level: 'light' }, vi.fn(), new AbortController().signal);
+    await patchChapter(project.id, generated.chapters[0]!.id, { paragraphs: ['Manual edit'] });
+    expect((await getProject(project.id)).chapters[1]).toMatchObject({ reviewStatus: 'upstream-changed' });
+
+    const baseUrl = await startScriptServer();
+    const manualDocument = JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Manual opening', role: 'hook', beat: 'Open', targetWords: 2, endsOnTension: true, paragraphs: ['Manual one'] },
+        { no: 2, title: 'Manual close', role: 'resolution', beat: 'Close', targetWords: 2, endsOnTension: false, paragraphs: ['Manual two'] },
+      ], openLoops: [], coreQuestion: 'What changed?', openingHook: 'At dawn, everything changed.',
+    });
+    const importResponse = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: manualDocument }),
+    });
+    expect(importResponse.status).toBe(200);
+
+    aiMock.chat.mockResolvedValueOnce(JSON.stringify({ issues: [] }));
+    const qa = await runFinalQa(project.id, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() });
+    expect(qa).toEqual({ issues: [] });
   });
 
   it('rejects finalization until every chapter is approved', async () => {

@@ -85,3 +85,4 @@ needs-fix ──edit/regen──> pending or generating
 - `mongodb-memory-server` ran successfully; no fallback was required.
 - Built worker logged startup and graceful SIGINT shutdown.
 - `eslint.config.js` was unchanged; only `openai` and `@anthropic-ai/sdk` were added as direct runtime dependencies.
+- Task 6/6 final integration audit passes the complete generation → continuity → finalization → regeneration → manual edit/import → Final QA flow against mocked AI and MongoDB, including retry, cancellation, failure isolation, legacy defaults, route/SSE contracts, and terminal job-result delivery. Manual paragraph edits now mark only the next chapter `upstream-changed`, matching regeneration semantics; no automatic QA or client changes were introduced.

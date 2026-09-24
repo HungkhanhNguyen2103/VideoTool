@@ -50,4 +50,5 @@
 - Do not release a running lock from the cancel route; the worker owns terminal transitions.
 - SSE emits the current state on the first poll, then only changed state and periodic heartbeats.
 - Stale recovery uses a five-minute threshold so future long-running handlers are not reclaimed every poll.
-- Keep `worker/registry.ts` explicit and empty until later asset/video phases add handlers.
+- Keep `worker/registry.ts` explicit; script, asset, and video handlers are registered there as their job flows are implemented.
+- Task 6/6 final integration audit confirms queued script generation and manual Final QA cancellation, registry delegation, and terminal-only result exposure through SSE; existing client job-event parsing remains compatible with the additive `result` field.

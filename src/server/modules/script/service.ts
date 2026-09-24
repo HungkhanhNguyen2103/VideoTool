@@ -42,7 +42,11 @@ export async function patchChapter(
   };
   if (Object.keys(normalizedPatch).length === 0) return project.chapters;
   const updated = await patchProjectChapter(projectId, chapterId, normalizedPatch, paragraphsChanged || titleChanged ? snapshotOf(project.chapters) : null);
-  return updated.chapters;
+  if (paragraphsChanged) {
+    const nextChapter = project.chapters.find((item) => item.no === chapter.no + 1);
+    if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' });
+  }
+  return paragraphsChanged ? (await getProject(projectId)).chapters : updated.chapters;
 }
 
 export async function getChapterHistory(projectId: string): Promise<ChapterSnapshot[]> {

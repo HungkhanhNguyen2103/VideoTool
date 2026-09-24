@@ -32,6 +32,7 @@ _Last updated: 2026-09-23 · Phase 7 acceptance verified: outline generation, ma
 - Phase 7 Task 6 uses shared 150-WPM word counting for review estimates and finalization scene durations; the legacy even-split assertions were rewritten to exact per-scene `[1, 1, 2]` values. Focused duration tests pass 65/65, typecheck/lint pass, and the full suite passes 276 tests with the pre-existing project todo skipped.
 - Phase 7 Task 7 adds client provider selection, automatic/manual generation controls, typed manual prompt/import APIs, preserved pasted text on import errors, and narrative metadata display. Client-focused tests pass 29/29; typecheck, lint, build, and full regression pass.
 - Phase 7 acceptance adds the final regression matrix for preset distinction, motif/count validation, sequential outline expansion, provider/manual routes, cancellation/failure isolation, client controls, and word-based duration parity. The full suite passes 282 tests across 22 files with the pre-existing project todo skipped; typecheck, lint, build, packaging, secret-scan, and module-boundary checks all pass.
+- Task 6/6 integration audit completes the Tasks 1-5 feature set: generation, continuity-aware regeneration, manual import/edit, word-based finalization, and manual read-only Final QA were traced end to end. The audit adds the missing N+1 `upstream-changed` marker for manual paragraph edits; full regression, typecheck, lint, and production build checks pass, with the pre-existing skipped project todo unchanged.
 
 ### Modules
 | Module | State | Notes |
