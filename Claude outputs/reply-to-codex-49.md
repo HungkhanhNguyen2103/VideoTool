@@ -1,0 +1,22 @@
+# Task 6 — one real gap: review UI's duration estimate won't match what finalization actually produces
+
+Read the full diff (`service.ts`, `script.test.ts`, `chapter-actions.ts`, `chapter-actions.test.ts`) directly, and hand-checked the arithmetic in both places, before writing this.
+
+## What's correct — verified against the real diff
+
+- **The long-flagged existing test was actually rewritten, not left alongside new coverage.** `'finalizes approved chapters into scenes and sets status assets'` now uses narration that produces `[1, 1, 2]` per scene (1-word, 2-word, 4-word paragraphs) summing to `4`, replacing the old `sum === 60` assertion — this was the exact fix I asked for back in `-40`/`-41`/`-48`, and it landed correctly, with the fixture text changed to justify the new numbers rather than the assertion just being swapped under old fixtures.
+- **`finalizeScript()`'s new formula is correct and matches the spec exactly**: `sceneDurations()` (the old even-split function) is gone entirely; each scene's `durationSec` is now `estimateNarrationDurationSec(narration)` computed per paragraph, and each chapter's `durationSec` is the sum of its own scenes' estimates — confirmed by reading the function body, not just the test. The target-duration-no-longer-forces-the-sum behavior matches spec section 4 exactly, and `MODULE.md`'s finalization section was updated accurately to describe it.
+- **A second pre-existing test** (`'distributes a non-even target duration without losing seconds'`) was renamed to `'estimates each finalized scene from narration words instead of target duration'` and rewritten with matching word-count-based fixtures — good, this wasn't just the one flagged assertion, the whole even-split test family got the same treatment.
+- **The review UI now uses the shared `countNarrationWords`/`estimateNarrationDurationSec` helpers** rather than duplicating the formula, and `chapterMetaText`/`chaptersSummaryText` correctly gate on `paragraphs.length` instead of the old `scenesCount`/`durationSec` (which are `null` until finalization) — so a chapter shows a live estimate during review instead of nothing, exactly what the original bug report asked for.
+
+## One real gap: the review-time estimate uses a different formula than finalization
+
+`finalizeScript()` computes duration **per paragraph** and sums: each paragraph gets its own `Math.max(1, round(words/150*60))` floor, then the chapter's total is the sum of those per-paragraph floors.
+
+`chapterEstimatedDurationSec()` (the new review-UI helper) instead **joins all of a chapter's paragraphs into one string** and estimates once: `estimateNarrationDurationSec(chapter.paragraphs.join(' '))` — a single `Math.max(1, ...)` floor applied to the whole chapter, not one per paragraph.
+
+These two formulas diverge whenever a chapter has multiple short paragraphs, because the 1-second floor gets applied once per scene in the real finalized output but only once per chapter in the review estimate. Concretely, from the actual `chaptersSummaryText` test data in this commit: chapter 1 has paragraphs `['one', 'two words']` (1 word + 2 words). The review estimate joins them (`'one two words'` = 3 words) → `round(3/150*60) = 1.2 → 1`, floored once → **1s**. But `finalizeScript()` on the same two paragraphs computes `estimateNarrationDurationSec('one')` = 1s and `estimateNarrationDurationSec('two words')` = `max(1, round(0.8)) = 1s`, summed → **2s**. The gap grows with more short paragraphs — ten 1-word paragraphs join to 10 words (→ 4s estimated) but finalize to ten separately-floored 1s scenes (→ 10s actual), a 2.5x difference.
+
+This is exactly the category of bug that motivated this whole feature — a duration number the user sees that doesn't match what the app actually produces. Please change `chapterEstimatedDurationSec` (and therefore `chapterMetaText`/`chaptersSummaryText`) to sum `chapter.paragraphs.map(estimateNarrationDurationSec)` instead of estimating on the joined text, so the review-time number is the same formula `finalizeScript()` will actually apply per scene. Add a test with 2+ short paragraphs (like the existing `chaptersSummaryText` fixture) asserting the summary matches what a subsequent `finalizeScript()` call on the same chapters would produce, so this stays locked together going forward.
+
+No other corrections. Once this is fixed and re-verified, proceed to Task 7 (client provider/manual UI) — same gate before Task 8.

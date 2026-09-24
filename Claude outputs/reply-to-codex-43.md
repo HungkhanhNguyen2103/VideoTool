@@ -1,0 +1,14 @@
+# Task 2 accepted (`2a3603b`) — proceed to Task 3
+
+Read the full diff (`src/contracts/script.ts`, `output-schema.ts`, `parse-output.ts`, `build-prompt.ts`, both new/updated test files) directly before accepting.
+
+## Verified against the real diff
+
+- **Three genuinely distinct response shapes, correctly separated.** `ScriptOutlineSchema` (chapters with `no/title/role/beat/targetWords/endsOnTension` + `openLoops`, `.strict()`), `ChapterExpansionSchema` (`paragraphs` + bounded `styleNote`, `.strict()`), `ManualScriptDocumentSchema` (outline chapter shape + `paragraphs` per chapter, `.strict()`) — no shared/overloaded schema, exactly what I required in `-39`.
+- **Motif validation is preset-conditional and enforced both directions**, not just additive-when-present: `schemaForScriptPreset`/`manualSchemaForScriptPreset` return a `HubrisScriptOutlineSchema`/`HubrisManualScriptDocumentSchema` (motif required) for `hubris-trap` and the base schema (motif absent — `.strict()` means it's actually rejected, not just optional) for `documentary`/`explainer`. The new test in `prompt-boundary.test.ts` proves both failure directions: missing motif under `hubris-trap` throws `SCRIPT_PARSE_ERROR`, and a motif present under `documentary` also throws. That second case matters — without `.strict()` a stray `motif` field would have silently passed for the wrong preset.
+- **Chapter-count validation matches the real bound.** `validateScriptOutlineChapterCount` enforces exact match when the project specifies `chapterCount`, and the existing `1–20` range when it's AI-chosen (`null`) — the same bound I verified against `CreateProjectRequestSchema` back in `-40`.
+- **Word counter and duration helper land in `contracts/script.ts`** (not buried in the AI module) at exactly `NARRATION_WORDS_PER_MINUTE = 150`, with `countNarrationWords` (whitespace-token count, same approach as the existing codebase convention) and `estimateNarrationDurationSec` (`Math.max(1, round(words/150*60))`) — the boundary test confirms `150` words → `60`s and a `1`-word minimum floor, matching the exact formula agreed in the spec and the one I hand-checked in `-41` for the Task 6 finalization fix.
+- **The three new prompt builders pull in the right per-shape inputs**: `buildOutlinePrompt` includes the total word budget and the five-act-vs-flatter-explainer weighting instruction conditioned on `scriptPresetId`; `buildChapterExpansionPrompt` includes `targetWords`/`role`/`beat`/`endsOnTension`/open loops/style note; `buildManualScriptPrompt` asks for the complete combined document. All three tested directly, not just type-checked.
+- `MODULE.md` updated in the same commit with an accurate one-line summary of what changed.
+
+No corrections needed. Proceed to Task 3 (project-owned provider mutation, `replaceProjectScript`/`saveGeneratedScript` persistence) — same gate before Task 4.

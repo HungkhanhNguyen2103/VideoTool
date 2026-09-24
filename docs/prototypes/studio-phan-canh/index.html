@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Tool — Studio Phân Cảnh &amp; Xuất Video</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Icon sprite: dùng <svg class="ic"><use href="#i-..."/></svg> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21v-7M8 3h8l-1 6 3 3H6l3-3z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5.5-5.5-4 4L8 11l-5 5"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v4h16v-4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></symbol>
+  <symbol id="i-clapper" viewBox="0 0 24 24"><path d="M3 9l1.5-4h15L21 9z"/><rect x="3" y="9" width="18" height="11" rx="2"/></symbol>
+</svg>
+
+<div class="app">
+
+  <!-- ===== Menu tổng ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand__logo"><svg class="ic ic--lg" aria-hidden="true"><use href="#i-film"/></svg></span>
+      <span class="brand__name">Video Tool</span>
+    </div>
+    <nav class="menu" aria-label="Menu tổng">
+      <div class="label">Menu</div>
+      <a class="menu__item is-active" href="#" aria-current="page">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-film"/></svg>
+        <span>Sản Xuất &amp; Kịch Bản</span>
+      </a>
+      <button class="menu__item" type="button" disabled aria-disabled="true">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-lock"/></svg>
+        <span class="menu__text">Menu 2</span><span class="pill">Sắp có</span>
+      </button>
+      <button class="menu__item" type="button" disabled aria-disabled="true">
+        <svg class="ic ic--lg" aria-hidden="true"><use href="#i-lock"/></svg>
+        <span class="menu__text">Menu 3</span><span class="pill">Sắp có</span>
+      </button>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <!-- ===== Tiêu đề dự án ===== -->
+    <header class="project-head">
+      <div>
+        <div class="label">Dự án đang mở</div>
+        <h1 id="project-title"></h1>
+      </div>
+      <div class="chip chip--meta"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg><span id="project-meta"></span></div>
+    </header>
+
+    <!-- ===== Tab điều hướng ===== -->
+    <nav class="tabs" aria-label="Các bước sản xuất">
+      <a class="tab" href="#" data-tab="1"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg><span>1. Khởi Tạo Dự Án</span></a>
+      <a class="tab" href="#" data-tab="2"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg><span>2. Duyệt &amp; Tái Tạo</span></a>
+      <a class="tab is-active" href="#" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-video"/></svg><span>3. Studio Phân Cảnh &amp; Xuất Video</span></a>
+      <a class="tab" href="#" data-tab="4"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg><span>4. SEO &amp; Đóng Gói Kênh</span></a>
+    </nav>
+
+    <!-- ===== Header trang Studio (mirrors StudioPage's own <header>) ===== -->
+    <section class="panel studio-header">
+      <div class="panel__head">
+        <div>
+          <h2 class="ptitle-lg" id="page-title">Studio Phân Cảnh</h2>
+          <p class="muted" id="page-project-title"></p>
+        </div>
+        <span class="badge" id="project-status"></span>
+      </div>
+      <div class="row">
+        <button type="button" class="btn btn--sm" id="copy-json"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>Copy JSON</button>
+        <button type="button" class="btn btn--sm" id="download-json"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg>Export JSON</button>
+        <input type="file" id="import-zip" class="sr-only" accept=".zip,application/zip,application/x-zip-compressed">
+        <label class="btn btn--sm btn--amber" for="import-zip" id="import-zip-label"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>Import ZIP</label>
+      </div>
+    </section>
+
+    <!-- ===== Toolbar (mirrors StudioPage's <div className={styles.toolbar}>) ===== -->
+    <section class="panel toolbar-row">
+      <strong id="scene-summary"></strong>
+      <span class="muted" id="upload-progress-text" hidden></span>
+      <div class="spacer"></div>
+      <div class="row">
+        <button type="button" class="btn btn--sm" id="set-all-image">All images</button>
+        <button type="button" class="btn btn--sm" id="set-all-video">All videos</button>
+        <button type="button" class="btn btn--sm btn--indigoline" id="gen-voiceover-all">Tạo voiceover</button>
+        <button type="button" class="btn btn--sm btn--indigoline" id="gen-visual-prompts">Tạo visual prompt</button>
+        <button type="button" class="btn btn--sm btn--amber" id="render-project">Render video</button>
+      </div>
+    </section>
+
+    <details class="skipped" id="skipped-panel" hidden>
+      <summary id="skipped-summary"></summary>
+      <ul id="skipped-list"></ul>
+    </details>
+
+    <!-- ===== Media panel (mirrors StudioPage's <section className={styles.mediaPanel}>) ===== -->
+    <section class="panel media-panel" aria-label="Âm thanh và render">
+      <div class="media-head">
+        <div>
+          <h2 class="ptitle-lg">BGM nền</h2>
+          <p class="muted small">Tìm nhạc ambient theo mood</p>
+        </div>
+        <div class="segmented-btn" role="group" aria-label="Render engine" id="engine-selector">
+          <button type="button" class="btn btn--sm" data-engine="ffmpeg">FFmpeg</button>
+          <button type="button" class="btn btn--sm" data-engine="remotion">Remotion</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <input class="input" id="bgm-mood" placeholder="Ví dụ: calm cinematic">
+        <button type="button" class="btn btn--sm" id="gen-bgm">Tạo BGM</button>
+        <span class="audio-row" id="bgm-player"></span>
+      </div>
+      <div class="render-preview" id="render-preview" hidden></div>
+      <p class="warning" id="missing-warning" hidden></p>
+      <div class="job-progress" id="job-progress" hidden>
+        <div class="row"><strong class="mono" id="job-status"></strong><span class="mono muted" id="job-pct"></span></div>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="job-bar"><span></span></div>
+        <ul class="job-logs" id="job-logs"></ul>
+      </div>
+    </section>
+
+    <!-- ===== Danh sách scene ===== -->
+    <section class="scene-grid" id="scene-list" aria-label="Danh sách scene"></section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

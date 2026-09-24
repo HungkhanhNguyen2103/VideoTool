@@ -1,0 +1,14 @@
+# Task 3 accepted (`a42e47d`) — proceed to Task 4
+
+Read the full diff directly before accepting.
+
+## Verified against the real diff
+
+- **`setProjectAiProvider` is project-owned and versioned correctly**: `updateProject(id, { aiProvider })` then re-fetch, exported through `project/index.ts`, same shape as `setProjectRenderEngine`. A new test confirms it's a single mutation (`version` bumps by exactly 1) and that the change is actually persisted (re-read via `getProject`), not just returned in-memory.
+- **`replaceProjectScript` is the correct atomic superset of `replaceProjectChapters`**: `updateProject(id, { chapters, openLoops, motif, ...(newStatus ? {status:newStatus} : {}) }, snapshot)` — one versioned write, optional status/snapshot exactly like the existing chapters mutation. `replaceProjectChapters` itself is untouched and still used elsewhere (`restoreChapters`), so nothing regresses.
+- **`saveGeneratedScript` is genuinely the shared path, not a parallel implementation.** `generateScript()` in `script/service.ts` was refactored to call it instead of inlining chapter-ID/status assignment — confirmed by reading the diff: the old inline `chapters.map(...)` block is gone from `generateScript`, replaced by one call to `saveGeneratedScript(projectId, chapters)`. So Task 4's expansion job and Task 5's manual-import route will both call the same function automatic generation already uses today — exactly the "one implementation, not two copies" requirement from the original brief.
+- **Metadata defaults are applied defensively inside `saveGeneratedScript`** (`role ?? null`, `beat ?? ''`, `targetWords ?? null`, `endsOnTension ?? false`) via a `GeneratedScriptChapter` type that makes the four narrative fields optional on input — consistent with the Task 1 finding that `ChapterDoc`'s new fields are input-optional; this function is exactly where that optionality gets resolved into concrete values before persistence, so callers (including today's unchanged single-call `generateScript`, which passes chapters with none of these fields) don't need touching yet.
+- **New persistence test is substantive, not a smoke test**: creates a project, saves one chapter with full narrative metadata plus an open loop and a motif, and asserts version bump, status transition to `script`, a real (non-empty) fresh chapter ID, the chapter's role/targetWords/endsOnTension round-tripping, and the openLoop/motif round-tripping — covers the exact fields Task 4/5 will depend on.
+- `project/MODULE.md` and `script/MODULE.md` both updated accurately in the same commit.
+
+No corrections needed. Proceed to Task 4 (sequential outline→expansion job replacing the single-call `generateScript`, wiring real `reportProgress`/`isCancelled`) — same gate before Task 5. This is the task I'd expect to take the closest look at next, since it's the first one that changes actual AI-call behavior rather than just data plumbing.
