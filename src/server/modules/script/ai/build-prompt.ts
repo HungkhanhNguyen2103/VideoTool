@@ -3,6 +3,7 @@ import type { ChapterDoc, OpenLoop } from '../../../../contracts/script';
 import { NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
 import { loadScriptPreset, type ScriptPreset } from './presets/loader';
 import { SCRIPT_PRESET_CONFIG } from './presets/config';
+import { QA_ISSUE_TYPES, QA_SUGGESTED_ACTIONS } from './qa-schema';
 
 export type BuiltPrompt = { system: string; user: string; promptVersion: string };
 export type VisualPromptSceneInput = {
@@ -185,6 +186,27 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
       `This chapter contains exactly ${scenes.length} scenes. Return exactly ${scenes.length} prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.`,
       'Scenes:',
       ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}`),
+    ].join('\n\n'),
+    promptVersion: version(preset),
+  };
+}
+
+export function buildQaPrompt(project: ProjectDetail): BuiltPrompt {
+  const preset = loadScriptPreset(project.scriptPresetId);
+  const issueTypes = QA_ISSUE_TYPES.join(', ');
+  const actions = QA_SUGGESTED_ACTIONS.join(', ');
+  return {
+    system: systemMessage(preset, `Return one strict JSON object: {"issues":[...]}. Each issue must contain only chapter (positive integer), type (${issueTypes}), severity (low, medium, or high), reason, and suggestedAction (${actions}). Do not return a score, suggestedFix, or any other field. Detect and flag issues only; do not rewrite any text.`),
+    user: [
+      `Project title: ${project.title}`,
+      `Language: ${language(project)}`,
+      `Core question: ${project.coreQuestion || '(none)'}`,
+      `Opening hook: ${project.openingHook || '(none)'}`,
+      `Open loops: ${project.openLoops.map((loop) => `chapter ${loop.plantedInChapter}->${loop.resolvedInChapter}: ${loop.question}`).join(' | ') || '(none)'}`,
+      'Evaluate every chapter and the transitions between them for repetition, contradiction, dead chapters, and possible filler. For POSSIBLE_FILLER, apply the Chapter Deletion Test: judge the chapter\'s narrative function, information value, pacing/breathing-room role, and setup/payoff contribution; flag it if removing it would not measurably hurt the video.',
+      'Also evaluate whether the hook is weak or missing relative to openingHook, pacing is flat, reveals arrive prematurely, open loops remain unresolved, payoffs are weak, transitions are awkward, tone drifts, or claims create credibility risk. Cross-reference each open loop\'s planted and resolved chapter against the actual content.',
+      'Chapters:',
+      ...project.chapters.map((chapter) => `Chapter ${chapter.no}: ${chapter.title}\nRole: ${chapter.role || '(none)'}\nBeat: ${chapter.beat || '(none)'}\nParagraphs:\n${chapter.paragraphs.join('\n\n')}`),
     ].join('\n\n'),
     promptVersion: version(preset),
   };

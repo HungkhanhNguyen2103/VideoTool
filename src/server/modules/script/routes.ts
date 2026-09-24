@@ -46,6 +46,12 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): R
     res.status(201).json({ jobId: job.id });
   });
 
+  router.post('/:id/qa', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const job = await options.enqueueJob({ type: 'final-qa', projectId: project.id, payload: { projectId: project.id } });
+    res.status(201).json({ jobId: job.id });
+  });
+
   router.patch('/:id/ai-provider', async (req, res) => {
     const body = ProviderSchema.parse(req.body);
     res.json(await setProjectAiProvider(req.params.id, body.provider));

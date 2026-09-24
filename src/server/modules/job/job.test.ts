@@ -188,6 +188,7 @@ describe('job service', () => {
 
   it('runs a handler, clamps progress, and persists its result', async () => {
     const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    expect((await getJob(job.id)).result).toBeNull();
     const seen: number[] = [];
     const handled = await claimAndRun(
       { example: async (_doc, ctx) => { await ctx.reportProgress(150); seen.push((await ctx.isCancelled()) ? 1 : 0); return { ok: true }; } },
@@ -195,7 +196,7 @@ describe('job service', () => {
     );
     expect(handled).toBe(true);
     expect(seen).toEqual([0]);
-    expect(await getJob(job.id)).toMatchObject({ status: 'done', progress: 100 });
+    expect(await getJob(job.id)).toMatchObject({ status: 'done', progress: 100, result: { ok: true } });
   });
 
   it('exposes appendLog in the handler context', async () => {
@@ -283,8 +284,17 @@ describe('job routes', () => {
     const response = await fetch(`${base}/api/job/${job.id}/events`);
     expect(response.status).toBe(200);
     const text = await response.text();
-    expect(text).toContain(`data: ${JSON.stringify({ status: 'cancelled', progress: 0, error: null })}`);
+    expect(text).toContain(`data: ${JSON.stringify({ status: 'cancelled', progress: 0, error: null, result: null })}`);
     expect(text).toContain('\n\n');
+  });
+
+  it('emits a completed handler result only after the job is terminal', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    expect((await getJob(job.id)).result).toBeNull();
+    await claimAndRun({ example: async () => ({ issues: [{ chapter: 1 }] }) }, 'worker-a');
+    const base = await startServer();
+    const text = await (await fetch(`${base}/api/job/${job.id}/events`)).text();
+    expect(text).toContain(`data: ${JSON.stringify({ status: 'done', progress: 100, error: null, result: { issues: [{ chapter: 1 }] } })}`);
   });
 
   it('emits existing logs before closing a terminal stream', async () => {

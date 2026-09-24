@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { cancelJob, getJobWithLogs } from './service';
 
-type ProgressState = { status: string; progress: number; error: string | null };
+type ProgressState = { status: string; progress: number; error: string | null; result: unknown };
 
 function stateOf(summary: Awaited<ReturnType<typeof getJobWithLogs>>['summary']): ProgressState {
-  return { status: summary.status, progress: summary.progress, error: summary.error };
+  const isTerminal = terminal(summary.status);
+  return { status: summary.status, progress: summary.progress, error: summary.error, result: isTerminal ? summary.result : null };
 }
 
 function terminal(status: string): boolean {

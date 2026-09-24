@@ -40,6 +40,7 @@ function toSummary(job: JobDoc): JobSummary {
     error: job.error,
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
+    result: job.result,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
   });

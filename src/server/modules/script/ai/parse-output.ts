@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AppError } from '../../../shared/errors';
 import { ChapterExpansionSchema, GeneratedChapterSchema, manualSchemaForScriptPreset, RegeneratedParagraphsSchema, schemaForScriptPreset, VisualPromptBatchSchema, type ChapterExpansion, type ManualScriptDocument, type ScriptOutline } from './output-schema';
+import { QAResultSchema, type QAResult } from './qa-schema';
 import type { ScriptPresetId } from '../../../../contracts/project';
 
 function parseJson(raw: string): unknown {
@@ -51,4 +52,8 @@ export function parseRegeneratedParagraphs(raw: string): z.infer<typeof Regenera
 
 export function parseVisualPromptBatch(raw: string): z.infer<typeof VisualPromptBatchSchema> {
   return validate(raw, VisualPromptBatchSchema);
+}
+
+export function parseQaResult(raw: string): QAResult {
+  return validate(raw, QAResultSchema);
 }

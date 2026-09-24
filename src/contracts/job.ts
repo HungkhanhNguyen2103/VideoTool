@@ -12,6 +12,7 @@ export const JobSummarySchema = z.object({
   error: z.string().nullable(),
   attempts: z.number().int().nonnegative(),
   maxAttempts: z.number().int().positive(),
+  result: z.unknown().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
