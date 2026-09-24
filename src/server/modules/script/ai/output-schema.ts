@@ -28,6 +28,9 @@ export type ScriptOutlineChapter = z.infer<typeof OutlineChapterSchema>;
 export const ChapterExpansionSchema = z.object({
   paragraphs: z.array(z.string().min(1)).min(1),
   styleNote: z.string().max(500),
+  chapterSummary: z.string().max(250),
+  avoidRepeating: z.array(z.string().max(80)).max(5),
+  persistentFactsNext: z.array(z.string().max(120)).max(5),
 }).strict();
 export type ChapterExpansion = z.infer<typeof ChapterExpansionSchema>;
 

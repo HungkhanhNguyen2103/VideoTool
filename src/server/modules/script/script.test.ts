@@ -395,8 +395,8 @@ describe('script contracts', () => {
       { no: 2, title: 'Context', role: 'resolution', beat: 'Close', targetWords: 1, endsOnTension: false },
         ], openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
       }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['First'], styleNote: 'Style 1' }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Second'], styleNote: 'Style 2' }));
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['First'], styleNote: 'Style 1', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Second'], styleNote: 'Style 2', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: ['Second fact'] }));
     const project = await createProject(projectInput);
     const logs: string[] = [];
 

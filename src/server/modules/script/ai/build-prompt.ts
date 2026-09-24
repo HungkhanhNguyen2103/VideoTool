@@ -20,6 +20,11 @@ export type VisualPromptPromptInput = {
 export type ChapterExpansionPromptInput = {
   project: ProjectDetail;
   chapter: Pick<ChapterDoc, 'no' | 'title' | 'role' | 'beat' | 'targetWords' | 'endsOnTension'>;
+  coreQuestion: string;
+  openingHook: string | null;
+  previousChapterSummary: string | null;
+  previousAvoidRepeating: string[];
+  previousPersistentFacts: string[];
   openLoops: readonly (OpenLoop | string)[];
   styleNote: string;
 };
@@ -85,17 +90,22 @@ export function buildOutlinePrompt(project: ProjectDetail): BuiltPrompt {
 }
 
 export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput): BuiltPrompt {
-  const { project, chapter, openLoops, styleNote } = input;
+  const { project, chapter, coreQuestion, openingHook, previousChapterSummary, previousAvoidRepeating, previousPersistentFacts, openLoops, styleNote } = input;
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, 'Return one JSON object with paragraphs (string array) and styleNote (string, at most 500 characters).'),
+    system: systemMessage(preset, 'Return one JSON object with paragraphs (string array), styleNote (string, at most 500 characters), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). persistentFacts is NOT a chapter summary. Keep only facts or narrative state that a later chapter could accidentally contradict, reintroduce as new, or forget while it remains relevant. Drop facts that are no longer useful. Return the COMPLETE next persistentFacts state, not a delta. Maximum 5 items.'),
     user: [
       `Language: ${language(project)}`,
+      `Core question: ${coreQuestion}`,
+      ...(openingHook !== null ? [`Opening hook: ${openingHook}`] : []),
       `Chapter ${chapter.no}: ${chapter.title}`,
       `Role: ${chapter.role || '(unspecified)'}`,
       `Beat: ${chapter.beat || '(unspecified)'}`,
       `Target words: ${chapter.targetWords ?? '(unspecified)'}`,
       `Ends on tension: ${chapter.endsOnTension ? 'yes' : 'no'}`,
+      `Previous chapter summary: ${previousChapterSummary ?? '(none)'}`,
+      `Avoid repeating: ${previousAvoidRepeating.join(' | ') || '(none)'}`,
+      `Persistent facts: ${previousPersistentFacts.join(' | ') || '(none)'}`,
       `Open loops: ${openLoops.map((loop) => typeof loop === 'string' ? loop : loop.question).join(' | ') || '(none)'}`,
       `Existing style note: ${styleNote.slice(0, 500) || '(none)'}`,
     ].join('\n\n'),

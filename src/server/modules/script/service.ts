@@ -121,7 +121,18 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
     if (await context.isCancelled()) return;
     try {
       const openLoops = outline.openLoops.filter((loop) => loop.plantedInChapter === chapter.no || loop.resolvedInChapter === chapter.no);
-      const input = { project, chapter, openLoops, styleNote };
+      const previousChapter = saved.chapters[index - 1];
+      const input = {
+        project,
+        chapter,
+        coreQuestion: outline.coreQuestion,
+        openingHook: index === 0 ? outline.openingHook : null,
+        previousChapterSummary: previousChapter?.chapterSummary ?? null,
+        previousAvoidRepeating: previousChapter?.avoidRepeating ?? [],
+        previousPersistentFacts: previousChapter?.persistentFacts ?? [],
+        openLoops,
+        styleNote,
+      };
       const prompt = buildChapterExpansionPrompt(input);
       await context.appendLog(`Expanding chapter ${index + 1}/${saved.chapters.length}…`);
       const raw = await aiClient.chat([
@@ -133,7 +144,7 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
       if (chapter.targetWords !== null && countNarrationWords(expansion.paragraphs.join(' ')) < chapter.targetWords * 0.8) {
         const retryPrompt = {
           ...prompt,
-          user: `${prompt.user}\n\nPrevious response was ${countNarrationWords(expansion.paragraphs.join(' '))} words; target is ${chapter.targetWords}. Retry once and reach at least 80% of the target.`,
+          user: `${prompt.user}\n\nPrevious response was ${countNarrationWords(expansion.paragraphs.join(' '))} words; target is ${chapter.targetWords}. Retry once and reach at least 80% of the target. Every added sentence must provide meaningful progression: new evidence, a concrete consequence, a causal explanation, or escalation. Do not paraphrase the same content, add generic padding, or repeat an already-stated fact just to raise the word count.`,
         };
         const retryRaw = await aiClient.chat([
           { role: 'system', content: retryPrompt.system },
@@ -143,7 +154,14 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
         expansion = parseChapterExpansion(retryRaw);
       }
       if (await context.isCancelled()) return;
-      await patchProjectChapter(projectId, chapter.id, { paragraphs: expansion.paragraphs, status: 'pending' });
+      const updated = await patchProjectChapter(projectId, chapter.id, {
+        paragraphs: expansion.paragraphs,
+        status: 'pending',
+        chapterSummary: expansion.chapterSummary,
+        avoidRepeating: expansion.avoidRepeating,
+        persistentFacts: expansion.persistentFactsNext,
+      });
+      saved.chapters = updated.chapters;
       styleNote = expansion.styleNote;
     } catch (error) {
       await patchProjectChapter(projectId, chapter.id, { status: 'needs-fix' });

@@ -97,7 +97,7 @@ describe('script AI parsers', () => {
   });
 
   it('parses expansion and manual document as distinct response shapes', () => {
-    expect(parseChapterExpansion('{"paragraphs":["Expanded scene"],"styleNote":"Muted palette"}')).toEqual({ paragraphs: ['Expanded scene'], styleNote: 'Muted palette' });
+    expect(parseChapterExpansion('{"paragraphs":["Expanded scene"],"styleNote":"Muted palette","chapterSummary":"Summary","avoidRepeating":[],"persistentFactsNext":[]}')).toEqual({ paragraphs: ['Expanded scene'], styleNote: 'Muted palette', chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: [] });
     expect(parseManualScriptDocument(JSON.stringify({
       chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 2, endsOnTension: false, paragraphs: ['Expanded scene'] }],
       openLoops: [], coreQuestion: 'Question', openingHook: 'Hook',
@@ -106,13 +106,19 @@ describe('script AI parsers', () => {
     expect(() => parseManualScriptDocument('{"paragraphs":["x"]}', 'explainer')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
   });
 
+  it.each(['chapterSummary', 'avoidRepeating', 'persistentFactsNext'] as const)('rejects chapter expansion missing %s with SCRIPT_PARSE_ERROR', (field) => {
+    const expansion = { paragraphs: ['Expanded scene'], styleNote: 'Muted palette', chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: [] };
+    delete expansion[field];
+    expect(() => parseChapterExpansion(JSON.stringify(expansion))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));
+  });
+
   it('builds the three new prompt shapes with their required inputs', () => {
     const outline = buildOutlinePrompt(project);
     expect(outline.user).toContain('Total narration word budget: 300 words');
     expect(outline.user).toContain('exactly 2 chapters');
     expect(outline.system).toContain('five-act');
 
-    const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, openLoops: ['What happens next?'], styleNote: 'Muted palette' });
+    const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [], openLoops: ['What happens next?'], styleNote: 'Muted palette' });
     expect(expansion.user).toContain('Target words: 300');
     expect(expansion.user).toContain('What happens next?');
     expect(expansion.user).toContain('Muted palette');
