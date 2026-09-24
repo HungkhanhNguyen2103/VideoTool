@@ -10,12 +10,12 @@ function projectIdFrom(job: { payload: unknown }): string {
 
 const handleGenerateVoiceover: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  await generateProjectVoiceovers(projectIdFrom(job), context.appendLog);
+  await generateProjectVoiceovers(projectIdFrom(job), context.appendLog, context.reportProgress);
 };
 
 const handleRenderFullVideo: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  await renderFullProject(projectIdFrom(job), context.appendLog);
+  await renderFullProject(projectIdFrom(job), context.appendLog, context.reportProgress);
 };
 
 export const jobHandlers: Record<string, JobHandler> = {

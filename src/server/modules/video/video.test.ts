@@ -260,14 +260,16 @@ describe('video orchestration services', () => {
     mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
     mocks.probeAudioDuration.mockResolvedValue(1.1);
     const logs: string[] = [];
+    const progress: number[] = [];
 
-    await generateProjectVoiceovers(project.id, async (message) => { logs.push(message); });
+    await generateProjectVoiceovers(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
 
     const updated = await getProject(project.id);
     expect(updated.scenes[0]!.audioFileId).toBeNull();
     expect(updated.scenes[1]!.audioFileId).toEqual(expect.any(String));
     expect(logs.some((line) => line.includes('scene 1'))).toBe(true);
     expect(logs.some((line) => line.includes('failed'))).toBe(true);
+    expect(progress).toEqual([50, 100]);
   });
 
   it('does not write SFX when Freesound has no result, then stores a successful SFX hit', async () => {
@@ -300,21 +302,23 @@ describe('video orchestration services', () => {
     const project = await createProject(projectInput);
     await replaceProjectScenes(project.id, [{ id: 'scene-1', narration: 'Missing', visualPrompt: 'Visual', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null }]);
 
-    await expect(renderFullProject(project.id, async () => undefined)).rejects.toMatchObject({ code: 'SCENES_NOT_READY', status: 422 });
+    await expect(renderFullProject(project.id, async () => undefined, async () => undefined)).rejects.toMatchObject({ code: 'SCENES_NOT_READY', status: 422 });
   });
 
   it('stores rendered output and updates the project final file/status', async () => {
     const project = await seedProject();
     const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('mp4')) };
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+    const reportProgress = vi.fn();
 
-    await renderFullProject(project.id, async () => undefined);
+    await renderFullProject(project.id, async () => undefined, reportProgress);
 
     const updated = await getProject(project.id);
     expect(updated).toMatchObject({ status: 'rendered', renderFileId: expect.any(String) });
     const files = await createFileStoreService(filesDir).listProjectFiles(project.id);
     expect(files).toContainEqual(expect.objectContaining({ purpose: 'render', mimeType: 'video/mp4' }));
     expect(renderer.renderFullVideo).toHaveBeenCalledOnce();
+    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), reportProgress);
   });
 });
 
@@ -459,10 +463,12 @@ describe('real FFmpeg integration', () => {
 
     const latest = await getProject(project.id);
     const preview = await renderer.renderScenePreview(latest, latest.scenes[0]!);
-    const full = await renderer.renderFullVideo(latest, async () => undefined);
+    const progress: number[] = [];
+    const full = await renderer.renderFullVideo(latest, async () => undefined, async (percent) => { progress.push(percent); });
 
     expect(preview.byteLength).toBeGreaterThan(100);
     expect(full.byteLength).toBeGreaterThan(100);
+    expect(progress).toEqual([90, 100]);
 
     const shortVideoPath = path.join(filesDir, 'short.mp4');
     const shortOutputPath = path.join(filesDir, 'short-preview.mp4');

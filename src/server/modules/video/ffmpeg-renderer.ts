@@ -8,7 +8,7 @@ import { buildBgmArguments, buildConcatArguments, buildSceneArguments } from './
 
 export interface VideoRenderer {
   renderScenePreview(project: ProjectDetail, scene: Scene): Promise<Buffer>;
-  renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>): Promise<Buffer>;
+  renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<Buffer>;
 }
 
 type RendererOptions = { filesDir?: string; ffmpegPath?: string; resolveFilePath?: ReturnType<typeof createFileStoreService>['resolveFilePath'] };
@@ -47,7 +47,7 @@ export class FfmpegRenderer implements VideoRenderer {
     }
   }
 
-  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>): Promise<Buffer> {
+  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<Buffer> {
     const directory = await mkdtemp(path.join(tmpdir(), 'video-tool-render-'));
     try {
       const segmentPaths: string[] = [];
@@ -56,17 +56,24 @@ export class FfmpegRenderer implements VideoRenderer {
         const filename = `segment-${String(index + 1).padStart(4, '0')}.mp4`;
         await this.renderSegment(project, scene, directory, filename, appendLog);
         segmentPaths.push(path.join(directory, filename));
+        await reportProgress(Math.round(((index + 1) / project.scenes.length) * 90));
       }
       const listPath = path.join(directory, 'segments.txt');
       const concatPath = path.join(directory, 'concat.mp4');
       await writeFile(listPath, segmentPaths.map(quoteConcatPath).join('\n'));
       await runProcess(this.ffmpegPath, buildConcatArguments(listPath, concatPath), appendLog);
-      if (!project.bgmFileId) return await readFile(concatPath);
+      if (!project.bgmFileId) {
+        const output = await readFile(concatPath);
+        await reportProgress(100);
+        return output;
+      }
       const bgm = await this.resolveFilePath(project.id, project.bgmFileId);
       const outputPath = path.join(directory, 'final.mp4');
       const totalDuration = project.scenes.reduce((sum, scene) => sum + scene.durationSec, 0);
       await runProcess(this.ffmpegPath, buildBgmArguments(concatPath, bgm.absolutePath, outputPath, totalDuration), appendLog);
-      return await readFile(outputPath);
+      const output = await readFile(outputPath);
+      await reportProgress(100);
+      return output;
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

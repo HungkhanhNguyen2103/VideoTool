@@ -35,7 +35,7 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
   return updated.scenes.find((candidate) => candidate.id === sceneId)!;
 }
 
-export async function generateProjectVoiceovers(projectId: string, appendLog: (message: string) => Promise<void>): Promise<void> {
+export async function generateProjectVoiceovers(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<void> {
   const project = await getProject(projectId);
   const failed: number[] = [];
   for (const [index, scene] of project.scenes.entries()) {
@@ -49,6 +49,7 @@ export async function generateProjectVoiceovers(projectId: string, appendLog: (m
       logger.warn(`Voiceover generation failed for scene ${sceneNumber}.`, error);
       await appendLog(`Scene ${sceneNumber} failed: ${message}`);
     }
+    await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
   }
   if (failed.length > 0) await appendLog(`Voiceover failed for scenes: ${failed.join(', ')}`);
 }

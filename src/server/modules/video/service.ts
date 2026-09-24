@@ -59,10 +59,10 @@ export async function generateProjectBgm(projectId: string, mood: string): Promi
   await setProjectBgm(projectId, normalizedMood, stored.id);
 }
 
-export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>): Promise<void> {
+export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<void> {
   const project = await getProject(projectId);
   assertProjectRenderReady(project);
-  const output = await getVideoRenderer(project.renderEngine).renderFullVideo(project, appendLog);
+  const output = await getVideoRenderer(project.renderEngine).renderFullVideo(project, appendLog, reportProgress);
   const stored = await storeFile({ projectId, originalName: 'render.mp4', mimeType: 'video/mp4', buffer: output, purpose: 'render' });
   await setProjectRenderFile(projectId, stored.id);
 }

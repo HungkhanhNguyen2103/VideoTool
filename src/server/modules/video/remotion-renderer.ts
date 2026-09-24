@@ -51,26 +51,31 @@ export class RemotionRenderer implements VideoRenderer {
     return this.render({ ...project, bgmFileId: null }, [scene]);
   }
 
-  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>): Promise<Buffer> {
-    return this.render(project, project.scenes, appendLog);
+  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<Buffer> {
+    return this.render(project, project.scenes, appendLog, reportProgress);
   }
 
-  private async render(project: ProjectDetail, scenes: ReadonlyArray<Scene>, appendLog?: (message: string) => Promise<void>): Promise<Buffer> {
+  private async render(project: ProjectDetail, scenes: ReadonlyArray<Scene>, appendLog?: (message: string) => Promise<void>, reportProgress?: (percent: number) => Promise<void>): Promise<Buffer> {
     let staged: StagedRemotionRender | null = null;
     try {
       const serveUrl = await this.getBundle();
       staged = await stageRemotionRender({ serveUrl, project, scenes, resolver: this.resolver });
       if (appendLog) await appendLog('Remotion staging complete.');
+      if (reportProgress) await reportProgress(10);
       const composition = await this.selectComposition({
         serveUrl,
         id: 'VideoComposition',
         inputProps: staged.inputProps,
       });
       if (appendLog) await appendLog('Remotion render started.');
+      if (reportProgress) await reportProgress(15);
 
       let lastBucket = -1;
+      let lastProgress = 15;
       let progressLogChain = Promise.resolve();
       let progressLogError: unknown;
+      let progressReportChain = Promise.resolve();
+      let progressReportError: unknown;
       const queueProgressLog = (message: string) => {
         if (!appendLog) return;
         progressLogChain = progressLogChain.then(async () => {
@@ -81,12 +86,27 @@ export class RemotionRenderer implements VideoRenderer {
           }
         });
       };
+      const queueProgressReport = (percent: number) => {
+        if (!reportProgress) return;
+        progressReportChain = progressReportChain.then(async () => {
+          try {
+            await reportProgress(percent);
+          } catch (error) {
+            progressReportError ??= error;
+          }
+        });
+      };
       const onProgress = (progress: { progress: number }) => {
-        if (!appendLog) return;
-        const bucket = Math.floor(Math.max(0, Math.min(1, progress.progress)) * 10);
-        if (bucket > lastBucket) {
+        const fraction = Math.max(0, Math.min(1, progress.progress));
+        const bucket = Math.floor(fraction * 10);
+        if (appendLog && bucket > lastBucket) {
           lastBucket = bucket;
           queueProgressLog(`Remotion render progress ${bucket * 10}%.`);
+        }
+        const percent = Math.round(15 + (fraction * 80));
+        if (percent > lastProgress) {
+          lastProgress = percent;
+          queueProgressReport(percent);
         }
       };
       const renderOptions: RenderMediaOptions = {
@@ -99,9 +119,12 @@ export class RemotionRenderer implements VideoRenderer {
       };
       await this.renderMedia(renderOptions);
       await progressLogChain;
+      await progressReportChain;
       if (progressLogError) throw progressLogError;
+      if (progressReportError) throw progressReportError;
       const output = await this.readOutput(staged.outputPath);
       if (appendLog) await appendLog('Remotion render complete.');
+      if (reportProgress) await reportProgress(100);
       return output as Buffer;
     } catch (error) {
       throw asRenderFailure(error);
