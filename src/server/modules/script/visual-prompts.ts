@@ -72,6 +72,7 @@ export async function generateVisualPrompts(
   for (const [chapterIndex, chapter] of project.chapters.entries()) {
     if (await context.isCancelled()) { cancelled = true; break; }
     const scenes = scenesByChapter[chapterIndex]!;
+    const previousChapter = chapterIndex > 0 ? project.chapters[chapterIndex - 1] : null;
     const prefilled = scenes.filter((scene) => scene.visualPrompt !== '').length;
     result.skippedScenes += prefilled;
 
@@ -79,7 +80,18 @@ export async function generateVisualPrompts(
       await context.appendLog(`Chapter ${chapter.no}: all visual prompts already filled; skipped.`);
     } else {
       try {
-        const prompt = buildVisualPromptPrompt({ project, chapter, scenes, styleNote });
+        const prompt = buildVisualPromptPrompt({
+          project,
+          chapter,
+          scenes,
+          styleNote,
+          visualStylePresetId: project.visualStylePresetId,
+          coreQuestion: project.coreQuestion,
+          openingHook: project.openingHook || null,
+          previousChapterSummary: previousChapter?.chapterSummary ?? null,
+          previousAvoidRepeating: previousChapter?.avoidRepeating ?? [],
+          previousPersistentFacts: previousChapter?.persistentFacts ?? [],
+        });
         let batch: VisualPromptBatch | undefined;
         let retryError = '';
         for (let attempt = 0; attempt < 2; attempt += 1) {

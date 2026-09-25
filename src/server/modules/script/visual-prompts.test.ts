@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes } from '../project';
+import { createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript } from '../project';
 import { generateVisualPrompts } from './visual-prompts';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn() }));
@@ -69,6 +69,34 @@ describe('generateVisualPrompts', () => {
     expect(first).not.toContain('scene-1');
     expect(second).toContain('Scene 3\nNarration: Three');
     expect(second).toContain('Previous style note: Muted archival palette');
+  });
+
+  it('forwards the selected style and script continuity, using only the previous chapter for later context', async () => {
+    const project = await projectWithScenes(['', '', '']);
+    await replaceProjectScript(project.id, project.chapters.map((chapter, index) => ({
+      ...chapter,
+      chapterSummary: index === 0 ? 'First chapter summary' : 'Current chapter summary',
+      avoidRepeating: index === 0 ? ['First avoidance'] : ['Current avoidance'],
+      persistentFacts: index === 0 ? ['First fact'] : ['Current fact'],
+    })), [], null, 'Why did the river change?', 'At dawn, it reversed.');
+    aiMock.chat.mockResolvedValueOnce(batch([1, 2], 'First style')).mockResolvedValueOnce(batch([3], 'Second style'));
+
+    await generateVisualPrompts(project.id, context());
+
+    const first = aiMock.chat.mock.calls[0]![0][1].content as string;
+    const second = aiMock.chat.mock.calls[1]![0][1].content as string;
+    expect(first).toContain('Required visual style (must follow for every scene):');
+    expect(first).toContain('Core question: Why did the river change?');
+    expect(first).toContain('Opening hook: At dawn, it reversed.');
+    expect(first).toContain('Previous chapter summary: (none)');
+    expect(first).toContain('Avoid repeating: (none)');
+    expect(first).toContain('Persistent facts: (none)');
+    expect(second).toContain('Previous chapter summary: First chapter summary');
+    expect(second).toContain('Avoid repeating: First avoidance');
+    expect(second).toContain('Persistent facts: First fact');
+    expect(second).not.toContain('Current chapter summary');
+    expect(second).not.toContain('Current avoidance');
+    expect(second).not.toContain('Current fact');
   });
 
   it.each([
