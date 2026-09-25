@@ -41,6 +41,15 @@ describe('Freesound client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]![0])).toContain('freesound.org/apiv2/search/text');
     expect(String(fetchMock.mock.calls[0]![0])).toContain('query=wind+blowing');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('fields=previews');
+  });
+
+  it('returns null when a search result has no preview URLs', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ results: [{ id: 123, name: 'Wind' }] }), { status: 200 }));
+    const client = createFreesoundClient({ apiKey: 'key', fetchImpl: fetchMock });
+
+    await expect(client.searchAndDownloadSfx('wind')).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns null for no results and download failures', async () => {

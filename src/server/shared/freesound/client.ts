@@ -22,6 +22,7 @@ export function createFreesoundClient(options: FreesoundClientOptions): Freesoun
       url.searchParams.set('filter', filter);
       url.searchParams.set('sort', 'rating_desc');
       url.searchParams.set('page_size', '1');
+      url.searchParams.set('fields', 'previews');
       const response = await fetchImpl(url, { headers: { accept: 'application/json' } });
       if (!response.ok) throw new Error(`Freesound search returned ${response.status}.`);
       const payload = await response.json() as { results?: Array<{ previews?: Record<string, unknown> }> };
