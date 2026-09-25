@@ -22,7 +22,11 @@ beforeEach(async () => {
 });
 afterAll(() => closeTestMongo());
 
-async function projectWithScenes(prompts = ['', 'Manual second', ''], counts: [number, number] = [2, 1]) {
+async function projectWithScenes(
+  prompts: string[] = ['', 'Manual second', ''],
+  counts: [number, number] = [2, 1],
+  sfxPrompts: string[] = prompts.map((prompt) => prompt ? 'Existing SFX' : ''),
+) {
   const project = await createProject(projectInput);
   await replaceProjectChapters(project.id, [
     { id: 'chapter-1', no: 1, title: 'First', paragraphs: ['One', 'Two', 'Three', 'Four'].slice(0, counts[0]), status: 'approved', scenesCount: counts[0], durationSec: counts[0] * 20 },
@@ -30,7 +34,7 @@ async function projectWithScenes(prompts = ['', 'Manual second', ''], counts: [n
   ], null);
   await replaceProjectScenes(project.id, ['One', 'Two', 'Three', 'Four'].slice(0, counts[0] + counts[1]).map((narration, index) => ({
     id: `scene-${index + 1}`, narration, visualPrompt: prompts[index]!, durationSec: 20,
-    assetType: 'image' as const, assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+    assetType: 'image' as const, assetFileId: null, audioFileId: null, sfxPrompt: sfxPrompts[index] ?? '', sfxFileId: null,
   })), 'assets');
   return getProject(project.id);
 }
@@ -46,8 +50,8 @@ function context(cancelled: () => boolean = () => false) {
   };
 }
 
-function batch(indexes: number[], styleNote: string) {
-  return JSON.stringify({ styleNote, prompts: indexes.map((sceneIndex) => ({ sceneIndex, visualPrompt: `Generated ${sceneIndex}` })) });
+function batch(indexes: number[], styleNote: string, sfxPrompts: Partial<Record<number, string>> = {}) {
+  return JSON.stringify({ styleNote, prompts: indexes.map((sceneIndex) => ({ sceneIndex, visualPrompt: `Generated ${sceneIndex}`, sfxPrompt: sfxPrompts[sceneIndex] ?? `Generated SFX ${sceneIndex}` })) });
 }
 
 describe('generateVisualPrompts', () => {
@@ -60,15 +64,67 @@ describe('generateVisualPrompts', () => {
 
     expect(result).toEqual({ updatedScenes: 2, skippedScenes: 1, failedChapters: [] });
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Generated 1', 'Manual second', 'Generated 3']);
+    expect((await getProject(project.id)).scenes.map((scene) => scene.sfxPrompt)).toEqual(['Generated SFX 1', 'Existing SFX', 'Generated SFX 3']);
     expect(job.progress).toEqual([50, 100]);
     const first = aiMock.chat.mock.calls[0]![0][1].content as string;
     const second = aiMock.chat.mock.calls[1]![0][1].content as string;
     expect(first).toContain('This chapter contains exactly 2 scenes. Return exactly 2 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
     expect(first).toContain('Scene 1\nNarration: One');
     expect(first).toContain('Scene 2\nNarration: Two\nExisting visual prompt: Manual second');
+    expect(first).toContain('Existing SFX prompt: Existing SFX');
     expect(first).not.toContain('scene-1');
     expect(second).toContain('Scene 3\nNarration: Three');
     expect(second).toContain('Previous style note: Muted archival palette');
+  });
+
+  it('preserves existing SFX prompts while filling empty SFX prompts', async () => {
+    const project = await projectWithScenes(['', '', ''], [2, 1], ['Existing SFX', '', '']);
+    aiMock.chat.mockResolvedValueOnce(batch([1, 2], 'First style')).mockResolvedValueOnce(batch([3], 'Second style'));
+
+    await generateVisualPrompts(project.id, context());
+
+    expect((await getProject(project.id)).scenes.map((scene) => scene.sfxPrompt)).toEqual(['Existing SFX', 'Generated SFX 2', 'Generated SFX 3']);
+  });
+
+  it('backfills SFX when all visual prompts are already filled', async () => {
+    const project = await projectWithScenes(['Visual 1', 'Visual 2', 'Visual 3'], [2, 1], ['', '', '']);
+    aiMock.chat.mockResolvedValueOnce(batch([1, 2], 'First style')).mockResolvedValueOnce(batch([3], 'Second style'));
+
+    const result = await generateVisualPrompts(project.id, context());
+
+    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [] });
+    expect(aiMock.chat).toHaveBeenCalledTimes(2);
+    expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Visual 1', 'Visual 2', 'Visual 3']);
+    expect((await getProject(project.id)).scenes.map((scene) => scene.sfxPrompt)).toEqual(['Generated SFX 1', 'Generated SFX 2', 'Generated SFX 3']);
+  });
+
+  it('skips a chapter only when both visual and SFX prompts are filled', async () => {
+    const project = await projectWithScenes(['Visual 1', 'Visual 2', 'Visual 3'], [2, 1], ['SFX 1', 'SFX 2', 'SFX 3']);
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+
+    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [] });
+    expect(aiMock.chat).not.toHaveBeenCalled();
+    expect(job.logs).toEqual([
+      'Chapter 1: all visual and SFX prompts already filled; skipped.',
+      'Chapter 2: all visual and SFX prompts already filled; skipped.',
+      'Visual prompts finished: 0 updated, 0 SFX prompts added, 3 skipped, 0 failed chapters.',
+    ]);
+  });
+
+  it('leaves empty SFX suggestions empty and logs zero SFX additions', async () => {
+    const project = await projectWithScenes(['', '', '']);
+    aiMock.chat.mockResolvedValueOnce(batch([1, 2], 'First style', { 1: '', 2: '' })).mockResolvedValueOnce(batch([3], 'Second style', { 3: '' }));
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+
+    expect(result).toEqual({ updatedScenes: 3, skippedScenes: 0, failedChapters: [] });
+    expect((await getProject(project.id)).scenes.every((scene) => scene.sfxPrompt === '')).toBe(true);
+    expect(job.logs).toContain('Chapter 1: 2 visual prompts added; 0 SFX prompts added; 0 already filled.');
+    expect(job.logs).toContain('Chapter 2: 1 visual prompts added; 0 SFX prompts added; 0 already filled.');
+    expect(job.logs.at(-1)).toBe('Visual prompts finished: 3 updated, 0 SFX prompts added, 0 skipped, 0 failed chapters.');
   });
 
   it('forwards the selected style and script continuity, using only the previous chapter for later context', async () => {

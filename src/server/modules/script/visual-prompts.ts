@@ -28,6 +28,7 @@ function chapterScenes(project: ProjectDetail): VisualPromptSceneInput[][] {
       sceneIndex: nextScene + index + 1,
       narration: scene.narration,
       visualPrompt: scene.visualPrompt,
+      sfxPrompt: scene.sfxPrompt,
     }));
     nextScene += count;
     return scenes;
@@ -67,17 +68,19 @@ export async function generateVisualPrompts(
   const client = getAiClient(project.aiProvider);
   const result: VisualPromptJobResult = { updatedScenes: 0, skippedScenes: 0, failedChapters: [] };
   let styleNote = excerpt(project.scenes);
+  let updatedSfxPrompts = 0;
   let cancelled = false;
 
   for (const [chapterIndex, chapter] of project.chapters.entries()) {
     if (await context.isCancelled()) { cancelled = true; break; }
     const scenes = scenesByChapter[chapterIndex]!;
     const previousChapter = chapterIndex > 0 ? project.chapters[chapterIndex - 1] : null;
-    const prefilled = scenes.filter((scene) => scene.visualPrompt !== '').length;
-    result.skippedScenes += prefilled;
+    const prefilledVisual = scenes.filter((scene) => scene.visualPrompt !== '').length;
+    const fullyPrefilled = scenes.filter((scene) => scene.visualPrompt !== '' && scene.sfxPrompt !== '').length;
+    result.skippedScenes += prefilledVisual;
 
-    if (prefilled === scenes.length) {
-      await context.appendLog(`Chapter ${chapter.no}: all visual prompts already filled; skipped.`);
+    if (fullyPrefilled === scenes.length) {
+      await context.appendLog(`Chapter ${chapter.no}: all visual and SFX prompts already filled; skipped.`);
     } else {
       try {
         const prompt = buildVisualPromptPrompt({
@@ -116,14 +119,16 @@ export async function generateVisualPrompts(
         if (!batch) throw new AppError('Visual prompt batch was empty.', 422, 'SCRIPT_PARSE_ERROR');
 
         const idsByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene.sceneId]));
-        const updates = batch.prompts.map((item) => ({ sceneId: idsByIndex.get(item.sceneIndex)!, visualPrompt: item.visualPrompt }));
+        const updates = batch.prompts.map((item) => ({ sceneId: idsByIndex.get(item.sceneIndex)!, visualPrompt: item.visualPrompt, sfxPrompt: item.sfxPrompt }));
         if (await context.isCancelled()) { cancelled = true; break; }
-        const { updatedSceneIds } = await applyEmptySceneVisualPromptsWithResult(projectId, updates);
+        const { updatedSceneIds, updatedSfxPromptSceneIds } = await applyEmptySceneVisualPromptsWithResult(projectId, updates);
         const changed = updatedSceneIds.length;
+        const changedSfx = updatedSfxPromptSceneIds.length;
         result.updatedScenes += changed;
-        result.skippedScenes += scenes.length - prefilled - changed;
+        result.skippedScenes += scenes.length - prefilledVisual - changed;
+        updatedSfxPrompts += changedSfx;
         styleNote = batch.styleNote;
-        await context.appendLog(`Chapter ${chapter.no}: ${changed} visual prompts added; ${scenes.length - changed} already filled.`);
+        await context.appendLog(`Chapter ${chapter.no}: ${changed} visual prompts added; ${changedSfx} SFX prompts added; ${scenes.length - changed} already filled.`);
       } catch (error) {
         result.failedChapters.push(chapter.no);
         await context.appendLog(`Chapter ${chapter.no}: visual prompt generation failed: ${describeError(error)}`);
@@ -133,6 +138,6 @@ export async function generateVisualPrompts(
     await context.reportProgress(Math.round(((chapterIndex + 1) / project.chapters.length) * 100), result);
   }
 
-  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${result.skippedScenes} skipped, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}.`);
+  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${updatedSfxPrompts} SFX prompts added, ${result.skippedScenes} skipped, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}.`);
   return result;
 }
