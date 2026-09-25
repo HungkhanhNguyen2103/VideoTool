@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
 import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, setVisualStyle, splitScenes } from './api';
+import * as assetApi from './api';
 
 const project = {
   id: 'project-1',
@@ -12,6 +13,7 @@ const project = {
 const projectPayload = {
   id: 'project-1', title: 'Project', status: 'assets', language: 'vi', brief: 'Brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null,
   aiProvider: 'deepseek', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null,
+  customStyleReferenceFileId: null,
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: project.scenes, chapters: [], version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 };
 
@@ -118,6 +120,29 @@ describe('asset API helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/visual-style', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ visualStylePresetId: 'watercolor' }),
     }));
+  });
+
+  it('uploads, persists, and reads a custom style reference through its project routes', async () => {
+    const customApi = assetApi as typeof assetApi & {
+      uploadStyleReference: (projectId: string, file: File) => Promise<{ id: string; purpose: string }>;
+      setCustomStyleReferenceFile: (projectId: string, fileId: string | null) => Promise<ProjectDetail>;
+      getVisualStylePrompt: (projectId: string) => Promise<{ style: string }>;
+    };
+    const filePayload = { id: 'file-1', projectId: 'project/1', originalName: 'style.png', mimeType: 'image/png', ext: 'png', sizeBytes: 3, purpose: 'style-reference', storedPath: '01ARZ3NDEKTSV4RRFFQ69G5FAV.png', createdAt: new Date().toISOString() };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(filePayload), { status: 201, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...projectPayload, customStyleReferenceFileId: 'file-1' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ style: 'Use a dramatic documentary frame.' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(customApi.uploadStyleReference('project/1', new File(['png'], 'style.png', { type: 'image/png' }))).resolves.toMatchObject({ id: 'file-1', purpose: 'style-reference' });
+    await expect(customApi.setCustomStyleReferenceFile('project/1', 'file-1')).resolves.toMatchObject({ customStyleReferenceFileId: 'file-1' });
+    await expect(customApi.getVisualStylePrompt('project/1')).resolves.toEqual({ style: 'Use a dramatic documentary frame.' });
+
+    const [, uploadOptions] = fetchMock.mock.calls[0]!;
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/files', expect.objectContaining({ method: 'POST' }));
+    expect((uploadOptions?.body as FormData).get('purpose')).toBe('style-reference');
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/style-reference', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ fileId: 'file-1' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/project/project%2F1/visual-style-prompt', expect.objectContaining({ method: 'GET' }));
   });
 
   it('reads video/mp4 previews as blobs and computes file/readiness helpers', async () => {

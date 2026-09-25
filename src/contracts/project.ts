@@ -154,6 +154,7 @@ export const ProjectDetailSchema = z.object({
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),
   bgmFileId: z.string().nullable().default(null),
+  customStyleReferenceFileId: z.string().nullable().default(null),
   renderSettings: RenderSettingsSchema,
   scenes: z.array(SceneSchema),
   chapters: z.array(ChapterDocSchema).default([]),

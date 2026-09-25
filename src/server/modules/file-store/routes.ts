@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import AdmZip from 'adm-zip';
 import { z } from 'zod';
-import { ALLOWED_MIME_TYPES } from '../../../contracts/file';
+import { ALLOWED_MIME_TYPES, FILE_PURPOSES } from '../../../contracts/file';
 import { getProject, replaceProjectScenes, SceneDocSchema } from '../project';
 import { AppError, FieldAppError, NotFound } from '../../shared/errors';
 import { uploadReference, uploadZip } from '../../shared/upload';
@@ -11,16 +11,21 @@ import { createFileStoreService, type StoreFileParams } from './service';
 let configuredService = createFileStoreService('./data/files');
 export function configureFileStore(filesDir: string): void { configuredService = createFileStoreService(filesDir); }
 export const fileStoreRouter = Router();
+const UploadPurposeSchema = z.object({ purpose: z.enum(FILE_PURPOSES).default('reference') }).strict();
 
 fileStoreRouter.post('/:id/files', uploadReference, async (req, res) => {
   const projectId = String(req.params.id);
   const project = await getProject(projectId);
   const file = req.file;
+  const { purpose } = UploadPurposeSchema.parse(req.body);
   if (!file) throw new AppError('File is required.', 400, 'FILE_REQUIRED');
   if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.mimetype)) {
     throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
   }
-  const params: StoreFileParams = { projectId: project.id, originalName: file.originalname, mimeType: file.mimetype, buffer: file.buffer, purpose: 'reference' };
+  if (purpose === 'style-reference' && !file.mimetype.startsWith('image/')) {
+    throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
+  }
+  const params: StoreFileParams = { projectId: project.id, originalName: file.originalname, mimeType: file.mimetype, buffer: file.buffer, purpose };
   res.status(201).json(await configuredService.storeFile(params));
 });
 

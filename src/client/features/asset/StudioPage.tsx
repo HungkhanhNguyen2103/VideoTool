@@ -21,11 +21,13 @@ export function StudioPage() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [bgmMood, setBgmMood] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
+  const [stylePrompt, setStylePrompt] = useState<string | null>(null);
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const previewUrlsRef = useRef<Record<string, string>>({});
   const refreshedJobRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const styleReferenceInputRef = useRef<HTMLInputElement>(null);
   const detailDialogRef = useRef<HTMLDialogElement>(null);
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const filesQuery = useQuery({ queryKey: ['project-files', projectId], queryFn: () => api.listProjectFiles(projectId), enabled: Boolean(projectId) });
@@ -40,6 +42,7 @@ export function StudioPage() {
   const expandedSceneBusy = expandedScene !== null && busy === `scene:${expandedScene.id}`;
   const expandedVoiceoverFile = expandedScene?.audioFileId ? filesById.get(expandedScene.audioFileId) : undefined;
   const expandedSfxFile = expandedScene?.sfxFileId ? filesById.get(expandedScene.sfxFileId) : undefined;
+  const styleReferenceFile = project?.customStyleReferenceFileId ? filesById.get(project.customStyleReferenceFileId) : undefined;
   const progress = useJobProgress(jobId);
 
   useEffect(() => { if (project) setBgmMood(project.bgmMood); }, [project?.id, project?.bgmMood]);
@@ -99,6 +102,36 @@ export function StudioPage() {
       await refresh();
     } catch (error) { toast(error instanceof Error ? error.message : 'Không thể import ZIP.'); }
     finally { setBusy(null); setUploadProgress(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  }
+
+  async function uploadStyleReference(file: File) {
+    try {
+      setBusy('style-reference');
+      const uploaded = await api.uploadStyleReference(projectId, file);
+      await api.setCustomStyleReferenceFile(projectId, uploaded.id);
+      await refresh();
+      toast('Đã cập nhật ảnh tham chiếu phong cách.');
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể upload ảnh tham chiếu.'); }
+    finally { setBusy(null); if (styleReferenceInputRef.current) styleReferenceInputRef.current.value = ''; }
+  }
+
+  async function clearStyleReference() {
+    try {
+      setBusy('style-reference');
+      await api.setCustomStyleReferenceFile(projectId, null);
+      await refresh();
+      toast('Đã xóa ảnh tham chiếu phong cách.');
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể xóa ảnh tham chiếu.'); }
+    finally { setBusy(null); }
+  }
+
+  async function getVisualStylePrompt() {
+    try {
+      setBusy('style-prompt');
+      const result = await api.getVisualStylePrompt(projectId);
+      setStylePrompt(result.style);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể lấy style prompt.'); }
+    finally { setBusy(null); }
   }
 
   async function patchScene(sceneId: string, body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string }) {
@@ -178,7 +211,7 @@ export function StudioPage() {
   async function setVisualStyle(visualStylePresetId: VisualStyleId) {
     if (visualStylePresetId === project?.visualStylePresetId) return;
     const label = api.VISUAL_STYLE_OPTIONS.find((option) => option.value === visualStylePresetId)?.label ?? visualStylePresetId;
-    try { setBusy('visual-style'); await api.setVisualStyle(projectId, visualStylePresetId); await refresh(); toast(`Đã chọn phong cách hình ảnh ${label}.`); }
+    try { setBusy('visual-style'); await api.setVisualStyle(projectId, visualStylePresetId); setStylePrompt(null); await refresh(); toast(`Đã chọn phong cách hình ảnh ${label}.`); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi phong cách hình ảnh.'); }
     finally { setBusy(null); }
   }
@@ -212,9 +245,16 @@ export function StudioPage() {
         <select aria-label="AI provider" className={styles.audioInput} disabled={busy !== null} value={project.aiProvider} onChange={(event) => void setAiProvider(event.target.value as 'deepseek' | 'claude')}>
           {api.AI_PROVIDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        <select aria-label="Visual style" className={styles.audioInput} disabled={busy !== null} value={project.visualStylePresetId} onChange={(event) => void setVisualStyle(event.target.value as VisualStyleId)}>
-          {api.VISUAL_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+        <div className={styles.styleReferenceControls}>
+          <select aria-label="Visual style" className={styles.audioInput} disabled={busy !== null} value={project.visualStylePresetId} onChange={(event) => void setVisualStyle(event.target.value as VisualStyleId)}>
+            {api.VISUAL_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <input ref={styleReferenceInputRef} className={styles.hiddenInput} type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadStyleReference(file); }} />
+          <Button size="sm" disabled={busy !== null} onClick={() => styleReferenceInputRef.current?.click()}>{project.customStyleReferenceFileId ? 'Thay ảnh' : 'Upload ảnh'}</Button>
+          <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void getVisualStylePrompt()}>Get prompt</Button>
+          {styleReferenceFile?.purpose === 'style-reference' && styleReferenceFile.mimeType.startsWith('image/') ? <img className={styles.styleReferenceImage} src={api.fileUrlForSummary(styleReferenceFile)} alt="Ảnh tham chiếu phong cách" /> : null}
+          {project.customStyleReferenceFileId ? <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void clearStyleReference()}>Xóa ảnh</Button> : null}
+        </div>
         <div className={styles.actions}>
           <Button size="sm" disabled={busy !== null} onClick={() => void copyJson()}>Copy JSON</Button>
           <Button size="sm" disabled={busy !== null} onClick={() => void downloadJson()}>Export JSON</Button>
@@ -222,6 +262,8 @@ export function StudioPage() {
           <Button size="sm" variant="amber" disabled={busy !== null} onClick={() => fileInputRef.current?.click()}>Import ZIP</Button>
         </div>
       </header>
+
+      {stylePrompt !== null && <section className={styles.stylePrompt} aria-label="Visual style prompt"><label className={styles.label} htmlFor="visual-style-prompt">Style prompt</label><textarea id="visual-style-prompt" className={styles.textarea} readOnly value={stylePrompt} /></section>}
 
       <div className={styles.toolbar}>
         <strong>{filled} / {scenes.length} scenes have assets</strong>

@@ -37,6 +37,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     renderFileId: doc.renderFileId,
     bgmMood: doc.bgmMood,
     bgmFileId: doc.bgmFileId,
+    customStyleReferenceFileId: doc.customStyleReferenceFileId,
     renderSettings: doc.renderSettings,
     scenes: doc.scenes,
     chapters: doc.chapters,
@@ -71,6 +72,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     renderFileId: input.renderFileId ?? null,
     bgmMood: input.bgmMood ?? '',
     bgmFileId: input.bgmFileId ?? null,
+    customStyleReferenceFileId: null,
     renderSettings: input.renderSettings,
     status: 'draft',
     scenes: [],
@@ -116,6 +118,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, sfxFileId: null })),
     renderFileId: null,
     bgmFileId: null,
+    customStyleReferenceFileId: null,
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -161,6 +164,11 @@ export async function setProjectScenesAssetType(id: string, assetType: 'image' |
 
 export async function setProjectBgm(id: string, mood: string, bgmFileId: string | null): Promise<ProjectDetail> {
   await updateProject(id, { bgmMood: mood, bgmFileId });
+  return getProject(id);
+}
+
+export async function setProjectCustomStyleReferenceFile(id: string, fileId: string | null): Promise<ProjectDetail> {
+  await updateProject(id, { customStyleReferenceFileId: fileId });
   return getProject(id);
 }
 

@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { FlowSceneExportSchema, type FlowSceneExport } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
+import { ApiErrorBodySchema } from '../../../contracts/common';
 import { AI_PROVIDERS, ProjectDetailSchema, RENDER_ENGINES, type ProjectDetail, type RenderEngine, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
 const FileListSchema = z.array(FileSummarySchema);
 const JobResponseSchema = z.object({ jobId: z.string() });
+const VisualStylePromptSchema = z.object({ style: z.string() });
 
 export type { FlowSceneExport };
 export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
@@ -127,6 +129,31 @@ export function setVisualStyle(projectId: string, visualStylePresetId: VisualSty
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/visual-style`, ProjectDetailSchema, {
     method: 'PATCH', body: { visualStylePresetId },
   });
+}
+
+export function setCustomStyleReferenceFile(projectId: string, fileId: string | null): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/style-reference`, ProjectDetailSchema, {
+    method: 'PATCH', body: { fileId },
+  });
+}
+
+export function getVisualStylePrompt(projectId: string): Promise<{ style: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/visual-style-prompt`, VisualStylePromptSchema);
+}
+
+export async function uploadStyleReference(projectId: string, file: File): Promise<FileSummary> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('purpose', 'style-reference');
+  const response = await fetch(`/api/project/${encodeURIComponent(projectId)}/files`, { method: 'POST', body: form });
+  if (!response.ok) {
+    let payload: unknown;
+    try { payload = await response.json(); } catch { payload = null; }
+    const parsed = ApiErrorBodySchema.safeParse(payload);
+    if (parsed.success) throw new ApiError(parsed.data.error.message, response.status, parsed.data.error.code, parsed.data.error.fields);
+    throw new ApiError(`Yêu cầu thất bại (${response.status}).`, response.status, 'unknown_error');
+  }
+  return FileSummarySchema.parse(await response.json());
 }
 
 export async function previewScene(projectId: string, sceneId: string): Promise<Blob> {

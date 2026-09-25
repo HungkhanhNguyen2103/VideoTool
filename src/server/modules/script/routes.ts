@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { VISUAL_STYLE_IDS } from '../../../contracts/project';
-import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
+import { getProject, setProjectAiProvider, setProjectCustomStyleReferenceFile, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
 import { buildManualScriptPrompt } from './ai/build-prompt';
 import { parseManualScriptDocument, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
+import { loadVisualStylePreset } from './ai/presets/visual-style-loader';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 
@@ -23,6 +24,7 @@ const RegenerateChapterSchema = z.object({
 const RestoreSchema = z.object({ index: z.number().int().nonnegative() });
 const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']) }).strict();
 const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
+const StyleReferenceSchema = z.object({ fileId: z.string().nullable() }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
 
 function writeEvent(res: { write: (chunk: string) => boolean }, event: string, data: unknown): void {
@@ -62,6 +64,16 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): R
   router.patch('/:id/visual-style', async (req, res) => {
     const body = VisualStyleSchema.parse(req.body);
     res.json(await setProjectVisualStylePreset(req.params.id, body.visualStylePresetId));
+  });
+
+  router.patch('/:id/style-reference', async (req, res) => {
+    const body = StyleReferenceSchema.parse(req.body);
+    res.json(await setProjectCustomStyleReferenceFile(req.params.id, body.fileId));
+  });
+
+  router.get('/:id/visual-style-prompt', async (req, res) => {
+    const project = await getProject(req.params.id);
+    res.json({ style: loadVisualStylePreset(project.visualStylePresetId).style });
   });
 
   router.get('/:id/generate-script/manual-prompt', async (req, res) => {

@@ -76,9 +76,10 @@ describe('file-store schema and repository', () => {
   it('validates the persisted file document', () => {
     expect(FileDocSchema.parse(makeFile()).purpose).toBe('reference');
     expect(FileDocSchema.parse({ ...makeFile(), purpose: 'voiceover' }).purpose).toBe('voiceover');
+    expect(FileDocSchema.parse({ ...makeFile(), purpose: 'style-reference' }).purpose).toBe('style-reference');
   });
 
-  it('normalizes legacy project audio and render fields through schema defaults', () => {
+  it('normalizes legacy project audio, render, and style-reference fields through schema defaults', () => {
     const legacy = {
       _id: 'project-1', schemaVersion: 1, title: 'Legacy', titleSearch: 'legacy', language: 'vi', brief: 'A legacy project',
       referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: null, voiceId: null,
@@ -87,7 +88,7 @@ describe('file-store schema and repository', () => {
       createdAt: new Date(), updatedAt: new Date(),
     };
     const parsed = ProjectDocSchema.parse(legacy);
-    expect(parsed).toMatchObject({ renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null });
+    expect(parsed).toMatchObject({ renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, customStyleReferenceFileId: null });
     expect(parsed.scenes[0]).toMatchObject({ audioFileId: null, sfxPrompt: '', sfxFileId: null });
   });
 
@@ -150,6 +151,24 @@ describe('file-store schema and repository', () => {
     const response = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: form });
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({ projectId: project.id, mimeType: 'image/png', ext: 'png' });
+  });
+
+  it('stores a requested style reference purpose and rejects a non-image style reference', async () => {
+    const project = await createProject(projectInput);
+    const base = await startServer();
+    const styleForm = new FormData();
+    styleForm.append('file', new Blob([Buffer.from('png')], { type: 'image/png' }), 'style.png');
+    styleForm.append('purpose', 'style-reference');
+    const styleResponse = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: styleForm });
+    expect(styleResponse.status).toBe(201);
+    expect(await styleResponse.json()).toMatchObject({ purpose: 'style-reference', mimeType: 'image/png' });
+
+    const invalidForm = new FormData();
+    invalidForm.append('file', new Blob([Buffer.from('pdf')], { type: 'application/pdf' }), 'style.pdf');
+    invalidForm.append('purpose', 'style-reference');
+    const invalidResponse = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: invalidForm });
+    expect(invalidResponse.status).toBe(400);
+    expect(await invalidResponse.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
   });
 
   it('rejects a disallowed upload MIME type', async () => {

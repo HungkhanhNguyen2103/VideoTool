@@ -19,6 +19,7 @@ export {
   restoreProjectChapters,
   setProjectScenesAssetType,
   setProjectBgm,
+  setProjectCustomStyleReferenceFile,
   setProjectRenderEngine,
   setProjectAiProvider,
   setProjectVisualStylePreset,
