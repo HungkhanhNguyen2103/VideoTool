@@ -11,3 +11,19 @@ const names = (await readdir(source)).filter((name) => name.endsWith('.md')).sor
 for (const name of names) {
   await cp(join(source, name), join(destination, name));
 }
+
+async function copyMarkdownTree(sourceDirectory, destinationDirectory) {
+  await mkdir(destinationDirectory, { recursive: true });
+  const entries = await readdir(sourceDirectory, { withFileTypes: true });
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const sourcePath = join(sourceDirectory, entry.name);
+    const destinationPath = join(destinationDirectory, entry.name);
+    if (entry.isDirectory()) {
+      await copyMarkdownTree(sourcePath, destinationPath);
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      await cp(sourcePath, destinationPath);
+    }
+  }
+}
+
+await copyMarkdownTree(join(source, 'visual-styles'), join(destination, 'visual-styles'));

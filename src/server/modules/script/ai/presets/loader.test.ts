@@ -62,7 +62,7 @@ describe('script preset packaging', () => {
       .toBe(path.join(root, 'dist/presets'));
   });
 
-  it('copies both Markdown presets into dist and can run repeatedly', async () => {
+  it('copies root script presets and nested visual styles into dist and can run repeatedly', async () => {
     const root = path.resolve(import.meta.dirname, '../../../../../../');
     const script = path.join(root, 'scripts/copy-script-presets.mjs');
     const firstRun = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
@@ -70,8 +70,11 @@ describe('script preset packaging', () => {
 
     const destination = path.join(root, 'dist/presets');
     const copied = await readdir(destination);
-    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md']);
+    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md', 'visual-styles']);
     expect(await readFile(path.join(destination, 'documentary.md'), 'utf8')).toContain('id: documentary');
+    const visualStyles = await readdir(path.join(destination, 'visual-styles'));
+    expect(visualStyles.sort()).toEqual(['anime.md', 'cinematic.md', 'photorealistic.md', 'watercolor.md']);
+    expect(await readFile(path.join(destination, 'visual-styles/cinematic.md'), 'utf8')).toContain('id: cinematic');
 
     const secondRun = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
     expect(secondRun.status).toBe(0);
