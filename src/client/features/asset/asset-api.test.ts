@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { fileUrlForSummary, filesByPurpose, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setRenderEngine, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, fileUrlForSummary, filesByPurpose, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, splitScenes } from './api';
 
 const project = {
   id: 'project-1',
@@ -83,6 +83,19 @@ describe('asset API helpers', () => {
     }));
     expect(selectedRenderEngine('remotion')).toBe('remotion');
     expect(selectedRenderEngine('ffmpeg')).toBe('ffmpeg');
+  });
+
+  it('exposes AI provider options and updates the provider with the exact PATCH route and body', async () => {
+    expect(AI_PROVIDER_OPTIONS).toEqual([
+      { value: 'deepseek', label: 'DeepSeek' },
+      { value: 'claude', label: 'Claude' },
+    ]);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(setAiProvider('project/1', 'claude')).resolves.toMatchObject({ aiProvider: 'deepseek' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/ai-provider', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ provider: 'claude' }),
+    }));
   });
 
   it('reads video/mp4 previews as blobs and computes file/readiness helpers', async () => {

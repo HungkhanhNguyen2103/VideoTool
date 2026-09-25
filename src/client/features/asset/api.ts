@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { FlowSceneExportSchema, type FlowSceneExport } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
-import { ProjectDetailSchema, RENDER_ENGINES, type ProjectDetail, type RenderEngine } from '../../../contracts/project';
+import { AI_PROVIDERS, ProjectDetailSchema, RENDER_ENGINES, type ProjectDetail, type RenderEngine } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
@@ -14,6 +14,11 @@ export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
 export const RENDER_ENGINE_OPTIONS = [
   { value: RENDER_ENGINES[0], label: 'FFmpeg' },
   { value: RENDER_ENGINES[1], label: 'Remotion' },
+] as const;
+
+export const AI_PROVIDER_OPTIONS = [
+  { value: AI_PROVIDERS[0], label: 'DeepSeek' },
+  { value: AI_PROVIDERS[1], label: 'Claude' },
 ] as const;
 
 export function selectedRenderEngine(engine: RenderEngine): RenderEngine {
@@ -98,6 +103,12 @@ export function renderProject(projectId: string): Promise<{ jobId: string }> {
 export function setRenderEngine(projectId: string, engine: RenderEngine): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/render-engine`, ProjectDetailSchema, {
     method: 'PATCH', body: { engine },
+  });
+}
+
+export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, {
+    method: 'PATCH', body: { provider },
   });
 }
 
