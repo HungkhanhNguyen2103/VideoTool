@@ -70,7 +70,7 @@ describe('script AI prompt boundary', () => {
       project: { ...project, visualStylePresetId: 'anime' },
       chapter,
       styleNote: 'Muted colors',
-      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', visualPrompt: 'Existing image' }],
+      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', visualPrompt: 'Existing image', sfxPrompt: 'Existing wind' }],
       visualStylePresetId: 'anime',
       coreQuestion: 'Why did the river change?',
       openingHook: 'At dawn, it reversed.',
@@ -91,6 +91,7 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('This chapter contains exactly 1 scenes. Return exactly 1 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
     expect(result.user).toContain('First beat');
     expect(result.user).toContain('Existing image');
+    expect(result.user).toContain('Existing SFX prompt: Existing wind');
     expect(result.user).toContain('1');
     expect(result.user).not.toContain('internal-id');
   });
@@ -100,7 +101,7 @@ describe('script AI prompt boundary', () => {
       project,
       chapter,
       styleNote: 'x'.repeat(501),
-      scenes: [],
+      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'A quiet beat', visualPrompt: '', sfxPrompt: '' }],
       visualStylePresetId: 'cinematic',
       coreQuestion: '',
       openingHook: null,
@@ -114,6 +115,7 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('Previous chapter summary: (none)');
     expect(result.user).toContain('Avoid repeating: (none)');
     expect(result.user).toContain('Persistent facts: (none)');
+    expect(result.user).toContain('Existing SFX prompt: (none)');
     expect(result.user).toContain(`Previous style note: ${'x'.repeat(500)}\n\n`);
     expect(result.user).not.toContain('x'.repeat(501));
   });
@@ -217,10 +219,10 @@ describe('script AI parsers', () => {
   it.each(['not json', '{"paragraphs":[]}', '{"paragraphs":[3]}', '{"paragraphs":["Updated"]}', '["Updated"]'])('rejects invalid regenerated paragraphs', (raw) => {
     expect(() => parseRegeneratedParagraphs(raw)).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));
   });
-  it.each(['{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn"}]}', '```json\n{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn"}]}\n```'])('accepts visual batches', (raw) => {
-    expect(parseVisualPromptBatch(raw)).toEqual({ styleNote: 'Continuity', prompts: [{ sceneIndex: 1, visualPrompt: 'Bridge at dawn' }] });
+  it.each(['{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn","sfxPrompt":"River water"}]}', '```json\n{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn"}]}\n```'])('accepts visual batches', (raw) => {
+    expect(parseVisualPromptBatch(raw)).toEqual({ styleNote: 'Continuity', prompts: [{ sceneIndex: 1, visualPrompt: 'Bridge at dawn', sfxPrompt: raw.includes('sfxPrompt') ? 'River water' : '' }] });
   });
-  it.each(['not json', '{"styleNote":"x","prompts":[{"sceneIndex":0,"visualPrompt":"view"}]}', '{"styleNote":"x","prompts":[{"sceneIndex":1,"visualPrompt":"   "}]}', JSON.stringify({ styleNote: 'x'.repeat(501), prompts: [{ sceneIndex: 1, visualPrompt: 'view' }] })])('rejects invalid visual batches', (raw) => {
+  it.each(['not json', '{"styleNote":"x","prompts":[{"sceneIndex":0,"visualPrompt":"view"}]}', '{"styleNote":"x","prompts":[{"sceneIndex":1,"visualPrompt":"   "}]}', JSON.stringify({ styleNote: 'x'.repeat(501), prompts: [{ sceneIndex: 1, visualPrompt: 'view' }] }), JSON.stringify({ styleNote: 'x', prompts: [{ sceneIndex: 1, visualPrompt: 'view', sfxPrompt: 'x'.repeat(121) }] })])('rejects invalid visual batches', (raw) => {
     expect(() => parseVisualPromptBatch(raw)).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));
   });
 });

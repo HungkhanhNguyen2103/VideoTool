@@ -12,6 +12,7 @@ export type VisualPromptSceneInput = {
   sceneIndex: number;
   narration: string;
   visualPrompt: string;
+  sfxPrompt?: string;
 };
 export type VisualPromptPromptInput = {
   project: ProjectDetail;
@@ -194,7 +195,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
   const scriptPreset = loadScriptPreset(project.scriptPresetId);
   const visualPreset = loadVisualStylePreset(visualStylePresetId);
   return {
-    system: systemMessage(scriptPreset, 'Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. Existing visual prompts are references; preserve their intent.'),
+    system: systemMessage(scriptPreset, 'Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt should be a short ambient or foley sound suggestion in the narration language, or an empty string when no sound is appropriate. Existing visual prompts and SFX prompts are references; preserve their intent.'),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -209,7 +210,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
       `Previous style note: ${styleNote.slice(0, 500)}`,
       `This chapter contains exactly ${scenes.length} scenes. Return exactly ${scenes.length} prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.`,
       'Scenes:',
-      ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}`),
+      ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}\nExisting SFX prompt: ${scene.sfxPrompt || '(none)'}`),
     ].join('\n\n'),
     promptVersion: `visual-prompt-v1/${visualPreset.id}@${visualPreset.version}`,
   };
