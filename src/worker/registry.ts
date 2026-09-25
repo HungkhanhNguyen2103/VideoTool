@@ -1,5 +1,5 @@
 import type { JobHandler } from '../server/modules/job';
-import { handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts } from '../server/modules/script';
+import { handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handleSplitScenes } from '../server/modules/script';
 import { generateProjectVoiceovers, renderFullProject } from '../server/modules/video';
 
 function projectIdFrom(job: { payload: unknown }): string {
@@ -21,6 +21,7 @@ const handleRenderFullVideo: JobHandler = async (job, context) => {
 export const jobHandlers: Record<string, JobHandler> = {
   'generate-script': handleGenerateScript,
   'generate-visual-prompts': handleGenerateVisualPrompts,
+  'split-scenes': handleSplitScenes,
   'final-qa': handleFinalQa,
   'generate-voiceover': handleGenerateVoiceover,
   'render-full-video': handleRenderFullVideo,

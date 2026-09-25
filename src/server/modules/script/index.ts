@@ -8,6 +8,8 @@ export { generateVisualPrompts } from './visual-prompts';
 export type { VisualPromptJobContext, VisualPromptJobResult } from './visual-prompts';
 export { handleGenerateVisualPrompts } from './visual-prompt-handler';
 export type { VisualPromptJobPayload } from './visual-prompt-handler';
+export { handleSplitScenes } from './scene-split-handler';
+export type { SceneSplitJobPayload } from './scene-split-handler';
 export { runFinalQa } from './qa';
 export type { FinalQaJobContext } from './qa';
 export { handleFinalQa } from './qa-handler';

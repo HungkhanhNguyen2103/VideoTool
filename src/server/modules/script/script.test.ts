@@ -865,6 +865,36 @@ describe('script contracts', () => {
     expect(saved.chapters[0]!.scenesCount).toBe(3);
   });
 
+  it('enqueues a scene-split job with the exact type and payload for finalized scenes', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'approved', scenesCount: 1, durationSec: 1,
+    }], null, 'assets');
+    await replaceProjectScenes(project.id, [{
+      id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 1,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+    }], 'assets');
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/split`, { method: 'POST' });
+    expect(response.status).toBe(201);
+    const body = await response.json() as { jobId: string };
+    expect(body.jobId).toEqual(expect.any(String));
+    expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({
+      type: 'split-scenes', payload: { projectId: project.id },
+    });
+  });
+
+  it('rejects an unfinalized project without enqueueing scene splitting', async () => {
+    const project = await createProject(projectInput);
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/split`, { method: 'POST' });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'SCENES_NOT_READY' } });
+    expect(await getCollection<JobRecord>('jobs').countDocuments({ type: 'split-scenes' })).toBe(0);
+  });
+
   it('emits an SSE error frame when streamed AI output is invalid', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');

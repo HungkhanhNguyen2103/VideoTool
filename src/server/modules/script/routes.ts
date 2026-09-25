@@ -86,6 +86,17 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): R
     res.status(201).json({ jobId: job.id });
   });
 
+  router.post('/:id/scenes/split', async (req, res) => {
+    const project = await getProject(req.params.id);
+    assertVisualPromptSourceReady(project);
+    const job = await options.enqueueJob({
+      type: 'split-scenes',
+      projectId: project.id,
+      payload: { projectId: project.id },
+    });
+    res.status(201).json({ jobId: job.id });
+  });
+
   router.patch('/:id/chapters/:chapterId', async (req, res) => {
     const patch = PatchChapterSchema.parse(req.body);
     res.json({ chapters: await patchChapter(req.params.id, req.params.chapterId, patch) });
