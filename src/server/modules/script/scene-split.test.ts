@@ -19,8 +19,13 @@ describe('scene split AI contract', () => {
       .toEqual({ scenes: [{ sceneIndex: 1, chunks: ['First beat', 'second beat'] }] });
   });
 
-  it('rejects zero indexes and empty chunk sets as script parse errors', () => {
-    expect(() => parseSceneSplitBatch('{"scenes":[{"sceneIndex":0,"chunks":[]}]}'))
+  it('rejects a zero scene index even when chunks are valid', () => {
+    expect(() => parseSceneSplitBatch('{"scenes":[{"sceneIndex":0,"chunks":["Valid chunk"]}]}'))
+      .toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+  });
+
+  it('rejects an empty chunk set for a valid scene index', () => {
+    expect(() => parseSceneSplitBatch('{"scenes":[{"sceneIndex":1,"chunks":[]}]}'))
       .toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
   });
 
