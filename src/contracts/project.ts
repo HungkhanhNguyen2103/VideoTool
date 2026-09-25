@@ -13,6 +13,9 @@ export type AiProvider = (typeof AI_PROVIDERS)[number];
 export const SCRIPT_PRESET_IDS = ['documentary', 'explainer', 'hubris-trap'] as const;
 export type ScriptPresetId = (typeof SCRIPT_PRESET_IDS)[number];
 
+export const VISUAL_STYLE_IDS = ['cinematic', 'anime', 'watercolor', 'photorealistic'] as const;
+export type VisualStyleId = (typeof VISUAL_STYLE_IDS)[number];
+
 export const ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const;
 export type AspectRatio = (typeof ASPECT_RATIOS)[number];
 
@@ -47,6 +50,7 @@ const CreateProjectRequestBase = z.object({
   language: z.enum(['vi', 'en']),
   referencesText: z.string(),
   scriptPresetId: z.enum(SCRIPT_PRESET_IDS),
+  visualStylePresetId: z.enum(VISUAL_STYLE_IDS).default('cinematic'),
   targetDurationSec: z.number(),
   chapterCount: z.number().nullable(),
   voiceId: z.string().nullable(),
@@ -140,6 +144,7 @@ export const ProjectDetailSchema = z.object({
   brief: z.string(),
   referencesText: z.string(),
   scriptPresetId: z.enum(SCRIPT_PRESET_IDS),
+  visualStylePresetId: z.enum(VISUAL_STYLE_IDS).default('cinematic'),
   targetDurationSec: z.number().int(),
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),

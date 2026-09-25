@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, VISUAL_STYLE_IDS } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 
 export const SceneDocSchema = z.object({
@@ -26,6 +26,7 @@ export const ProjectDocSchema = z.object({
   brief: z.string(),
   referencesText: z.string(),
   scriptPresetId: z.enum(SCRIPT_PRESET_IDS),
+  visualStylePresetId: z.enum(VISUAL_STYLE_IDS).default('cinematic'),
   targetDurationSec: z.number().int(),
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),
