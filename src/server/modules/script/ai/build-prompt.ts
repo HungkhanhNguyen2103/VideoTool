@@ -1,7 +1,8 @@
-import type { ProjectDetail } from '../../../../contracts/project';
+import type { ProjectDetail, VisualStyleId } from '../../../../contracts/project';
 import type { ChapterDoc, OpenLoop } from '../../../../contracts/script';
 import { NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
 import { loadScriptPreset, type ScriptPreset } from './presets/loader';
+import { loadVisualStylePreset } from './presets/visual-style-loader';
 import { SCRIPT_PRESET_CONFIG } from './presets/config';
 import { QA_ISSUE_TYPES, QA_SUGGESTED_ACTIONS } from './qa-schema';
 
@@ -17,6 +18,12 @@ export type VisualPromptPromptInput = {
   chapter: ChapterDoc;
   scenes: readonly VisualPromptSceneInput[];
   styleNote: string;
+  visualStylePresetId?: VisualStyleId;
+  coreQuestion?: string;
+  openingHook?: string | null;
+  previousChapterSummary?: string | null;
+  previousAvoidRepeating?: string[];
+  previousPersistentFacts?: string[];
 };
 export type SceneSplitSceneInput = {
   sceneId: string;
@@ -183,21 +190,33 @@ export function buildRegenerationPrompt(
 }
 
 export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPrompt {
-  const { project, chapter, scenes, styleNote } = input;
-  const preset = loadScriptPreset(project.scriptPresetId);
+  const { project, chapter, scenes, styleNote, visualStylePresetId, coreQuestion, openingHook, previousChapterSummary, previousAvoidRepeating, previousPersistentFacts } = input;
+  const scriptPreset = loadScriptPreset(project.scriptPresetId);
+  const visualPreset = loadVisualStylePreset(visualStylePresetId ?? project.visualStylePresetId);
+  const resolvedCoreQuestion = coreQuestion ?? project.coreQuestion;
+  const resolvedOpeningHook = openingHook ?? (project.openingHook || null);
+  const resolvedPreviousChapterSummary = previousChapterSummary ?? null;
+  const resolvedPreviousAvoidRepeating = previousAvoidRepeating ?? [];
+  const resolvedPreviousPersistentFacts = previousPersistentFacts ?? [];
   return {
-    system: systemMessage(preset, 'Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. Existing visual prompts are references; preserve their intent.'),
+    system: systemMessage(scriptPreset, 'Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. Existing visual prompts are references; preserve their intent.'),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
       `Language: ${language(project)}`,
+      `Required visual style (must follow for every scene): ${visualPreset.style}`,
+      `Core question: ${resolvedCoreQuestion}`,
       `Chapter ${chapter.no}: ${chapter.title}`,
+      `Opening hook: ${resolvedOpeningHook || '(none)'}`,
+      `Previous chapter summary: ${resolvedPreviousChapterSummary ?? '(none)'}`,
+      `Avoid repeating: ${resolvedPreviousAvoidRepeating.join(' | ') || '(none)'}`,
+      `Persistent facts: ${resolvedPreviousPersistentFacts.join(' | ') || '(none)'}`,
       `Previous style note: ${styleNote.slice(0, 500)}`,
       `This chapter contains exactly ${scenes.length} scenes. Return exactly ${scenes.length} prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.`,
       'Scenes:',
       ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}`),
     ].join('\n\n'),
-    promptVersion: version(preset),
+    promptVersion: `visual-prompt-v1/${visualPreset.id}@${visualPreset.version}`,
   };
 }
 

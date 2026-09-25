@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProjectDetailSchema } from '../../../../contracts/project';
 import { ChapterDocSchema } from '../../../../contracts/script';
 import { loadScriptPreset } from './presets/loader';
+import { loadVisualStylePreset } from './presets/visual-style-loader';
 import { SCRIPT_PRESET_CONFIG } from './presets/config';
 import { buildChapterExpansionPrompt, buildManualScriptPrompt, buildOutlinePrompt, buildRegenerationPrompt, buildScriptPrompt, buildVisualPromptPrompt } from './build-prompt';
 import { parseChapterExpansion, parseGeneratedChapters, parseManualScriptDocument, parseRegeneratedParagraphs, parseScriptOutline, parseVisualPromptBatch } from './parse-output';
@@ -65,9 +66,27 @@ describe('script AI prompt boundary', () => {
   });
 
   it('builds visual batch prompt with scene indexes but no internal IDs', () => {
-    const result = buildVisualPromptPrompt({ project, chapter, styleNote: 'Muted colors', scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', visualPrompt: 'Existing image' }] });
-    expect(result.promptVersion).toBe('script-prompt-v1/documentary@2');
+    const result = buildVisualPromptPrompt({
+      project: { ...project, visualStylePresetId: 'anime' },
+      chapter,
+      styleNote: 'Muted colors',
+      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', visualPrompt: 'Existing image' }],
+      visualStylePresetId: 'anime',
+      coreQuestion: 'Why did the river change?',
+      openingHook: 'At dawn, it reversed.',
+      previousChapterSummary: 'The flood changed the river.',
+      previousAvoidRepeating: ['Do not repeat the flood reveal'],
+      previousPersistentFacts: ['The bridge is damaged'],
+    });
+    expect(result.promptVersion).toBe('visual-prompt-v1/anime@1');
     expect(result.system).toContain(loadScriptPreset('documentary').system);
+    expect(result.user).toContain(`Required visual style (must follow for every scene): ${loadVisualStylePreset('anime').style}`);
+    expect(result.user).toContain('Core question: Why did the river change?');
+    expect(result.user).toContain('Opening hook: At dawn, it reversed.');
+    expect(result.user).toContain('Previous chapter summary: The flood changed the river.');
+    expect(result.user).toContain('Avoid repeating: Do not repeat the flood reveal');
+    expect(result.user).toContain('Persistent facts: The bridge is damaged');
+    expect(result.user).toContain('Previous style note: Muted colors');
     expect(result.user).toContain('Muted colors');
     expect(result.user).toContain('This chapter contains exactly 1 scenes. Return exactly 1 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
     expect(result.user).toContain('First beat');
@@ -77,7 +96,24 @@ describe('script AI prompt boundary', () => {
   });
 
   it('bounds a supplied continuity note before placing it in a visual batch prompt', () => {
-    const result = buildVisualPromptPrompt({ project, chapter, styleNote: 'x'.repeat(501), scenes: [] });
+    const result = buildVisualPromptPrompt({
+      project,
+      chapter,
+      styleNote: 'x'.repeat(501),
+      scenes: [],
+      visualStylePresetId: 'cinematic',
+      coreQuestion: '',
+      openingHook: null,
+      previousChapterSummary: null,
+      previousAvoidRepeating: [],
+      previousPersistentFacts: [],
+    });
+    expect(result.user).toContain('Required visual style (must follow for every scene):');
+    expect(result.user).toContain('Core question: ');
+    expect(result.user).toContain('Opening hook: (none)');
+    expect(result.user).toContain('Previous chapter summary: (none)');
+    expect(result.user).toContain('Avoid repeating: (none)');
+    expect(result.user).toContain('Persistent facts: (none)');
     expect(result.user).toContain(`Previous style note: ${'x'.repeat(500)}\n\n`);
     expect(result.user).not.toContain('x'.repeat(501));
   });
