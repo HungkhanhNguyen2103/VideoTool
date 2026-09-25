@@ -195,7 +195,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
   const scriptPreset = loadScriptPreset(project.scriptPresetId);
   const visualPreset = loadVisualStylePreset(visualStylePresetId);
   return {
-    system: systemMessage(scriptPreset, 'Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt should be a short ambient or foley sound suggestion in the narration language, or an empty string when no sound is appropriate. Existing visual prompts and SFX prompts are references; preserve their intent.'),
+    system: systemMessage(scriptPreset, "Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words, like a Freesound search query — e.g. 'pen writing on paper', 'quiet sigh', 'coffee dripping'), regardless of the narration language, or an empty string when no sound is appropriate. Existing visual prompts and SFX prompts are references; preserve their intent."),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,

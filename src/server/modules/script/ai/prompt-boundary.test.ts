@@ -80,6 +80,8 @@ describe('script AI prompt boundary', () => {
     });
     expect(result.promptVersion).toBe('visual-prompt-v1/anime@1');
     expect(result.system).toContain(loadScriptPreset('documentary').system);
+    expect(result.system).toContain('sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words');
+    expect(result.system).not.toContain('in the narration language');
     expect(result.user).toContain(`Required visual style (must follow for every scene): ${loadVisualStylePreset('anime').style}`);
     expect(result.user).toContain('Core question: Why did the river change?');
     expect(result.user).toContain('Opening hook: At dawn, it reversed.');
