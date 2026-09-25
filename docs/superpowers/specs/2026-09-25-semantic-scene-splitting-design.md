@@ -20,7 +20,7 @@ The script AI boundary gains a `SceneSplitBatchSchema`, parser, and prompt build
 
 `splitProjectScenes` reads a project through the public project API and slices scenes by `chapter.scenesCount`, using the existing visual-prompt indexing model. For a candidate chapter it calls the configured provider, parses the response, validates the exact index set and verbatim reconstruction, and retries exactly once on a parse, schema, index, or reconstruction validation error. A second validation failure records a chapter-local failure and processing continues.
 
-The service accumulates a full replacement chapter array and flattened scene array in memory. If at least one source scene produces more than one chunk, it snapshots the original chapters and writes chapters and scenes once through the project module's public APIs. Unchanged, skipped, and failed chapters retain their original objects in those arrays. `splitScenes` measures added scene count: for every split source scene it adds `chunks.length - 1`.
+The service maintains the current replacement chapter array and flattened scene array in memory. As soon as a chapter's AI response validates successfully, it immediately snapshots the original chapters when needed and writes chapters and scenes through the project module's public APIs from inside the per-chapter loop. Each write contains already-processed chapters' new scenes and not-yet-processed chapters' original scenes in project order; the next iteration reads this updated state so its scene offsets stay correct. Unchanged, skipped, and failed chapters retain their original objects in those arrays. `splitScenes` measures added scene count: for every split source scene it adds `chunks.length - 1`.
 
 The script route reuses finalized-scene readiness validation and enqueues `split-scenes`. The worker registers a handler with the same cancellation and context mapping as visual-prompt generation. Studio exposes a disabled-while-busy `Tách nhỏ scene` action using the existing job progress pattern.
 
@@ -34,7 +34,7 @@ For each multi-chunk source, replacement scenes use trimmed chunks, word-based d
 
 ## Failure and cancellation behavior
 
-Project-read, provider, or write failures are isolated to the active chapter where possible and recorded in the job log. A malformed or text-altering provider response receives one corrected retry; after that, the chapter remains untouched and its number appears in `failedChapters`. Cancellation is checked before each chapter, before provider calls, and after responses; no in-flight output is written after cancellation.
+Project-read, provider, or write failures are isolated to the active chapter where possible and recorded in the job log. A malformed or text-altering provider response receives one corrected retry; after that, the chapter remains untouched and its number appears in `failedChapters`. Each validated chapter is persisted immediately; cancellation preserves every chapter already written and stops before the next chapter begins.
 
 The final job result is `{ splitScenes, skippedChapters, failedChapters }`. The job emits chapter-based rounded progress and a final summary log.
 
