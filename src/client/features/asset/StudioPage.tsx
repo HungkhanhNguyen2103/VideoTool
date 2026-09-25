@@ -209,8 +209,12 @@ export function StudioPage() {
       <header className={styles.header}>
         <div><h2 className={styles.title}>Studio Phân Cảnh</h2><p className={styles.muted}>{project.title}</p></div>
         <Badge tone={statusTone[project.status]}>{statusLabel[project.status]}</Badge>
-        <div className={styles.engineSelector} role="group" aria-label="AI provider">{api.AI_PROVIDER_OPTIONS.map((option) => <Button key={option.value} size="sm" variant={project.aiProvider === option.value ? 'indigoline' : 'ghost'} disabled={busy !== null} aria-pressed={project.aiProvider === option.value} onClick={() => void setAiProvider(option.value)}>{option.label}</Button>)}</div>
-        <div className={styles.engineSelector} role="group" aria-label="Visual style">{api.VISUAL_STYLE_OPTIONS.map((option) => <Button key={option.value} size="sm" variant={project.visualStylePresetId === option.value ? 'indigoline' : 'ghost'} disabled={busy !== null} aria-pressed={project.visualStylePresetId === option.value} onClick={() => void setVisualStyle(option.value)}>{option.label}</Button>)}</div>
+        <select aria-label="AI provider" className={styles.audioInput} disabled={busy !== null} value={project.aiProvider} onChange={(event) => void setAiProvider(event.target.value as 'deepseek' | 'claude')}>
+          {api.AI_PROVIDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <select aria-label="Visual style" className={styles.audioInput} disabled={busy !== null} value={project.visualStylePresetId} onChange={(event) => void setVisualStyle(event.target.value as VisualStyleId)}>
+          {api.VISUAL_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
         <div className={styles.actions}>
           <Button size="sm" disabled={busy !== null} onClick={() => void copyJson()}>Copy JSON</Button>
           <Button size="sm" disabled={busy !== null} onClick={() => void downloadJson()}>Export JSON</Button>
