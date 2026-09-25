@@ -6,6 +6,7 @@ import {
   ASPECT_RATIOS,
   ASPECT_RESOLUTIONS,
   AI_PROVIDERS,
+  VISUAL_STYLE_IDS,
   type CreateProjectRequest,
   CreateProjectRequestSchema,
 } from '../../../../contracts/project';
@@ -23,6 +24,7 @@ const DEFAULT_VALUES: CreateProjectRequest = {
   brief: '',
   referencesText: '',
   scriptPresetId: 'documentary',
+  visualStylePresetId: 'cinematic',
   targetDurationSec: 180,
   chapterCount: null,
   voiceId: null,
@@ -212,6 +214,12 @@ export function NewProjectForm() {
               <label htmlFor="ai-provider">Nhà cung cấp AI</label>
               <select className={styles.input} id="ai-provider" {...register('aiProvider')}>
                 {AI_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider === 'deepseek' ? 'DeepSeek' : 'Claude'}</option>)}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="visual-style">Phong cách hình ảnh</label>
+              <select className={styles.input} id="visual-style" {...register('visualStylePresetId')}>
+                {VISUAL_STYLE_IDS.map((style) => <option key={style} value={style}>{style === 'cinematic' ? 'Cinematic (điện ảnh)' : style === 'anime' ? 'Anime' : style === 'watercolor' ? 'Watercolor (màu nước)' : 'Photorealistic (ảnh thực)'}</option>)}
               </select>
             </div>
             <div className={styles.field}>
