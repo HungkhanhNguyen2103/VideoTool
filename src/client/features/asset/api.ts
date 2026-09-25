@@ -67,6 +67,10 @@ export function generateVisualPrompts(projectId: string): Promise<{ jobId: strin
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-visual-prompts`, JobResponseSchema, { method: 'POST' });
 }
 
+export function splitScenes(projectId: string): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/split`, JobResponseSchema, { method: 'POST' });
+}
+
 export function isProjectJobActive(jobId: string | null, progress: { status: string } | null): boolean {
   return Boolean(jobId) && (progress === null || progress.status === 'queued' || progress.status === 'running');
 }

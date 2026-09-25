@@ -24,6 +24,7 @@
 - The structural `VisualPromptJobContext` does not import `job`. The handler parses `{ projectId }` and checks cancellation before orchestration. Orchestration checks before each call and after each response, discarding in-flight output when cancelled so the worker's post-handler check marks the job cancelled.
 - Final QA is a manual, optional, read-only job. `POST /api/project/:id/qa` enqueues `final-qa`; its handler parses `{ projectId }`, builds a versioned prompt from the complete narrative, and returns strict `{ issues }` output without scores, suggested fixes, rewrites, or project mutations. It is never called by generation or regeneration.
 - `POST /api/project/:id/scenes/generate-visual-prompts` is script-owned because it enqueues preset-aware narration-to-visual work. It accepts only projects with non-empty scenes, positive `scenesCount` on every chapter, and a chapter-count sum equal to the scene array length; otherwise it returns `SCENES_NOT_READY` without creating a job. The exact `generate-visual-prompts` handler is registered in `src/worker/registry.ts`.
+- `POST /api/project/:id/scenes/split` is an optional queued semantic scene-splitting action with the same finalized-scene readiness guard. Its `split-scenes` worker job preserves narration verbatim while replacing only scenes that receive multiple visual-beat chunks.
 - `POST /api/project/:id/qa` is a manual trigger only; the `final-qa` worker handler is registered explicitly and exposes its terminal result through the generic job SSE stream.
 
 ## Flow

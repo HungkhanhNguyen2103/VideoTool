@@ -107,6 +107,12 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function splitScenes() {
+    try { setBusy('split-scenes'); const result = await api.splitScenes(projectId); setJobId(result.jobId); toast('Đã xếp hàng tách nhỏ scene.'); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể tách nhỏ scene.'); }
+    finally { setBusy(null); }
+  }
+
   async function regenerateVoiceover(sceneId: string) {
     try { setBusy(`voice:${sceneId}`); await api.regenerateVoiceover(projectId, sceneId); await refresh(); toast('Đã tạo lại voiceover.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo lại voiceover.'); }
@@ -175,7 +181,7 @@ export function StudioPage() {
       <div className={styles.toolbar}>
         <strong>{filled} / {scenes.length} scenes have assets</strong>
         {uploadProgress !== null && <span className={styles.muted}>Đang upload {uploadProgress}%</span>}
-        <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('video')}>All videos</Button><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button><Button size="sm" variant="amber" disabled={busy !== null || missingScenes.length > 0} onClick={() => void renderProject()}>Render video</Button></div>
+        <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('video')}>All videos</Button><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="amber" disabled={busy !== null || missingScenes.length > 0} onClick={() => void renderProject()}>Render video</Button></div>
       </div>
 
       <section className={styles.mediaPanel} aria-label="Âm thanh và render">
