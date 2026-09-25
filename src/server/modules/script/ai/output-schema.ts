@@ -76,3 +76,10 @@ export const VisualPromptBatchSchema = z.object({
     visualPrompt: z.string().trim().min(1),
   })),
 });
+
+export const SceneSplitBatchSchema = z.object({
+  scenes: z.array(z.object({
+    sceneIndex: z.number().int().positive(),
+    chunks: z.array(z.string().min(1)).min(1),
+  })),
+});

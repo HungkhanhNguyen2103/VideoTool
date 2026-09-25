@@ -18,6 +18,16 @@ export type VisualPromptPromptInput = {
   scenes: readonly VisualPromptSceneInput[];
   styleNote: string;
 };
+export type SceneSplitSceneInput = {
+  sceneId: string;
+  sceneIndex: number;
+  narration: string;
+};
+export type SceneSplitPromptInput = {
+  project: ProjectDetail;
+  chapter: Pick<ChapterDoc, 'no' | 'title'>;
+  scenes: readonly SceneSplitSceneInput[];
+};
 export type ChapterExpansionPromptInput = {
   project: ProjectDetail;
   chapter: Pick<ChapterDoc, 'no' | 'title' | 'role' | 'beat' | 'targetWords' | 'endsOnTension'>;
@@ -188,6 +198,24 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
       ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}`),
     ].join('\n\n'),
     promptVersion: version(preset),
+  };
+}
+
+export function buildSceneSplitPrompt(input: SceneSplitPromptInput): BuiltPrompt {
+  const { project, chapter, scenes } = input;
+  return {
+    system: 'You select visual cut points in existing narration. Return only valid JSON with a scenes array. For every supplied sceneIndex, return one object containing that exact sceneIndex and chunks, an array of non-empty strings. Each chunk must be an exact contiguous substring of its source narration. Do not reword, add, remove, or otherwise modify any narration text. Preserve the source text in order. Echo each supplied sceneIndex exactly once; do not invent, omit, duplicate, or renumber indexes.',
+    user: [
+      `Project title: ${project.title}`,
+      `Brief: ${project.brief}`,
+      `References: ${project.referencesText || '(none)'}`,
+      `Language: ${language(project)}`,
+      `Chapter ${chapter.no}: ${chapter.title}`,
+      `Split each narration into visual beats only where a meaningful visual change occurs. Return one item for every supplied sceneIndex.`,
+      'Scenes:',
+      ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}`),
+    ].join('\n\n'),
+    promptVersion: 'scene-split-v1',
   };
 }
 
