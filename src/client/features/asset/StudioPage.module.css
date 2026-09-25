@@ -17,9 +17,9 @@
 .renderPlayer { width: min(100%, 42rem); max-height: 24rem; border-radius: .6rem; background: var(--input); }
 .sceneList { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .85rem; }
 .card { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; }
-.cardHead { flex-wrap: wrap; }
+.cardHead { justify-content: space-between; flex-wrap: wrap; }
 .number { font-weight: 800; color: var(--amber-text); }
-.sceneText { display: grid; gap: .2rem; flex: 1; min-width: 12rem; }
+.sceneText { display: grid; gap: .2rem; }
 .statusBadges { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .cardFooter { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-top: auto; padding-top: .75rem; }
 .prompt { display: grid; gap: .45rem; align-content: start; }
