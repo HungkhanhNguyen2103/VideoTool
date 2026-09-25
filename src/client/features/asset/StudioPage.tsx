@@ -38,6 +38,8 @@ export function StudioPage() {
   const expandedScene = scenes.find((scene) => scene.id === expandedSceneId) ?? null;
   const expandedEditing = expandedScene !== null && editingScene === expandedScene.id;
   const expandedSceneBusy = expandedScene !== null && busy === `scene:${expandedScene.id}`;
+  const expandedVoiceoverFile = expandedScene?.audioFileId ? filesById.get(expandedScene.audioFileId) : undefined;
+  const expandedSfxFile = expandedScene?.sfxFileId ? filesById.get(expandedScene.sfxFileId) : undefined;
   const progress = useJobProgress(jobId);
 
   useEffect(() => { if (project) setBgmMood(project.bgmMood); }, [project?.id, project?.bgmMood]);
@@ -46,6 +48,11 @@ export function StudioPage() {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;
     refreshedJobRef.current = jobId;
     void refresh();
+  }, [jobId, progress?.status]);
+  useEffect(() => {
+    if (!jobId || refreshedJobRef.current === jobId) return undefined;
+    const interval = setInterval(() => { void refresh(); }, 15_000);
+    return () => clearInterval(interval);
   }, [jobId, progress?.status]);
   useEffect(() => {
     const dialog = detailDialogRef.current;
@@ -229,7 +236,7 @@ export function StudioPage() {
           return <article className={styles.card} key={scene.id}>
             <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><span className={styles.muted}>{scene.durationSec}s</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={busy !== null} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
             <div className={`${styles.preview} ${styles.cardPreview}`}>{previewUrls[scene.id] ? <video controls src={previewUrls[scene.id]} /> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
-            <div className={styles.cardFooter}><div className={styles.statusBadges}><Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
+            <div className={styles.cardFooter}><div className={styles.statusBadges}><Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? 'green' : 'muted'}>{scene.audioFileId ? 'Đã có voiceover' : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
           </article>;
         })}
       </section>
@@ -240,11 +247,18 @@ export function StudioPage() {
           <div className={styles.detailBody}>
             <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{expandedEditing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startEdit(expandedScene)}>Edit</Button></div>}</div>
             <div className={styles.audioControls}>
-              <label className={styles.label} htmlFor={`sfx-${expandedScene.id}`}>SFX prompt</label>
-              <input id={`sfx-${expandedScene.id}`} className={styles.audioInput} defaultValue={expandedScene.sfxPrompt} onBlur={(event) => { if (event.currentTarget.value !== expandedScene.sfxPrompt) void patchScene(expandedScene.id, { sfxPrompt: event.currentTarget.value }); }} placeholder="Ví dụ: tiếng gió" />
-              <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void generateSfx(expandedScene.id)}>Tạo SFX</Button><Button size="sm" disabled={busy !== null} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button><Button size="sm" disabled={busy !== null} onClick={() => void previewScene(expandedScene.id)}>Preview</Button></div>
-              {expandedScene.audioFileId && filesById.get(expandedScene.audioFileId)?.mimeType.startsWith('audio/') && <audio controls src={api.fileUrlForSummary(filesById.get(expandedScene.audioFileId)!)} />}
-              {expandedScene.sfxFileId && filesById.get(expandedScene.sfxFileId)?.mimeType.startsWith('audio/') && <audio controls src={api.fileUrlForSummary(filesById.get(expandedScene.sfxFileId)!)} />}
+              <section className={styles.prompt}>
+                <span className={styles.label}>Voiceover</span>
+                {expandedVoiceoverFile?.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(expandedVoiceoverFile)} /> : <span className={styles.placeholder}>Chưa có voiceover.</span>}
+                <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button></div>
+              </section>
+              <section className={styles.prompt}>
+                <label className={styles.label} htmlFor={`sfx-${expandedScene.id}`}>SFX prompt</label>
+                <input id={`sfx-${expandedScene.id}`} className={styles.audioInput} defaultValue={expandedScene.sfxPrompt} onBlur={(event) => { if (event.currentTarget.value !== expandedScene.sfxPrompt) void patchScene(expandedScene.id, { sfxPrompt: event.currentTarget.value }); }} placeholder="Ví dụ: tiếng gió" />
+                <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void generateSfx(expandedScene.id)}>Tạo SFX</Button></div>
+                {expandedSfxFile?.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(expandedSfxFile)} /> : <span className={styles.placeholder}>Chưa có SFX.</span>}
+              </section>
+              <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void previewScene(expandedScene.id)}>Preview</Button></div>
             </div>
           </div>
         </div> : null}

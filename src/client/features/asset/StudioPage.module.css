@@ -8,7 +8,7 @@
 .mediaPanel { display: grid; gap: .75rem; padding: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
 .mediaHeader { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .engineSelector { display: flex; align-items: center; gap: .35rem; }
-.audioControls { display: grid; gap: .5rem; align-content: start; }
+.audioControls { display: grid; gap: 1rem; align-content: start; }
 .audioInput { min-width: 12rem; padding: .5rem .65rem; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: .45rem; font: inherit; }
 .warning { margin: 0; color: var(--amber-text); font-size: .85rem; }
 .progress { display: grid; grid-template-columns: auto minmax(8rem, 1fr) auto; align-items: center; gap: .6rem; font-size: .85rem; }
