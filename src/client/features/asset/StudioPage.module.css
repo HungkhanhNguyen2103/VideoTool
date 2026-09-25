@@ -15,22 +15,30 @@
 .progress progress { width: 100%; accent-color: var(--amber); }
 .progress ul { grid-column: 1 / -1; max-height: 7rem; margin: 0; padding-left: 1.2rem; overflow: auto; color: var(--text-3); }
 .renderPlayer { width: min(100%, 42rem); max-height: 24rem; border-radius: .6rem; background: var(--input); }
-.sceneList { display: grid; gap: .85rem; }
+.sceneList { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .85rem; align-items: start; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; }
 .cardHead { flex-wrap: wrap; }
 .number { font-weight: 800; color: var(--amber-text); }
 .sceneText { display: grid; gap: .2rem; flex: 1; min-width: 12rem; }
-.body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12rem, 22rem); gap: 1rem; margin-top: 1rem; }
+.cardFooter { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-top: .75rem; }
 .prompt { display: grid; gap: .45rem; align-content: start; }
 .label { font-size: .8rem; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
 .promptLine { align-items: flex-start; justify-content: space-between; white-space: pre-wrap; line-height: 1.5; }
 .textarea { width: 100%; min-height: 7rem; padding: .65rem; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: .5rem; font: inherit; }
 .preview { min-height: 10rem; display: grid; place-items: center; overflow: hidden; border-radius: .6rem; background: var(--input); }
 .preview img, .preview video { display: block; width: 100%; max-height: 18rem; object-fit: contain; }
+.cardPreview { min-height: 9rem; margin-top: .75rem; }
+.cardPreview img, .cardPreview video { max-height: 10rem; }
 .placeholder { color: var(--text-3); }
+.detailDialog { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 1.25rem; border-radius: 14px; background: var(--panel); color: var(--text); border: 1px solid var(--border-2); overflow: auto; }
+.detailDialog::backdrop { background: rgba(3, 5, 14, 0.7); }
+.detailHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.detailTitle { margin: 0; font-size: 1.1rem; }
+.detailNarration { max-width: 60rem; margin: .4rem 0 0; color: var(--text-2); line-height: 1.5; white-space: pre-wrap; }
+.detailContent, .detailBody { display: grid; gap: 1rem; }
 .skipped { padding: .75rem 1rem; border: 1px solid var(--border); border-radius: .6rem; }
 .skipped ul { margin: .5rem 0 0; padding-left: 1.2rem; }
 .hiddenInput { display: none; }
 .error { color: var(--red); }
 .mismatch { color: var(--amber-text); font-size: .8rem; padding: .4rem .6rem; }
-@media (max-width: 760px) { .body { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .detailHeader { flex-direction: column; } }
