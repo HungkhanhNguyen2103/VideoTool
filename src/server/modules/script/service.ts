@@ -17,7 +17,7 @@ import { buildChapterExpansionPrompt, buildOutlinePrompt, buildRegenerationPromp
 import { parseChapterExpansion, parseRegeneratedParagraphs, parseScriptOutline, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { countNarrationWords } from '../../../contracts/script';
 
-function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
+export function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
   return { takenAt: new Date(), chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })) };
 }
 
