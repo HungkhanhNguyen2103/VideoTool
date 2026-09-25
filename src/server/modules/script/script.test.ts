@@ -240,6 +240,28 @@ describe('script contracts', () => {
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
   });
 
+  it('owns the visual style patch route and does not enqueue a job', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/visual-style`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visualStylePresetId: 'watercolor' }),
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).visualStylePresetId).toBe('watercolor');
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('rejects an invalid visual style before any project mutation', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/visual-style`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visualStylePresetId: 'other' }),
+    });
+    expect(response.status).toBe(400);
+    expect((await getProject(project.id)).visualStylePresetId).toBe('cinematic');
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
   it('returns a flattened manual prompt without enqueuing a job', async () => {
     const project = await createProject(projectInput);
     const baseUrl = await startScriptServer();

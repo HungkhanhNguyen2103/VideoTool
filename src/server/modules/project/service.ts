@@ -1,4 +1,4 @@
-import type { AiProvider, CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary } from '../../../contracts/project';
+import type { AiProvider, CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary, VisualStyleId } from '../../../contracts/project';
 import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
@@ -176,6 +176,11 @@ export async function setProjectRenderEngine(id: string, renderEngine: ProjectDe
 
 export async function setProjectAiProvider(id: string, aiProvider: AiProvider): Promise<ProjectDetail> {
   await updateProject(id, { aiProvider });
+  return getProject(id);
+}
+
+export async function setProjectVisualStylePreset(id: string, visualStylePresetId: VisualStyleId): Promise<ProjectDetail> {
+  await updateProject(id, { visualStylePresetId });
   return getProject(id);
 }
 

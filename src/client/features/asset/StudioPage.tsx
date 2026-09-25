@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import type { Scene } from '../../../contracts/project';
+import type { Scene, VisualStyleId } from '../../../contracts/project';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
@@ -175,6 +175,14 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function setVisualStyle(visualStylePresetId: VisualStyleId) {
+    if (visualStylePresetId === project?.visualStylePresetId) return;
+    const label = api.VISUAL_STYLE_OPTIONS.find((option) => option.value === visualStylePresetId)?.label ?? visualStylePresetId;
+    try { setBusy('visual-style'); await api.setVisualStyle(projectId, visualStylePresetId); await refresh(); toast(`Đã chọn phong cách hình ảnh ${label}.`); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi phong cách hình ảnh.'); }
+    finally { setBusy(null); }
+  }
+
   async function previewScene(sceneId: string) {
     try {
       setBusy(`preview:${sceneId}`);
@@ -202,6 +210,7 @@ export function StudioPage() {
         <div><h2 className={styles.title}>Studio Phân Cảnh</h2><p className={styles.muted}>{project.title}</p></div>
         <Badge tone={statusTone[project.status]}>{statusLabel[project.status]}</Badge>
         <div className={styles.engineSelector} role="group" aria-label="AI provider">{api.AI_PROVIDER_OPTIONS.map((option) => <Button key={option.value} size="sm" variant={project.aiProvider === option.value ? 'indigoline' : 'ghost'} disabled={busy !== null} aria-pressed={project.aiProvider === option.value} onClick={() => void setAiProvider(option.value)}>{option.label}</Button>)}</div>
+        <div className={styles.engineSelector} role="group" aria-label="Visual style">{api.VISUAL_STYLE_OPTIONS.map((option) => <Button key={option.value} size="sm" variant={project.visualStylePresetId === option.value ? 'indigoline' : 'ghost'} disabled={busy !== null} aria-pressed={project.visualStylePresetId === option.value} onClick={() => void setVisualStyle(option.value)}>{option.label}</Button>)}</div>
         <div className={styles.actions}>
           <Button size="sm" disabled={busy !== null} onClick={() => void copyJson()}>Copy JSON</Button>
           <Button size="sm" disabled={busy !== null} onClick={() => void downloadJson()}>Export JSON</Button>

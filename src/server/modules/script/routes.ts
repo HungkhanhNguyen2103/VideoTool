@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectAiProvider } from '../project';
+import { VISUAL_STYLE_IDS } from '../../../contracts/project';
+import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
 import { buildManualScriptPrompt } from './ai/build-prompt';
 import { parseManualScriptDocument, validateScriptOutlineChapterCount } from './ai/parse-output';
@@ -21,6 +22,7 @@ const RegenerateChapterSchema = z.object({
 
 const RestoreSchema = z.object({ index: z.number().int().nonnegative() });
 const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']) }).strict();
+const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
 
 function writeEvent(res: { write: (chunk: string) => boolean }, event: string, data: unknown): void {
@@ -55,6 +57,11 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): R
   router.patch('/:id/ai-provider', async (req, res) => {
     const body = ProviderSchema.parse(req.body);
     res.json(await setProjectAiProvider(req.params.id, body.provider));
+  });
+
+  router.patch('/:id/visual-style', async (req, res) => {
+    const body = VisualStyleSchema.parse(req.body);
+    res.json(await setProjectVisualStylePreset(req.params.id, body.visualStylePresetId));
   });
 
   router.get('/:id/generate-script/manual-prompt', async (req, res) => {

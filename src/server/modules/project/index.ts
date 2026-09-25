@@ -21,6 +21,7 @@ export {
   setProjectBgm,
   setProjectRenderEngine,
   setProjectAiProvider,
+  setProjectVisualStylePreset,
   setProjectRenderFile,
 } from './service';
 export { SceneDocSchema } from './docs';

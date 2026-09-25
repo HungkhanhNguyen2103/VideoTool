@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, setVisualStyle, splitScenes } from './api';
 
 const project = {
   id: 'project-1',
@@ -102,6 +102,21 @@ describe('asset API helpers', () => {
     await expect(setAiProvider('project/1', 'claude')).resolves.toMatchObject({ aiProvider: 'deepseek' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/ai-provider', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ provider: 'claude' }),
+    }));
+  });
+
+  it('exposes visual style options and updates the style with the exact PATCH route and body', async () => {
+    expect(VISUAL_STYLE_OPTIONS).toEqual([
+      { value: 'cinematic', label: 'Cinematic (điện ảnh)' },
+      { value: 'anime', label: 'Anime' },
+      { value: 'watercolor', label: 'Watercolor (màu nước)' },
+      { value: 'photorealistic', label: 'Photorealistic (ảnh thực)' },
+    ]);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(setVisualStyle('project/1', 'watercolor')).resolves.toMatchObject({ visualStylePresetId: 'cinematic' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/visual-style', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ visualStylePresetId: 'watercolor' }),
     }));
   });
 
