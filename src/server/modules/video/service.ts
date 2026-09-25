@@ -44,6 +44,25 @@ export async function generateSceneSfx(projectId: string, sceneId: string): Prom
   await patchProjectScene(projectId, sceneId, { sfxFileId: stored.id });
 }
 
+export async function generateProjectSfx(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<void> {
+  const project = await getProject(projectId);
+  const failed: number[] = [];
+  for (const [index, scene] of project.scenes.entries()) {
+    const sceneNumber = index + 1;
+    await appendLog(`Generating SFX for scene ${sceneNumber}/${project.scenes.length}…`);
+    try {
+      await generateSceneSfx(projectId, scene.id);
+    } catch (error) {
+      failed.push(sceneNumber);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`SFX generation failed for scene ${sceneNumber}.`, error);
+      await appendLog(`Scene ${sceneNumber} failed: ${message}`);
+    }
+    await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
+  }
+  if (failed.length > 0) await appendLog(`SFX failed for scenes: ${failed.join(', ')}`);
+}
+
 export async function generateProjectBgm(projectId: string, mood: string): Promise<void> {
   const normalizedMood = mood.trim();
   if (!normalizedMood) {

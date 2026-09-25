@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, fileUrlForSummary, filesByPurpose, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, splitScenes } from './api';
 
 const project = {
   id: 'project-1',
@@ -57,6 +57,13 @@ describe('asset API helpers', () => {
 
     await expect(generateVisualPrompts('project/1')).resolves.toEqual({ jobId: 'job-1' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-visual-prompts', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('queues bulk SFX generation through the project route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-1' }), { status: 201, headers: { 'content-type': 'application/json' } }));
+
+    await expect(generateAllSfx('project/1')).resolves.toEqual({ jobId: 'job-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-all-sfx', expect.objectContaining({ method: 'POST' }));
   });
 
   it('queues semantic scene splitting through the project route', async () => {

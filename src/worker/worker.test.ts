@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWorkerLoop } from './main';
 
-const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn() }));
+const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn(), generateProjectVoiceovers: vi.fn(), generateProjectSfx: vi.fn(), renderFullProject: vi.fn() }));
 vi.mock('../server/modules/script/service', () => ({ generateScript: mocks.generateScript }));
 vi.mock('../server/modules/script/visual-prompts', () => ({ generateVisualPrompts: mocks.generateVisualPrompts }));
 vi.mock('../server/modules/script/scene-split', () => ({ splitProjectScenes: mocks.splitProjectScenes }));
 vi.mock('../server/modules/script/qa', () => ({ runFinalQa: mocks.runFinalQa }));
+vi.mock('../server/modules/video', () => ({ generateProjectVoiceovers: mocks.generateProjectVoiceovers, generateProjectSfx: mocks.generateProjectSfx, renderFullProject: mocks.renderFullProject }));
 import { jobHandlers } from './registry';
 
 describe('worker poll loop', () => {
@@ -151,5 +152,34 @@ describe('script job registration', () => {
       progress: 0, result: null, error: null, cancelRequested: true, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });
     expect(mocks.runFinalQa).not.toHaveBeenCalled();
+  });
+});
+
+describe('video job registration', () => {
+  it('registers generate-all-sfx and forwards reportProgress through the worker context', async () => {
+    mocks.generateProjectSfx.mockResolvedValue(undefined);
+    const appendLog = vi.fn();
+    const isCancelled = vi.fn().mockResolvedValue(false);
+    const reportProgress = vi.fn();
+    const handler = jobHandlers['generate-all-sfx'];
+    expect(handler).toBeDefined();
+
+    await handler!({
+      _id: 'job-sfx-1', schemaVersion: 1, type: 'generate-all-sfx', projectId: 'project-1', payload: { projectId: 'project-2' },
+      status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
+      progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress, isCancelled, appendLog });
+
+    expect(mocks.generateProjectSfx).toHaveBeenCalledWith('project-2', appendLog, reportProgress);
+  });
+
+  it('does not start bulk SFX generation when the job is already cancelled', async () => {
+    mocks.generateProjectSfx.mockReset();
+    await jobHandlers['generate-all-sfx']!({
+      _id: 'job-sfx-2', schemaVersion: 1, type: 'generate-all-sfx', projectId: 'project-1', payload: { projectId: 'project-1' },
+      status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
+      progress: 0, result: null, error: null, cancelRequested: true, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });
+    expect(mocks.generateProjectSfx).not.toHaveBeenCalled();
   });
 });

@@ -21,7 +21,7 @@ import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
-import { configureVideoModule, generateProjectBgm, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
+import { configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
 import { createVideoRouter } from './routes';
 import { jobHandlers } from '../../../worker/registry';
 
@@ -272,6 +272,35 @@ describe('video orchestration services', () => {
     expect(progress).toEqual([50, 100]);
   });
 
+  it('generates project SFX sequentially and reports progress for every scene', async () => {
+    const project = await seedVoiceProject();
+    mocks.searchAndDownloadSfx.mockResolvedValue(Buffer.from('sfx'));
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
+
+    const updated = await getProject(project.id);
+    expect(updated.scenes[0]!.sfxFileId).toEqual(expect.any(String));
+    expect(updated.scenes[1]!.sfxFileId).toBeNull();
+    expect(logs).toHaveLength(2);
+    expect(progress).toEqual([50, 100]);
+  });
+
+  it('continues project SFX generation after one scene fails and logs a summary', async () => {
+    const project = await seedVoiceProject();
+    mocks.searchAndDownloadSfx.mockRejectedValueOnce(new Error('first failed'));
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
+
+    expect((await getProject(project.id)).scenes[0]!.sfxFileId).toBeNull();
+    expect(logs.some((line) => line.includes('Scene 1 failed: first failed'))).toBe(true);
+    expect(logs.some((line) => line.includes('SFX failed for scenes: 1'))).toBe(true);
+    expect(progress).toEqual([50, 100]);
+  });
+
   it('does not write SFX when Freesound has no result, then stores a successful SFX hit', async () => {
     const project = await seedVoiceProject();
     mocks.searchAndDownloadSfx.mockResolvedValueOnce(null).mockResolvedValueOnce(Buffer.from('sfx'));
@@ -375,8 +404,12 @@ describe('video routes and worker handlers', () => {
     const voiceoverResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-voiceover`, { method: 'POST' });
     expect(voiceoverResponse.status).toBe(201);
     expect(await voiceoverResponse.json()).toEqual({ jobId: 'job-1' });
+    const sfxResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-all-sfx`, { method: 'POST' });
+    expect(sfxResponse.status).toBe(201);
+    expect(await sfxResponse.json()).toEqual({ jobId: 'job-1' });
     await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } }));
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } }));
   });
 

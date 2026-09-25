@@ -112,6 +112,12 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function generateAllSfx() {
+    try { setBusy('sfx-all'); const result = await api.generateAllSfx(projectId); setJobId(result.jobId); toast('Đã xếp hàng tạo tất cả SFX.'); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo tất cả SFX.'); }
+    finally { setBusy(null); }
+  }
+
   async function generateVisualPrompts() {
     try { setBusy('visual-prompts'); const result = await api.generateVisualPrompts(projectId); setJobId(result.jobId); toast('Đã xếp hàng tạo visual prompt.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo visual prompt.'); }
@@ -200,7 +206,7 @@ export function StudioPage() {
       <div className={styles.toolbar}>
         <strong>{filled} / {scenes.length} scenes have assets</strong>
         {uploadProgress !== null && <span className={styles.muted}>Đang upload {uploadProgress}%</span>}
-        <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('video')}>All videos</Button><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="amber" disabled={busy !== null || missingScenes.length > 0} onClick={() => void renderProject()}>Render video</Button></div>
+        <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('video')}>All videos</Button><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="amber" disabled={busy !== null || missingScenes.length > 0} onClick={() => void renderProject()}>Render video</Button></div>
       </div>
 
       <section className={styles.mediaPanel} aria-label="Âm thanh và render">
@@ -221,9 +227,9 @@ export function StudioPage() {
           const previewType = actualType ?? scene.assetType;
           const typeMismatch = actualType !== null && actualType !== scene.assetType;
           return <article className={styles.card} key={scene.id}>
-            <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><strong>{scene.narration}</strong><span className={styles.muted}>{scene.durationSec}s</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={busy !== null} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
+            <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><strong className={styles.narration}>{scene.narration}</strong><span className={styles.muted}>{scene.durationSec}s</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={busy !== null} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
             <div className={`${styles.preview} ${styles.cardPreview}`}>{previewUrls[scene.id] ? <video controls src={previewUrls[scene.id]} /> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
-            <div className={styles.cardFooter}><Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
+            <div className={styles.cardFooter}><div className={styles.statusBadges}><Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
           </article>;
         })}
       </section>

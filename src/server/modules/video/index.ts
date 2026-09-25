@@ -30,6 +30,7 @@ export {
   assertProjectRenderReady,
   configureVideoModule,
   generateProjectBgm,
+  generateProjectSfx,
   generateProjectVoiceovers,
   generateSceneSfx,
   generateSceneVoiceover,
