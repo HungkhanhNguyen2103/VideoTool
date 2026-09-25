@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import cinematicPreview from '../../../assets/visual-style-previews/cinematic.jpg';
 import {
   ASPECT_RATIOS,
   ASPECT_RESOLUTIONS,
@@ -9,6 +10,7 @@ import {
   VISUAL_STYLE_IDS,
   type CreateProjectRequest,
   CreateProjectRequestSchema,
+  type VisualStyleId,
 } from '../../../../contracts/project';
 import { Button } from '../../../shared/ui/Button';
 import { Icon } from '../../../shared/ui/Icon';
@@ -41,6 +43,14 @@ const DURATION_CHIPS = [
 
 const FIELD_ORDER = ['title', 'brief', 'targetDurationSec', 'chapterCount'] as const;
 
+const VISUAL_STYLE_PREVIEWS: Partial<Record<VisualStyleId, { src: string; alt: string; filename: string }>> = {
+  cinematic: {
+    src: cinematicPreview,
+    alt: 'Ảnh mẫu phong cách Cinematic',
+    filename: 'cinematic-style-preview.jpg',
+  },
+};
+
 export function NewProjectForm() {
   const navigate = useNavigate();
   const setCurrentProjectId = useProjectUiStore((s) => s.setCurrentProjectId);
@@ -63,10 +73,12 @@ export function NewProjectForm() {
 
   const brief = watch('brief');
   const targetDurationSec = watch('targetDurationSec');
+  const visualStylePresetId = watch('visualStylePresetId') ?? 'cinematic';
   const aspect = watch('renderSettings.aspect');
   const width = watch('renderSettings.width');
   const height = watch('renderSettings.height');
   const busy = createProject.isPending;
+  const visualStylePreview = VISUAL_STYLE_PREVIEWS[visualStylePresetId];
 
   // Aspect changed: reset resolution to the first option for that aspect if the
   // current width/height pair no longer belongs to it (mirrors the prototype's fillResolutions()).
@@ -218,9 +230,23 @@ export function NewProjectForm() {
             </div>
             <div className={styles.field}>
               <label htmlFor="visual-style">Phong cách hình ảnh</label>
-              <select className={styles.input} id="visual-style" {...register('visualStylePresetId')}>
-                {VISUAL_STYLE_IDS.map((style) => <option key={style} value={style}>{style === 'cinematic' ? 'Cinematic (điện ảnh)' : style === 'anime' ? 'Anime' : style === 'watercolor' ? 'Watercolor (màu nước)' : 'Photorealistic (ảnh thực)'}</option>)}
-              </select>
+              <div className={styles.stylePicker}>
+                <select className={styles.input} id="visual-style" {...register('visualStylePresetId')}>
+                  {VISUAL_STYLE_IDS.map((style) => <option key={style} value={style}>{style === 'cinematic' ? 'Cinematic (điện ảnh)' : style === 'anime' ? 'Anime' : style === 'watercolor' ? 'Watercolor (màu nước)' : 'Photorealistic (ảnh thực)'}</option>)}
+                </select>
+                <div className={styles.stylePreview} aria-live="polite">
+                  {visualStylePreview ? (
+                    <>
+                      <img className={styles.stylePreviewImage} src={visualStylePreview.src} alt={visualStylePreview.alt} />
+                      <a className={styles.stylePreviewDownload} href={visualStylePreview.src} download={visualStylePreview.filename}>
+                        Tải ảnh
+                      </a>
+                    </>
+                  ) : (
+                    <span className={styles.stylePreviewPlaceholder}>Chưa có ảnh mẫu</span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className={styles.field}>
               <label htmlFor="duration">Thời lượng mục tiêu (giây)</label>
@@ -280,15 +306,17 @@ export function NewProjectForm() {
         <fieldset className={styles.section}>
           <legend className={`label ${styles.legend}`}>Cấu hình video</legend>
           <div className={`${styles.grid} ${styles.grid4}`}>
-            <fieldset className={styles.segmented} aria-label="Khổ hình">
-              <legend>Khổ hình</legend>
-              {ASPECT_RATIOS.map((value) => (
-                <label key={value} className={styles.segmentedOption}>
-                  <input type="radio" value={value} {...register('renderSettings.aspect')} />
-                  <span className={styles.segmentedLabel}>{value}</span>
-                </label>
-              ))}
-            </fieldset>
+            <div className={styles.field}>
+              <span id="aspect-label">Khổ hình</span>
+              <div className={styles.segmented} role="radiogroup" aria-labelledby="aspect-label">
+                {ASPECT_RATIOS.map((value) => (
+                  <label key={value} className={styles.segmentedOption}>
+                    <input type="radio" value={value} {...register('renderSettings.aspect')} />
+                    <span className={styles.segmentedLabel}>{value}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <div className={styles.field}>
               <label htmlFor="resolution">Độ phân giải</label>
               <select

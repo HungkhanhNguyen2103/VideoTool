@@ -69,7 +69,7 @@
   min-width: 0;
 }
 .field > label,
-.segmented legend {
+.field > span {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
@@ -174,11 +174,6 @@
   gap: 6px;
   align-content: flex-start;
 }
-.segmented legend {
-  width: 100%;
-  margin-bottom: 2px;
-  float: none;
-}
 .segmentedOption {
   flex: 1;
   position: relative;
@@ -211,6 +206,52 @@
 .segmentedOption input:focus-visible + .segmentedLabel {
   outline: 2px solid var(--amber);
   outline-offset: 2px;
+}
+
+.stylePicker {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.stylePicker .input {
+  flex: 1;
+  min-width: 0;
+}
+.stylePreview {
+  flex: 0 0 80px;
+  width: 80px;
+}
+.stylePreviewImage,
+.stylePreviewPlaceholder {
+  display: block;
+  width: 80px;
+  height: 80px;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+}
+.stylePreviewImage {
+  object-fit: cover;
+}
+.stylePreviewPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: var(--input);
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+}
+.stylePreviewDownload {
+  display: block;
+  margin-top: 4px;
+  color: var(--amber-text);
+  font-size: 12px;
+  text-align: center;
+}
+.stylePreviewDownload:hover {
+  color: var(--amber);
 }
 
 .formActions {
