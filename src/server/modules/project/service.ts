@@ -208,47 +208,79 @@ export async function applySceneAssets(
   return getProject(id);
 }
 
+type EmptyScenePromptUpdate = {
+  sceneId: string;
+  visualPrompt?: string;
+  sfxPrompt?: string;
+};
+
+type EmptyScenePromptWriteResult = {
+  project: ProjectDetail;
+  updatedSceneIds: string[];
+  updatedSfxPromptSceneIds: string[];
+};
+
+function hasPromptValue(value: string | undefined): value is string {
+  return value !== undefined && value.trim() !== '';
+}
+
 export async function applyEmptySceneVisualPrompts(
   projectId: string,
-  updates: Array<{ sceneId: string; visualPrompt: string }>,
+  updates: EmptyScenePromptUpdate[],
 ): Promise<ProjectDetail> {
   return (await applyEmptySceneVisualPromptsWithResult(projectId, updates)).project;
 }
 
 export async function applyEmptySceneVisualPromptsWithResult(
   projectId: string,
-  updates: Array<{ sceneId: string; visualPrompt: string }>,
-): Promise<{ project: ProjectDetail; updatedSceneIds: string[] }> {
+  updates: EmptyScenePromptUpdate[],
+): Promise<EmptyScenePromptWriteResult> {
   const project = await getProject(projectId);
-  const latest = new Map<string, string>();
-  for (const update of updates) latest.set(update.sceneId, update.visualPrompt);
-  if (latest.size === 0) return { project, updatedSceneIds: [] };
+  const latest = new Map<string, { visualPrompt?: string; sfxPrompt?: string }>();
+  for (const update of updates) {
+    const current = latest.get(update.sceneId) ?? {};
+    if (update.visualPrompt !== undefined) current.visualPrompt = update.visualPrompt;
+    if (update.sfxPrompt !== undefined) current.sfxPrompt = update.sfxPrompt;
+    latest.set(update.sceneId, current);
+  }
+  if (latest.size === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [] };
 
   const scenesById = new Map(project.scenes.map((scene) => [scene.id, scene]));
   for (const sceneId of latest.keys()) {
     if (!scenesById.has(sceneId)) throw new NotFound('Không tìm thấy cảnh.');
   }
 
-  const emptyTargets = [...latest].filter(([sceneId]) => scenesById.get(sceneId)!.visualPrompt === '');
-  if (emptyTargets.length === 0) return { project, updatedSceneIds: [] };
-
   const set: Record<string, unknown> = { updatedAt: new Date() };
   const arrayFilters: Record<string, unknown>[] = [];
-  for (const [index, [sceneId, visualPrompt]] of emptyTargets.entries()) {
-    const identifier = `scene${index}`;
-    set[`scenes.$[${identifier}].visualPrompt`] = visualPrompt;
-    arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.visualPrompt`]: '' });
+  const eligibleClauses: Record<string, unknown>[] = [];
+  for (const [index, [sceneId, update]] of [...latest].entries()) {
+    if (hasPromptValue(update.visualPrompt)) {
+      const identifier = `visual${index}`;
+      set[`scenes.$[${identifier}].visualPrompt`] = update.visualPrompt;
+      arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.visualPrompt`]: '' });
+      eligibleClauses.push({ id: sceneId, visualPrompt: '' });
+    }
+    if (hasPromptValue(update.sfxPrompt)) {
+      const identifier = `sfx${index}`;
+      set[`scenes.$[${identifier}].sfxPrompt`] = update.sfxPrompt;
+      arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.sfxPrompt`]: '' });
+      eligibleClauses.push({ id: sceneId, sfxPrompt: '' });
+    }
   }
+  if (eligibleClauses.length === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [] };
 
   const previous = await getCollection<ProjectDoc>('projects').findOneAndUpdate(
-    { _id: projectId, scenes: { $elemMatch: { id: { $in: emptyTargets.map(([sceneId]) => sceneId) }, visualPrompt: '' } } },
+    { _id: projectId, scenes: { $elemMatch: { $or: eligibleClauses } } },
     { $set: set, $inc: { version: 1 } },
     { arrayFilters, returnDocument: 'before' },
   );
   const updatedSceneIds = previous
-    ? emptyTargets.filter(([sceneId]) => previous.scenes.some((scene) => scene.id === sceneId && scene.visualPrompt === '')).map(([sceneId]) => sceneId)
+    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.visualPrompt) && previous.scenes.some((scene) => scene.id === sceneId && scene.visualPrompt === '')).map(([sceneId]) => sceneId)
     : [];
-  return { project: await getProject(projectId), updatedSceneIds };
+  const updatedSfxPromptSceneIds = previous
+    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.sfxPrompt) && previous.scenes.some((scene) => scene.id === sceneId && scene.sfxPrompt === '')).map(([sceneId]) => sceneId)
+    : [];
+  return { project: await getProject(projectId), updatedSceneIds, updatedSfxPromptSceneIds };
 }
 
 export async function replaceProjectChapters(

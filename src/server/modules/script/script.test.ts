@@ -77,6 +77,30 @@ describe('empty scene visual prompts', () => {
     expect(noOp.project.version).toBe(result.project.version);
   });
 
+  it('fills SFX independently when the visual prompt is already filled', async () => {
+    const project = await projectWithFinalizedScenes();
+    const result = await applyEmptySceneVisualPromptsWithResult(project.id, [{
+      sceneId: 'scene-3', visualPrompt: 'Should stay manual', sfxPrompt: 'Footsteps in the hall',
+    }]);
+    expect(result.updatedSceneIds).toEqual([]);
+    expect(result.updatedSfxPromptSceneIds).toEqual(['scene-3']);
+    expect(result.project.scenes[2]).toMatchObject({ visualPrompt: 'Manual prompt', sfxPrompt: 'Footsteps in the hall' });
+    expect(result.project.version).toBe(project.version + 1);
+  });
+
+  it('fills the visual prompt independently when SFX is already filled', async () => {
+    const project = await projectWithFinalizedScenes();
+    await patchProjectScene(project.id, 'scene-1', { sfxPrompt: 'Manual river water' });
+    const before = await getProject(project.id);
+    const result = await applyEmptySceneVisualPromptsWithResult(project.id, [{
+      sceneId: 'scene-1', visualPrompt: 'Bridge at dawn', sfxPrompt: 'Should stay manual',
+    }]);
+    expect(result.updatedSceneIds).toEqual(['scene-1']);
+    expect(result.updatedSfxPromptSceneIds).toEqual([]);
+    expect(result.project.scenes[0]).toMatchObject({ visualPrompt: 'Bridge at dawn', sfxPrompt: 'Manual river water' });
+    expect(result.project.version).toBe(before.version + 1);
+  });
+
   it('returns only the scene still empty at the atomic write when a manual edit races with it', async () => {
     const project = await projectWithFinalizedScenes();
     const original = Collection.prototype.findOneAndUpdate;
@@ -118,6 +142,27 @@ describe('empty scene visual prompts', () => {
     }
   });
 
+  it('returns only the SFX target still empty when a manual SFX edit races with it', async () => {
+    const project = await projectWithFinalizedScenes();
+    const original = Collection.prototype.findOneAndUpdate;
+    const spy = vi.spyOn(Collection.prototype, 'findOneAndUpdate').mockImplementationOnce(async function (this: Collection, ...args) {
+      await patchProjectScene(project.id, 'scene-1', { sfxPrompt: 'Manual wind' });
+      return original.apply(this, args);
+    });
+    try {
+      const result = await applyEmptySceneVisualPromptsWithResult(project.id, [
+        { sceneId: 'scene-1', sfxPrompt: 'Generated wind' },
+        { sceneId: 'scene-2', sfxPrompt: 'Generated water' },
+      ]);
+      expect(result.updatedSceneIds).toEqual([]);
+      expect(result.updatedSfxPromptSceneIds).toEqual(['scene-2']);
+      expect(result.project.scenes.map((scene) => scene.sfxPrompt)).toEqual(['Manual wind', 'Generated water', '']);
+      expect(result.project.version).toBe(project.version + 2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('applies two targets in one version increment and keeps the last duplicate value', async () => {
     const project = await projectWithFinalizedScenes();
     const updated = await applyEmptySceneVisualPrompts(project.id, [
@@ -127,6 +172,17 @@ describe('empty scene visual prompts', () => {
     ]);
     expect(updated.version).toBe(project.version + 1);
     expect(updated.scenes.map((scene) => scene.visualPrompt)).toEqual(['Last value', 'Second value', 'Manual prompt']);
+  });
+
+  it('keeps the last duplicate value independently for visual and SFX prompts', async () => {
+    const project = await projectWithFinalizedScenes();
+    const updated = await applyEmptySceneVisualPrompts(project.id, [
+      { sceneId: 'scene-1', visualPrompt: 'First visual', sfxPrompt: 'First SFX' },
+      { sceneId: 'scene-1', visualPrompt: 'Last visual' },
+      { sceneId: 'scene-1', sfxPrompt: 'Last SFX' },
+    ]);
+    expect(updated.version).toBe(project.version + 1);
+    expect(updated.scenes[0]).toMatchObject({ visualPrompt: 'Last visual', sfxPrompt: 'Last SFX' });
   });
 
   it('rejects a missing scene before changing any valid scene', async () => {
