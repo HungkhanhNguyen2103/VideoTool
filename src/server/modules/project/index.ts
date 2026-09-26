@@ -12,6 +12,7 @@ export {
   listProjects,
   applySceneAssets,
   patchProjectScene,
+  setSceneWordTimings,
   patchProjectChapter,
   replaceProjectChapters,
   replaceProjectScript,

@@ -1,9 +1,10 @@
-import type { AiProvider, CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary, VisualStyleId } from '../../../contracts/project';
+import type { AiProvider, CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary, VisualStyleId, WordTimings } from '../../../contracts/project';
 import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
+import type { z } from 'zod';
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
-import type { ProjectDoc, SceneDoc } from './docs';
+import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
 import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
 
@@ -115,7 +116,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
-    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, sfxFileId: null })),
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null })),
     renderFileId: null,
     bgmFileId: null,
     customStyleReferenceFileId: null,
@@ -133,8 +134,15 @@ export async function deleteProject(id: string): Promise<void> {
   if (deletedCount === 0) throw new NotFound('Không tìm thấy dự án.');
 }
 
-export async function replaceProjectScenes(id: string, scenes: SceneDoc[], newStatus?: ProjectStatus): Promise<void> {
-  await updateProject(id, { scenes, ...(newStatus ? { status: newStatus } : {}) });
+export async function replaceProjectScenes(id: string, scenes: z.input<typeof SceneDocSchema>[], newStatus?: ProjectStatus): Promise<void> {
+  const previous = await getProject(id);
+  const oldById = new Map(previous.scenes.map((scene) => [scene.id, scene]));
+  const safeScenes = scenes.map((scene) => {
+    const old = oldById.get(scene.id);
+    const sameVoice = old && old.narration === scene.narration && old.audioFileId === scene.audioFileId;
+    return SceneDocSchema.parse({ ...scene, wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null });
+  });
+  await updateProject(id, { scenes: safeScenes, ...(newStatus ? { status: newStatus } : {}) });
 }
 
 export async function patchProjectScene(
@@ -144,6 +152,7 @@ export async function patchProjectScene(
 ): Promise<ProjectDetail> {
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(patch)) set[`scenes.$[scene].${field}`] = value;
+  if (patch.audioFileId !== undefined) set['scenes.$[scene].wordTimings'] = null;
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id, scenes: { $elemMatch: { id: sceneId } } },
     { $set: set, $inc: { version: 1 } },
@@ -165,6 +174,17 @@ export async function setProjectScenesAssetType(id: string, assetType: 'image' |
 export async function setProjectBgm(id: string, mood: string, bgmFileId: string | null): Promise<ProjectDetail> {
   await updateProject(id, { bgmMood: mood, bgmFileId });
   return getProject(id);
+}
+
+/** Commit only while both the voiceover and narration still equal the aligned snapshot. */
+export async function setSceneWordTimings(
+  projectId: string, sceneId: string, expectedAudioFileId: string, expectedNarration: string, timings: WordTimings | null,
+): Promise<boolean> {
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: projectId, scenes: { $elemMatch: { id: sceneId, audioFileId: expectedAudioFileId, narration: expectedNarration } } },
+    { $set: { 'scenes.$.wordTimings': timings, updatedAt: new Date() }, $inc: { version: 1 } },
+  );
+  return result.matchedCount > 0;
 }
 
 export async function setProjectCustomStyleReferenceFile(id: string, fileId: string | null): Promise<ProjectDetail> {

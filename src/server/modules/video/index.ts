@@ -26,6 +26,7 @@ export type { VideoRenderer } from './ffmpeg-renderer';
 export { FfmpegRenderer } from './ffmpeg-renderer';
 export { RemotionRenderer } from './remotion-renderer';
 export { createVideoRouter } from './routes';
+export { alignProjectWordTimings } from './word-timing-service';
 export {
   assertProjectRenderReady,
   configureVideoModule,

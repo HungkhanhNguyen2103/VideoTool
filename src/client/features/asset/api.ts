@@ -78,6 +78,10 @@ export function generateAllVoiceovers(projectId: string): Promise<{ jobId: strin
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-voiceover`, JobResponseSchema, { method: 'POST' });
 }
 
+export function alignWordTimings(projectId: string): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/align-words`, JobResponseSchema, { method: 'POST' });
+}
+
 export function generateAllSfx(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-all-sfx`, JobResponseSchema, { method: 'POST' });
 }

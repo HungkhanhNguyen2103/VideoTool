@@ -113,6 +113,12 @@ export const CreateProjectRequestSchema = CreateProjectRequestBase.transform((va
 export type CreateProjectRequest = z.input<typeof CreateProjectRequestSchema>;
 export type CreateProject = z.output<typeof CreateProjectRequestSchema>;
 
+export const WordTimingsSchema = z.object({
+  audioFileId: z.string(),
+  words: z.array(z.object({ text: z.string(), startSec: z.number().nonnegative(), endSec: z.number().nonnegative() })),
+});
+export type WordTimings = z.infer<typeof WordTimingsSchema>;
+
 export const SceneSchema = z.object({
   id: z.string(),
   narration: z.string(),
@@ -121,6 +127,7 @@ export const SceneSchema = z.object({
   assetType: z.enum(['image', 'video']).default('image'),
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),
+  wordTimings: WordTimingsSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
 });

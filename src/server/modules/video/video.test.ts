@@ -16,12 +16,13 @@ import {
   setProjectBgm,
   setProjectRenderEngine,
   setProjectRenderFile,
+  setSceneWordTimings,
 } from '../project';
 import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
-import { configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
+import { alignProjectWordTimings, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
 import { createVideoRouter } from './routes';
 import { jobHandlers } from '../../../worker/registry';
 
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   synthesize: vi.fn(),
   masterAudio: vi.fn(),
   probeAudioDuration: vi.fn(),
+  requestWhisperAlignment: vi.fn(),
   searchAndDownloadSfx: vi.fn(),
   searchAndDownloadBgm: vi.fn(),
 }));
@@ -37,6 +39,7 @@ vi.mock('../../shared/tts', () => ({
   masterAudio: mocks.masterAudio,
   probeAudioDuration: mocks.probeAudioDuration,
 }));
+vi.mock('../../shared/tts/align', () => ({ requestWhisperAlignment: mocks.requestWhisperAlignment }));
 vi.mock('../../shared/freesound', () => ({
   getFreesoundClient: () => ({ searchAndDownloadSfx: mocks.searchAndDownloadSfx, searchAndDownloadBgm: mocks.searchAndDownloadBgm }),
 }));
@@ -89,6 +92,8 @@ beforeEach(async () => {
   mocks.synthesize.mockReset();
   mocks.masterAudio.mockReset();
   mocks.probeAudioDuration.mockReset();
+  mocks.requestWhisperAlignment.mockReset();
+  mocks.requestWhisperAlignment.mockResolvedValue([]);
   mocks.searchAndDownloadSfx.mockReset();
   mocks.searchAndDownloadBgm.mockReset();
   vi.restoreAllMocks();
@@ -122,6 +127,19 @@ async function seedVoiceProject() {
 }
 
 describe('video project mutations', () => {
+  it('defaults legacy timings to null and conditionally invalidates them when audio or narration changes', async () => {
+    const project = await seedProject();
+    expect(project.scenes[0]!.wordTimings).toBeNull();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    const timing = { audioFileId: 'voice-1', words: [{ text: 'Narration', startSec: 0, endSec: 1 }] };
+    expect(await setSceneWordTimings(project.id, 'scene-1', 'voice-1', 'Narration', timing)).toBe(true);
+    expect(await setSceneWordTimings(project.id, 'scene-1', 'wrong-voice', 'Narration', timing)).toBe(false);
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-2' });
+    expect((await getProject(project.id)).scenes[0]!.wordTimings).toBeNull();
+    expect(await setSceneWordTimings(project.id, 'scene-1', 'voice-1', 'Narration', timing)).toBe(false);
+    await replaceProjectScenes(project.id, [{ ...(await getProject(project.id)).scenes[0]!, narration: 'Rewritten narration' }]);
+    expect((await getProject(project.id)).scenes[0]!.wordTimings).toBeNull();
+  });
   it('clears all cross-project media references when duplicating a project', async () => {
     const project = await seedProject();
     await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', sfxFileId: 'sfx-1' });
@@ -229,6 +247,33 @@ describe('video renderer builders', () => {
 });
 
 describe('video orchestration services', () => {
+  it('backfills eligible voiceovers sequentially and skips fresh timings', async () => {
+    const project = await seedVoiceProject();
+    const file = await createFileStoreService(filesDir).storeFile({ projectId: project.id, originalName: 'scene.wav', mimeType: 'audio/wav', buffer: Buffer.from('wav'), purpose: 'voiceover' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: file.id });
+    mocks.probeAudioDuration.mockResolvedValue(2);
+    mocks.requestWhisperAlignment.mockResolvedValue([
+      { word: 'First', start: 0, end: 0.8, probability: 0.9 },
+      { word: 'narration', start: 1, end: 1.8, probability: 0.9 },
+    ]);
+    const logs: string[] = [];
+    const counts = await alignProjectWordTimings(project.id, async (line) => { logs.push(line); }, async () => {}, async () => false);
+    expect(counts).toEqual({ aligned: 1, rejected: 0, failed: 0, stale: 0, skipped: 1 });
+    expect((await getProject(project.id)).scenes[0]!.wordTimings?.words.map((word) => word.text)).toEqual(['First', 'narration']);
+    expect(logs.at(-1)).toContain('"aligned":1');
+    expect((await alignProjectWordTimings(project.id, async () => {}, async () => {}, async () => false)).skipped).toBe(2);
+  });
+
+  it('preserves a generated voiceover when alignment fails', async () => {
+    const project = await seedVoiceProject();
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(2);
+    mocks.requestWhisperAlignment.mockRejectedValue(new Error('Model not downloaded'));
+    const updated = await generateSceneVoiceover(project.id, 'scene-1');
+    expect(updated.audioFileId).toEqual(expect.any(String));
+    expect((await getProject(project.id)).scenes[0]!.wordTimings).toBeNull();
+  });
   it('stores a mastered voiceover and patches the probed duration', async () => {
     const project = await seedVoiceProject();
     mocks.synthesize.mockResolvedValue(Buffer.from('voice')); 
@@ -404,11 +449,14 @@ describe('video routes and worker handlers', () => {
     const voiceoverResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-voiceover`, { method: 'POST' });
     expect(voiceoverResponse.status).toBe(201);
     expect(await voiceoverResponse.json()).toEqual({ jobId: 'job-1' });
+    const alignResponse = await fetch(`${base}/api/project/${project.id}/scenes/align-words`, { method: 'POST' });
+    expect(alignResponse.status).toBe(201);
     const sfxResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-all-sfx`, { method: 'POST' });
     expect(sfxResponse.status).toBe(201);
     expect(await sfxResponse.json()).toEqual({ jobId: 'job-1' });
     await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } }));
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'align-word-timings', projectId: project.id, payload: { projectId: project.id } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } }));
   });
@@ -469,10 +517,11 @@ describe('video routes and worker handlers', () => {
     };
 
     await jobHandlers['generate-voiceover']!(job, context);
+    await jobHandlers['align-word-timings']!(job, context);
     await jobHandlers['render-full-video']!(job, context);
 
     expect(mocks.synthesize).not.toHaveBeenCalled();
-    expect(context.isCancelled).toHaveBeenCalledTimes(2);
+    expect(context.isCancelled).toHaveBeenCalledTimes(3);
   });
 });
 

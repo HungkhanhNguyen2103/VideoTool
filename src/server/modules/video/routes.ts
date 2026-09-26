@@ -32,6 +32,12 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
     res.status(201).json({ jobId: job.id });
   });
 
+  router.post('/:id/scenes/align-words', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const job = await options.enqueueJob({ type: 'align-word-timings', projectId: project.id, payload: { projectId: project.id } });
+    res.status(201).json({ jobId: job.id });
+  });
+
   router.post('/:id/scenes/generate-all-sfx', async (req, res) => {
     const project = await getProject(req.params.id);
     const job = await options.enqueueJob({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id } });

@@ -7,6 +7,7 @@ import { getFreesoundClient } from '../../shared/freesound';
 import { getVideoRenderer, configureVideoRenderer } from './index';
 import { configureVideoTts, generateProjectVoiceovers, generateSceneVoiceover } from './tts-service';
 import type { TtsOptions } from '../../shared/tts';
+import { configureWordTimingService } from './word-timing-service';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 
@@ -14,6 +15,7 @@ export function configureVideoModule(filesDir: string, remotionPublicDir = './da
   const store = createFileStoreService(filesDir);
   storeFile = store.storeFile;
   configureVideoTts(filesDir);
+  configureWordTimingService(filesDir);
   configureVideoRenderer(filesDir, remotionPublicDir);
 }
 

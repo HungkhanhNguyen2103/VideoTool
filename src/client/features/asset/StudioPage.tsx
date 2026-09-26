@@ -152,6 +152,12 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function alignWordTimings() {
+    try { setBusy('align-words'); const result = await api.alignWordTimings(projectId); setJobId(result.jobId); toast('Đã xếp hàng căn thời gian từng từ.'); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể căn thời gian từng từ.'); }
+    finally { setBusy(null); }
+  }
+
   async function generateAllSfx() {
     try { setBusy('sfx-all'); const result = await api.generateAllSfx(projectId); setJobId(result.jobId); toast('Đã xếp hàng tạo tất cả SFX.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo tất cả SFX.'); }
@@ -268,7 +274,7 @@ export function StudioPage() {
       <div className={styles.toolbar}>
         <strong>{filled} / {scenes.length} scenes have assets</strong>
         {uploadProgress !== null && <span className={styles.muted}>Đang upload {uploadProgress}%</span>}
-        <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('video')}>All videos</Button><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="amber" disabled={busy !== null || missingScenes.length > 0} onClick={() => void renderProject()}>Render video</Button></div>
+        <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('video')}>All videos</Button><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={busy !== null || !scenes.some((scene) => scene.audioFileId) || api.isProjectJobActive(jobId, progress)} onClick={() => void alignWordTimings()}>Căn thời gian từ</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="amber" disabled={busy !== null || missingScenes.length > 0} onClick={() => void renderProject()}>Render video</Button></div>
       </div>
 
       <section className={styles.mediaPanel} aria-label="Âm thanh và render">

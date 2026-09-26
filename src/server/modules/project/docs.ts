@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, VISUAL_STYLE_IDS } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 
 export const SceneDocSchema = z.object({
@@ -10,6 +10,7 @@ export const SceneDocSchema = z.object({
   assetType: z.enum(['image', 'video']).default('image'),
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),
+  wordTimings: WordTimingsSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
 });

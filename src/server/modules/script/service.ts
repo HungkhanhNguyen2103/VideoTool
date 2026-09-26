@@ -261,6 +261,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       assetType: 'image' as const,
       assetFileId: null,
       audioFileId: null,
+      wordTimings: null,
       sfxPrompt: '',
       sfxFileId: null,
     })));

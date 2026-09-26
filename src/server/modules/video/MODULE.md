@@ -27,6 +27,12 @@ The orchestration services call VieNeu and Freesound adapters, store generated v
 
 The router is mounted explicitly at `/api/project`. Project-wide voiceover and render requests enqueue jobs; single-scene voiceover regeneration, SFX/BGM generation, and preview rendering remain synchronous. Worker handlers check cancellation before invoking the service and forward `appendLog` for progress events.
 
+## Word-timing groundwork (Task 34)
+
+After storing each mastered WAV, video sends its bytes and original narration to the Python `/api/align` endpoint. Alignment is best-effort: a failure is logged and leaves the voiceover valid. The Python model is lazy-loaded from a pre-downloaded local path; see `lib/README.md` for the Python 3.12/CUDA setup. The TS request timeout is 120 seconds, covering cold model load and ordinary scene alignment.
+
+The pure sequence alignment keeps narration whitespace tokens and maps normalized Whisper words in order. Insertions in the transcript are ignored; unmatched narration tokens receive spans interpolated between neighboring matched words (or the WAV boundaries). The named `MIN_WORD_ALIGNMENT_MATCH_RATIO` is 0.7: a result below that ratio is rejected to `null`. Negative, non-monotonic, and out-of-WAV spans are also rejected. Stored `wordTimings` carry the source `audioFileId`. Project-owned writes compare both that file ID and narration atomically, and audio replacement or narration replacement clears stale timings. The queued `align-word-timings` job backfills scenes sequentially, skips scenes without audio or with current timings, and checks cancellation between scenes. Rendering does not use these timings yet.
+
 ## Prerequisites and known gaps
 
 - FFmpeg and ffprobe are external prerequisites selected by `FFMPEG_PATH`/`FFPROBE_PATH`, falling back to binaries on `PATH`.

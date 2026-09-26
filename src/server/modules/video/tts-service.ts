@@ -6,6 +6,7 @@ import type { SceneDoc } from '../project';
 import { logger } from '../../shared/logger';
 import { NotFound } from '../../shared/errors';
 import { AUDIO_BUFFER_SECONDS } from './docs';
+import { alignSceneWordTimings } from './word-timing-service';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 
@@ -32,7 +33,9 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
     purpose: 'voiceover',
   });
   const updated = await patchProjectScene(projectId, sceneId, { audioFileId: stored.id, durationSec });
-  return updated.scenes.find((candidate) => candidate.id === sceneId)!;
+  const updatedScene = updated.scenes.find((candidate) => candidate.id === sceneId)!;
+  await alignSceneWordTimings(projectId, updatedScene, mastered);
+  return updatedScene;
 }
 
 export async function generateProjectVoiceovers(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<void> {

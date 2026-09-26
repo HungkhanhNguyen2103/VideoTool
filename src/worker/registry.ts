@@ -1,6 +1,6 @@
 import type { JobHandler } from '../server/modules/job';
 import { handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handleSplitScenes } from '../server/modules/script';
-import { generateProjectSfx, generateProjectVoiceovers, renderFullProject } from '../server/modules/video';
+import { alignProjectWordTimings, generateProjectSfx, generateProjectVoiceovers, renderFullProject } from '../server/modules/video';
 
 function projectIdFrom(job: { payload: unknown }): string {
   const projectId = (job.payload as { projectId?: unknown } | null)?.projectId;
@@ -11,6 +11,11 @@ function projectIdFrom(job: { payload: unknown }): string {
 const handleGenerateVoiceover: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
   await generateProjectVoiceovers(projectIdFrom(job), context.appendLog, context.reportProgress);
+};
+
+const handleAlignWordTimings: JobHandler = async (job, context) => {
+  if (await context.isCancelled()) return;
+  await alignProjectWordTimings(projectIdFrom(job), context.appendLog, context.reportProgress, context.isCancelled);
 };
 
 const handleGenerateAllSfx: JobHandler = async (job, context) => {
@@ -29,6 +34,7 @@ export const jobHandlers: Record<string, JobHandler> = {
   'split-scenes': handleSplitScenes,
   'final-qa': handleFinalQa,
   'generate-voiceover': handleGenerateVoiceover,
+  'align-word-timings': handleAlignWordTimings,
   'generate-all-sfx': handleGenerateAllSfx,
   'render-full-video': handleRenderFullVideo,
 };

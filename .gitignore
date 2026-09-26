@@ -4,6 +4,8 @@ dist
 .env.example
 .WAV
 data/files/*
+data/models/
+__pycache__/
 !data/files/.gitkeep
 *.log
 .DS_Store

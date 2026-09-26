@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, setVisualStyle, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, setVisualStyle, splitScenes } from './api';
 import * as assetApi from './api';
 
 const project = {
@@ -66,6 +66,12 @@ describe('asset API helpers', () => {
 
     await expect(generateAllSfx('project/1')).resolves.toEqual({ jobId: 'job-1' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-all-sfx', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('queues the word-timing backfill through the project route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-1' }), { status: 201, headers: { 'content-type': 'application/json' } }));
+    await expect(alignWordTimings('project/1')).resolves.toEqual({ jobId: 'job-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/align-words', expect.objectContaining({ method: 'POST' }));
   });
 
   it('queues semantic scene splitting through the project route', async () => {
