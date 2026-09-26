@@ -14,8 +14,9 @@ const validCreateInput = {
 };
 
 describe('visual style project field', () => {
-  it('defaults create requests to cinematic and rejects unknown styles', () => {
+  it('defaults create requests to cinematic, accepts flat-cartoon, and rejects unknown styles', () => {
     expect(CreateProjectRequestSchema.parse(validCreateInput).visualStylePresetId).toBe('cinematic');
+    expect(CreateProjectRequestSchema.parse({ ...validCreateInput, visualStylePresetId: 'flat-cartoon' }).visualStylePresetId).toBe('flat-cartoon');
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, visualStylePresetId: 'oil' })).toThrow();
   });
 

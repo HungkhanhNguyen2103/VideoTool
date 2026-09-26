@@ -18,7 +18,7 @@ afterAll(async () => {
 });
 
 describe('loadVisualStylePreset', () => {
-  it.each(['cinematic', 'anime', 'watercolor', 'photorealistic'] as const)('loads the %s preset with its style directive', (id) => {
+  it.each(['cinematic', 'anime', 'watercolor', 'photorealistic', 'flat-cartoon'] as const)('loads the %s preset with its style directive', (id) => {
     const preset = loadVisualStylePreset(id);
 
     expect(preset.id).toBe(id);

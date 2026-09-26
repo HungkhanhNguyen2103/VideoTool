@@ -28,6 +28,7 @@ export const VISUAL_STYLE_OPTIONS = [
   { value: 'anime', label: 'Anime' },
   { value: 'watercolor', label: 'Watercolor (màu nước)' },
   { value: 'photorealistic', label: 'Photorealistic (ảnh thực)' },
+  { value: 'flat-cartoon', label: 'Flat Cartoon' },
 ] as const;
 
 export function selectedRenderEngine(engine: RenderEngine): RenderEngine {
