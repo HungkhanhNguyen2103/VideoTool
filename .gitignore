@@ -5,6 +5,7 @@ dist
 .WAV
 data/files/*
 data/models/
+data/remotion-public/
 __pycache__/
 !data/files/.gitkeep
 *.log
