@@ -15,6 +15,7 @@ import { RemotionRenderer } from './remotion-renderer';
 import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
 import { ensureBrowser } from '@remotion/renderer';
 import type { RenderMediaOptions } from '@remotion/renderer';
+import type { BundleOptions } from '@remotion/bundler';
 import type { Scene } from '../../../contracts/project';
 
 const renderResourceLock = path.join(tmpdir(), 'video-tool-render-resource.lock');
@@ -294,6 +295,22 @@ describe('Remotion renderer orchestration', () => {
 });
 
 describe('Remotion bundle lifecycle', () => {
+  it('places the local Vietnamese font and OFL licence in the bundle public directory', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'remotion-bundle-font-'));
+    const bundleMock = vi.fn(async (options: BundleOptions) => {
+      await expect(readFile(path.join(options.publicDir!, 'fonts', 'BeVietnamPro-Bold.ttf'))).resolves.toHaveLength(140300);
+      await expect(readFile(path.join(options.publicDir!, 'fonts', 'OFL.txt'), 'utf8')).resolves.toContain('SIL OPEN FONT LICENSE');
+      return directory;
+    });
+    try {
+      configureRemotionBundle(directory, bundleMock as never);
+      await expect(getRemotionBundle()).resolves.toBe(directory);
+    } finally {
+      configureRemotionBundle('./data/remotion-public');
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('caches a successful bundle and retries after a rejection or configuration change', async () => {
     const dirOne = await mkdtemp(path.join(tmpdir(), 'remotion-bundle-one-'));
     const dirTwo = await mkdtemp(path.join(tmpdir(), 'remotion-bundle-two-'));

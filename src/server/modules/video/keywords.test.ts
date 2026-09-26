@@ -62,4 +62,26 @@ describe('selectKeywords', () => {
       { text: '85%', startSec: 3.2, endSec: 4.7 },
     ]);
   });
+
+  it('turns a full Vietnamese date into one compact pop-up instead of a bare day', () => {
+    expect(selectKeywords(words([
+      ['Ngày', 0, .2], ['19', .2, .4], ['tháng', .4, .6], ['1', .6, .8], ['năm', .8, 1], ['2012,', 1, 1.3], ['sau', 2, 2.2], ['đó', 2.2, 2.4],
+    ]))).toEqual([{ text: '19/1/2012', startSec: 0, endSec: 1.6 }]);
+  });
+
+  it('selects month-year and year-only date chains while retaining duration phrases', () => {
+    expect(selectKeywords(words([
+      ['tháng', 0, .2], ['1', .2, .4], ['năm', .4, .6], ['2012', .6, .9], ['và', 2, 2.2],
+      ['năm', 3.5, 3.7], ['1975', 3.7, 4], ['rồi', 5, 5.2],
+    ]))).toEqual([
+      { text: '1/2012', startSec: 0, endSec: 1.5 },
+      { text: '1975', startSec: 3.5, endSec: 5 },
+    ]);
+  });
+
+  it('keeps a number followed by năm as a duration, not a date', () => {
+    expect(selectKeywords(words([
+      ['Nó', 0, .2], ['mất', .2, .4], ['37', 1, 1.2], ['năm.', 1.2, 1.4], ['xong', 2.5, 2.7],
+    ]))).toEqual([{ text: '37 năm', startSec: 1, endSec: 2.5 }]);
+  });
 });

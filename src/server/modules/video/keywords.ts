@@ -14,6 +14,32 @@ const isSentenceStart = (words: ReadonlyArray<TimedWord>, index: number) =>
 
 type Candidate = { text: string; startSec: number; phraseEndSec: number; priority: number };
 
+function dateCandidate(words: ReadonlyArray<TimedWord>, index: number): { candidate: Candidate; endIndex: number } | null {
+  const token = clean(words[index]!.text).toLocaleLowerCase('vi');
+  const next = (offset: number) => clean(words[index + offset]?.text ?? '');
+  const numeric = (value: string) => /^\d+$/u.test(value);
+  const startSec = words[index]!.startSec;
+
+  const hasDayPrefix = token === 'ngày' && numeric(next(1)) && clean(words[index + 2]?.text ?? '').toLocaleLowerCase('vi') === 'tháng';
+  const monthIndex = hasDayPrefix ? index + 2 : token === 'tháng' ? index : -1;
+  if (monthIndex >= 0 && numeric(next(monthIndex - index + 1)) && clean(words[monthIndex + 2]?.text ?? '').toLocaleLowerCase('vi') === 'năm' && numeric(clean(words[monthIndex + 3]?.text ?? ''))) {
+    const day = hasDayPrefix ? next(1) : null;
+    const month = clean(words[monthIndex + 1]!.text);
+    const year = clean(words[monthIndex + 3]!.text);
+    return {
+      candidate: { text: day ? `${day}/${month}/${year}` : `${month}/${year}`, startSec, phraseEndSec: words[monthIndex + 3]!.endSec, priority: 0 },
+      endIndex: monthIndex + 3,
+    };
+  }
+  if (token === 'năm' && numeric(next(1))) {
+    return {
+      candidate: { text: next(1), startSec, phraseEndSec: words[index + 1]!.endSec, priority: 0 },
+      endIndex: index + 1,
+    };
+  }
+  return null;
+}
+
 /** Select a few narration-derived phrases; endSec includes the full fade. */
 export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
   if (words.length === 0) return [];
@@ -21,6 +47,12 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
   const audioEndSec = words[words.length - 1]!.endSec;
   const candidates: Candidate[] = [];
   for (let index = 0; index < words.length; index++) {
+    const date = dateCandidate(words, index);
+    if (date) {
+      candidates.push(date.candidate);
+      index = date.endIndex;
+      continue;
+    }
     const first = words[index]!;
     const firstText = clean(first.text);
     if (/\d/u.test(firstText)) {
