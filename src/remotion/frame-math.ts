@@ -4,6 +4,31 @@ export function sceneDurationInFrames(durationSec: number, fps: number): number 
   return Math.round(durationSec * fps);
 }
 
+export type KenBurnsTransform = {
+  scale: number;
+  translateXPercent: number;
+  translateYPercent: number;
+};
+
+export function kenBurnsTransform(frame: number, durationInFrames: number, seed: string): KenBurnsTransform {
+  // A sub-second scene at 30 fps stays still instead of completing a visible zoom in a snap.
+  if (durationInFrames < 30) return { scale: 1, translateXPercent: 0, translateYPercent: 0 };
+
+  let hash = 0;
+  for (const character of seed) hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
+  const progress = Math.min(1, Math.max(0, frame / durationInFrames));
+  const eased = 1 - (1 - progress) ** 3;
+  const motion = hash % 2 === 0 ? eased : 1 - eased;
+  const pan = motion * 1.2;
+  const axis = Math.floor(hash / 2) % 4;
+
+  return {
+    scale: 1 + motion * 0.08,
+    translateXPercent: axis < 2 ? pan * (axis === 0 ? 1 : -1) : 0,
+    translateYPercent: axis >= 2 ? pan * (axis === 2 ? 1 : -1) : 0,
+  };
+}
+
 export function sceneFrameTimings(
   scenes: ReadonlyArray<Pick<RemotionSceneProps, 'id' | 'durationSec'>>,
   fps: number,
