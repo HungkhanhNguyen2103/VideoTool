@@ -42,6 +42,22 @@ export function sceneFrameTimings(
   });
 }
 
+const CROSSFADE_SECONDS = 0.5;
+const MIN_FADE_SCENE_MULTIPLIER = 3;
+
+export function sceneVisualTimings(
+  scenes: ReadonlyArray<Pick<RemotionSceneProps, 'id' | 'durationSec' | 'assetType'>>,
+  fps: number,
+): Array<{ id: string; from: number; durationInFrames: number; fadeInFrames: number }> {
+  const transitionFrames = Math.round(CROSSFADE_SECONDS * fps);
+  return sceneFrameTimings(scenes, fps).map((timing, index) => ({
+    id: timing.id,
+    from: timing.from,
+    durationInFrames: timing.durationInFrames + (index < scenes.length - 1 && scenes[index]!.assetType === 'image' ? transitionFrames : 0),
+    fadeInFrames: index > 0 && timing.durationInFrames >= MIN_FADE_SCENE_MULTIPLIER * transitionFrames ? transitionFrames : 0,
+  }));
+}
+
 export function totalDurationInFrames(
   scenes: ReadonlyArray<Pick<RemotionSceneProps, 'durationSec'>>,
   fps: number,

@@ -1,7 +1,7 @@
 import { AbsoluteFill, Audio, Composition, staticFile } from 'remotion';
 import type { RemotionInputProps } from '../contracts/video';
 import { BGM_VOLUME_NUMBER } from '../contracts/video';
-import { sceneFrameTimings, totalDurationInFrames } from './frame-math';
+import { sceneFrameTimings, sceneVisualTimings, totalDurationInFrames } from './frame-math';
 import { SceneSequence } from './SceneSequence';
 
 export const VIDEO_COMPOSITION_ID = 'VideoComposition';
@@ -15,13 +15,18 @@ export const DEFAULT_REMOTION_PROPS: RemotionInputProps = {
 };
 
 export function VideoComposition(props: RemotionInputProps) {
-  const timings = sceneFrameTimings(props.scenes, props.fps);
+  const audioTimings = sceneFrameTimings(props.scenes, props.fps);
+  const visualTimings = sceneVisualTimings(props.scenes, props.fps);
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
-      {timings.map((timing) => {
-        const scene = props.scenes.find((candidate) => candidate.id === timing.id);
-        return scene ? <SceneSequence key={scene.id} scene={scene} from={timing.from} fps={props.fps} /> : null;
-      })}
+      {props.scenes.map((scene, index) => (
+        <SceneSequence
+          key={scene.id}
+          scene={scene}
+          audioTiming={audioTimings[index]!}
+          visualTiming={visualTimings[index]!}
+        />
+      ))}
       {props.bgmRelPath ? <Audio src={staticFile(props.bgmRelPath)} volume={BGM_VOLUME_NUMBER} loop /> : null}
     </AbsoluteFill>
   );

@@ -1,5 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import { kenBurnsTransform } from './frame-math';
+import { kenBurnsTransform, sceneFrameTimings, sceneVisualTimings, totalDurationInFrames } from './frame-math';
+
+describe('sceneVisualTimings', () => {
+  it('extends outgoing images, fades in later scenes, and leaves audio starts and total length unchanged', () => {
+    const scenes = [
+      { id: 'a', assetType: 'image' as const, durationSec: 2 },
+      { id: 'b', assetType: 'image' as const, durationSec: 2 },
+      { id: 'c', assetType: 'video' as const, durationSec: 2 },
+    ];
+    expect(sceneVisualTimings(scenes, 30)).toEqual([
+      { id: 'a', from: 0, durationInFrames: 75, fadeInFrames: 0 },
+      { id: 'b', from: 60, durationInFrames: 75, fadeInFrames: 15 },
+      { id: 'c', from: 120, durationInFrames: 60, fadeInFrames: 15 },
+    ]);
+    expect(sceneFrameTimings(scenes, 30)).toEqual([
+      { id: 'a', from: 0, durationInFrames: 60 },
+      { id: 'b', from: 60, durationInFrames: 60 },
+      { id: 'c', from: 120, durationInFrames: 60 },
+    ]);
+    expect(totalDurationInFrames(scenes, 30)).toBe(180);
+  });
+
+  it('does not extend outgoing video and skips fading for a short incoming scene', () => {
+    const scenes = [
+      { id: 'video', assetType: 'video' as const, durationSec: 2 },
+      { id: 'short', assetType: 'image' as const, durationSec: 1 },
+      { id: 'last', assetType: 'image' as const, durationSec: 2 },
+    ];
+    expect(sceneVisualTimings(scenes, 30)).toEqual([
+      { id: 'video', from: 0, durationInFrames: 60, fadeInFrames: 0 },
+      { id: 'short', from: 60, durationInFrames: 45, fadeInFrames: 0 },
+      { id: 'last', from: 90, durationInFrames: 60, fadeInFrames: 15 },
+    ]);
+  });
+
+  it('uses half-second fades at the project frame rate', () => {
+    const scenes = [
+      { id: 'first', assetType: 'image' as const, durationSec: 2 },
+      { id: 'second', assetType: 'image' as const, durationSec: 2 },
+    ];
+    expect(sceneVisualTimings(scenes, 24)).toEqual([
+      { id: 'first', from: 0, durationInFrames: 60, fadeInFrames: 0 },
+      { id: 'second', from: 48, durationInFrames: 48, fadeInFrames: 12 },
+    ]);
+  });
+});
 
 describe('kenBurnsTransform', () => {
   it('starts with no or minimal pan and a scale no larger than the gentle zoom range', () => {
