@@ -2,6 +2,7 @@ import { AbsoluteFill, Audio, Easing, Img, interpolate, OffthreadVideo, Sequence
 import type { RemotionSceneProps } from '../contracts/video';
 import { SFX_VOLUME_NUMBER } from '../contracts/video';
 import { kenBurnsTransform } from './frame-math';
+import { KeywordOverlay } from './KeywordOverlay';
 
 export type SceneSequenceProps = {
   scene: RemotionSceneProps;
@@ -56,6 +57,7 @@ export function SceneSequence({ scene, audioTiming, visualTiming }: SceneSequenc
       <Sequence from={audioTiming.from} durationInFrames={audioTiming.durationInFrames}>
         {scene.voiceRelPath ? <Audio src={staticFile(scene.voiceRelPath)} /> : null}
         {scene.sfxRelPath ? <Audio src={staticFile(scene.sfxRelPath)} volume={SFX_VOLUME_NUMBER} /> : null}
+        <KeywordOverlay keywords={scene.keywords} />
       </Sequence>
     </>
   );

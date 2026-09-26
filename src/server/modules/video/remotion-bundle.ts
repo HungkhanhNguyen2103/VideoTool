@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { bundle } from '@remotion/bundler';
 
@@ -17,7 +17,8 @@ export function getRemotionBundle(): Promise<string> {
   if (!cachedBundle) {
     const outputDir = path.resolve(remotionPublicDir);
     const seedPublicDir = path.join(outputDir, '.seed-public');
-    cachedBundle = mkdir(seedPublicDir, { recursive: true })
+    cachedBundle = mkdir(path.join(seedPublicDir, 'fonts'), { recursive: true })
+      .then(() => copyFile(path.resolve('src/remotion/fonts/BeVietnamPro-Bold.ttf'), path.join(seedPublicDir, 'fonts/BeVietnamPro-Bold.ttf')))
       .then(() => bundleImplementation({
         entryPoint: path.resolve(process.cwd(), 'src/remotion/index.ts'),
         outDir: outputDir,

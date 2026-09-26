@@ -15,6 +15,7 @@ import { RemotionRenderer } from './remotion-renderer';
 import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
 import { ensureBrowser } from '@remotion/renderer';
 import type { RenderMediaOptions } from '@remotion/renderer';
+import type { Scene } from '../../../contracts/project';
 
 const renderResourceLock = path.join(tmpdir(), 'video-tool-render-resource.lock');
 
@@ -67,7 +68,7 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual(props);
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, scenes: [{ ...props.scenes[0], keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
@@ -102,6 +103,26 @@ describe('Remotion build isolation', () => {
 });
 
 describe('Remotion props and public-dir staging', () => {
+  it('passes only timings bound to the current voiceover into Remotion', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null } as never;
+    const scene = {
+      id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4,
+      wordTimings: { audioFileId: 'voice-1', words: [
+        { text: 'giá', startSec: 0, endSec: .3 }, { text: '30', startSec: 1, endSec: 1.2 },
+        { text: 'tỷ', startSec: 1.2, endSec: 1.4 }, { text: 'rồi', startSec: 2.8, endSec: 3 },
+      ] },
+    } as unknown as Scene;
+    const current = await buildRemotionInputProps(project, [scene], 'render-current', resolver);
+    expect(current.scenes[0]?.keywords).toEqual([{ text: '30 tỷ', startSec: 1, endSec: 2.5 }]);
+    const stale = await buildRemotionInputProps(project, [{ ...scene, audioFileId: 'voice-2' }], 'render-stale', resolver);
+    expect(stale.scenes[0]?.keywords).toEqual([]);
+  });
+
   it('resolves owned media and produces generated forward-slash paths', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'remotion-props-'));
     try {

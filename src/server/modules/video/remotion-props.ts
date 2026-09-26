@@ -3,6 +3,7 @@ import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { RemotionInputPropsSchema, type RemotionInputProps, type RemotionSceneProps } from '../../../contracts/video';
 import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
+import { selectKeywords } from './keywords';
 
 export type ResolvedRenderFile = {
   absolutePath: string;
@@ -109,6 +110,9 @@ export async function resolveRemotionAssets(
       voiceRelPath,
       sfxRelPath,
       durationSec: scene.durationSec,
+      keywords: scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId
+        ? selectKeywords(scene.wordTimings.words)
+        : [],
     });
   }
 
