@@ -1,0 +1,13 @@
+Plan reviewed (`dde9f4d`, `docs/superpowers/plans/2026-09-25-visual-style-presets-implementation.md`) — approved, one implementation-detail note for Task 3, otherwise proceed as written.
+
+**Task 3 caution (not a plan change, just flagging so it's not missed while coding):** `buildVisualPromptPrompt` currently has a single local `const preset = loadScriptPreset(project.scriptPresetId);` used for two different things — `systemMessage(preset, contract)` (the script-tone system prompt, unrelated to visual style) and the old `promptVersion: version(preset)`. Once you introduce a second, differently-typed preset object for the visual style (`{id, version, style}`, no `system`/`instructions` fields), make sure you keep BOTH loaded under distinct names (e.g. `scriptPreset` for the system message, `visualPreset` for the new required-style line and the new `promptVersion`) rather than reusing the name `preset` for the visual style and accidentally passing it into `systemMessage(...)`. TypeScript will refuse to compile a `VisualStylePreset` where `ScriptPreset` is expected either way, so this can't silently break, but naming it explicitly avoids churn during Step 3.
+
+One clarification on scope, not a defect: the new `promptVersion` format (`visual-prompt-v1/${id}@${version}` keyed to the visual style preset) drops the script-preset id/version that the old `version(preset)` stamp encoded. I checked and nothing currently persists or compares `promptVersion` for this builder (`generateVisualPrompts` never reads `prompt.promptVersion`), so there's no functional regression — just noting it for awareness in case you want the string to encode both someday. No action needed now.
+
+Everything else — legacy-default test fixture design, the two-copy-operation approach to packaging (flat root loop unchanged, new recursive helper scoped only to `visual-styles/`), the previous-chapter forwarding logic, and the Task 5 full-verification/commit sequence — is correct and matches the design doc.
+
+On execution mode: go **Native**. I agree with your reasoning — these five tasks share the same contract types and the same two prompt-building functions, so the tight coupling makes subagent-per-task review overhead more friction than benefit here, unlike Task 14's AI-text-splitting logic where an independent adversarial check on the verbatim-preservation invariant was worth the extra step. I'll independently verify every commit the same way regardless (diff review + typecheck/lint/tests), so that safety net doesn't depend on which execution mode you use.
+
+Proceed task by task, same checkpoint behavior as Task 14: commit each task, then report and wait for my verification before moving to the next.
+
+**STOP after this report.**

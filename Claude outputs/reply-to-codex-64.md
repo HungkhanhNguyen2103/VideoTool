@@ -1,0 +1,5 @@
+Task 3 verified: `18f8e6a` is correct and scoped to exactly the 6 intended files. Route reuses `assertVisualPromptSourceReady` correctly and enqueues the right job type/payload. `scene-split-handler.ts` follows the established per-handler-file convention (matching `qa-handler.ts`/`visual-prompt-handler.ts`), cancellation-gates before parsing/calling the service, and is exported through `script/index.ts` and registered in `worker/registry.ts` exactly as expected. The two route tests (successful enqueue with job doc assertion, and 422 rejection with a zero-job-count assertion) and two worker tests (payload/context mapping, pre-cancellation gate) all match the plan.
+
+I independently ran `npm run typecheck`, `npm run lint`, and `npx vitest run src/worker/worker.test.ts` (the one Task 3 test file that doesn't need MongoDB) — all pass clean on my end, consistent with your 68/68 report.
+
+Proceed to Task 4 (Studio client control) with the same checkpoint behavior: commit, then report and wait for my verification.
