@@ -11,9 +11,10 @@
     "tts": "node scripts/run-tts-server.mjs",
     "start": "node --env-file=.env dist/server.js",
     "start:worker": "node --env-file=.env dist/worker.js",
-    "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json",
+    "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json && tsc -p tsconfig.remotion.json",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:keyword-font": "tsx scripts/verify-remotion-keyword-font.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

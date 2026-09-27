@@ -1,30 +1,30 @@
 import { useEffect, useState } from 'react';
-import { AbsoluteFill, continueRender, delayRender, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, cancelRender, continueRender, delayRender, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { RemotionSceneProps } from '../contracts/video';
 
 const FADE_OUT_SEC = 0.3;
-const FONT_FAMILY = 'VideoTool Noto Sans';
+export const KEYWORD_FONT_FAMILY = 'VideoToolNotoSans';
 const FONT_WEIGHT = '700';
 const FONT_STYLE = 'normal';
 let fontPromise: Promise<void> | null = null;
 
 function isLoadedLocalFontFace(face: FontFace): boolean {
-  return face.family === FONT_FAMILY
+  return face.family === KEYWORD_FONT_FAMILY
     && face.weight === FONT_WEIGHT
     && face.style === FONT_STYLE
     && face.status === 'loaded';
 }
 
-function loadLocalFont(): Promise<void> {
+export function loadKeywordFont(): Promise<void> {
   if (!fontPromise) {
     const faces = [
-      new FontFace(FONT_FAMILY, `url(${staticFile('fonts/NotoSans-vietnamese.woff2')})`, {
+      new FontFace(KEYWORD_FONT_FAMILY, `url(${staticFile('fonts/NotoSans-vietnamese.woff2')})`, {
         weight: FONT_WEIGHT,
         style: FONT_STYLE,
         display: 'block',
         unicodeRange: 'U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB',
       }),
-      new FontFace(FONT_FAMILY, `url(${staticFile('fonts/NotoSans-latin.woff2')})`, {
+      new FontFace(KEYWORD_FONT_FAMILY, `url(${staticFile('fonts/NotoSans-latin.woff2')})`, {
         weight: FONT_WEIGHT,
         style: FONT_STYLE,
         display: 'block',
@@ -32,16 +32,19 @@ function loadLocalFont(): Promise<void> {
       }),
     ];
     fontPromise = Promise.all(faces.map((face) => face.load())).then(async (loadedFaces) => {
-      if (!loadedFaces.every(isLoadedLocalFontFace)) throw new Error('A local Noto Sans font face did not load with its expected family, weight, and style.');
+      if (!loadedFaces.every(isLoadedLocalFontFace)) {
+        const descriptors = loadedFaces.map((face) => JSON.stringify({ family: face.family, weight: face.weight, style: face.style, status: face.status })).join(', ');
+        throw new Error(`A local Noto Sans font face did not load with its expected family, weight, and style: ${descriptors}`);
+      }
       for (const loaded of loadedFaces) document.fonts.add(loaded);
       await document.fonts.ready;
       const registeredFaces = Array.from(document.fonts).filter(isLoadedLocalFontFace);
       if (!loadedFaces.every((face) => document.fonts.has(face)) || registeredFaces.length < loadedFaces.length) {
-        throw new Error(`The expected loaded ${FONT_FAMILY} font faces are not registered in document.fonts.`);
+        throw new Error(`The expected loaded ${KEYWORD_FONT_FAMILY} font faces are not registered in document.fonts.`);
       }
     }).catch((error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new Error(`Keyword font ${FONT_FAMILY} failed to load: ${reason}`);
+      throw new Error(`Keyword font ${KEYWORD_FONT_FAMILY} failed to load: ${reason}`);
     });
   }
   return fontPromise;
@@ -56,12 +59,12 @@ function PopUp({ text, durationInFrames }: { text: string; durationInFrames: num
   const { fps, width, height } = useVideoConfig();
   const [fontHandle] = useState(() => delayRender('Loading local Noto Sans font'));
   useEffect(() => {
-    loadLocalFont().then(() => {
+    loadKeywordFont().then(() => {
       const registeredFaces = Array.from(document.fonts).filter(isLoadedLocalFontFace);
-      console.info(`[KeywordOverlay] font=${FONT_FAMILY} loadedFaces=${registeredFaces.length} textCodePoints=${codePoints(text)}`);
-      if (registeredFaces.length < 2) throw new Error(`Keyword font ${FONT_FAMILY} is unavailable for popup text.`);
+      console.info(`[KeywordOverlay] font=${KEYWORD_FONT_FAMILY} loadedFaces=${registeredFaces.length} textCodePoints=${codePoints(text)}`);
+      if (registeredFaces.length < 2) throw new Error(`Keyword font ${KEYWORD_FONT_FAMILY} is unavailable for popup text.`);
       continueRender(fontHandle);
-    }).catch((error) => continueRender(fontHandle, { error }));
+    }).catch((error) => cancelRender(error));
   }, [fontHandle, text]);
   const fadeFrames = Math.min(Math.round(FADE_OUT_SEC * fps), durationInFrames);
   const fadeStart = Math.max(0, durationInFrames - fadeFrames);
@@ -72,7 +75,7 @@ function PopUp({ text, durationInFrames }: { text: string; durationInFrames: num
     <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
       <div lang="vi" style={{
         maxWidth: '86%', maxHeight: '30%', overflow: 'hidden',
-        color: '#fff', fontFamily: FONT_FAMILY, fontWeight: 700,
+        color: '#fff', fontFamily: KEYWORD_FONT_FAMILY, fontWeight: 700,
         fontSize: Math.min(width * 0.1, height * 0.1), lineHeight: 1.1,
         textAlign: 'center', overflowWrap: 'anywhere',
         display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
