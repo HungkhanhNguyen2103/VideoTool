@@ -8,6 +8,8 @@ export const MAX_KEYWORDS_PER_SCENE = 2;
 export const MIN_KEYWORD_START_SPACING_SEC = 2.5;
 export const MIN_KEYWORD_HOLD_SEC = 1.2;
 export const KEYWORD_FADE_SEC = 0.3;
+export const LOWER_THIRD_HOLD_SEC = 3;
+export const LOWER_THIRD_MIN_REMAIN_SEC = 1.5;
 /** Lone 4-digit tokens in this range are treated as calendar years. */
 export const YEAR_RANGE = { min: 1000, max: 2100 } as const;
 /** The first year in a video rolls up from this many years earlier. */
@@ -20,9 +22,46 @@ const isCapitalized = (text: string) => /^\p{Lu}/u.test(text);
 const isSentenceStart = (words: ReadonlyArray<TimedWord>, index: number) =>
   index === 0 || /[.!?]["'”’)]*$/u.test(words[index - 1]?.text ?? '');
 
-type Candidate = { text: string; startSec: number; phraseEndSec: number; priority: number; kind: KeywordKind };
+type Candidate = {
+  text: string;
+  startSec: number;
+  phraseEndSec: number;
+  priority: number;
+  kind: KeywordKind;
+  nameRole?: 'person' | 'place';
+  subtitle?: string;
+};
+
+const ROLE_PHRASES = [
+  'kỹ sư', 'ông', 'bà', 'giám đốc', 'tổng giám đốc', 'chủ tịch', 'tổng thống', 'thủ tướng',
+  'tướng', 'đại tướng', 'nhà khoa học', 'nhà sáng lập', 'nhà phát minh', 'người sáng lập',
+].sort((a, b) => b.split(' ').length - a.split(' ').length);
+const LOCATIVE_PHRASES = ['ở', 'tại', 'từ', 'đến', 'sang', 'thành phố', 'bang', 'tỉnh', 'thủ đô']
+  .sort((a, b) => b.split(' ').length - a.split(' ').length);
 
 const isYearToken = (value: string) => /^\d{4}$/u.test(value) && Number(value) >= YEAR_RANGE.min && Number(value) <= YEAR_RANGE.max;
+
+const normalizedWord = (value: string) => clean(value).toLocaleLowerCase('vi');
+
+function matchesPhraseBefore(words: ReadonlyArray<TimedWord>, index: number, phrase: string): boolean {
+  const parts = phrase.split(' ');
+  if (index < parts.length) return false;
+  return parts.every((part, offset) => normalizedWord(words[index - parts.length + offset]!.text) === part);
+}
+
+function sentenceCase(value: string): string {
+  const lower = value.toLocaleLowerCase('vi');
+  return `${lower.slice(0, 1).toLocaleUpperCase('vi')}${lower.slice(1)}`;
+}
+
+function nameMetadata(words: ReadonlyArray<TimedWord>, index: number): Pick<Candidate, 'nameRole' | 'subtitle'> {
+  const role = ROLE_PHRASES.find((phrase) => matchesPhraseBefore(words, index, phrase));
+  const place = LOCATIVE_PHRASES.some((phrase) => matchesPhraseBefore(words, index, phrase));
+  return {
+    nameRole: place ? 'place' : 'person',
+    ...(role ? { subtitle: sentenceCase(role) } : {}),
+  };
+}
 
 function dateCandidate(words: ReadonlyArray<TimedWord>, index: number): { candidate: Candidate; endIndex: number } | null {
   const token = clean(words[index]!.text).toLocaleLowerCase('vi');
@@ -55,11 +94,12 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
   if (words.length === 0) return [];
   // The final aligned word ends no later than the WAV. It is a conservative audio-end bound.
   const audioEndSec = words[words.length - 1]!.endSec;
-  const candidates: Candidate[] = [];
+  const centerCandidates: Candidate[] = [];
+  const nameCandidates: Candidate[] = [];
   for (let index = 0; index < words.length; index++) {
     const date = dateCandidate(words, index);
     if (date) {
-      candidates.push(date.candidate);
+      centerCandidates.push(date.candidate);
       index = date.endIndex;
       continue;
     }
@@ -68,7 +108,7 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
     if (/\d/u.test(firstText)) {
       let last = index;
       while (last + 1 < words.length && NUMBER_UNIT_TOKENS.has(clean(words[last + 1]!.text).toLocaleLowerCase('vi'))) last++;
-      candidates.push({
+      centerCandidates.push({
         text: words.slice(index, last + 1).map((word) => clean(word.text)).join(' ').replace(/ %/gu, '%'),
         startSec: first.startSec,
         phraseEndSec: words[last]!.endSec,
@@ -79,29 +119,53 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
       continue;
     }
     if (isSentenceStart(words, index) || !isCapitalized(firstText)) continue;
+    // A capitalized continuation of a sentence-start run belongs to that run;
+    // do not surface its trailing token as a single-name lower third.
+    if (isCapitalized(clean(words[index - 1]?.text ?? ''))) continue;
     let last = index;
     while (last + 1 < words.length && isCapitalized(clean(words[last + 1]!.text))) last++;
-    if (last > index) {
-      candidates.push({
+    if (last >= index) {
+      nameCandidates.push({
         text: words.slice(index, last + 1).map((word) => clean(word.text)).join(' '),
         startSec: first.startSec,
         phraseEndSec: words[last]!.endSec,
         priority: 1,
         kind: 'name',
+        ...nameMetadata(words, index),
       });
       index = last;
     }
   }
 
-  candidates.sort((a, b) => a.priority - b.priority || a.startSec - b.startSec);
-  const selected: Keyword[] = [];
-  for (const candidate of candidates) {
+  centerCandidates.sort((a, b) => a.priority - b.priority || a.startSec - b.startSec);
+  const selectedCenter: Keyword[] = [];
+  for (const candidate of centerCandidates) {
     const endSec = Math.min(audioEndSec, Math.round((candidate.startSec + Math.max(candidate.phraseEndSec - candidate.startSec, MIN_KEYWORD_HOLD_SEC) + KEYWORD_FADE_SEC) * 1000) / 1000);
     if (endSec - candidate.startSec < KEYWORD_FADE_SEC) continue;
-    if (selected.some((prior) => Math.abs(prior.startSec - candidate.startSec) < MIN_KEYWORD_START_SPACING_SEC ||
+    if (selectedCenter.some((prior) => Math.abs(prior.startSec - candidate.startSec) < MIN_KEYWORD_START_SPACING_SEC ||
       (candidate.startSec < prior.endSec && prior.startSec < endSec))) continue;
-    selected.push(enrichKeyword({ text: candidate.text, startSec: candidate.startSec, endSec, kind: candidate.kind }));
-    if (selected.length === MAX_KEYWORDS_PER_SCENE) break;
+    selectedCenter.push(enrichKeyword({ text: candidate.text, startSec: candidate.startSec, endSec, kind: candidate.kind }));
+    if (selectedCenter.length === MAX_KEYWORDS_PER_SCENE) break;
+  }
+
+  const selectedName = nameCandidates
+    .sort((a, b) => a.startSec - b.startSec)
+    .map((candidate) => {
+      const endSec = Math.min(audioEndSec, Math.round((candidate.startSec + Math.max(candidate.phraseEndSec - candidate.startSec, LOWER_THIRD_HOLD_SEC) + KEYWORD_FADE_SEC) * 1000) / 1000);
+      return { candidate, endSec };
+    })
+    .find(({ candidate, endSec }) => endSec - candidate.startSec >= LOWER_THIRD_MIN_REMAIN_SEC);
+  const selected: Keyword[] = [...selectedCenter];
+  if (selectedName) {
+    const { candidate, endSec } = selectedName;
+    selected.push({
+      text: candidate.text,
+      startSec: candidate.startSec,
+      endSec,
+      kind: 'name',
+      ...(candidate.nameRole ? { nameRole: candidate.nameRole } : {}),
+      ...(candidate.subtitle ? { subtitle: candidate.subtitle } : {}),
+    });
   }
   return selected.sort((a, b) => a.startSec - b.startSec);
 }
@@ -161,4 +225,26 @@ export function annotateYearKeywords(scenes: ReadonlyArray<ReadonlyArray<Keyword
   min -= pad;
   max += pad;
   return chained.map((keywords) => keywords.map((keyword) => (keyword.kind === 'year' ? { ...keyword, timeline: { min, max } } : keyword)));
+}
+
+function normalizeNameMention(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[đĐ]/gu, 'd')
+    .toLocaleLowerCase('vi')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+/** Keep only the first lower-third mention of each name across the project. */
+export function annotateNameKeywords(scenes: ReadonlyArray<ReadonlyArray<Keyword>>): Keyword[][] {
+  const seen = new Set<string>();
+  return scenes.map((keywords) => keywords.filter((keyword) => {
+    if (keyword.kind !== 'name') return true;
+    const key = normalizeNameMention(keyword.text);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }));
 }

@@ -7,6 +7,7 @@ import { formatVietnameseNumber, odometerColumnOffset } from './number-format';
 const FADE_OUT_SEC = 0.3;
 const COUNT_UP_SEC = 0.7;
 const YEAR_ROLL_SEC = 0.8;
+const LOWER_THIRD_OUT_SEC = 0.4;
 const ROW_EM = 1.1;
 export const KEYWORD_FONT_FAMILY = 'VideoToolNotoSans';
 const FONT_WEIGHT = '700';
@@ -106,7 +107,10 @@ function YearRoll({ keyword, frame, fps, fontSize, width }: { keyword: RemotionK
   const timeline = keyword.timeline;
   const markerPosition = timeline ? Math.min(1, Math.max(0, (value - timeline.min) / (timeline.max - timeline.min))) : null;
   const lineWidth = Math.min(width * 0.5, fontSize * 6);
-  const labelStyle: CSSProperties = { position: 'absolute', top: fontSize * 0.14, fontSize: fontSize * 0.22, opacity: 0.8, WebkitTextStroke: '1px #111' };
+  const labelStyle: CSSProperties = {
+    position: 'absolute', top: fontSize * 0.14, fontSize: fontSize * 0.22, opacity: 0.8,
+    WebkitTextStroke: '1px #111', textShadow: '0 2px 6px rgba(0,0,0,.9)',
+  };
   return (
     <div>
       <div style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
@@ -114,7 +118,10 @@ function YearRoll({ keyword, frame, fps, fontSize, width }: { keyword: RemotionK
       </div>
       {timeline && markerPosition !== null && (
         <div style={{ position: 'relative', width: lineWidth, height: fontSize * 0.5, margin: `${fontSize * 0.18}px auto 0` }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: Math.max(2, Math.round(fontSize * 0.03)), background: 'rgba(255,255,255,.7)', borderRadius: 999 }} />
+          <div style={{
+            position: 'absolute', left: 0, right: 0, top: 0, height: Math.max(2, Math.round(fontSize * 0.03)),
+            background: 'rgba(255,255,255,.7)', borderRadius: 999, boxShadow: '0 1px 5px rgba(0,0,0,.95)',
+          }} />
           <div style={{
             position: 'absolute', top: 0, left: `${markerPosition * 100}%`, width: fontSize * 0.16, height: fontSize * 0.16,
             transform: 'translate(-50%, -40%)', borderRadius: '50%', background: '#fff', boxShadow: '0 0 12px rgba(0,0,0,.8)',
@@ -124,6 +131,68 @@ function YearRoll({ keyword, frame, fps, fontSize, width }: { keyword: RemotionK
         </div>
       )}
     </div>
+  );
+}
+
+function MapPinIcon({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+      <path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z" stroke="#f5a623" strokeWidth="1.8" />
+      <circle cx="12" cy="9" r="2.2" stroke="#f5a623" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function LowerThird({ keyword, frame, fps, width, height, durationInFrames }: {
+  keyword: RemotionKeyword;
+  frame: number;
+  fps: number;
+  width: number;
+  height: number;
+  durationInFrames: number;
+}) {
+  const enter = spring({ frame, fps, from: 0, to: 1, config: { damping: 15, stiffness: 170 } });
+  const outFrames = Math.max(1, Math.round(LOWER_THIRD_OUT_SEC * fps));
+  const outStart = Math.max(0, durationInFrames - outFrames);
+  const out = interpolate(frame, [outStart, Math.max(outStart + 1, durationInFrames)], [0, 1], {
+    easing: Easing.inOut(Easing.cubic), extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+  const opacityIn = interpolate(frame, [0, Math.max(1, Math.round(0.18 * fps))], [0, 1], { extrapolateRight: 'clamp' });
+  const opacity = Math.min(opacityIn, 1 - out);
+  const translateX = ((1 - enter) * -110) + (out * -110);
+  const marginBottom = width / height < 0.8 ? 0.14 : 0.1;
+  const nameSize = Math.min(width, height) * 0.045;
+  const pinSize = nameSize * 0.72;
+  return (
+    <AbsoluteFill style={{ pointerEvents: 'none' }}>
+      <div style={{
+        position: 'absolute', left: width * 0.06, bottom: height * marginBottom, maxWidth: width * 0.82,
+        opacity, transform: `translateX(${translateX}%)`,
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'stretch', overflow: 'hidden', borderRadius: 5,
+          background: 'rgba(10,14,28,.78)', boxShadow: '0 5px 18px rgba(0,0,0,.42)',
+        }}>
+          <div style={{ width: Math.max(4, Math.round(width * 0.003)), background: '#f5a623', flex: '0 0 auto' }} />
+          <div style={{ padding: `${nameSize * 0.22}px ${nameSize * 0.48}px ${nameSize * 0.24}px` }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: nameSize * 0.14, color: '#fff',
+              fontFamily: KEYWORD_FONT_FAMILY, fontWeight: 700, fontSize: nameSize, lineHeight: 1.05,
+              whiteSpace: 'nowrap', textShadow: '0 2px 7px rgba(0,0,0,.75)',
+            }}>
+              {keyword.nameRole === 'place' ? <MapPinIcon size={pinSize} /> : null}
+              <span>{keyword.text}</span>
+            </div>
+            {keyword.subtitle ? (
+              <div style={{
+                marginTop: nameSize * 0.12, color: 'rgba(255,255,255,.8)', fontFamily: KEYWORD_FONT_FAMILY,
+                fontSize: nameSize * 0.6, lineHeight: 1.05, textShadow: '0 1px 5px rgba(0,0,0,.75)',
+              }}>{keyword.subtitle}</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </AbsoluteFill>
   );
 }
 
@@ -155,6 +224,9 @@ function PopUp({ keyword, durationInFrames }: { keyword: RemotionKeyword; durati
   };
   const isYear = keyword.kind === 'year' && keyword.year !== undefined;
   const isCount = keyword.kind === 'number' && keyword.value !== undefined;
+  if (keyword.kind === 'name') {
+    return <LowerThird keyword={keyword} frame={frame} fps={fps} width={width} height={height} durationInFrames={durationInFrames} />;
+  }
   return (
     <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
       {isYear ? (

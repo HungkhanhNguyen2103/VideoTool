@@ -137,6 +137,7 @@ describe('Remotion props and public-dir staging', () => {
       id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4,
       wordTimings: { audioFileId: 'voice-1', words: [
         { text: 'giá', startSec: 0, endSec: .3 }, { text: '30', startSec: 1, endSec: 1.2 }, { text: 'tỷ', startSec: 1.2, endSec: 1.4 },
+        { text: 'Steven', startSec: 2, endSec: 2.2 }, { text: 'Sasson', startSec: 2.2, endSec: 2.4 },
       ] },
     } as unknown as Scene;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annotateYearKeywords, parseNumberPhrase, selectKeywords, type Keyword } from './keywords';
+import { annotateNameKeywords, annotateYearKeywords, LOWER_THIRD_HOLD_SEC, parseNumberPhrase, selectKeywords, type Keyword } from './keywords';
 
 const words = (items: Array<[string, number, number]>) => items.map(([text, startSec, endSec]) => ({ text, startSec, endSec }));
 
@@ -11,13 +11,12 @@ describe('selectKeywords', () => {
     ]))).toMatchObject([{ text: '30 tỷ đô la', startSec: 1, endSec: 2.5 }]);
   });
 
-  it('excludes sentence-start capitals but selects a later proper-name run', () => {
+  it('excludes sentence-start capitals and selects one later proper-name run', () => {
     expect(selectKeywords(words([
       ['Eastman', 0, .3], ['Kodak', .3, .6], ['đã', .7, .9], ['gặp', 1, 1.2], ['Steven', 1.3, 1.6], ['Sasson.', 1.6, 1.9],
       ['ở', 3.7, 3.9], ['New', 4, 4.2], ['York', 4.2, 4.4], ['rất', 4.5, 4.7], ['lớn', 5, 5.2],
     ]))).toMatchObject([
-      { text: 'Steven Sasson', startSec: 1.3, endSec: 2.8 },
-      { text: 'New York', startSec: 4, endSec: 5.2 },
+      { text: 'Steven Sasson', kind: 'name', nameRole: 'person', startSec: 1.3, endSec: 4.6 },
     ]);
   });
 
@@ -27,14 +26,15 @@ describe('selectKeywords', () => {
     ]))).toMatchObject([]);
   });
 
-  it('prefers numbers over names, limits to two, and enforces spacing', () => {
+  it('selects two centre pop-ups and one independent lower third', () => {
     expect(selectKeywords(words([
       ['hãng', 0, .2], ['Eastman', .4, .6], ['Kodak', .6, .8], ['có', 1, 1.1],
       ['30', 1.2, 1.4], ['tỷ', 1.4, 1.6], ['và', 2, 2.2], ['40', 3.8, 4], ['triệu', 4, 4.2],
       ['đến', 5, 5.2], ['Steven', 6, 6.2], ['Sasson', 6.2, 6.4], ['rồi', 7, 7.2], ['kết', 8, 8.2], ['thúc', 8.2, 8.4],
     ]))).toMatchObject([
-      { text: '30 tỷ', startSec: 1.2, endSec: 2.7 },
-      { text: '40 triệu', startSec: 3.8, endSec: 5.3 },
+      { text: 'Eastman Kodak', kind: 'name', nameRole: 'person', startSec: .4, endSec: 3.7 },
+      { text: '30 tỷ', kind: 'number', startSec: 1.2, endSec: 2.7 },
+      { text: '40 triệu', kind: 'number', startSec: 3.8, endSec: 5.3 },
     ]);
   });
 
@@ -83,6 +83,26 @@ describe('selectKeywords', () => {
     expect(selectKeywords(words([
       ['Nó', 0, .2], ['mất', .2, .4], ['37', 1, 1.2], ['năm.', 1.2, 1.4], ['xong', 2.5, 2.7],
     ]))).toMatchObject([{ text: '37 năm', startSec: 1, endSec: 2.5 }]);
+  });
+
+  it('adds a role subtitle and detects places for names', () => {
+    const result = selectKeywords(words([
+      ['gặp', 0, .2], ['kỹ', .4, .6], ['sư', .6, .8], ['Steven', .8, 1], ['Sasson', 1, 1.2], ['sau', 3.8, 4],
+    ]));
+    expect(result).toMatchObject([{ text: 'Steven Sasson', kind: 'name', subtitle: 'Kỹ sư', nameRole: 'person' }]);
+    expect(selectKeywords(words([
+      ['ở', 0, .2], ['Rochester', .3, .5], ['nổi', 3, 3.2], ['tiếng', 3.2, 3.4],
+    ]))).toMatchObject([{ text: 'Rochester', kind: 'name', nameRole: 'place' }]);
+  });
+
+  it('uses the lower-third hold and skips names with too little remaining audio', () => {
+    expect(LOWER_THIRD_HOLD_SEC).toBe(3);
+    expect(selectKeywords(words([
+      ['gặp', 0, .2], ['Steven', .4, .6], ['Sasson', .6, .8], ['xong', 3.2, 3.5],
+    ]))).toMatchObject([{ text: 'Steven Sasson', endSec: 3.5 }]);
+    expect(selectKeywords(words([
+      ['gặp', 0, .2], ['Steven', .4, .6], ['Sasson', .6, .8], ['xong', 1.7, 1.8],
+    ])).filter((keyword) => keyword.kind === 'name')).toEqual([]);
   });
 
   it('classifies kinds and attaches parsed number and year data', () => {
@@ -136,5 +156,22 @@ describe('annotateYearKeywords', () => {
     const single = annotateYearKeywords([[kw('1975', 0, 'year', 1975)]])[0]?.[0];
     expect(single).toMatchObject({ fromYear: 1965, timeline: { min: 1964, max: 1976 } });
     expect(annotateYearKeywords([[kw('30', 0, 'number')], []])).toEqual([[kw('30', 0, 'number')], []]);
+  });
+});
+
+describe('annotateNameKeywords', () => {
+  const kw = (text: string, startSec: number, kind: Keyword['kind']): Keyword => ({ text, startSec, endSec: startSec + 2, kind });
+
+  it('keeps the first case- and diacritic-insensitive mention only', () => {
+    const result = annotateNameKeywords([
+      [kw('Steven Sasson', 1, 'name'), kw('30 tỷ', 2, 'number')],
+      [kw('Stévên Sasson', 0, 'name'), kw('1975', 2, 'year')],
+      [kw('Rochester', 0, 'name')],
+    ]);
+    expect(result).toEqual([
+      [kw('Steven Sasson', 1, 'name'), kw('30 tỷ', 2, 'number')],
+      [kw('1975', 2, 'year')],
+      [kw('Rochester', 0, 'name')],
+    ]);
   });
 });

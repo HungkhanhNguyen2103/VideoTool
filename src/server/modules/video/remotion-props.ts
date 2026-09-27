@@ -3,7 +3,7 @@ import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { RemotionInputPropsSchema, type RemotionInputProps, type RemotionSceneProps } from '../../../contracts/video';
 import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
-import { annotateYearKeywords, selectKeywords } from './keywords';
+import { annotateNameKeywords, annotateYearKeywords, selectKeywords } from './keywords';
 
 export type ResolvedRenderFile = {
   absolutePath: string;
@@ -84,7 +84,7 @@ export async function resolveRemotionAssets(
   const contextKeywords = project.keywordPopupsEnabled === false
     ? keywordContextScenes.map(() => [])
     : keywordContextScenes.map((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId ? selectKeywords(scene.wordTimings.words) : []);
-  const annotatedContextKeywords = annotateYearKeywords(contextKeywords);
+  const annotatedContextKeywords = annotateNameKeywords(annotateYearKeywords(contextKeywords));
   const keywordsBySceneId = new Map(keywordContextScenes.map((scene, index) => [scene.id, annotatedContextKeywords[index]!]));
 
   for (const [index, scene] of scenes.entries()) {

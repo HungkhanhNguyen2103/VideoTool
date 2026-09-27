@@ -26,6 +26,8 @@ export const RemotionKeywordSchema = z.object({
   /** year: the year the odometer rolls from, and the project-wide timeline range. */
   fromYear: z.number().int().optional(),
   timeline: z.object({ min: z.number(), max: z.number() }).optional(),
+  nameRole: z.enum(['person', 'place']).optional(),
+  subtitle: z.string().optional(),
 });
 export type RemotionKeyword = z.infer<typeof RemotionKeywordSchema>;
 
