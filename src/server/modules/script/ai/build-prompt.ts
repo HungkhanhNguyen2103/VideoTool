@@ -1,3 +1,4 @@
+import type { AssetType } from '../../../../contracts/asset';
 import type { ProjectDetail, VisualStyleId } from '../../../../contracts/project';
 import type { ChapterDoc, OpenLoop } from '../../../../contracts/script';
 import { NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
@@ -11,8 +12,10 @@ export type VisualPromptSceneInput = {
   sceneId: string;
   sceneIndex: number;
   narration: string;
+  assetType: AssetType;
   visualPrompt: string;
   sfxPrompt?: string;
+  motionPrompt?: string;
 };
 export type VisualPromptPromptInput = {
   project: ProjectDetail;
@@ -195,7 +198,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
   const scriptPreset = loadScriptPreset(project.scriptPresetId);
   const visualPreset = loadVisualStylePreset(visualStylePresetId);
   return {
-    system: systemMessage(scriptPreset, "Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words, like a Freesound search query — e.g. 'pen writing on paper', 'quiet sigh', 'coffee dripping'), regardless of the narration language, or an empty string when no sound is appropriate. Existing visual prompts and SFX prompts are references; preserve their intent."),
+    system: systemMessage(scriptPreset, "Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt, motionPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words, like a Freesound search query — e.g. 'pen writing on paper', 'quiet sigh', 'coffee dripping'), regardless of the narration language, or an empty string when no sound is appropriate. motionPrompt should be a short English animation instruction of roughly one or two sentences describing a camera move and what the subject does, intended for image-to-video generation. Only write a non-empty motionPrompt when that scene's asset type is video; return an empty string for image scenes. Existing visual prompts, SFX prompts, and motion prompts are references; preserve their intent."),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -210,7 +213,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
       `Previous style note: ${styleNote.slice(0, 500)}`,
       `This chapter contains exactly ${scenes.length} scenes. Return exactly ${scenes.length} prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.`,
       'Scenes:',
-      ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}\nExisting SFX prompt: ${scene.sfxPrompt || '(none)'}`),
+      ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nAsset type: ${scene.assetType}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}\nExisting SFX prompt: ${scene.sfxPrompt || '(none)'}\nExisting motion prompt: ${scene.motionPrompt || '(none)'}`),
     ].join('\n\n'),
     promptVersion: `visual-prompt-v1/${visualPreset.id}@${visualPreset.version}`,
   };

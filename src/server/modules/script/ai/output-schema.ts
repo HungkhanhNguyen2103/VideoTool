@@ -75,6 +75,7 @@ export const VisualPromptBatchSchema = z.object({
     sceneIndex: z.number().int().positive(),
     visualPrompt: z.string().trim().min(1),
     sfxPrompt: z.string().trim().max(120).default(''),
+    motionPrompt: z.string().trim().max(400).default(''),
   })),
 });
 

@@ -70,7 +70,7 @@ describe('script AI prompt boundary', () => {
       project: { ...project, visualStylePresetId: 'anime' },
       chapter,
       styleNote: 'Muted colors',
-      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', visualPrompt: 'Existing image', sfxPrompt: 'Existing wind' }],
+      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', assetType: 'video', visualPrompt: 'Existing image', sfxPrompt: 'Existing wind', motionPrompt: 'Slow push-in on the river.' }],
       visualStylePresetId: 'anime',
       coreQuestion: 'Why did the river change?',
       openingHook: 'At dawn, it reversed.',
@@ -81,6 +81,8 @@ describe('script AI prompt boundary', () => {
     expect(result.promptVersion).toBe('visual-prompt-v1/anime@1');
     expect(result.system).toContain(loadScriptPreset('documentary').system);
     expect(result.system).toContain('sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words');
+    expect(result.system).toContain('motionPrompt');
+    expect(result.system).toContain("Only write a non-empty motionPrompt when that scene's asset type is video");
     expect(result.system).not.toContain('in the narration language');
     expect(result.user).toContain(`Required visual style (must follow for every scene): ${loadVisualStylePreset('anime').style}`);
     expect(result.user).toContain('Core question: Why did the river change?');
@@ -94,6 +96,8 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('First beat');
     expect(result.user).toContain('Existing image');
     expect(result.user).toContain('Existing SFX prompt: Existing wind');
+    expect(result.user).toContain('Asset type: video');
+    expect(result.user).toContain('Existing motion prompt: Slow push-in on the river.');
     expect(result.user).toContain('1');
     expect(result.user).not.toContain('internal-id');
   });
@@ -103,7 +107,7 @@ describe('script AI prompt boundary', () => {
       project,
       chapter,
       styleNote: 'x'.repeat(501),
-      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'A quiet beat', visualPrompt: '', sfxPrompt: '' }],
+      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'A quiet beat', assetType: 'image', visualPrompt: '', sfxPrompt: '', motionPrompt: '' }],
       visualStylePresetId: 'cinematic',
       coreQuestion: '',
       openingHook: null,
@@ -118,6 +122,8 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('Avoid repeating: (none)');
     expect(result.user).toContain('Persistent facts: (none)');
     expect(result.user).toContain('Existing SFX prompt: (none)');
+    expect(result.user).toContain('Asset type: image');
+    expect(result.user).toContain('Existing motion prompt: (none)');
     expect(result.user).toContain(`Previous style note: ${'x'.repeat(500)}\n\n`);
     expect(result.user).not.toContain('x'.repeat(501));
   });
@@ -222,7 +228,13 @@ describe('script AI parsers', () => {
     expect(() => parseRegeneratedParagraphs(raw)).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));
   });
   it.each(['{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn","sfxPrompt":"River water"}]}', '```json\n{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Bridge at dawn"}]}\n```'])('accepts visual batches', (raw) => {
-    expect(parseVisualPromptBatch(raw)).toEqual({ styleNote: 'Continuity', prompts: [{ sceneIndex: 1, visualPrompt: 'Bridge at dawn', sfxPrompt: raw.includes('sfxPrompt') ? 'River water' : '' }] });
+    expect(parseVisualPromptBatch(raw)).toEqual({ styleNote: 'Continuity', prompts: [{ sceneIndex: 1, visualPrompt: 'Bridge at dawn', sfxPrompt: raw.includes('sfxPrompt') ? 'River water' : '', motionPrompt: '' }] });
+  });
+
+  it('accepts and preserves an AI-authored motion prompt', () => {
+    expect(parseVisualPromptBatch('{"styleNote":"Continuity","prompts":[{"sceneIndex":1,"visualPrompt":"Lab portrait","sfxPrompt":"quiet room","motionPrompt":"Camera slowly pushes in as the engineer turns the prototype toward the lens."}]}').prompts[0]).toMatchObject({
+      motionPrompt: 'Camera slowly pushes in as the engineer turns the prototype toward the lens.',
+    });
   });
   it.each(['not json', '{"styleNote":"x","prompts":[{"sceneIndex":0,"visualPrompt":"view"}]}', '{"styleNote":"x","prompts":[{"sceneIndex":1,"visualPrompt":"   "}]}', JSON.stringify({ styleNote: 'x'.repeat(501), prompts: [{ sceneIndex: 1, visualPrompt: 'view' }] }), JSON.stringify({ styleNote: 'x', prompts: [{ sceneIndex: 1, visualPrompt: 'view', sfxPrompt: 'x'.repeat(121) }] })])('rejects invalid visual batches', (raw) => {
     expect(() => parseVisualPromptBatch(raw)).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', status: 422 }));

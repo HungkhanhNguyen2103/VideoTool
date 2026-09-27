@@ -308,16 +308,22 @@ type EmptyScenePromptUpdate = {
   sceneId: string;
   visualPrompt?: string;
   sfxPrompt?: string;
+  motionPrompt?: string;
 };
 
 type EmptyScenePromptWriteResult = {
   project: ProjectDetail;
   updatedSceneIds: string[];
   updatedSfxPromptSceneIds: string[];
+  updatedMotionPromptSceneIds: string[];
 };
 
 function hasPromptValue(value: string | undefined): value is string {
   return value !== undefined && value.trim() !== '';
+}
+
+function isEmptyMotionPrompt(value: string | undefined): boolean {
+  return value === undefined || value === '';
 }
 
 export async function applyEmptySceneVisualPrompts(
@@ -332,14 +338,15 @@ export async function applyEmptySceneVisualPromptsWithResult(
   updates: EmptyScenePromptUpdate[],
 ): Promise<EmptyScenePromptWriteResult> {
   const project = await getProject(projectId);
-  const latest = new Map<string, { visualPrompt?: string; sfxPrompt?: string }>();
+  const latest = new Map<string, { visualPrompt?: string; sfxPrompt?: string; motionPrompt?: string }>();
   for (const update of updates) {
     const current = latest.get(update.sceneId) ?? {};
     if (update.visualPrompt !== undefined) current.visualPrompt = update.visualPrompt;
     if (update.sfxPrompt !== undefined) current.sfxPrompt = update.sfxPrompt;
+    if (update.motionPrompt !== undefined) current.motionPrompt = update.motionPrompt;
     latest.set(update.sceneId, current);
   }
-  if (latest.size === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [] };
+  if (latest.size === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [], updatedMotionPromptSceneIds: [] };
 
   const scenesById = new Map(project.scenes.map((scene) => [scene.id, scene]));
   for (const sceneId of latest.keys()) {
@@ -362,8 +369,17 @@ export async function applyEmptySceneVisualPromptsWithResult(
       arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.sfxPrompt`]: '' });
       eligibleClauses.push({ id: sceneId, sfxPrompt: '' });
     }
+    if (hasPromptValue(update.motionPrompt)) {
+      const identifier = `motion${index}`;
+      set[`scenes.$[${identifier}].motionPrompt`] = update.motionPrompt;
+      arrayFilters.push({
+        [`${identifier}.id`]: sceneId,
+        $or: [{ [`${identifier}.motionPrompt`]: '' }, { [`${identifier}.motionPrompt`]: { $exists: false } }],
+      });
+      eligibleClauses.push({ id: sceneId, $or: [{ motionPrompt: '' }, { motionPrompt: { $exists: false } }] });
+    }
   }
-  if (eligibleClauses.length === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [] };
+  if (eligibleClauses.length === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [], updatedMotionPromptSceneIds: [] };
 
   const previous = await getCollection<ProjectDoc>('projects').findOneAndUpdate(
     { _id: projectId, scenes: { $elemMatch: { $or: eligibleClauses } } },
@@ -376,7 +392,10 @@ export async function applyEmptySceneVisualPromptsWithResult(
   const updatedSfxPromptSceneIds = previous
     ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.sfxPrompt) && previous.scenes.some((scene) => scene.id === sceneId && scene.sfxPrompt === '')).map(([sceneId]) => sceneId)
     : [];
-  return { project: await getProject(projectId), updatedSceneIds, updatedSfxPromptSceneIds };
+  const updatedMotionPromptSceneIds = previous
+    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.motionPrompt) && previous.scenes.some((scene) => scene.id === sceneId && isEmptyMotionPrompt(scene.motionPrompt))).map(([sceneId]) => sceneId)
+    : [];
+  return { project: await getProject(projectId), updatedSceneIds, updatedSfxPromptSceneIds, updatedMotionPromptSceneIds };
 }
 
 export async function replaceProjectChapters(

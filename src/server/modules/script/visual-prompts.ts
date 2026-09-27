@@ -27,8 +27,10 @@ function chapterScenes(project: ProjectDetail): VisualPromptSceneInput[][] {
       sceneId: scene.id,
       sceneIndex: nextScene + index + 1,
       narration: scene.narration,
+      assetType: scene.assetType,
       visualPrompt: scene.visualPrompt,
       sfxPrompt: scene.sfxPrompt,
+      motionPrompt: scene.motionPrompt,
     }));
     nextScene += count;
     return scenes;
@@ -69,6 +71,7 @@ export async function generateVisualPrompts(
   const result: VisualPromptJobResult = { updatedScenes: 0, skippedScenes: 0, failedChapters: [] };
   let styleNote = excerpt(project.scenes);
   let updatedSfxPrompts = 0;
+  let updatedMotionPrompts = 0;
   let cancelled = false;
 
   for (const [chapterIndex, chapter] of project.chapters.entries()) {
@@ -76,7 +79,7 @@ export async function generateVisualPrompts(
     const scenes = scenesByChapter[chapterIndex]!;
     const previousChapter = chapterIndex > 0 ? project.chapters[chapterIndex - 1] : null;
     const prefilledVisual = scenes.filter((scene) => scene.visualPrompt !== '').length;
-    const fullyPrefilled = scenes.filter((scene) => scene.visualPrompt !== '' && scene.sfxPrompt !== '').length;
+    const fullyPrefilled = scenes.filter((scene) => scene.visualPrompt !== '' && scene.sfxPrompt !== '' && (scene.assetType !== 'video' || scene.motionPrompt !== '')).length;
     result.skippedScenes += prefilledVisual;
 
     if (fullyPrefilled === scenes.length) {
@@ -119,16 +122,24 @@ export async function generateVisualPrompts(
         if (!batch) throw new AppError('Visual prompt batch was empty.', 422, 'SCRIPT_PARSE_ERROR');
 
         const idsByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene.sceneId]));
-        const updates = batch.prompts.map((item) => ({ sceneId: idsByIndex.get(item.sceneIndex)!, visualPrompt: item.visualPrompt, sfxPrompt: item.sfxPrompt }));
+        const scenesByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene]));
+        const updates = batch.prompts.map((item) => ({
+          sceneId: idsByIndex.get(item.sceneIndex)!,
+          visualPrompt: item.visualPrompt,
+          sfxPrompt: item.sfxPrompt,
+          motionPrompt: scenesByIndex.get(item.sceneIndex)?.assetType === 'video' ? item.motionPrompt : '',
+        }));
         if (await context.isCancelled()) { cancelled = true; break; }
-        const { updatedSceneIds, updatedSfxPromptSceneIds } = await applyEmptySceneVisualPromptsWithResult(projectId, updates);
+        const { updatedSceneIds, updatedSfxPromptSceneIds, updatedMotionPromptSceneIds } = await applyEmptySceneVisualPromptsWithResult(projectId, updates);
         const changed = updatedSceneIds.length;
         const changedSfx = updatedSfxPromptSceneIds.length;
+        const changedMotion = updatedMotionPromptSceneIds.length;
         result.updatedScenes += changed;
         result.skippedScenes += scenes.length - prefilledVisual - changed;
         updatedSfxPrompts += changedSfx;
+        updatedMotionPrompts += changedMotion;
         styleNote = batch.styleNote;
-        await context.appendLog(`Chapter ${chapter.no}: ${changed} visual prompts added; ${changedSfx} SFX prompts added; ${scenes.length - changed} already filled.`);
+        await context.appendLog(`Chapter ${chapter.no}: ${changed} visual prompts added; ${changedSfx} SFX prompts added; ${changedMotion} motion prompts added; ${scenes.length - changed} already filled.`);
       } catch (error) {
         result.failedChapters.push(chapter.no);
         await context.appendLog(`Chapter ${chapter.no}: visual prompt generation failed: ${describeError(error)}`);
@@ -138,6 +149,6 @@ export async function generateVisualPrompts(
     await context.reportProgress(Math.round(((chapterIndex + 1) / project.chapters.length) * 100), result);
   }
 
-  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${updatedSfxPrompts} SFX prompts added, ${result.skippedScenes} skipped, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}.`);
+  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${updatedSfxPrompts} SFX prompts added, ${updatedMotionPrompts} motion prompts added, ${result.skippedScenes} skipped, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}.`);
   return result;
 }

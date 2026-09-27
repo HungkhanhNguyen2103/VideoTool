@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript } from '../project';
+import { applyEmptySceneVisualPromptsWithResult, createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript } from '../project';
 import { generateVisualPrompts } from './visual-prompts';
 
 const aiMock = vi.hoisted(() => ({ chat: vi.fn() }));
@@ -26,6 +26,8 @@ async function projectWithScenes(
   prompts: string[] = ['', 'Manual second', ''],
   counts: [number, number] = [2, 1],
   sfxPrompts: string[] = prompts.map((prompt) => prompt ? 'Existing SFX' : ''),
+  assetTypes: ('image' | 'video')[] = prompts.map(() => 'image'),
+  motionPrompts: string[] = prompts.map(() => ''),
 ) {
   const project = await createProject(projectInput);
   await replaceProjectChapters(project.id, [
@@ -34,7 +36,7 @@ async function projectWithScenes(
   ], null);
   await replaceProjectScenes(project.id, ['One', 'Two', 'Three', 'Four'].slice(0, counts[0] + counts[1]).map((narration, index) => ({
     id: `scene-${index + 1}`, narration, visualPrompt: prompts[index]!, durationSec: 20,
-    assetType: 'image' as const, assetFileId: null, audioFileId: null, sfxPrompt: sfxPrompts[index] ?? '', motionPrompt: '', sfxFileId: null,
+    assetType: assetTypes[index] ?? 'image', assetFileId: null, audioFileId: null, sfxPrompt: sfxPrompts[index] ?? '', motionPrompt: motionPrompts[index] ?? '', sfxFileId: null,
   })), 'assets');
   return getProject(project.id);
 }
@@ -50,8 +52,8 @@ function context(cancelled: () => boolean = () => false) {
   };
 }
 
-function batch(indexes: number[], styleNote: string, sfxPrompts: Partial<Record<number, string>> = {}) {
-  return JSON.stringify({ styleNote, prompts: indexes.map((sceneIndex) => ({ sceneIndex, visualPrompt: `Generated ${sceneIndex}`, sfxPrompt: sfxPrompts[sceneIndex] ?? `Generated SFX ${sceneIndex}` })) });
+function batch(indexes: number[], styleNote: string, sfxPrompts: Partial<Record<number, string>> = {}, motionPrompts: Partial<Record<number, string>> = {}) {
+  return JSON.stringify({ styleNote, prompts: indexes.map((sceneIndex) => ({ sceneIndex, visualPrompt: `Generated ${sceneIndex}`, sfxPrompt: sfxPrompts[sceneIndex] ?? `Generated SFX ${sceneIndex}`, motionPrompt: motionPrompts[sceneIndex] ?? '' })) });
 }
 
 describe('generateVisualPrompts', () => {
@@ -70,7 +72,7 @@ describe('generateVisualPrompts', () => {
     const second = aiMock.chat.mock.calls[1]![0][1].content as string;
     expect(first).toContain('This chapter contains exactly 2 scenes. Return exactly 2 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
     expect(first).toContain('Scene 1\nNarration: One');
-    expect(first).toContain('Scene 2\nNarration: Two\nExisting visual prompt: Manual second');
+    expect(first).toContain('Scene 2\nNarration: Two\nAsset type: image\nExisting visual prompt: Manual second');
     expect(first).toContain('Existing SFX prompt: Existing SFX');
     expect(first).not.toContain('scene-1');
     expect(second).toContain('Scene 3\nNarration: Three');
@@ -109,8 +111,37 @@ describe('generateVisualPrompts', () => {
     expect(job.logs).toEqual([
       'Chapter 1: all visual and SFX prompts already filled; skipped.',
       'Chapter 2: all visual and SFX prompts already filled; skipped.',
-      'Visual prompts finished: 0 updated, 0 SFX prompts added, 3 skipped, 0 failed chapters.',
+      'Visual prompts finished: 0 updated, 0 SFX prompts added, 0 motion prompts added, 3 skipped, 0 failed chapters.',
     ]);
+  });
+
+  it('regenerates a video scene with filled visual and SFX prompts when motion is empty', async () => {
+    const project = await projectWithScenes(['Visual 1', 'Visual 2', 'Visual 3'], [2, 1], ['SFX 1', 'SFX 2', 'SFX 3'], ['video', 'image', 'image']);
+    expect(project.scenes[0]?.assetType).toBe('video');
+    expect(project.scenes[0]?.motionPrompt).toBe('');
+    aiMock.chat.mockResolvedValueOnce(batch([1, 2], 'Video style', {}, { 1: 'Camera slowly pushes in as the engineer turns the prototype toward the lens.' }));
+
+    const job = context();
+    const result = await generateVisualPrompts(project.id, job);
+
+    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [] });
+    expect(aiMock.chat).toHaveBeenCalledTimes(1);
+    expect(job.logs).toContain('Chapter 1: 0 visual prompts added; 0 SFX prompts added; 1 motion prompts added; 2 already filled.');
+    expect(job.logs.at(-1)).toContain('1 motion prompts added');
+    expect((await getProject(project.id)).scenes.map((scene) => scene.motionPrompt)).toEqual(['Camera slowly pushes in as the engineer turns the prototype toward the lens.', '', '']);
+  });
+
+  it('returns motion prompt write IDs without clobbering a manual motion edit', async () => {
+    const project = await projectWithScenes(['', '', ''], [2, 1], ['', '', '']);
+    await patchProjectScene(project.id, 'scene-1', { motionPrompt: 'Manual camera move.' });
+
+    const result = await applyEmptySceneVisualPromptsWithResult(project.id, [
+      { sceneId: 'scene-1', motionPrompt: 'AI camera move 1.' },
+      { sceneId: 'scene-2', motionPrompt: 'AI camera move 2.' },
+    ]);
+
+    expect(result.updatedMotionPromptSceneIds).toEqual(['scene-2']);
+    expect((await getProject(project.id)).scenes.map((scene) => scene.motionPrompt)).toEqual(['Manual camera move.', 'AI camera move 2.', '']);
   });
 
   it('leaves empty SFX suggestions empty and logs zero SFX additions', async () => {
@@ -122,9 +153,9 @@ describe('generateVisualPrompts', () => {
 
     expect(result).toEqual({ updatedScenes: 3, skippedScenes: 0, failedChapters: [] });
     expect((await getProject(project.id)).scenes.every((scene) => scene.sfxPrompt === '')).toBe(true);
-    expect(job.logs).toContain('Chapter 1: 2 visual prompts added; 0 SFX prompts added; 0 already filled.');
-    expect(job.logs).toContain('Chapter 2: 1 visual prompts added; 0 SFX prompts added; 0 already filled.');
-    expect(job.logs.at(-1)).toBe('Visual prompts finished: 3 updated, 0 SFX prompts added, 0 skipped, 0 failed chapters.');
+    expect(job.logs).toContain('Chapter 1: 2 visual prompts added; 0 SFX prompts added; 0 motion prompts added; 0 already filled.');
+    expect(job.logs).toContain('Chapter 2: 1 visual prompts added; 0 SFX prompts added; 0 motion prompts added; 0 already filled.');
+    expect(job.logs.at(-1)).toBe('Visual prompts finished: 3 updated, 0 SFX prompts added, 0 motion prompts added, 0 skipped, 0 failed chapters.');
   });
 
   it('forwards the selected style and script continuity, using only the previous chapter for later context', async () => {
