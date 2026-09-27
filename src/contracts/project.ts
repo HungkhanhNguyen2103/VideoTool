@@ -53,7 +53,7 @@ export type RenderSettings = z.infer<typeof RenderSettingsSchema>;
  * Validation rules and Vietnamese messages copied from
  * docs/prototypes/khoi-tao-du-an/app.js (`validate()`), one message per field.
  */
-const CreateProjectRequestBase = z.object({
+export const CreateProjectRequestBase = z.object({
   title: z.string(),
   brief: z.string(),
   language: z.enum(['vi', 'en']),
@@ -71,6 +71,30 @@ const CreateProjectRequestBase = z.object({
   bgmFileId: z.string().nullable().default(null),
   renderSettings: RenderSettingsSchema,
 });
+
+const ProjectImportRenderSettingsSchema = z.object({
+  aspect: z.enum(ASPECT_RATIOS).optional(),
+  fps: z.union([z.literal(24), z.literal(30), z.literal(60)]).optional(),
+}).strict();
+
+/** Optional create-project fields accepted by the root project.json import seed. */
+export const ProjectImportSeedSchema = CreateProjectRequestBase.pick({
+  title: true,
+  language: true,
+  brief: true,
+  referencesText: true,
+  scriptPresetId: true,
+  visualStylePresetId: true,
+  aiProvider: true,
+  targetDurationSec: true,
+  chapterCount: true,
+  voiceId: true,
+}).partial().extend({
+  visualStylePresetId: z.enum(VISUAL_STYLE_IDS).optional(),
+  aiProvider: z.enum(AI_PROVIDERS).optional(),
+  renderSettings: ProjectImportRenderSettingsSchema.optional(),
+}).strict();
+export type ProjectImportSeed = z.infer<typeof ProjectImportSeedSchema>;
 
 export const CreateProjectRequestSchema = CreateProjectRequestBase.transform((val) => ({
   ...val,

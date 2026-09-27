@@ -206,6 +206,49 @@ describe('file-store schema and repository', () => {
     return zip.toBuffer();
   }
 
+  it('imports a partial project seed and ordered reference documents without creating a project', async () => {
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(zipWith({
+      'project.json': JSON.stringify({ title: 'Seed', referencesText: 'From JSON' }),
+      'references/z-last.txt': 'Last',
+      'references/a-first.md': 'First',
+    }))], { type: 'application/zip' }), 'seed.zip');
+    const response = await fetch(`${base}/api/project/import-seed`, { method: 'POST', body: form });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ title: 'Seed', referencesText: 'From JSON\n\nFirst\n\nLast' });
+  });
+
+  it('rejects a missing or invalid project seed with 400', async () => {
+    const base = await startServer();
+    const missing = new FormData();
+    missing.append('file', new Blob([new Uint8Array(zipWith({}))], { type: 'application/zip' }), 'seed.zip');
+    const missingResponse = await fetch(`${base}/api/project/import-seed`, { method: 'POST', body: missing });
+    expect(missingResponse.status).toBe(400);
+    const invalid = new FormData();
+    invalid.append('file', new Blob([new Uint8Array(zipWith({ 'project.json': '{"unknown":true}' }))], { type: 'application/zip' }), 'seed.zip');
+    const invalidResponse = await fetch(`${base}/api/project/import-seed`, { method: 'POST', body: invalid });
+    expect(invalidResponse.status).toBe(400);
+  });
+
+  it('rejects a non-ZIP seed upload', async () => {
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob(['not zip'], { type: 'text/plain' }), 'seed.txt');
+    const response = await fetch(`${base}/api/project/import-seed`, { method: 'POST', body: form });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
+  });
+
+  it('extracts plain reference text through the upload endpoint', async () => {
+    const base = await startServer();
+    const form = new FormData();
+    form.append('file', new Blob(['Hello from markdown'], { type: 'text/markdown' }), 'notes.md');
+    const response = await fetch(`${base}/api/project/reference-text`, { method: 'POST', body: form });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ text: 'Hello from markdown' });
+  });
+
   it('imports root scenes.json and replaces project scenes', async () => {
     const project = await createProject(projectInput);
     const base = await startServer();

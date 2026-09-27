@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
-import type { ProjectStatus } from '../../../../contracts/project';
+import { useEffect, useRef, useState } from 'react';
+import type { ProjectImportSeed, ProjectStatus } from '../../../../contracts/project';
 import { Button } from '../../../shared/ui/Button';
 import { Icon } from '../../../shared/ui/Icon';
 import { toast } from '../../../shared/ui/toast-store';
 import { useDeleteProject, useDuplicateProject, useProjects } from '../hooks';
+import { importProjectSeed } from '../reference-import';
 import { useProjectUiStore } from '../store';
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog';
 import { ProjectCard } from './ProjectCard';
@@ -17,10 +18,14 @@ const STATUS_OPTIONS: { value: 'all' | ProjectStatus; label: string }[] = [
   { value: 'rendered', label: 'Đã render' },
 ];
 
-export function RecentProjects() {
+export type RecentProjectsProps = { onImportSeed?: (seed: ProjectImportSeed) => void };
+
+export function RecentProjects({ onImportSeed }: RecentProjectsProps) {
   const [queryInput, setQueryInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [status, setStatus] = useState<'all' | ProjectStatus>('all');
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importBusy, setImportBusy] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(queryInput.trim()), 300);
@@ -53,10 +58,10 @@ export function RecentProjects() {
           </h2>
           <div className="mono muted">{filtering ? `${items.length}/${total} dự án` : `${total} dự án`}</div>
         </div>
-        <Button variant="indigoline" disabled title="Sắp có">
+        <input ref={importInputRef} className="sr-only" type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importSeed(file); }} />
+        <Button variant="indigoline" disabled={importBusy} busy={importBusy} onClick={() => importInputRef.current?.click()}>
           <Icon name="upload" />
           Nhập từ ZIP
-          <span className={styles.pill}>Sắp có</span>
         </Button>
       </div>
 
@@ -154,4 +159,18 @@ export function RecentProjects() {
       />
     </section>
   );
+
+  async function importSeed(file: File) {
+    try {
+      setImportBusy(true);
+      const seed = await importProjectSeed(file);
+      onImportSeed?.(seed);
+      toast('Đã nạp dữ liệu từ ZIP vào form tạo dự án.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể nhập ZIP.');
+    } finally {
+      setImportBusy(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  }
 }

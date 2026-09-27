@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -8,6 +8,7 @@ import {
   AI_PROVIDERS,
   VISUAL_STYLE_IDS,
   type CreateProjectRequest,
+  type ProjectImportSeed,
   CreateProjectRequestSchema,
 } from '../../../../contracts/project';
 import { Button } from '../../../shared/ui/Button';
@@ -16,6 +17,7 @@ import { toast } from '../../../shared/ui/toast-store';
 import { formatDuration } from '../format';
 import { useCreateProject, useUploadVisualStyleSample, useVisualStyleSamples } from '../hooks';
 import { useProjectUiStore } from '../store';
+import { appendReferenceText, isReferenceFile, mergeProjectPrefill, readReferenceText } from '../reference-import';
 import { resolveVisualStylePreview } from '../visual-style-preview';
 import styles from './NewProjectForm.module.css';
 
@@ -42,13 +44,20 @@ const DURATION_CHIPS = [
 
 const FIELD_ORDER = ['title', 'brief', 'targetDurationSec', 'chapterCount'] as const;
 
-export function NewProjectForm() {
+export type NewProjectFormProps = {
+  prefill?: ProjectImportSeed | null;
+  onPrefillApplied?: () => void;
+};
+
+export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProps) {
   const navigate = useNavigate();
   const setCurrentProjectId = useProjectUiStore((s) => s.setCurrentProjectId);
   const createProject = useCreateProject();
   const samplesQuery = useVisualStyleSamples();
   const uploadSample = useUploadVisualStyleSample();
   const sampleInputRef = useRef<HTMLInputElement>(null);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
+  const [referenceBusy, setReferenceBusy] = useState(false);
 
   const {
     register,
@@ -57,6 +66,7 @@ export function NewProjectForm() {
     setValue,
     setFocus,
     reset,
+    getValues,
     formState: { errors, isSubmitted },
   } = useForm<CreateProjectRequest>({
     resolver: zodResolver(CreateProjectRequestSchema),
@@ -73,6 +83,31 @@ export function NewProjectForm() {
   const height = watch('renderSettings.height');
   const busy = createProject.isPending;
   const visualStylePreview = resolveVisualStylePreview(visualStylePresetId, samplesQuery.data);
+
+  useEffect(() => {
+    if (!prefill) return;
+    reset(mergeProjectPrefill(getValues(), prefill));
+    onPrefillApplied?.();
+  }, [getValues, onPrefillApplied, prefill, reset]);
+
+  async function importReference(file: File) {
+    if (!isReferenceFile(file)) {
+      toast('Chỉ hỗ trợ file TXT, MD, DOCX hoặc PDF.');
+      return;
+    }
+    try {
+      setReferenceBusy(true);
+      const text = await readReferenceText(file);
+      if (!text.trim()) { toast('File không có nội dung văn bản.'); return; }
+      setValue('referencesText', appendReferenceText(watch('referencesText'), text), { shouldDirty: true });
+      toast(`Đã thêm nội dung từ ${file.name}.`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể đọc file tham khảo.');
+    } finally {
+      setReferenceBusy(false);
+      if (referenceInputRef.current) referenceInputRef.current.value = '';
+    }
+  }
 
   async function uploadVisualStyleSample(file: File) {
     try {
@@ -109,6 +144,7 @@ export function NewProjectForm() {
       const project = await createProject.mutateAsync(data);
       setCurrentProjectId(project.id);
       reset(DEFAULT_VALUES);
+      onPrefillApplied?.();
       if (mode === 'outline') {
         toast('Đã tạo dự án. Đang chuyển sang "Duyệt & Tái Tạo"…');
         navigate(`/production/${project.id}/review`);
@@ -208,11 +244,12 @@ export function NewProjectForm() {
               {...register('referencesText')}
             />
             <div className={styles.uploadRow}>
-              <Button variant="ghost" size="sm" disabled>
+              <input ref={referenceInputRef} className={styles.hiddenInput} type="file" accept=".txt,.md,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importReference(file); }} />
+              <Button variant="ghost" size="sm" disabled={referenceBusy} busy={referenceBusy} onClick={() => referenceInputRef.current?.click()}>
                 <Icon name="upload" />
                 Chọn file
               </Button>
-              <span className={styles.hint}>Tải file: sắp có</span>
+              <span className={styles.hint}>TXT/MD đọc ngay; DOCX/PDF sẽ trích xuất văn bản.</span>
             </div>
           </div>
         </fieldset>

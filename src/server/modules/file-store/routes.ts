@@ -7,11 +7,38 @@ import { AppError, FieldAppError, NotFound } from '../../shared/errors';
 import { uploadReference, uploadZip } from '../../shared/upload';
 import { findFileById } from './repo';
 import { createFileStoreService, type StoreFileParams } from './service';
+import { extractReferenceText, isReferenceDocument } from './reference-text';
+import { parseProjectImportSeed } from './project-import';
+import { ProjectImportSeedSchema } from '../../../contracts/project';
 
 let configuredService = createFileStoreService('./data/files');
 export function configureFileStore(filesDir: string): void { configuredService = createFileStoreService(filesDir); }
 export const fileStoreRouter = Router();
 const UploadPurposeSchema = z.object({ purpose: z.enum(FILE_PURPOSES).default('reference') }).strict();
+
+fileStoreRouter.post('/import-seed', uploadZip, async (req, res) => {
+  const file = req.file;
+  if (!file) throw new AppError('File is required.', 400, 'FILE_REQUIRED');
+  if (file.mimetype !== 'application/zip' && file.mimetype !== 'application/x-zip-compressed') {
+    throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
+  }
+  try {
+    res.json(ProjectImportSeedSchema.parse(parseProjectImportSeed(file.buffer)));
+  } catch (error) {
+    throw new FieldAppError(error instanceof Error ? error.message : 'ZIP file is invalid.', 400, 'INVALID_PROJECT_SEED', []);
+  }
+});
+
+fileStoreRouter.post('/reference-text', uploadReference, async (req, res) => {
+  const file = req.file;
+  if (!file) throw new AppError('File is required.', 400, 'FILE_REQUIRED');
+  if (!isReferenceDocument(file.originalname, file.mimetype)) throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
+  try {
+    res.json({ text: extractReferenceText(file.originalname, file.mimetype, file.buffer) });
+  } catch (error) {
+    throw new FieldAppError(error instanceof Error ? error.message : 'Cannot read reference document.', 422, 'REFERENCE_TEXT_FAILED', []);
+  }
+});
 
 fileStoreRouter.post('/:id/files', uploadReference, async (req, res) => {
   const projectId = String(req.params.id);

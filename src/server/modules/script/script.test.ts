@@ -262,32 +262,6 @@ describe('script contracts', () => {
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
   });
 
-  it('persists and clears a custom style-reference file without enqueuing a job', async () => {
-    const project = await createProject(projectInput);
-    const baseUrl = await startScriptServer();
-    const setResponse = await fetch(`${baseUrl}/api/project/${project.id}/style-reference`, {
-      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileId: 'style-file-1' }),
-    });
-    expect(setResponse.status).toBe(200);
-    expect((await setResponse.json()).customStyleReferenceFileId).toBe('style-file-1');
-
-    const clearResponse = await fetch(`${baseUrl}/api/project/${project.id}/style-reference`, {
-      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileId: null }),
-    });
-    expect(clearResponse.status).toBe(200);
-    expect((await clearResponse.json()).customStyleReferenceFileId).toBeNull();
-    expect(await getCollection('jobs').countDocuments({})).toBe(0);
-  });
-
-  it('returns the selected visual style directive without enqueuing a job', async () => {
-    const project = await createProject(projectInput);
-    const baseUrl = await startScriptServer();
-    const response = await fetch(`${baseUrl}/api/project/${project.id}/visual-style-prompt`);
-    expect(response.status).toBe(200);
-    expect((await response.json()).style).toContain('modern cinematic documentary');
-    expect(await getCollection('jobs').countDocuments({})).toBe(0);
-  });
-
   it('returns a flattened manual prompt without enqueuing a job', async () => {
     const project = await createProject(projectInput);
     const baseUrl = await startScriptServer();

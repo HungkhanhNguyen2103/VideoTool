@@ -4,7 +4,7 @@ import type { z } from 'zod';
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
-import { ProjectDocSchema, SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
+import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
 import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
 
@@ -191,19 +191,6 @@ export async function setProjectBgm(id: string, mood: string, bgmFileId: string 
   return getProject(id);
 }
 
-export type ProjectStyleReferenceCandidate = {
-  projectId: string;
-  visualStylePresetId: VisualStyleId;
-  fileId: string;
-};
-
-export async function listProjectStyleReferenceCandidates(): Promise<ProjectStyleReferenceCandidate[]> {
-  const docs = await getCollection<ProjectDoc>('projects').find({ customStyleReferenceFileId: { $type: 'string' } }).toArray();
-  return docs.map((raw) => ProjectDocSchema.parse(raw)).flatMap((project) => project.customStyleReferenceFileId
-    ? [{ projectId: project._id, visualStylePresetId: project.visualStylePresetId, fileId: project.customStyleReferenceFileId }]
-    : []);
-}
-
 /** Commit only while both the voiceover and narration still equal the aligned snapshot. */
 export async function setSceneWordTimings(
   projectId: string, sceneId: string, expectedAudioFileId: string, expectedNarration: string, timings: WordTimings | null,
@@ -227,11 +214,6 @@ export async function setSceneDepthMap(
     { $set: { 'scenes.$.depthMap': depthMap, updatedAt: new Date() }, $inc: { version: 1 } },
   );
   return result.matchedCount > 0;
-}
-
-export async function setProjectCustomStyleReferenceFile(id: string, fileId: string | null): Promise<ProjectDetail> {
-  await updateProject(id, { customStyleReferenceFileId: fileId });
-  return getProject(id);
 }
 
 export async function setProjectRenderFile(id: string, renderFileId: string): Promise<ProjectDetail> {

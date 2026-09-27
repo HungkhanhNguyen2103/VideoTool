@@ -8,8 +8,6 @@ import { getCollection } from '../../db/client';
 import { AppError } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { uploadReference } from '../../shared/upload';
-import { listProjectStyleReferenceCandidates } from '../project';
-import { findFilesByIds } from './repo';
 import { extensionFor } from './service';
 
 type VisualStyleSampleDoc = {
@@ -33,17 +31,6 @@ export function createVisualStyleSamplesService(filesDir: string) {
     const result: VisualStyleSamples = {};
     for (const sample of await collection().find().toArray()) {
       result[sample._id] = entry(sample.storedPath, sample.originalName, 'shared', sample.createdAt);
-    }
-
-    const candidates = await listProjectStyleReferenceCandidates();
-    const files = new Map((await findFilesByIds(candidates.map((candidate) => candidate.fileId))).map((file) => [file._id, file]));
-    for (const candidate of candidates) {
-      const file = files.get(candidate.fileId);
-      if (!file || file.projectId !== candidate.projectId || file.purpose !== 'style-reference' || !file.mimeType.startsWith('image/')) continue;
-      const current = result[candidate.visualStylePresetId];
-      if (!current || file.createdAt.getTime() > new Date(current.updatedAt).getTime()) {
-        result[candidate.visualStylePresetId] = entry(file.storedPath, file.originalName, 'project', file.createdAt);
-      }
     }
     return VisualStyleSamplesSchema.parse(result);
   }
