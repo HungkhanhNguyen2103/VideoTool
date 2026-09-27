@@ -295,11 +295,12 @@ describe('Remotion renderer orchestration', () => {
 });
 
 describe('Remotion bundle lifecycle', () => {
-  it('places the local Vietnamese font and OFL licence in the bundle public directory', async () => {
+  it('places the local Noto Sans Vietnamese font faces and OFL licence in the bundle public directory', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'remotion-bundle-font-'));
     const bundleMock = vi.fn(async (options: BundleOptions) => {
-      await expect(readFile(path.join(options.publicDir!, 'fonts', 'BeVietnamPro-Bold.ttf'))).resolves.toHaveLength(140300);
-      await expect(readFile(path.join(options.publicDir!, 'fonts', 'OFL.txt'), 'utf8')).resolves.toContain('SIL OPEN FONT LICENSE');
+      await expect(readFile(path.join(options.publicDir!, 'fonts', 'NotoSans-vietnamese.woff2'))).resolves.toHaveLength(5700);
+      await expect(readFile(path.join(options.publicDir!, 'fonts', 'NotoSans-latin.woff2'))).resolves.toHaveLength(13464);
+      await expect(readFile(path.join(options.publicDir!, 'fonts', 'NotoSans-OFL.txt'), 'utf8')).resolves.toContain('SIL OPEN FONT LICENSE');
       return directory;
     });
     try {

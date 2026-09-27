@@ -3,19 +3,42 @@ import { AbsoluteFill, continueRender, delayRender, interpolate, Sequence, sprin
 import type { RemotionSceneProps } from '../contracts/video';
 
 const FADE_OUT_SEC = 0.3;
-const FONT_FAMILY = 'Be Vietnam Pro';
-const FONT_CHECK_TEXT = 'Ả Ẻ Ỏ Ủ Ỷ Ố Ờ Ự Đ';
+const FONT_FAMILY = 'VideoTool Noto Sans';
+const FONT_WEIGHT = '700';
+const FONT_STYLE = 'normal';
 let fontPromise: Promise<void> | null = null;
+
+function isLoadedLocalFontFace(face: FontFace): boolean {
+  return face.family === FONT_FAMILY
+    && face.weight === FONT_WEIGHT
+    && face.style === FONT_STYLE
+    && face.status === 'loaded';
+}
 
 function loadLocalFont(): Promise<void> {
   if (!fontPromise) {
-    const face = new FontFace(FONT_FAMILY, `url(${staticFile('fonts/BeVietnamPro-Bold.ttf')})`, { weight: '700', style: 'normal', display: 'block' });
-    fontPromise = face.load().then(async (loaded) => {
-      if (loaded.status !== 'loaded') throw new Error(`FontFace status is ${loaded.status}.`);
-      document.fonts.add(loaded);
+    const faces = [
+      new FontFace(FONT_FAMILY, `url(${staticFile('fonts/NotoSans-vietnamese.woff2')})`, {
+        weight: FONT_WEIGHT,
+        style: FONT_STYLE,
+        display: 'block',
+        unicodeRange: 'U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB',
+      }),
+      new FontFace(FONT_FAMILY, `url(${staticFile('fonts/NotoSans-latin.woff2')})`, {
+        weight: FONT_WEIGHT,
+        style: FONT_STYLE,
+        display: 'block',
+        unicodeRange: 'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
+      }),
+    ];
+    fontPromise = Promise.all(faces.map((face) => face.load())).then(async (loadedFaces) => {
+      if (!loadedFaces.every(isLoadedLocalFontFace)) throw new Error('A local Noto Sans font face did not load with its expected family, weight, and style.');
+      for (const loaded of loadedFaces) document.fonts.add(loaded);
       await document.fonts.ready;
-      const fontApplied = document.fonts.check(`700 100px "${FONT_FAMILY}"`, FONT_CHECK_TEXT);
-      if (!fontApplied) throw new Error(`document.fonts.check() did not confirm ${FONT_FAMILY}.`);
+      const registeredFaces = Array.from(document.fonts).filter(isLoadedLocalFontFace);
+      if (!loadedFaces.every((face) => document.fonts.has(face)) || registeredFaces.length < loadedFaces.length) {
+        throw new Error(`The expected loaded ${FONT_FAMILY} font faces are not registered in document.fonts.`);
+      }
     }).catch((error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error);
       throw new Error(`Keyword font ${FONT_FAMILY} failed to load: ${reason}`);
@@ -31,12 +54,12 @@ function codePoints(text: string): string {
 function PopUp({ text, durationInFrames }: { text: string; durationInFrames: number }) {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
-  const [fontHandle] = useState(() => delayRender('Loading local Be Vietnam Pro font'));
+  const [fontHandle] = useState(() => delayRender('Loading local Noto Sans font'));
   useEffect(() => {
     loadLocalFont().then(() => {
-      const fontApplied = document.fonts.check(`700 100px "${FONT_FAMILY}"`, text);
-      console.info(`[KeywordOverlay] font=${FONT_FAMILY} applied=${fontApplied} textCodePoints=${codePoints(text)}`);
-      if (!fontApplied) throw new Error(`Keyword font ${FONT_FAMILY} is unavailable for popup text.`);
+      const registeredFaces = Array.from(document.fonts).filter(isLoadedLocalFontFace);
+      console.info(`[KeywordOverlay] font=${FONT_FAMILY} loadedFaces=${registeredFaces.length} textCodePoints=${codePoints(text)}`);
+      if (registeredFaces.length < 2) throw new Error(`Keyword font ${FONT_FAMILY} is unavailable for popup text.`);
       continueRender(fontHandle);
     }).catch((error) => continueRender(fontHandle, { error }));
   }, [fontHandle, text]);
@@ -47,7 +70,7 @@ function PopUp({ text, durationInFrames }: { text: string; durationInFrames: num
   const scale = spring({ frame, fps, from: 0.6, to: 1, config: { damping: 13, stiffness: 190 } });
   return (
     <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-      <div style={{
+      <div lang="vi" style={{
         maxWidth: '86%', maxHeight: '30%', overflow: 'hidden',
         color: '#fff', fontFamily: FONT_FAMILY, fontWeight: 700,
         fontSize: Math.min(width * 0.1, height * 0.1), lineHeight: 1.1,

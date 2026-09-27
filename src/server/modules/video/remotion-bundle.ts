@@ -19,8 +19,9 @@ export function getRemotionBundle(): Promise<string> {
     const seedPublicDir = path.join(outputDir, '.seed-public');
     cachedBundle = mkdir(path.join(seedPublicDir, 'fonts'), { recursive: true })
       .then(() => Promise.all([
-        copyFile(path.resolve('src/remotion/fonts/BeVietnamPro-Bold.ttf'), path.join(seedPublicDir, 'fonts/BeVietnamPro-Bold.ttf')),
-        copyFile(path.resolve('src/remotion/fonts/OFL.txt'), path.join(seedPublicDir, 'fonts/OFL.txt')),
+        copyFile(path.resolve('src/remotion/fonts/NotoSans-vietnamese.woff2'), path.join(seedPublicDir, 'fonts/NotoSans-vietnamese.woff2')),
+        copyFile(path.resolve('src/remotion/fonts/NotoSans-latin.woff2'), path.join(seedPublicDir, 'fonts/NotoSans-latin.woff2')),
+        copyFile(path.resolve('src/remotion/fonts/NotoSans-OFL.txt'), path.join(seedPublicDir, 'fonts/NotoSans-OFL.txt')),
       ]))
       .then(() => bundleImplementation({
         entryPoint: path.resolve(process.cwd(), 'src/remotion/index.ts'),
