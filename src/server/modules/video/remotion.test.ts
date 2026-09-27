@@ -69,7 +69,7 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', scenes: [{ ...props.scenes[0], keywords: [] }] });
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', scenes: [{ ...props.scenes[0], filmLook: false, keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
@@ -138,7 +138,7 @@ describe('Remotion props and public-dir staging', () => {
       purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
     });
     const project = {
-      id: 'project-1', renderSettings: { aspect: '16:9', fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: false,
+      id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: false,
     } as const;
     const timedScene = {
       id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4,
@@ -151,6 +151,27 @@ describe('Remotion props and public-dir staging', () => {
     const props = await buildRemotionInputProps(project, [timedScene, { ...timedScene, id: 'scene-2' }], 'render-disabled', resolver);
 
     expect(props.scenes.map((scene) => scene.keywords)).toEqual([[], []]);
+  });
+
+  it('computes film look from years even when project pop-ups are disabled', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const project = {
+      id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: false,
+      filmLook: 'auto' as const,
+    };
+    const makeScene = (id: string, text: string) => ({
+      id, assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4,
+      wordTimings: { audioFileId: 'voice-1', words: [{ text, startSec: 0, endSec: .2 }, { text: 'xong', startSec: 2, endSec: 2.2 }] },
+    }) as unknown as Scene;
+
+    const props = await buildRemotionInputProps(project, [makeScene('scene-1', '1975'), makeScene('scene-2', '2012')], 'render-disabled-film', resolver);
+
+    expect(props.scenes.map((scene) => scene.keywords)).toEqual([[], []]);
+    expect(props.scenes.map((scene) => scene.filmLook)).toEqual([true, false]);
   });
 
   it('keeps legacy projects with no toggle field enabled', async () => {
@@ -168,6 +189,7 @@ describe('Remotion props and public-dir staging', () => {
     const props = await buildRemotionInputProps(project, [timedScene], 'render-legacy-toggle', resolver);
 
     expect(props.scenes[0]?.keywords).toMatchObject([{ text: '30 tỷ', kind: 'number', value: 30 }]);
+    expect(props.scenes[0]?.filmLook).toBe(false);
   });
 
   it('uses full project scene order for year context when staging a single-scene preview', async () => {

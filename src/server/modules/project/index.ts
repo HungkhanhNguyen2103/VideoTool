@@ -24,6 +24,7 @@ export {
   setProjectCustomStyleReferenceFile,
   setProjectKeywordPopups,
   setProjectTransitionStyle,
+  setProjectFilmLook,
   setProjectRenderEngine,
   setProjectAiProvider,
   setProjectVisualStylePreset,

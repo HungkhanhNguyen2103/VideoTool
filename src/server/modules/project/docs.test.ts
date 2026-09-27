@@ -33,4 +33,8 @@ describe('ProjectDocSchema visual style compatibility', () => {
   it('keeps varied transitions enabled for legacy project documents', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).transitionStyle).toBe('varied');
   });
+
+  it('defaults legacy project documents to automatic film look', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).filmLook).toBe('auto');
+  });
 });

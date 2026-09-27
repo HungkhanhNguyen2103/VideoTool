@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annotateNameKeywords, annotateYearKeywords, LOWER_THIRD_HOLD_SEC, parseNumberPhrase, selectKeywords, type Keyword } from './keywords';
+import { annotateNameKeywords, annotateYearKeywords, FILM_LOOK_BEFORE_YEAR, LOWER_THIRD_HOLD_SEC, parseNumberPhrase, resolveFilmLookByScene, selectKeywords, type Keyword } from './keywords';
 
 const words = (items: Array<[string, number, number]>) => items.map(([text, startSec, endSec]) => ({ text, startSec, endSec }));
 
@@ -173,5 +173,26 @@ describe('annotateNameKeywords', () => {
       [kw('1975', 2, 'year')],
       [kw('Rochester', 0, 'name')],
     ]);
+  });
+});
+
+describe('resolveFilmLookByScene', () => {
+  const kw = (text: string, startSec: number, year?: number): Keyword => ({ text, startSec, endSec: startSec + .2, kind: year && text.includes('/') ? 'date' : 'year', ...(year === undefined ? {} : { year }) });
+
+  it('turns on after a pre-1990 year and stays on until a later year turns it off', () => {
+    expect(resolveFilmLookByScene([
+      [],
+      [kw('1975', 0, 1975)],
+      [],
+      [kw('19/1/2012', 0, 2012)],
+      [],
+    ])).toEqual([false, true, true, false, false]);
+    expect(FILM_LOOK_BEFORE_YEAR).toBe(1990);
+  });
+
+  it('supports always and off modes', () => {
+    const scenes = [[], [kw('1975', 0, 1975)]];
+    expect(resolveFilmLookByScene(scenes, 'always')).toEqual([true, true]);
+    expect(resolveFilmLookByScene(scenes, 'off')).toEqual([false, false]);
   });
 });

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectKeywordPopups, setProjectRenderEngine, setProjectTransitionStyle } from '../project';
-import { RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
+import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectRenderEngine, setProjectTransitionStyle } from '../project';
+import { FILM_LOOK_STYLES, RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
 import {
   generateProjectBgm,
   generateSceneSfx,
@@ -24,6 +24,7 @@ const BgmSchema = z.object({ mood: z.string().trim().min(1) });
 const RenderEngineSchema = z.object({ engine: z.enum(RENDER_ENGINES) });
 const KeywordPopupsSchema = z.object({ enabled: z.boolean() }).strict();
 const TransitionStyleSchema = z.object({ style: z.enum(TRANSITION_STYLES) }).strict();
+const FilmLookSchema = z.object({ style: z.enum(FILM_LOOK_STYLES) }).strict();
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Router {
   const router = Router();
@@ -88,6 +89,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
   router.patch('/:id/transition-style', async (req, res) => {
     const { style } = TransitionStyleSchema.parse(req.body);
     res.json(await setProjectTransitionStyle(req.params.id, style));
+  });
+
+  router.patch('/:id/film-look', async (req, res) => {
+    const { style } = FilmLookSchema.parse(req.body);
+    res.json(await setProjectFilmLook(req.params.id, style));
   });
 
   return router;

@@ -3,7 +3,7 @@ import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { RemotionInputPropsSchema, type RemotionInputProps, type RemotionSceneProps } from '../../../contracts/video';
 import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
-import { annotateNameKeywords, annotateYearKeywords, selectKeywords } from './keywords';
+import { annotateNameKeywords, annotateYearKeywords, resolveFilmLookByScene, selectKeywords } from './keywords';
 
 export type ResolvedRenderFile = {
   absolutePath: string;
@@ -29,7 +29,7 @@ export type RemotionKeywordContext = {
 };
 
 export type RemotionProjectSettings = Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>
-  & Partial<Pick<ProjectDetail, 'transitionStyle'>>;
+  & Partial<Pick<ProjectDetail, 'transitionStyle' | 'filmLook'>>;
 
 const EXTENSION_BY_MIME: Record<string, string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
@@ -84,11 +84,11 @@ export async function resolveRemotionAssets(
   const sources: RemotionSource[] = [];
   const sceneProps: RemotionSceneProps[] = [];
   const keywordContextScenes = options.keywordContextScenes ?? scenes;
-  const contextKeywords = project.keywordPopupsEnabled === false
-    ? keywordContextScenes.map(() => [])
-    : keywordContextScenes.map((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId ? selectKeywords(scene.wordTimings.words) : []);
+  const contextKeywords = keywordContextScenes.map((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId ? selectKeywords(scene.wordTimings.words) : []);
   const annotatedContextKeywords = annotateNameKeywords(annotateYearKeywords(contextKeywords));
   const keywordsBySceneId = new Map(keywordContextScenes.map((scene, index) => [scene.id, annotatedContextKeywords[index]!]));
+  const filmLookByScene = resolveFilmLookByScene(annotatedContextKeywords, project.filmLook ?? 'auto');
+  const filmLookBySceneId = new Map(keywordContextScenes.map((scene, index) => [scene.id, filmLookByScene[index] ?? false]));
 
   for (const [index, scene] of scenes.entries()) {
     if (!scene.assetFileId) throw invalidAsset(`Scene ${scene.id} has no visual asset.`);
@@ -125,7 +125,8 @@ export async function resolveRemotionAssets(
       voiceRelPath,
       sfxRelPath,
       durationSec: scene.durationSec,
-      keywords: keywordsBySceneId.get(scene.id) ?? [],
+      filmLook: filmLookBySceneId.get(scene.id) ?? false,
+      keywords: project.keywordPopupsEnabled === false ? [] : keywordsBySceneId.get(scene.id) ?? [],
     });
   }
 

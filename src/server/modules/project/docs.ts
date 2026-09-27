@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 
 export const SceneDocSchema = z.object({
@@ -35,6 +35,7 @@ export const ProjectDocSchema = z.object({
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   keywordPopupsEnabled: z.boolean().default(true),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
+  filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

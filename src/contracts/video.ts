@@ -39,6 +39,7 @@ export const RemotionScenePropsSchema = z.object({
   voiceRelPath: z.string().min(1).nullable(),
   sfxRelPath: z.string().min(1).nullable(),
   durationSec: z.number().nonnegative(),
+  filmLook: z.boolean().default(false),
   keywords: z.array(RemotionKeywordSchema).default([]),
 });
 export type RemotionSceneProps = z.infer<typeof RemotionScenePropsSchema>;

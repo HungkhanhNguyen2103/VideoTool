@@ -1,4 +1,4 @@
-import type { AiProvider, CreateProjectRequest, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
+import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
 import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
 import type { z } from 'zod';
 import { NotFound } from '../../shared/errors';
@@ -36,6 +36,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     renderEngine: doc.renderEngine,
     keywordPopupsEnabled: doc.keywordPopupsEnabled,
     transitionStyle: doc.transitionStyle,
+    filmLook: doc.filmLook,
     voiceoverVoice: doc.voiceoverVoice,
     renderFileId: doc.renderFileId,
     bgmMood: doc.bgmMood,
@@ -73,6 +74,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     renderEngine: input.renderEngine ?? 'ffmpeg',
     keywordPopupsEnabled: true,
     transitionStyle: 'varied',
+    filmLook: 'auto',
     voiceoverVoice: input.voiceoverVoice ?? 'Truc Ly',
     renderFileId: input.renderFileId ?? null,
     bgmMood: input.bgmMood ?? '',
@@ -226,6 +228,11 @@ export async function setProjectKeywordPopups(id: string, enabled: boolean): Pro
 
 export async function setProjectTransitionStyle(id: string, transitionStyle: TransitionStyle): Promise<ProjectDetail> {
   await updateProject(id, { transitionStyle });
+  return getProject(id);
+}
+
+export async function setProjectFilmLook(id: string, filmLook: FilmLookStyle): Promise<ProjectDetail> {
+  await updateProject(id, { filmLook });
   return getProject(id);
 }
 

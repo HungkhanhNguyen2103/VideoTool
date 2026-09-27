@@ -1,4 +1,5 @@
 import type { KeywordKind, RemotionKeyword } from '../../../contracts/video';
+import type { FilmLookStyle } from '../../../contracts/project';
 
 export type TimedWord = { text: string; startSec: number; endSec: number };
 export type Keyword = RemotionKeyword & { kind: KeywordKind };
@@ -16,6 +17,7 @@ export const YEAR_RANGE = { min: 1000, max: 2100 } as const;
 export const FIRST_YEAR_ROLL_SPAN = 10;
 /** Timeline padding as a fraction of its span (at least one year each side). */
 export const TIMELINE_PAD_RATIO = 0.05;
+export const FILM_LOOK_BEFORE_YEAR = 1990;
 
 const clean = (text: string) => text.replace(/[\p{P}]+$/gu, (suffix) => suffix.replace(/[^%]/gu, ''));
 const isCapitalized = (text: string) => /^\p{Lu}/u.test(text);
@@ -225,6 +227,23 @@ export function annotateYearKeywords(scenes: ReadonlyArray<ReadonlyArray<Keyword
   min -= pad;
   max += pad;
   return chained.map((keywords) => keywords.map((keyword) => (keyword.kind === 'year' ? { ...keyword, timeline: { min, max } } : keyword)));
+}
+
+/** Resolve the old-film look scene by scene from the latest narrated year/date mention. */
+export function resolveFilmLookByScene(
+  scenes: ReadonlyArray<ReadonlyArray<Pick<Keyword, 'year' | 'startSec'>>>,
+  style: FilmLookStyle = 'auto',
+): boolean[] {
+  if (style === 'always') return scenes.map(() => true);
+  if (style === 'off') return scenes.map(() => false);
+
+  let currentYear: number | null = null;
+  return scenes.map((keywords) => {
+    for (const keyword of [...keywords].sort((a, b) => a.startSec - b.startSec)) {
+      if (keyword.year !== undefined) currentYear = keyword.year;
+    }
+    return currentYear !== null && currentYear < FILM_LOOK_BEFORE_YEAR;
+  });
 }
 
 function normalizeNameMention(value: string): string {

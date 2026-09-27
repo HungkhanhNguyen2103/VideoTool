@@ -10,6 +10,9 @@ export type RenderEngine = (typeof RENDER_ENGINES)[number];
 export const TRANSITION_STYLES = ['crossfade', 'varied'] as const;
 export type TransitionStyle = (typeof TRANSITION_STYLES)[number];
 
+export const FILM_LOOK_STYLES = ['auto', 'always', 'off'] as const;
+export type FilmLookStyle = (typeof FILM_LOOK_STYLES)[number];
+
 export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -162,6 +165,7 @@ export const ProjectDetailSchema = z.object({
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   keywordPopupsEnabled: z.boolean().default(true),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
+  filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),
