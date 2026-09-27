@@ -43,11 +43,10 @@ function incomingTransitionVisual(plan: TransitionPlan, progress: number, direct
     const featherStart = Math.max(0, edge - 8);
     const featherEnd = Math.min(100, edge + 8);
     const gradient = direction > 0
-      ? `linear-gradient(90deg, transparent ${featherStart}%, #fff ${featherEnd}%)`
-      : `linear-gradient(270deg, transparent ${featherStart}%, #fff ${featherEnd}%)`;
+      ? `linear-gradient(90deg, #fff ${featherStart}%, transparent ${featherEnd}%)`
+      : `linear-gradient(270deg, #fff ${featherStart}%, transparent ${featherEnd}%)`;
     return {
       contentStyle: {
-        clipPath: direction > 0 ? `inset(0 ${100 - edge}% 0 0)` : `inset(0 0 0 ${100 - edge}%)`,
         maskImage: gradient,
         WebkitMaskImage: gradient,
       },
