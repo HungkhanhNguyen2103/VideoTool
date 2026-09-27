@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectKeywordPopups, setProjectRenderEngine } from '../project';
-import { RENDER_ENGINES } from '../../../contracts/project';
+import { getProject, setProjectKeywordPopups, setProjectRenderEngine, setProjectTransitionStyle } from '../project';
+import { RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
 import {
   generateProjectBgm,
   generateSceneSfx,
@@ -23,6 +23,7 @@ const VoiceoverOptionsSchema = z.object({
 const BgmSchema = z.object({ mood: z.string().trim().min(1) });
 const RenderEngineSchema = z.object({ engine: z.enum(RENDER_ENGINES) });
 const KeywordPopupsSchema = z.object({ enabled: z.boolean() }).strict();
+const TransitionStyleSchema = z.object({ style: z.enum(TRANSITION_STYLES) }).strict();
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Router {
   const router = Router();
@@ -82,6 +83,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
   router.patch('/:id/keyword-popups', async (req, res) => {
     const { enabled } = KeywordPopupsSchema.parse(req.body);
     res.json(await setProjectKeywordPopups(req.params.id, enabled));
+  });
+
+  router.patch('/:id/transition-style', async (req, res) => {
+    const { style } = TransitionStyleSchema.parse(req.body);
+    res.json(await setProjectTransitionStyle(req.params.id, style));
   });
 
   return router;

@@ -12,17 +12,19 @@ export const DEFAULT_REMOTION_PROPS: RemotionInputProps = {
   height: 1080,
   scenes: [],
   bgmRelPath: null,
+  transitionStyle: 'varied',
 };
 
 export function VideoComposition(props: RemotionInputProps) {
   const audioTimings = sceneFrameTimings(props.scenes, props.fps);
-  const visualTimings = sceneVisualTimings(props.scenes, props.fps);
+  const visualTimings = sceneVisualTimings(props.scenes, props.fps, props.transitionStyle);
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
       {props.scenes.map((scene, index) => (
         <SceneSequence
           key={scene.id}
           scene={scene}
+          boundaryIndex={index}
           audioTiming={audioTimings[index]!}
           visualTiming={visualTimings[index]!}
         />

@@ -2,12 +2,12 @@ import { copyFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { newId } from '../../shared/ids';
 import { logger } from '../../shared/logger';
-import type { ProjectDetail, Scene } from '../../../contracts/project';
-import { resolveRemotionAssets, type RenderFileResolver } from './remotion-props';
+import type { Scene } from '../../../contracts/project';
+import { resolveRemotionAssets, type RemotionProjectSettings, type RenderFileResolver } from './remotion-props';
 
 export type StageRemotionRenderOptions = {
   serveUrl: string;
-  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>;
+  project: RemotionProjectSettings;
   scenes: ReadonlyArray<Scene>;
   resolver: RenderFileResolver;
   renderId?: string;

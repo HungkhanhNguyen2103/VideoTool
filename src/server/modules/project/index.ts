@@ -23,6 +23,7 @@ export {
   setProjectBgm,
   setProjectCustomStyleReferenceFile,
   setProjectKeywordPopups,
+  setProjectTransitionStyle,
   setProjectRenderEngine,
   setProjectAiProvider,
   setProjectVisualStylePreset,

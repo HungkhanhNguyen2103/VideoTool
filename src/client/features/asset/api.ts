@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { FlowSceneExportSchema, type FlowSceneExport } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
 import { ApiErrorBodySchema } from '../../../contracts/common';
-import { AI_PROVIDERS, ProjectDetailSchema, RENDER_ENGINES, type ProjectDetail, type RenderEngine, type VisualStyleId } from '../../../contracts/project';
+import { AI_PROVIDERS, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
@@ -16,6 +16,11 @@ export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
 export const RENDER_ENGINE_OPTIONS = [
   { value: RENDER_ENGINES[0], label: 'FFmpeg' },
   { value: RENDER_ENGINES[1], label: 'Remotion' },
+] as const;
+
+export const TRANSITION_STYLE_OPTIONS = [
+  { value: TRANSITION_STYLES[1], label: 'Đa dạng' },
+  { value: TRANSITION_STYLES[0], label: 'Chỉ mờ dần' },
 ] as const;
 
 export const AI_PROVIDER_OPTIONS = [
@@ -127,6 +132,12 @@ export function setRenderEngine(projectId: string, engine: RenderEngine): Promis
 export function setKeywordPopups(projectId: string, enabled: boolean): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/keyword-popups`, ProjectDetailSchema, {
     method: 'PATCH', body: { enabled },
+  });
+}
+
+export function setTransitionStyle(projectId: string, style: TransitionStyle): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/transition-style`, ProjectDetailSchema, {
+    method: 'PATCH', body: { style },
   });
 }
 

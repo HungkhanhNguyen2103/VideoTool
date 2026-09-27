@@ -69,7 +69,7 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, scenes: [{ ...props.scenes[0], keywords: [] }] });
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', scenes: [{ ...props.scenes[0], keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
@@ -83,6 +83,12 @@ describe('Remotion contracts and frame math', () => {
   it('mutes embedded audio from source video scenes', async () => {
     const source = await readFile('src/remotion/SceneSequence.tsx', 'utf8');
     expect(source).toMatch(/<OffthreadVideo[\s\S]*muted/);
+  });
+
+  it('uses a horizontal-only SVG blur for whip-pan transitions', async () => {
+    const source = await readFile('src/remotion/SceneSequence.tsx', 'utf8');
+    expect(source).toContain('feGaussianBlur');
+    expect(source).toContain('stdDeviation={`${blurX} 0`}');
   });
 });
 
@@ -119,6 +125,7 @@ describe('Remotion props and public-dir staging', () => {
       ] },
     } as unknown as Scene;
     const current = await buildRemotionInputProps(project, [scene], 'render-current', resolver);
+    expect(current.transitionStyle).toBe('varied');
     expect(current.scenes[0]?.keywords).toMatchObject([{ text: '30 tỷ', startSec: 1, endSec: 2.5 }]);
     const stale = await buildRemotionInputProps(project, [{ ...scene, audioFileId: 'voice-2' }], 'render-stale', resolver);
     expect(stale.scenes[0]?.keywords).toEqual([]);

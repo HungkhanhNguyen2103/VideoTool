@@ -11,6 +11,8 @@
 .renderControls { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; flex-wrap: wrap; }
 .popupToggle { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; font-weight: 700; }
 .popupToggle input { accent-color: var(--indigo); }
+.transitionSelect { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; font-weight: 700; }
+.transitionSelect .audioInput { min-width: 8.5rem; padding: .35rem .5rem; font-size: .8rem; }
 .renderHint { color: var(--text-3); font-size: .75rem; }
 .audioControls { display: grid; gap: 1rem; align-content: start; }
 .audioInput { min-width: 12rem; padding: .5rem .65rem; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: .45rem; font: inherit; }

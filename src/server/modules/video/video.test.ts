@@ -443,6 +443,28 @@ describe('video routes and worker handlers', () => {
     }
   });
 
+  it('persists transition style through the strict route and rejects malformed bodies', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn();
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    for (const style of ['crossfade', 'varied'] as const) {
+      const response = await fetch(`${base}/api/project/${project.id}/transition-style`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ style }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).transitionStyle).toBe(style);
+      expect((await getProject(project.id)).transitionStyle).toBe(style);
+    }
+    for (const body of [{ style: 'unknown' }, { style: 'varied', extra: true }]) {
+      const response = await fetch(`${base}/api/project/${project.id}/transition-style`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect((await duplicateProject(project.id)).transitionStyle).toBe('varied');
+  });
+
   it('updates the render engine through the thin route and rejects invalid or missing projects', async () => {
     const project = await seedProject();
     const enqueueJob = vi.fn();

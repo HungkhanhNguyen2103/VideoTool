@@ -28,6 +28,9 @@ export type RemotionKeywordContext = {
   keywordContextScenes?: ReadonlyArray<Scene>;
 };
 
+export type RemotionProjectSettings = Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>
+  & Partial<Pick<ProjectDetail, 'transitionStyle'>>;
+
 const EXTENSION_BY_MIME: Record<string, string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
   'image/png': ['png'],
@@ -71,7 +74,7 @@ async function resolveFile(
 }
 
 export async function resolveRemotionAssets(
-  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>,
+  project: RemotionProjectSettings,
   scenes: ReadonlyArray<Scene>,
   renderId: string,
   resolver: RenderFileResolver,
@@ -139,12 +142,13 @@ export async function resolveRemotionAssets(
     height: project.renderSettings.height,
     scenes: sceneProps,
     bgmRelPath,
+    transitionStyle: project.transitionStyle ?? 'varied',
   });
   return { inputProps, sources };
 }
 
 export async function buildRemotionInputProps(
-  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>,
+  project: RemotionProjectSettings,
   scenes: ReadonlyArray<Scene>,
   renderId: string,
   resolver: RenderFileResolver,

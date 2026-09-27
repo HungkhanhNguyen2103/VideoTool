@@ -7,6 +7,9 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const RENDER_ENGINES = ['ffmpeg', 'remotion'] as const;
 export type RenderEngine = (typeof RENDER_ENGINES)[number];
 
+export const TRANSITION_STYLES = ['crossfade', 'varied'] as const;
+export type TransitionStyle = (typeof TRANSITION_STYLES)[number];
+
 export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -158,6 +161,7 @@ export const ProjectDetailSchema = z.object({
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   keywordPopupsEnabled: z.boolean().default(true),
+  transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setKeywordPopups, setRenderEngine, setVisualStyle, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setKeywordPopups, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes } from './api';
 import * as assetApi from './api';
 
 const project = {
@@ -107,6 +107,16 @@ describe('asset API helpers', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/keyword-popups', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ enabled: false }),
+    }));
+  });
+
+  it('updates transition style with the exact PATCH route and body', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await setTransitionStyle('project/1', 'crossfade');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/transition-style', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ style: 'crossfade' }),
     }));
   });
 

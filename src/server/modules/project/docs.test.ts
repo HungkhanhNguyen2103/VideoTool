@@ -29,4 +29,8 @@ describe('ProjectDocSchema visual style compatibility', () => {
   it('keeps keyword pop-ups enabled for legacy project documents', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).keywordPopupsEnabled).toBe(true);
   });
+
+  it('keeps varied transitions enabled for legacy project documents', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).transitionStyle).toBe('varied');
+  });
 });
