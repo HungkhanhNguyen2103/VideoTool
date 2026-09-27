@@ -11,6 +11,7 @@ export type StageRemotionRenderOptions = {
   scenes: ReadonlyArray<Scene>;
   resolver: RenderFileResolver;
   renderId?: string;
+  keywordContextScenes?: ReadonlyArray<Scene>;
 };
 
 export type StagedRemotionRender = {
@@ -23,7 +24,7 @@ export type StagedRemotionRender = {
 
 export async function stageRemotionRender(options: StageRemotionRenderOptions): Promise<StagedRemotionRender> {
   const renderId = options.renderId ?? newId();
-  const resolved = await resolveRemotionAssets(options.project, options.scenes, renderId, options.resolver);
+  const resolved = await resolveRemotionAssets(options.project, options.scenes, renderId, options.resolver, { keywordContextScenes: options.keywordContextScenes });
   const renderDir = path.join(options.serveUrl, 'public', 'renders', renderId);
   const outputPath = path.join(options.serveUrl, `render-${renderId}.mp4`);
   await mkdir(renderDir, { recursive: true });

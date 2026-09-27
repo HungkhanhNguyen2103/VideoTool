@@ -59,7 +59,7 @@ export class RemotionRenderer implements VideoRenderer {
     let staged: StagedRemotionRender | null = null;
     try {
       const serveUrl = await this.getBundle();
-      staged = await stageRemotionRender({ serveUrl, project, scenes, resolver: this.resolver });
+      staged = await stageRemotionRender({ serveUrl, project, scenes, resolver: this.resolver, keywordContextScenes: project.scenes });
       if (appendLog) await appendLog('Remotion staging complete.');
       if (reportProgress) await reportProgress(10);
       const composition = await this.selectComposition({

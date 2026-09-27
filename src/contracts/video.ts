@@ -6,6 +6,29 @@ export const BGM_VOLUME = '0.1' as const;
 export const SFX_VOLUME_NUMBER = Number(SFX_VOLUME);
 export const BGM_VOLUME_NUMBER = Number(BGM_VOLUME);
 
+export const KEYWORD_KINDS = ['number', 'year', 'date', 'name'] as const;
+export type KeywordKind = (typeof KEYWORD_KINDS)[number];
+
+/** A narration-timed pop-up. Number/year kinds carry the data needed to animate them. */
+export const RemotionKeywordSchema = z.object({
+  text: z.string().min(1),
+  startSec: z.number().nonnegative(),
+  endSec: z.number().nonnegative(),
+  kind: z.enum(KEYWORD_KINDS).default('name'),
+  /** number: parsed value, decimal places, whether the narration used "." thousands grouping. */
+  value: z.number().optional(),
+  decimals: z.number().int().nonnegative().optional(),
+  grouping: z.boolean().optional(),
+  prefix: z.string().optional(),
+  suffix: z.string().optional(),
+  /** year/date: the calendar year mentioned. */
+  year: z.number().int().optional(),
+  /** year: the year the odometer rolls from, and the project-wide timeline range. */
+  fromYear: z.number().int().optional(),
+  timeline: z.object({ min: z.number(), max: z.number() }).optional(),
+});
+export type RemotionKeyword = z.infer<typeof RemotionKeywordSchema>;
+
 export const RemotionScenePropsSchema = z.object({
   id: z.string(),
   assetType: z.enum(['image', 'video']),
@@ -13,11 +36,7 @@ export const RemotionScenePropsSchema = z.object({
   voiceRelPath: z.string().min(1).nullable(),
   sfxRelPath: z.string().min(1).nullable(),
   durationSec: z.number().nonnegative(),
-  keywords: z.array(z.object({
-    text: z.string().min(1),
-    startSec: z.number().nonnegative(),
-    endSec: z.number().nonnegative(),
-  })).default([]),
+  keywords: z.array(RemotionKeywordSchema).default([]),
 });
 export type RemotionSceneProps = z.infer<typeof RemotionScenePropsSchema>;
 

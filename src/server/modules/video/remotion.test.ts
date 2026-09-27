@@ -119,7 +119,7 @@ describe('Remotion props and public-dir staging', () => {
       ] },
     } as unknown as Scene;
     const current = await buildRemotionInputProps(project, [scene], 'render-current', resolver);
-    expect(current.scenes[0]?.keywords).toEqual([{ text: '30 tỷ', startSec: 1, endSec: 2.5 }]);
+    expect(current.scenes[0]?.keywords).toMatchObject([{ text: '30 tỷ', startSec: 1, endSec: 2.5 }]);
     const stale = await buildRemotionInputProps(project, [{ ...scene, audioFileId: 'voice-2' }], 'render-stale', resolver);
     expect(stale.scenes[0]?.keywords).toEqual([]);
   });
@@ -143,6 +143,38 @@ describe('Remotion props and public-dir staging', () => {
     const props = await buildRemotionInputProps(project, [timedScene, { ...timedScene, id: 'scene-2' }], 'render-disabled', resolver);
 
     expect(props.scenes.map((scene) => scene.keywords)).toEqual([[], []]);
+  });
+
+  it('keeps legacy projects with no toggle field enabled', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null } as never;
+    const timedScene = {
+      id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4,
+      wordTimings: { audioFileId: 'voice-1', words: [{ text: '30', startSec: 1, endSec: 1.2 }, { text: 'tỷ', startSec: 1.2, endSec: 1.4 }] },
+    } as unknown as Scene;
+
+    const props = await buildRemotionInputProps(project, [timedScene], 'render-legacy-toggle', resolver);
+
+    expect(props.scenes[0]?.keywords).toMatchObject([{ text: '30 tỷ', kind: 'number', value: 30 }]);
+  });
+
+  it('uses full project scene order for year context when staging a single-scene preview', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true } as never;
+    const earlier = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4, wordTimings: { audioFileId: 'voice-1', words: [{ text: 'năm', startSec: 0, endSec: .2 }, { text: '1965', startSec: .2, endSec: .4 }, { text: 'xong', startSec: 2, endSec: 2.2 }] } } as unknown as Scene;
+    const target = { ...earlier, id: 'scene-2', wordTimings: { audioFileId: 'voice-1', words: [{ text: '1975', startSec: 0, endSec: .2 }, { text: 'xong', startSec: 2, endSec: 2.2 }] } } as unknown as Scene;
+
+    const props = await buildRemotionInputProps(project, [target], 'render-preview-years', resolver, { keywordContextScenes: [earlier, target] });
+
+    expect(props.scenes[0]?.keywords[0]).toMatchObject({ kind: 'year', year: 1975, fromYear: 1965 });
   });
 
   it('resolves owned media and produces generated forward-slash paths', async () => {

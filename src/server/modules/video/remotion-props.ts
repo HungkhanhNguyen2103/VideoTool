@@ -3,7 +3,7 @@ import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { RemotionInputPropsSchema, type RemotionInputProps, type RemotionSceneProps } from '../../../contracts/video';
 import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
-import { selectKeywords } from './keywords';
+import { annotateYearKeywords, selectKeywords } from './keywords';
 
 export type ResolvedRenderFile = {
   absolutePath: string;
@@ -21,6 +21,11 @@ export type RemotionSource = {
 export type ResolvedRemotionAssets = {
   inputProps: RemotionInputProps;
   sources: RemotionSource[];
+};
+
+export type RemotionKeywordContext = {
+  /** Full project scene order used for year chaining; preview renders may stage fewer scenes. */
+  keywordContextScenes?: ReadonlyArray<Scene>;
 };
 
 const EXTENSION_BY_MIME: Record<string, string[]> = {
@@ -70,10 +75,17 @@ export async function resolveRemotionAssets(
   scenes: ReadonlyArray<Scene>,
   renderId: string,
   resolver: RenderFileResolver,
+  options: RemotionKeywordContext = {},
 ): Promise<ResolvedRemotionAssets> {
   validateRenderId(renderId);
   const sources: RemotionSource[] = [];
   const sceneProps: RemotionSceneProps[] = [];
+  const keywordContextScenes = options.keywordContextScenes ?? scenes;
+  const contextKeywords = project.keywordPopupsEnabled === false
+    ? keywordContextScenes.map(() => [])
+    : keywordContextScenes.map((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId ? selectKeywords(scene.wordTimings.words) : []);
+  const annotatedContextKeywords = annotateYearKeywords(contextKeywords);
+  const keywordsBySceneId = new Map(keywordContextScenes.map((scene, index) => [scene.id, annotatedContextKeywords[index]!]));
 
   for (const [index, scene] of scenes.entries()) {
     if (!scene.assetFileId) throw invalidAsset(`Scene ${scene.id} has no visual asset.`);
@@ -110,9 +122,7 @@ export async function resolveRemotionAssets(
       voiceRelPath,
       sfxRelPath,
       durationSec: scene.durationSec,
-      keywords: project.keywordPopupsEnabled && scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId
-        ? selectKeywords(scene.wordTimings.words)
-        : [],
+      keywords: keywordsBySceneId.get(scene.id) ?? [],
     });
   }
 
@@ -138,6 +148,7 @@ export async function buildRemotionInputProps(
   scenes: ReadonlyArray<Scene>,
   renderId: string,
   resolver: RenderFileResolver,
+  options: RemotionKeywordContext = {},
 ): Promise<RemotionInputProps> {
-  return (await resolveRemotionAssets(project, scenes, renderId, resolver)).inputProps;
+  return (await resolveRemotionAssets(project, scenes, renderId, resolver, options)).inputProps;
 }

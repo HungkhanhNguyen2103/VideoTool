@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
-import { AbsoluteFill, cancelRender, continueRender, delayRender, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
-import type { RemotionSceneProps } from '../contracts/video';
+import type { CSSProperties } from 'react';
+import { AbsoluteFill, cancelRender, continueRender, delayRender, Easing, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import type { RemotionKeyword, RemotionSceneProps } from '../contracts/video';
+import { formatVietnameseNumber, odometerColumnOffset } from './number-format';
 
 const FADE_OUT_SEC = 0.3;
+const COUNT_UP_SEC = 0.7;
+const YEAR_ROLL_SEC = 0.8;
+const ROW_EM = 1.1;
 export const KEYWORD_FONT_FAMILY = 'VideoToolNotoSans';
 const FONT_WEIGHT = '700';
 const FONT_STYLE = 'normal';
@@ -54,7 +59,76 @@ function codePoints(text: string): string {
   return Array.from(text).map((character) => `U+${character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
 }
 
-function PopUp({ text, durationInFrames }: { text: string; durationInFrames: number }) {
+const upper = (value: string | undefined) => (value ?? '').toLocaleUpperCase('vi');
+
+function progress(frame: number, fps: number, seconds: number, easing: (t: number) => number): number {
+  return interpolate(frame, [0, Math.max(1, Math.round(seconds * fps))], [0, 1], {
+    easing, extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  });
+}
+
+/** Digits count up from 0; prefix/suffix stay static. Width is reserved for the final value. */
+function CountUp({ keyword, frame, fps }: { keyword: RemotionKeyword; frame: number; fps: number }) {
+  const decimals = keyword.decimals ?? 0;
+  const grouping = keyword.grouping ?? false;
+  const finalDigits = formatVietnameseNumber(keyword.value!, decimals, grouping);
+  const current = keyword.value! * progress(frame, fps, COUNT_UP_SEC, Easing.out(Easing.cubic));
+  return (
+    <>
+      {keyword.prefix ? `${upper(keyword.prefix)} ` : ''}
+      <span style={{ display: 'inline-block', minWidth: `${finalDigits.length}ch`, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+        {formatVietnameseNumber(current, decimals, grouping)}
+      </span>
+      {keyword.suffix ? ` ${upper(keyword.suffix)}` : ''}
+    </>
+  );
+}
+
+function OdometerDigit({ value, column }: { value: number; column: number }) {
+  const offset = odometerColumnOffset(value, column);
+  return (
+    <span style={{ display: 'inline-block', height: `${ROW_EM}em`, overflow: 'hidden', verticalAlign: 'top' }}>
+      <span style={{ display: 'flex', flexDirection: 'column', transform: `translateY(${-offset * ROW_EM}em)` }}>
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((digit, index) => (
+          <span key={index} style={{ height: `${ROW_EM}em`, lineHeight: ROW_EM }}>{digit}</span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/** Year rolls like an odometer from fromYear; a marker slides along the project timeline in sync. */
+function YearRoll({ keyword, frame, fps, fontSize, width }: { keyword: RemotionKeyword; frame: number; fps: number; fontSize: number; width: number }) {
+  const to = keyword.year!;
+  const from = keyword.fromYear ?? to;
+  const value = from + (to - from) * progress(frame, fps, YEAR_ROLL_SEC, Easing.inOut(Easing.cubic));
+  const columns = Math.max(4, String(Math.max(from, to)).length);
+  const timeline = keyword.timeline;
+  const markerPosition = timeline ? Math.min(1, Math.max(0, (value - timeline.min) / (timeline.max - timeline.min))) : null;
+  const lineWidth = Math.min(width * 0.5, fontSize * 6);
+  const labelStyle: CSSProperties = { position: 'absolute', top: fontSize * 0.14, fontSize: fontSize * 0.22, opacity: 0.8, WebkitTextStroke: '1px #111' };
+  return (
+    <div>
+      <div style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+        {Array.from({ length: columns }, (_, index) => <OdometerDigit key={index} value={value} column={columns - 1 - index} />)}
+      </div>
+      {timeline && markerPosition !== null && (
+        <div style={{ position: 'relative', width: lineWidth, height: fontSize * 0.5, margin: `${fontSize * 0.18}px auto 0` }}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: Math.max(2, Math.round(fontSize * 0.03)), background: 'rgba(255,255,255,.7)', borderRadius: 999 }} />
+          <div style={{
+            position: 'absolute', top: 0, left: `${markerPosition * 100}%`, width: fontSize * 0.16, height: fontSize * 0.16,
+            transform: 'translate(-50%, -40%)', borderRadius: '50%', background: '#fff', boxShadow: '0 0 12px rgba(0,0,0,.8)',
+          }} />
+          <span style={{ ...labelStyle, left: 0 }}>{timeline.min}</span>
+          <span style={{ ...labelStyle, right: 0 }}>{timeline.max}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PopUp({ keyword, durationInFrames }: { keyword: RemotionKeyword; durationInFrames: number }) {
+  const { text } = keyword;
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const [fontHandle] = useState(() => delayRender('Loading local Noto Sans font'));
@@ -71,21 +145,28 @@ function PopUp({ text, durationInFrames }: { text: string; durationInFrames: num
   const opacityIn = interpolate(frame, [0, Math.max(1, Math.round(0.12 * fps))], [0.12, 1], { extrapolateRight: 'clamp' });
   const opacityOut = interpolate(frame, [fadeStart, Math.max(fadeStart + 1, durationInFrames)], [1, 0], { extrapolateLeft: 'clamp' });
   const scale = spring({ frame, fps, from: 0.6, to: 1, config: { damping: 13, stiffness: 190 } });
+  const fontSize = Math.min(width * 0.1, height * 0.1);
+  const base: CSSProperties = {
+    color: '#fff', fontFamily: KEYWORD_FONT_FAMILY, fontWeight: 700, fontSize, lineHeight: ROW_EM, textAlign: 'center',
+    WebkitTextStroke: `${Math.max(2, Math.round(width * 0.003))}px #111`,
+    paintOrder: 'stroke fill',
+    textShadow: '0 4px 16px rgba(0,0,0,.9), 0 0 32px rgba(0,0,0,.75)',
+    opacity: Math.min(opacityIn, opacityOut), transform: `scale(${scale})`,
+  };
+  const isYear = keyword.kind === 'year' && keyword.year !== undefined;
+  const isCount = keyword.kind === 'number' && keyword.value !== undefined;
   return (
     <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-      <div lang="vi" style={{
-        maxWidth: '86%', maxHeight: '30%', overflow: 'hidden',
-        color: '#fff', fontFamily: KEYWORD_FONT_FAMILY, fontWeight: 700,
-        fontSize: Math.min(width * 0.1, height * 0.1), lineHeight: 1.1,
-        textAlign: 'center', overflowWrap: 'anywhere',
-        display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
-        WebkitTextStroke: `${Math.max(2, Math.round(width * 0.003))}px #111`,
-        paintOrder: 'stroke fill',
-        textShadow: '0 4px 16px rgba(0,0,0,.9), 0 0 32px rgba(0,0,0,.75)',
-        opacity: Math.min(opacityIn, opacityOut), transform: `scale(${scale})`,
-      }}>
-        {text.toLocaleUpperCase('vi')}
-      </div>
+      {isYear ? (
+        <div lang="vi" style={base}><YearRoll keyword={keyword} frame={frame} fps={fps} fontSize={fontSize} width={width} /></div>
+      ) : (
+        <div lang="vi" style={{
+          ...base, maxWidth: '86%', maxHeight: '30%', overflow: 'hidden', overflowWrap: 'anywhere',
+          display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+        }}>
+          {isCount ? <CountUp keyword={keyword} frame={frame} fps={fps} /> : upper(text)}
+        </div>
+      )}
     </AbsoluteFill>
   );
 }
@@ -97,7 +178,7 @@ export function KeywordOverlay({ keywords }: { keywords: RemotionSceneProps['key
     const end = Math.floor(keyword.endSec * fps);
     const durationInFrames = Math.max(1, end - from);
     return <Sequence key={`${keyword.startSec}-${index}`} from={from} durationInFrames={durationInFrames} layout="none">
-      <PopUp text={keyword.text} durationInFrames={durationInFrames} />
+      <PopUp keyword={keyword} durationInFrames={durationInFrames} />
     </Sequence>;
   })}</>;
 }
