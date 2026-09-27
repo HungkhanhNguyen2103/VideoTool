@@ -78,13 +78,17 @@ try {
   const place = sceneProps(assetRelPath, { text: 'Rochester', startSec: .4, endSec: 3.8, kind: 'name', nameRole: 'place' });
   const portrait = sceneProps(assetRelPath, { text: 'Steven Sasson', startSec: .4, endSec: 3.8, kind: 'name', nameRole: 'person', subtitle: 'Kỹ sư' }, 1080, 1920);
   const brightYear = sceneProps('bright.svg', { text: '1975', startSec: .2, endSec: 2.8, kind: 'year', year: 1975, fromYear: 1965, timeline: { min: 1960, max: 1980 } }, 1920, 1080, 3.1);
+  const darkYear = sceneProps(assetRelPath, { text: '1975', startSec: .2, endSec: 2.8, kind: 'year', year: 1975, fromYear: 1965, timeline: { min: 1960, max: 1980 } }, 1920, 1080, 3.1);
 
   await still(serveUrl, person, path.join(outputDir, 'name-slide-in-start.png'), 13);
   await still(serveUrl, person, path.join(outputDir, 'name-fully-in.png'), 42);
   await still(serveUrl, person, path.join(outputDir, 'name-slide-out.png'), 111);
   await still(serveUrl, place, path.join(outputDir, 'place-fully-in.png'), 42);
   await still(serveUrl, portrait, path.join(outputDir, 'portrait-fully-in.png'), 42);
+  await still(serveUrl, brightYear, path.join(outputDir, 'year-bright-mid.png'), 18);
   await still(serveUrl, brightYear, path.join(outputDir, 'year-bright-final.png'), 60);
+  await still(serveUrl, darkYear, path.join(outputDir, 'year-kodak-mid.png'), 18);
+  await still(serveUrl, darkYear, path.join(outputDir, 'year-kodak-final.png'), 60);
   await clip(serveUrl, person, path.join(outputDir, 'name-clip.mp4'), 'name');
   await clip(serveUrl, brightYear, path.join(outputDir, 'year-bright-clip.mp4'), 'year-bright');
 

@@ -113,7 +113,11 @@ function YearRoll({ keyword, frame, fps, fontSize, width }: { keyword: RemotionK
   };
   return (
     <div>
-      <div style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      <div style={{
+        fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+        WebkitTextStroke: '1px #111',
+        filter: 'drop-shadow(0 4px 12px rgba(0,0,0,.9)) drop-shadow(0 0 24px rgba(0,0,0,.6))',
+      }}>
         {Array.from({ length: columns }, (_, index) => <OdometerDigit key={index} value={value} column={columns - 1 - index} />)}
       </div>
       {timeline && markerPosition !== null && (
@@ -230,7 +234,7 @@ function PopUp({ keyword, durationInFrames }: { keyword: RemotionKeyword; durati
   return (
     <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
       {isYear ? (
-        <div lang="vi" style={base}><YearRoll keyword={keyword} frame={frame} fps={fps} fontSize={fontSize} width={width} /></div>
+        <div lang="vi" style={{ ...base, textShadow: 'none' }}><YearRoll keyword={keyword} frame={frame} fps={fps} fontSize={fontSize} width={width} /></div>
       ) : (
         <div lang="vi" style={{
           ...base, maxWidth: '86%', maxHeight: '30%', overflow: 'hidden', overflowWrap: 'anywhere',
