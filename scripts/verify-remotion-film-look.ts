@@ -92,6 +92,7 @@ try {
   await renderStillAt(serveUrl, makeProps(assetA, assetB, true), path.join(outputDir, 'film-on-full.png'), 45);
   await renderStillAt(serveUrl, makeProps(assetA, assetB, true), path.join(outputDir, 'film-on-grain-frame-45.png'), 45);
   await renderStillAt(serveUrl, makeProps(assetA, assetB, true), path.join(outputDir, 'film-on-grain-frame-46.png'), 46);
+  await renderStillAt(serveUrl, makeProps(assetA, assetB, true), path.join(outputDir, 'film-on-grain-frame-47.png'), 47);
   await renderStillAt(serveUrl, makeProps(assetA, assetB, true, [{ text: 'Steven Sasson', startSec: .5, endSec: 4, kind: 'name', nameRole: 'person', subtitle: 'Kỹ sư' }]), path.join(outputDir, 'film-on-lower-third.png'), 60);
 
   const offMs = await renderTimedClip(serveUrl, makeSegment(assetA, assetB, false), path.join(outputDir, 'segment-off.mp4'));

@@ -118,7 +118,11 @@ function SceneVisual({ scene, realDurationInFrames, visualTiming, boundaryIndex 
   return (
     <AbsoluteFill style={{ backgroundColor: hasVisualTransition ? 'transparent' : 'black' }}>
       {filterId && <svg width="0" height="0" aria-hidden="true"><defs><filter id={filterId} x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation={`${blurX} 0`} /></filter></defs></svg>}
-      <FilmLook enabled={scene.filmLook} sceneId={scene.id}>
+      <FilmLook
+        enabled={scene.filmLook}
+        sceneId={scene.id}
+        overlay={overlayStyle ? <AbsoluteFill style={overlayStyle} /> : undefined}
+      >
         <div style={{ position: 'absolute', inset: 0, ...contentStyle }}>
           {scene.assetType === 'video' ? (
             <OffthreadVideo muted src={staticFile(scene.assetRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
@@ -126,7 +130,6 @@ function SceneVisual({ scene, realDurationInFrames, visualTiming, boundaryIndex 
             <ImageScene scene={scene} durationInFrames={realDurationInFrames} />
           )}
         </div>
-        {overlayStyle && <AbsoluteFill style={overlayStyle} />}
       </FilmLook>
     </AbsoluteFill>
   );
