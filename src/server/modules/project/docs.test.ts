@@ -25,4 +25,8 @@ describe('ProjectDocSchema visual style compatibility', () => {
   it('defaults legacy project documents to cinematic', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).visualStylePresetId).toBe('cinematic');
   });
+
+  it('keeps keyword pop-ups enabled for legacy project documents', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).keywordPopupsEnabled).toBe(true);
+  });
 });

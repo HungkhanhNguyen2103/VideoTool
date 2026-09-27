@@ -66,7 +66,7 @@ async function resolveFile(
 }
 
 export async function resolveRemotionAssets(
-  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId'>,
+  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>,
   scenes: ReadonlyArray<Scene>,
   renderId: string,
   resolver: RenderFileResolver,
@@ -110,7 +110,7 @@ export async function resolveRemotionAssets(
       voiceRelPath,
       sfxRelPath,
       durationSec: scene.durationSec,
-      keywords: scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId
+      keywords: project.keywordPopupsEnabled && scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId
         ? selectKeywords(scene.wordTimings.words)
         : [],
     });
@@ -134,7 +134,7 @@ export async function resolveRemotionAssets(
 }
 
 export async function buildRemotionInputProps(
-  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId'>,
+  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>,
   scenes: ReadonlyArray<Scene>,
   renderId: string,
   resolver: RenderFileResolver,

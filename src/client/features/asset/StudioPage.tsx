@@ -207,6 +207,13 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function setKeywordPopups(enabled: boolean) {
+    if (enabled === project?.keywordPopupsEnabled) return;
+    try { setBusy('keyword-popups'); await api.setKeywordPopups(projectId, enabled); await refresh(); toast(`Đã ${enabled ? 'bật' : 'tắt'} chữ pop-up.`); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi chữ pop-up.'); }
+    finally { setBusy(null); }
+  }
+
   async function setAiProvider(provider: 'deepseek' | 'claude') {
     if (provider === project?.aiProvider) return;
     try { setBusy('ai-provider'); await api.setAiProvider(projectId, provider); await refresh(); toast(`Đã chọn nhà cung cấp AI ${provider === 'deepseek' ? 'DeepSeek' : 'Claude'}.`); }
@@ -278,7 +285,7 @@ export function StudioPage() {
       </div>
 
       <section className={styles.mediaPanel} aria-label="Âm thanh và render">
-        <div className={styles.mediaHeader}><div><strong>BGM nền</strong><p className={styles.muted}>Tìm nhạc ambient theo mood</p></div><div className={styles.engineSelector} role="group" aria-label="Render engine">{api.RENDER_ENGINE_OPTIONS.map((option) => <Button key={option.value} size="sm" variant={api.selectedRenderEngine(project.renderEngine) === option.value ? 'indigoline' : 'ghost'} disabled={busy !== null} aria-pressed={api.selectedRenderEngine(project.renderEngine) === option.value} onClick={() => void setRenderEngine(option.value)}>{option.label}</Button>)}</div></div>
+        <div className={styles.mediaHeader}><div><strong>BGM nền</strong><p className={styles.muted}>Tìm nhạc ambient theo mood</p></div><div className={styles.renderControls}><div className={styles.engineSelector} role="group" aria-label="Render engine">{api.RENDER_ENGINE_OPTIONS.map((option) => <Button key={option.value} size="sm" variant={api.selectedRenderEngine(project.renderEngine) === option.value ? 'indigoline' : 'ghost'} disabled={busy !== null} aria-pressed={api.selectedRenderEngine(project.renderEngine) === option.value} onClick={() => void setRenderEngine(option.value)}>{option.label}</Button>)}</div><label className={styles.popupToggle}><input type="checkbox" checked={project.keywordPopupsEnabled} disabled={busy !== null || project.renderEngine === 'ffmpeg'} onChange={(event) => void setKeywordPopups(event.currentTarget.checked)} /><span>Chữ pop-up</span></label>{project.renderEngine === 'ffmpeg' && <span className={styles.renderHint}>Chỉ áp dụng cho Remotion.</span>}</div></div>
         <div className={styles.actions}><input className={styles.audioInput} value={bgmMood} onChange={(event) => setBgmMood(event.target.value)} placeholder="Ví dụ: calm cinematic" /><Button size="sm" disabled={busy !== null || !bgmMood.trim()} onClick={() => void generateBgm()}>Tạo BGM</Button>{(() => { const file = project.bgmFileId ? filesById.get(project.bgmFileId) : undefined; return file && file.purpose === 'bgm' && file.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(file)} /> : null; })()}</div>
         {(() => { const file = project.renderFileId ? filesById.get(project.renderFileId) : undefined; return file && file.purpose === 'render' && file.mimeType.startsWith('video/') ? <video className={styles.renderPlayer} controls src={api.fileUrlForSummary(file)} /> : null; })()}
         {missingScenes.length > 0 && <p className={styles.warning}>Chưa sẵn sàng render: scene {missingScenes.join(', ')} thiếu asset.</p>}

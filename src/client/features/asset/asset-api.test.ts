@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setRenderEngine, setVisualStyle, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setKeywordPopups, setRenderEngine, setVisualStyle, splitScenes } from './api';
 import * as assetApi from './api';
 
 const project = {
@@ -98,6 +98,16 @@ describe('asset API helpers', () => {
     }));
     expect(selectedRenderEngine('remotion')).toBe('remotion');
     expect(selectedRenderEngine('ffmpeg')).toBe('ffmpeg');
+  });
+
+  it('updates keyword pop-ups with the exact PATCH route and body', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await setKeywordPopups('project/1', false);
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/keyword-popups', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ enabled: false }),
+    }));
   });
 
   it('exposes AI provider options and updates the provider with the exact PATCH route and body', async () => {

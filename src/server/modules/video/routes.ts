@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectRenderEngine } from '../project';
+import { getProject, setProjectKeywordPopups, setProjectRenderEngine } from '../project';
 import { RENDER_ENGINES } from '../../../contracts/project';
 import {
   generateProjectBgm,
@@ -22,6 +22,7 @@ const VoiceoverOptionsSchema = z.object({
 
 const BgmSchema = z.object({ mood: z.string().trim().min(1) });
 const RenderEngineSchema = z.object({ engine: z.enum(RENDER_ENGINES) });
+const KeywordPopupsSchema = z.object({ enabled: z.boolean() }).strict();
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Router {
   const router = Router();
@@ -76,6 +77,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
   router.patch('/:id/render-engine', async (req, res) => {
     const { engine } = RenderEngineSchema.parse(req.body);
     res.json(await setProjectRenderEngine(req.params.id, engine));
+  });
+
+  router.patch('/:id/keyword-popups', async (req, res) => {
+    const { enabled } = KeywordPopupsSchema.parse(req.body);
+    res.json(await setProjectKeywordPopups(req.params.id, enabled));
   });
 
   return router;

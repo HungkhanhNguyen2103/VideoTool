@@ -110,7 +110,7 @@ describe('Remotion props and public-dir staging', () => {
       mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
       purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
     });
-    const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null } as never;
+    const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true } as never;
     const scene = {
       id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4,
       wordTimings: { audioFileId: 'voice-1', words: [
@@ -122,6 +122,27 @@ describe('Remotion props and public-dir staging', () => {
     expect(current.scenes[0]?.keywords).toEqual([{ text: '30 tỷ', startSec: 1, endSec: 2.5 }]);
     const stale = await buildRemotionInputProps(project, [{ ...scene, audioFileId: 'voice-2' }], 'render-stale', resolver);
     expect(stale.scenes[0]?.keywords).toEqual([]);
+  });
+
+  it('omits every keyword when project pop-ups are disabled', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const project = {
+      id: 'project-1', renderSettings: { aspect: '16:9', fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: false,
+    } as const;
+    const timedScene = {
+      id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 4,
+      wordTimings: { audioFileId: 'voice-1', words: [
+        { text: 'giá', startSec: 0, endSec: .3 }, { text: '30', startSec: 1, endSec: 1.2 }, { text: 'tỷ', startSec: 1.2, endSec: 1.4 },
+      ] },
+    } as unknown as Scene;
+
+    const props = await buildRemotionInputProps(project, [timedScene, { ...timedScene, id: 'scene-2' }], 'render-disabled', resolver);
+
+    expect(props.scenes.map((scene) => scene.keywords)).toEqual([[], []]);
   });
 
   it('resolves owned media and produces generated forward-slash paths', async () => {

@@ -124,6 +124,12 @@ export function setRenderEngine(projectId: string, engine: RenderEngine): Promis
   });
 }
 
+export function setKeywordPopups(projectId: string, enabled: boolean): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/keyword-popups`, ProjectDetailSchema, {
+    method: 'PATCH', body: { enabled },
+  });
+}
+
 export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, {
     method: 'PATCH', body: { provider },

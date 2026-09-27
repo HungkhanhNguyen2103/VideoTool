@@ -33,6 +33,7 @@ export const ProjectDocSchema = z.object({
   voiceId: z.string().nullable(),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
+  keywordPopupsEnabled: z.boolean().default(true),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

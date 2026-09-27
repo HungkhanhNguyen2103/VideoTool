@@ -8,6 +8,10 @@
 .mediaPanel { display: grid; gap: .75rem; padding: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
 .mediaHeader { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .engineSelector { display: flex; align-items: center; gap: .35rem; }
+.renderControls { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; flex-wrap: wrap; }
+.popupToggle { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; font-weight: 700; }
+.popupToggle input { accent-color: var(--indigo); }
+.renderHint { color: var(--text-3); font-size: .75rem; }
 .audioControls { display: grid; gap: 1rem; align-content: start; }
 .audioInput { min-width: 12rem; padding: .5rem .65rem; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: .45rem; font: inherit; }
 .styleReferenceControls { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }

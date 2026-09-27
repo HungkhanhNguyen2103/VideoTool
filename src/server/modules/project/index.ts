@@ -21,6 +21,7 @@ export {
   setProjectScenesAssetType,
   setProjectBgm,
   setProjectCustomStyleReferenceFile,
+  setProjectKeywordPopups,
   setProjectRenderEngine,
   setProjectAiProvider,
   setProjectVisualStylePreset,

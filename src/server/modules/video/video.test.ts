@@ -412,6 +412,37 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue): Promise<string>
 }
 
 describe('video routes and worker handlers', () => {
+  it('persists true and false keyword pop-up settings through the route', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn();
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    expect(project.keywordPopupsEnabled).toBe(true);
+    for (const enabled of [false, true]) {
+      const response = await fetch(`${base}/api/project/${project.id}/keyword-popups`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).keywordPopupsEnabled).toBe(enabled);
+      expect((await getProject(project.id)).keywordPopupsEnabled).toBe(enabled);
+      if (!enabled) expect((await duplicateProject(project.id)).keywordPopupsEnabled).toBe(false);
+    }
+
+  });
+
+  it('rejects malformed keyword pop-up settings through the route', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn();
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    for (const body of [{ enabled: 'yes' }, { enabled: true, extra: true }]) {
+      const response = await fetch(`${base}/api/project/${project.id}/keyword-popups`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
   it('updates the render engine through the thin route and rejects invalid or missing projects', async () => {
     const project = await seedProject();
     const enqueueJob = vi.fn();

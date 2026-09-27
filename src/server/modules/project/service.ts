@@ -34,6 +34,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     voiceId: doc.voiceId,
     aiProvider: doc.aiProvider,
     renderEngine: doc.renderEngine,
+    keywordPopupsEnabled: doc.keywordPopupsEnabled,
     voiceoverVoice: doc.voiceoverVoice,
     renderFileId: doc.renderFileId,
     bgmMood: doc.bgmMood,
@@ -69,6 +70,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     voiceId: input.voiceId,
     aiProvider: input.aiProvider ?? 'deepseek',
     renderEngine: input.renderEngine ?? 'ffmpeg',
+    keywordPopupsEnabled: true,
     voiceoverVoice: input.voiceoverVoice ?? 'Truc Ly',
     renderFileId: input.renderFileId ?? null,
     bgmMood: input.bgmMood ?? '',
@@ -199,6 +201,11 @@ export async function setProjectRenderFile(id: string, renderFileId: string): Pr
 
 export async function setProjectRenderEngine(id: string, renderEngine: ProjectDetail['renderEngine']): Promise<ProjectDetail> {
   await updateProject(id, { renderEngine });
+  return getProject(id);
+}
+
+export async function setProjectKeywordPopups(id: string, enabled: boolean): Promise<ProjectDetail> {
+  await updateProject(id, { keywordPopupsEnabled: enabled });
   return getProject(id);
 }
 

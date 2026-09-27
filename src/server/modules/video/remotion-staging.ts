@@ -7,7 +7,7 @@ import { resolveRemotionAssets, type RenderFileResolver } from './remotion-props
 
 export type StageRemotionRenderOptions = {
   serveUrl: string;
-  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId'>;
+  project: Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>;
   scenes: ReadonlyArray<Scene>;
   resolver: RenderFileResolver;
   renderId?: string;
