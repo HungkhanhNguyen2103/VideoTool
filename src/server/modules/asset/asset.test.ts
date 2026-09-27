@@ -35,9 +35,9 @@ const projectInput = {
 async function seedProjectWithScenes() {
   const project = await createProject(projectInput);
   await replaceProjectScenes(project.id, [
-    { id: 'scene-1', narration: 'Opening', visualPrompt: 'A door', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
-    { id: 'scene-2', narration: 'Context', visualPrompt: 'A room', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
-    { id: 'scene-3', narration: 'Close', visualPrompt: 'A window', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
+    { id: 'scene-1', narration: 'Opening', visualPrompt: 'A door', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    { id: 'scene-2', narration: 'Context', visualPrompt: 'A room', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    { id: 'scene-3', narration: 'Close', visualPrompt: 'A window', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
   ]);
   return getProject(project.id);
 }
@@ -97,7 +97,7 @@ describe('asset contracts', () => {
     );
 
     const loaded = await getProject(project.id);
-    expect(loaded.scenes[0]).toMatchObject({ assetType: 'image', assetFileId: null });
+    expect(loaded.scenes[0]).toMatchObject({ assetType: 'image', assetFileId: null, motionPrompt: '' });
   });
 
   it('requires the generated stored path in file summaries', () => {
@@ -156,10 +156,19 @@ describe('asset contracts', () => {
     const exported = exportScenesJson(project);
 
     expect(exported).toEqual([
-      expect.objectContaining({ sceneId: 1, sceneNumber: 1, prompt: 'A door', assetType: 'image' }),
+      expect.objectContaining({ sceneId: 1, sceneNumber: 1, prompt: 'A door', assetType: 'image', motionPrompt: '' }),
       expect.objectContaining({ sceneId: 2, sceneNumber: 2, prompt: 'A room', assetType: 'image' }),
       expect.objectContaining({ sceneId: 3, sceneNumber: 3, prompt: 'A window', assetType: 'image' }),
     ]);
+  });
+
+  it('exports the stored motion prompt for a video scene', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video', motionPrompt: 'Slow dolly toward the subject.' });
+
+    const exported = exportScenesJson(await getProject(project.id));
+
+    expect(exported[1]).toMatchObject({ assetType: 'video', motionPrompt: 'Slow dolly toward the subject.' });
   });
 
   it('imports a valid root-level image and applies its file reference', async () => {
@@ -300,10 +309,10 @@ describe('asset contracts', () => {
     const base = await startAssetServer();
 
     const patched = await fetch(`${base}/api/project/${project.id}/scenes/scene-1`, {
-      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visualPrompt: 'Updated prompt', sfxPrompt: 'tiếng gió' }),
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visualPrompt: 'Updated prompt', sfxPrompt: 'tiếng gió', motionPrompt: 'Slow camera push-in.' }),
     });
     expect(patched.status).toBe(200);
-    expect((await patched.json() as { scenes: Array<{ visualPrompt: string; sfxPrompt: string }> }).scenes[0]).toMatchObject({ visualPrompt: 'Updated prompt', sfxPrompt: 'tiếng gió' });
+    expect((await patched.json() as { scenes: Array<{ visualPrompt: string; sfxPrompt: string; motionPrompt: string }> }).scenes[0]).toMatchObject({ visualPrompt: 'Updated prompt', sfxPrompt: 'tiếng gió', motionPrompt: 'Slow camera push-in.' });
 
     const rejected = await fetch(`${base}/api/project/${project.id}/scenes/scene-1`, {
       method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}),

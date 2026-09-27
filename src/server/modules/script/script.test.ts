@@ -53,9 +53,9 @@ async function startScriptServer(): Promise<string> {
 async function projectWithFinalizedScenes() {
   const project = await createProject(projectInput);
   await replaceProjectScenes(project.id, [
-    { id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
-    { id: 'scene-2', narration: 'Two', visualPrompt: '', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
-    { id: 'scene-3', narration: 'Three', visualPrompt: 'Manual prompt', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null },
+    { id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    { id: 'scene-2', narration: 'Two', visualPrompt: '', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    { id: 'scene-3', narration: 'Three', visualPrompt: 'Manual prompt', durationSec: 10, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
   ], 'assets');
   return getProject(project.id);
 }
@@ -808,7 +808,7 @@ describe('script contracts', () => {
     }], null, 'assets');
     await replaceProjectScenes(project.id, [{
       id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 60,
-      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null,
     }], 'assets');
     const base = await startScriptServer();
 
@@ -838,7 +838,7 @@ describe('script contracts', () => {
     }], null, 'script');
     await replaceProjectScenes(project.id, [{
       id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 60,
-      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null,
     }], 'assets');
     const base = await startScriptServer();
 
@@ -855,7 +855,7 @@ describe('script contracts', () => {
     }], null, 'script');
     await replaceProjectScenes(project.id, [{
       id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 60,
-      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null,
     }], 'assets');
     const base = await startScriptServer();
 
@@ -976,7 +976,7 @@ describe('script contracts', () => {
     }], null, 'assets');
     await replaceProjectScenes(project.id, [{
       id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 1,
-      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null,
+      assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null,
     }], 'assets');
     const base = await startScriptServer();
 

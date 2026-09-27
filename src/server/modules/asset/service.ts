@@ -39,6 +39,7 @@ export function exportScenesJson(project: ProjectDetail): FlowSceneExport[] {
       title: slugifyTitle(scene.narration, sceneNumber),
       prompt: scene.visualPrompt,
       assetType: scene.assetType,
+      motionPrompt: scene.motionPrompt,
     };
   });
 }

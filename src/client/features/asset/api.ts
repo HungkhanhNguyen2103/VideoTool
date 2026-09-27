@@ -77,7 +77,7 @@ export function exportScenesJson(projectId: string): Promise<FlowSceneExport[]> 
 export function patchScene(
   projectId: string,
   sceneId: string,
-  body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string },
+  body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string; motionPrompt?: string },
 ): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`, ProjectDetailSchema, {
     method: 'PATCH', body,

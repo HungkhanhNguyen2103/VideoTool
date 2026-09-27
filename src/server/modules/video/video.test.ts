@@ -115,7 +115,7 @@ async function seedProject() {
   const project = await createProject(projectInput);
   await replaceProjectScenes(project.id, [{
     id: 'scene-1', narration: 'Narration', visualPrompt: 'Visual', durationSec: 5,
-    assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: 'wind', sfxFileId: null,
+    assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: 'wind', motionPrompt: '', sfxFileId: null,
   }]);
   return getProject(project.id);
 }
@@ -123,8 +123,8 @@ async function seedProject() {
 async function seedVoiceProject() {
   const project = await createProject(projectInput);
   await replaceProjectScenes(project.id, [
-    { id: 'scene-1', narration: 'First narration', visualPrompt: 'Visual 1', durationSec: 5, assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: 'wind', sfxFileId: null },
-    { id: 'scene-2', narration: 'Second narration', visualPrompt: 'Visual 2', durationSec: 7, assetType: 'image', assetFileId: 'asset-2', audioFileId: null, sfxPrompt: '', sfxFileId: null },
+    { id: 'scene-1', narration: 'First narration', visualPrompt: 'Visual 1', durationSec: 5, assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: 'wind', motionPrompt: '', sfxFileId: null },
+    { id: 'scene-2', narration: 'Second narration', visualPrompt: 'Visual 2', durationSec: 7, assetType: 'image', assetFileId: 'asset-2', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
   ]);
   return getProject(project.id);
 }
@@ -386,7 +386,7 @@ describe('video orchestration services', () => {
 
   it('rejects renders with one-based scene numbers when assets are missing', async () => {
     const project = await createProject(projectInput);
-    await replaceProjectScenes(project.id, [{ id: 'scene-1', narration: 'Missing', visualPrompt: 'Visual', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null }]);
+    await replaceProjectScenes(project.id, [{ id: 'scene-1', narration: 'Missing', visualPrompt: 'Visual', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null }]);
 
     await expect(renderFullProject(project.id, async () => undefined, async () => undefined)).rejects.toMatchObject({ code: 'SCENES_NOT_READY', status: 422 });
   });
@@ -573,7 +573,7 @@ describe('video routes and worker handlers', () => {
 
   it('rejects an unready render before enqueueing a job', async () => {
     const project = await createProject(projectInput);
-    await replaceProjectScenes(project.id, [{ id: 'scene-1', narration: 'Missing asset', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null }]);
+    await replaceProjectScenes(project.id, [{ id: 'scene-1', narration: 'Missing asset', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null }]);
     const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' });
     const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
 
@@ -668,7 +668,7 @@ describe('real FFmpeg integration', () => {
     const generatedShort = spawnSync(ffmpegPath, ['-y', '-f', 'lavfi', '-i', 'color=c=blue:s=320x180:r=30:d=0.5', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', shortVideoPath], { encoding: 'utf8' });
     expect(generatedShort.status).toBe(0);
     const videoProject = await createProject(projectInput);
-    await replaceProjectScenes(videoProject.id, [{ id: 'video-scene', narration: 'Video', visualPrompt: '', durationSec: 2, assetType: 'video', assetFileId: 'video-1', audioFileId: null, sfxPrompt: '', sfxFileId: null }]);
+    await replaceProjectScenes(videoProject.id, [{ id: 'video-scene', narration: 'Video', visualPrompt: '', durationSec: 2, assetType: 'video', assetFileId: 'video-1', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null }]);
     const videoRenderer = new FfmpegRenderer({ ffmpegPath, resolveFilePath: async () => ({ absolutePath: shortVideoPath, mimeType: 'video/mp4', purpose: 'reference' }) });
     const shortPreview = await videoRenderer.renderScenePreview(await getProject(videoProject.id), (await getProject(videoProject.id)).scenes[0]!);
     await writeFile(shortOutputPath, shortPreview);

@@ -34,7 +34,7 @@ async function projectWithScenes(
   ], null);
   await replaceProjectScenes(project.id, ['One', 'Two', 'Three', 'Four'].slice(0, counts[0] + counts[1]).map((narration, index) => ({
     id: `scene-${index + 1}`, narration, visualPrompt: prompts[index]!, durationSec: 20,
-    assetType: 'image' as const, assetFileId: null, audioFileId: null, sfxPrompt: sfxPrompts[index] ?? '', sfxFileId: null,
+    assetType: 'image' as const, assetFileId: null, audioFileId: null, sfxPrompt: sfxPrompts[index] ?? '', motionPrompt: '', sfxFileId: null,
   })), 'assets');
   return getProject(project.id);
 }

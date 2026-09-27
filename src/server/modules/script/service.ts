@@ -263,6 +263,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       audioFileId: null,
       wordTimings: null,
       sfxPrompt: '',
+      motionPrompt: '',
       sfxFileId: null,
       depthMap: null,
     })));

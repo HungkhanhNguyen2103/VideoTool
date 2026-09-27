@@ -28,7 +28,7 @@ const projectInput = {
 
 function scene(id: string, narration: string) {
   return { id, narration, visualPrompt: '', durationSec: 9, assetType: 'image' as const,
-    assetFileId: null, audioFileId: null, sfxPrompt: '', sfxFileId: null };
+    assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null };
 }
 
 async function projectWithScenes() {

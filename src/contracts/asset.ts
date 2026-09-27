@@ -9,5 +9,6 @@ export const FlowSceneExportSchema = z.object({
   title: z.string(),
   prompt: z.string(),
   assetType: z.enum(ASSET_TYPES),
+  motionPrompt: z.string(),
 });
 export type FlowSceneExport = z.infer<typeof FlowSceneExportSchema>;

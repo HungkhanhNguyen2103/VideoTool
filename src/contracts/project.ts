@@ -138,6 +138,7 @@ export const SceneSchema = z.object({
   audioFileId: z.string().nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
+  motionPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
   depthMap: z.object({
     assetFileId: z.string(),

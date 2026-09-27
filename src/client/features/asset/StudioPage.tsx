@@ -17,6 +17,8 @@ export function StudioPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [editingScene, setEditingScene] = useState<string | null>(null);
   const [draftPrompt, setDraftPrompt] = useState('');
+  const [editingMotionScene, setEditingMotionScene] = useState<string | null>(null);
+  const [draftMotionPrompt, setDraftMotionPrompt] = useState('');
   const [skipped, setSkipped] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [bgmMood, setBgmMood] = useState('');
@@ -39,6 +41,7 @@ export function StudioPage() {
   const missingScenes = project ? api.missingSceneNumbers(project) : [];
   const expandedScene = scenes.find((scene) => scene.id === expandedSceneId) ?? null;
   const expandedEditing = expandedScene !== null && editingScene === expandedScene.id;
+  const expandedMotionEditing = expandedScene !== null && editingMotionScene === expandedScene.id;
   const expandedSceneBusy = expandedScene !== null && busy === `scene:${expandedScene.id}`;
   const expandedVoiceoverFile = expandedScene?.audioFileId ? filesById.get(expandedScene.audioFileId) : undefined;
   const expandedSfxFile = expandedScene?.sfxFileId ? filesById.get(expandedScene.sfxFileId) : undefined;
@@ -134,7 +137,7 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
-  async function patchScene(sceneId: string, body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string }) {
+  async function patchScene(sceneId: string, body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string; motionPrompt?: string }) {
     try { setBusy(`scene:${sceneId}`); await api.patchScene(projectId, sceneId, body); await refresh(); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật scene.'); }
     finally { setBusy(null); }
@@ -273,6 +276,7 @@ export function StudioPage() {
   }
 
   function startEdit(scene: Scene) { setEditingScene(scene.id); setDraftPrompt(scene.visualPrompt); }
+  function startMotionEdit(scene: Scene) { setEditingMotionScene(scene.id); setDraftMotionPrompt(scene.motionPrompt); }
 
   if (projectQuery.isLoading) return <section className={styles.panel}><p>Đang tải Studio…</p></section>;
   if (projectQuery.error || !project) return <section className={styles.panel}><p className={styles.error}>Không thể tải dự án.</p></section>;
@@ -336,11 +340,12 @@ export function StudioPage() {
         })}
       </section>
 
-      <dialog ref={detailDialogRef} className={styles.detailDialog} aria-labelledby="scene-detail-title" onClose={() => { setExpandedSceneId(null); setEditingScene(null); }}>
+      <dialog ref={detailDialogRef} className={styles.detailDialog} aria-labelledby="scene-detail-title" onClose={() => { setExpandedSceneId(null); setEditingScene(null); setEditingMotionScene(null); }}>
         {expandedScene ? <div key={expandedScene.id} className={styles.detailContent}>
-          <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(scenes.findIndex((scene) => scene.id === expandedScene.id) + 1).padStart(2, '0')}</h2><p className={styles.detailNarration}>{expandedScene.narration}</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); }}>Đóng</Button></div>
+          <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(scenes.findIndex((scene) => scene.id === expandedScene.id) + 1).padStart(2, '0')}</h2><p className={styles.detailNarration}>{expandedScene.narration}</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); setEditingMotionScene(null); }}>Đóng</Button></div>
           <div className={styles.detailBody}>
             <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{expandedEditing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startEdit(expandedScene)}>Edit</Button></div>}</div>
+            {expandedScene.assetType === 'video' && <div className={styles.prompt}><span className={styles.label}>Motion prompt</span>{expandedMotionEditing ? <><textarea className={styles.textarea} value={draftMotionPrompt} onChange={(event) => setDraftMotionPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingMotionScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { motionPrompt: draftMotionPrompt }); setEditingMotionScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.motionPrompt || 'Chưa có motion prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startMotionEdit(expandedScene)}>Edit</Button></div>}</div>}
             <div className={styles.audioControls}>
               <section className={styles.prompt}>
                 <span className={styles.label}>Voiceover</span>

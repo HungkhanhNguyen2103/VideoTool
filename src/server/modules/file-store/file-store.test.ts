@@ -89,7 +89,7 @@ describe('file-store schema and repository', () => {
     };
     const parsed = ProjectDocSchema.parse(legacy);
     expect(parsed).toMatchObject({ renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, customStyleReferenceFileId: null });
-    expect(parsed.scenes[0]).toMatchObject({ audioFileId: null, sfxPrompt: '', sfxFileId: null });
+    expect(parsed.scenes[0]).toMatchObject({ audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null });
   });
 
   it('inserts, finds, deletes, and lists files by project', async () => {
