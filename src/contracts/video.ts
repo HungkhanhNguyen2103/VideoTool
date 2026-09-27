@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TRANSITION_STYLES } from './project';
+import { PARALLAX_STYLES, TRANSITION_STYLES } from './project';
 
 /** These string values are also used by the FFmpeg filter graph. */
 export const SFX_VOLUME = '0.31622777' as const;
@@ -38,6 +38,7 @@ export const RemotionScenePropsSchema = z.object({
   assetRelPath: z.string().min(1),
   voiceRelPath: z.string().min(1).nullable(),
   sfxRelPath: z.string().min(1).nullable(),
+  depthMapRelPath: z.string().min(1).nullable().default(null),
   durationSec: z.number().nonnegative(),
   filmLook: z.boolean().default(false),
   keywords: z.array(RemotionKeywordSchema).default([]),
@@ -51,5 +52,6 @@ export const RemotionInputPropsSchema = z.object({
   scenes: z.array(RemotionScenePropsSchema),
   bgmRelPath: z.string().min(1).nullable(),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
+  parallax: z.enum(PARALLAX_STYLES).default('off'),
 });
 export type RemotionInputProps = z.infer<typeof RemotionInputPropsSchema>;

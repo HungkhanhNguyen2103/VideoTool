@@ -10,6 +10,8 @@ import type { VideoRenderer } from './ffmpeg-renderer';
 import { renderMedia as remotionRenderMedia, selectComposition as remotionSelectComposition } from '@remotion/renderer';
 import type { RenderMediaOptions } from '@remotion/renderer';
 
+export const REMOTION_CHROMIUM_OPTIONS = { gl: 'angle' as const };
+
 type BundleFunction = () => Promise<string>;
 type SelectCompositionFunction = typeof remotionSelectComposition;
 type RenderMediaFunction = typeof remotionRenderMedia;
@@ -66,6 +68,7 @@ export class RemotionRenderer implements VideoRenderer {
         serveUrl,
         id: 'VideoComposition',
         inputProps: staged.inputProps,
+        chromiumOptions: REMOTION_CHROMIUM_OPTIONS,
       });
       if (appendLog) await appendLog('Remotion render started.');
       if (reportProgress) await reportProgress(15);
@@ -116,6 +119,8 @@ export class RemotionRenderer implements VideoRenderer {
         outputLocation: staged.outputPath,
         inputProps: staged.inputProps,
         onProgress,
+        chromiumOptions: REMOTION_CHROMIUM_OPTIONS,
+        ...(staged.inputProps.parallax === 'auto' ? { concurrency: 1 } : {}),
       };
       await this.renderMedia(renderOptions);
       await progressLogChain;

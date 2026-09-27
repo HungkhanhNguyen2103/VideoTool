@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getProject, patchProjectScene, setProjectScenesAssetType } from '../project';
 import { AppError } from '../../shared/errors';
 import { uploadAssetZip } from '../../shared/upload';
-import { exportScenesJson, importAssetsFromZip } from './service';
+import { exportScenesJson, importAssetsFromZip, requestDepthMapsForImageScenes } from './service';
 
 const PatchSceneSchema = z.object({
   visualPrompt: z.string().optional(),
@@ -38,5 +38,8 @@ assetRouter.patch('/:id/scenes/:sceneId', async (req, res) => {
 
 assetRouter.post('/:id/scenes/set-asset-type', async (req, res) => {
   const body = AssetTypeSchema.parse(req.body);
-  res.json(await setProjectScenesAssetType(String(req.params.id), body.assetType));
+  const projectId = String(req.params.id);
+  const project = await setProjectScenesAssetType(projectId, body.assetType);
+  if (body.assetType === 'image') await requestDepthMapsForImageScenes(projectId);
+  res.json(project);
 });

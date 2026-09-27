@@ -6,6 +6,7 @@ import {
   claimNextJob,
   appendJobLog,
   findJobById,
+  findActiveJobByType,
   insertJob,
   markCancelled,
   markDone,
@@ -76,6 +77,11 @@ export async function getJob(id: string): Promise<JobSummary> {
   const job = await findJobById(id);
   if (!job) throw new NotFound('Không tìm thấy job.');
   return toSummary(job);
+}
+
+export async function getActiveJobByType(projectId: string, type: string, sceneId?: string): Promise<JobSummary | null> {
+  const job = await findActiveJobByType(projectId, type, sceneId);
+  return job ? toSummary(job) : null;
 }
 
 export async function getJobWithLogs(id: string): Promise<{ summary: JobSummary; logs: string[] }> {

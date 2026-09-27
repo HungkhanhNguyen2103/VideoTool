@@ -11,6 +11,10 @@ export async function findJobById(id: string): Promise<JobDoc | null> {
   return jobs().findOne({ _id: id });
 }
 
+export async function findActiveJobByType(projectId: string, type: string, sceneId?: string): Promise<JobDoc | null> {
+  return jobs().findOne({ projectId, type, ...(sceneId ? { 'payload.sceneId': sceneId } : {}), status: { $in: ['queued', 'running'] } }, { sort: { createdAt: 1 } });
+}
+
 export async function appendJobLog(id: string, message: string): Promise<void> {
   await jobs().updateOne({ _id: id }, { $push: { logs: message }, $set: { updatedAt: new Date() } });
 }

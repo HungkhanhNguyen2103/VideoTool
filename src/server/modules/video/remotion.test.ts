@@ -69,7 +69,7 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', scenes: [{ ...props.scenes[0], filmLook: false, keywords: [] }] });
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], depthMapRelPath: null, filmLook: false, keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
@@ -190,6 +190,25 @@ describe('Remotion props and public-dir staging', () => {
 
     expect(props.scenes[0]?.keywords).toMatchObject([{ text: '30 tỷ', kind: 'number', value: 30 }]);
     expect(props.scenes[0]?.filmLook).toBe(false);
+  });
+
+  it('stages only an eligible matching depth map when parallax is enabled', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'remotion-depth-'));
+    try {
+      const sources = new Map([
+        ['asset-1', { absolutePath: path.join(directory, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const }],
+        ['depth-1', { absolutePath: path.join(directory, 'depth.png'), mimeType: 'image/png', purpose: 'depth' as const }],
+      ]);
+      const resolver = vi.fn(async (_projectId: string, fileId: string) => sources.get(fileId)!);
+      const project = { id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto' as const };
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', depthMap: { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.95 }, audioFileId: null, sfxFileId: null, durationSec: 2 } as unknown as Scene;
+      const props = await buildRemotionInputProps(project, [scene], 'render-depth', resolver);
+      expect(props.parallax).toBe('auto');
+      expect(props.scenes[0]?.depthMapRelPath).toBe('renders/render-depth/scene-01-depth.png');
+      expect(resolver).toHaveBeenCalledWith('project-1', 'depth-1');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('uses full project scene order for year context when staging a single-scene preview', async () => {

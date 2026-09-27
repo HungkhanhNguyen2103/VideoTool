@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 
 export const SceneDocSchema = z.object({
@@ -13,6 +13,7 @@ export const SceneDocSchema = z.object({
   wordTimings: WordTimingsSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
+  depthMap: z.object({ assetFileId: z.string(), fileId: z.string(), score: z.number().finite() }).nullable().default(null),
 });
 export type SceneDoc = z.infer<typeof SceneDocSchema>;
 
@@ -36,6 +37,7 @@ export const ProjectDocSchema = z.object({
   keywordPopupsEnabled: z.boolean().default(true),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
   filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
+  parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

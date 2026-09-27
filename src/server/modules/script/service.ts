@@ -264,6 +264,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       wordTimings: null,
       sfxPrompt: '',
       sfxFileId: null,
+      depthMap: null,
     })));
     return { ...chapter, scenesCount: paragraphs.length, durationSec: chapterDurations.reduce((sum, value) => sum + value, 0) };
   });

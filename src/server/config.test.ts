@@ -16,6 +16,8 @@ describe('loadConfig', () => {
       TTS_REF_AUDIO_PATH: './lib/speech/audio.WAV',
       TTS_REF_AUDIO_TEXT: 'Ai cũng biết Quang Trung là người đánh tan 29 vạn quân Thanh chỉ trong 5 ngày tết.',
       TTS_TIMEOUT_MS: 60000,
+      DEPTH_API_URL: 'http://127.0.0.1:8000/api/depth',
+      DEPTH_TIMEOUT_MS: 120000,
       FFMPEG_PATH: 'ffmpeg',
       FFPROBE_PATH: 'ffprobe',
       FREESOUND_API_KEY: '',

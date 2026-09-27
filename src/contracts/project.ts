@@ -13,6 +13,9 @@ export type TransitionStyle = (typeof TRANSITION_STYLES)[number];
 export const FILM_LOOK_STYLES = ['auto', 'always', 'off'] as const;
 export type FilmLookStyle = (typeof FILM_LOOK_STYLES)[number];
 
+export const PARALLAX_STYLES = ['auto', 'off'] as const;
+export type ParallaxStyle = (typeof PARALLAX_STYLES)[number];
+
 export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -136,6 +139,11 @@ export const SceneSchema = z.object({
   wordTimings: WordTimingsSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
+  depthMap: z.object({
+    assetFileId: z.string(),
+    fileId: z.string(),
+    score: z.number().finite(),
+  }).nullable().default(null),
 });
 export type Scene = z.infer<typeof SceneSchema>;
 
@@ -166,6 +174,7 @@ export const ProjectDetailSchema = z.object({
   keywordPopupsEnabled: z.boolean().default(true),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
   filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
+  parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

@@ -13,6 +13,7 @@ export const DEFAULT_REMOTION_PROPS: RemotionInputProps = {
   scenes: [],
   bgmRelPath: null,
   transitionStyle: 'varied',
+  parallax: 'off',
 };
 
 export function VideoComposition(props: RemotionInputProps) {

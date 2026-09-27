@@ -27,6 +27,7 @@ export { FfmpegRenderer } from './ffmpeg-renderer';
 export { RemotionRenderer } from './remotion-renderer';
 export { createVideoRouter } from './routes';
 export { alignProjectWordTimings } from './word-timing-service';
+export { configureDepthMapService, generateProjectDepthMaps, generateSceneDepthMap } from './depth-map-service';
 export {
   assertProjectRenderReady,
   configureVideoModule,

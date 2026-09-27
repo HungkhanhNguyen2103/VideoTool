@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { FlowSceneExportSchema, type FlowSceneExport } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
 import { ApiErrorBodySchema } from '../../../contracts/common';
-import { AI_PROVIDERS, FILM_LOOK_STYLES, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type FilmLookStyle, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
+import { AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type FilmLookStyle, type ParallaxStyle, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
@@ -27,6 +27,11 @@ export const FILM_LOOK_OPTIONS = [
   { value: FILM_LOOK_STYLES[0], label: 'Tự động (trước 1990)' },
   { value: FILM_LOOK_STYLES[1], label: 'Luôn bật' },
   { value: FILM_LOOK_STYLES[2], label: 'Tắt' },
+] as const;
+
+export const PARALLAX_OPTIONS = [
+  { value: PARALLAX_STYLES[0], label: 'Tự động' },
+  { value: PARALLAX_STYLES[1], label: 'Tắt' },
 ] as const;
 
 export const AI_PROVIDER_OPTIONS = [
@@ -97,6 +102,10 @@ export function generateAllSfx(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-all-sfx`, JobResponseSchema, { method: 'POST' });
 }
 
+export function generateDepthMaps(projectId: string): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-depth-maps`, JobResponseSchema, { method: 'POST' });
+}
+
 export function generateVisualPrompts(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-visual-prompts`, JobResponseSchema, { method: 'POST' });
 }
@@ -149,6 +158,12 @@ export function setTransitionStyle(projectId: string, style: TransitionStyle): P
 
 export function setFilmLook(projectId: string, style: FilmLookStyle): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/film-look`, ProjectDetailSchema, {
+    method: 'PATCH', body: { style },
+  });
+}
+
+export function setParallax(projectId: string, style: ParallaxStyle): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/parallax`, ProjectDetailSchema, {
     method: 'PATCH', body: { style },
   });
 }

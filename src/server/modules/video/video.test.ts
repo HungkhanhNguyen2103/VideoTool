@@ -15,8 +15,10 @@ import {
   patchProjectScene,
   setProjectBgm,
   setProjectRenderEngine,
+  setProjectParallax,
   setProjectRenderFile,
   setSceneWordTimings,
+  setSceneDepthMap,
 } from '../project';
 import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
@@ -24,6 +26,7 @@ import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
 import { alignProjectWordTimings, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
 import { createVideoRouter } from './routes';
+import { enqueueJob as insertJob } from '../job';
 import { jobHandlers } from '../../../worker/registry';
 
 const mocks = vi.hoisted(() => ({
@@ -194,6 +197,15 @@ describe('video project mutations', () => {
 
   it('maps an unknown render-engine project to NotFound', async () => {
     await expect(setProjectRenderEngine('missing-project', 'remotion')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('persists parallax settings and clears a depth map when the source asset changes', async () => {
+    const project = await seedProject();
+    expect((await setProjectParallax(project.id, 'auto')).parallax).toBe('auto');
+    expect(await setSceneDepthMap(project.id, 'scene-1', 'asset-1', { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.95 })).toBe(true);
+    await patchProjectScene(project.id, 'scene-1', { assetFileId: 'asset-2' });
+    expect((await getProject(project.id)).scenes[0]!.depthMap).toBeNull();
+    expect(await setSceneDepthMap(project.id, 'scene-1', 'asset-1', { assetFileId: 'asset-1', fileId: 'depth-2', score: 0.95 })).toBe(false);
   });
 });
 
@@ -487,6 +499,29 @@ describe('video routes and worker handlers', () => {
     expect((await duplicateProject(project.id)).filmLook).toBe('auto');
   });
 
+  it('persists parallax through a strict route, copies it on duplicate, and rejects malformed bodies', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn(async (input: { type: string; projectId: string; payload: unknown }) => insertJob(input));
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+    const response = await fetch(`${base}/api/project/${project.id}/parallax`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ style: 'auto' }),
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).parallax).toBe('auto');
+    expect((await duplicateProject(project.id)).parallax).toBe('auto');
+    for (const body of [{ style: 'bad' }, { style: 'auto', extra: true }]) {
+      const invalid = await fetch(`${base}/api/project/${project.id}/parallax`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      expect(invalid.status).toBe(400);
+    }
+    const first = await fetch(`${base}/api/project/${project.id}/scenes/generate-depth-maps`, { method: 'POST' });
+    const second = await fetch(`${base}/api/project/${project.id}/scenes/generate-depth-maps`, { method: 'POST' });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(enqueueJob).toHaveBeenCalledOnce();
+  });
+
   it('updates the render engine through the thin route and rejects invalid or missing projects', async () => {
     const project = await seedProject();
     const enqueueJob = vi.fn();
@@ -593,10 +628,11 @@ describe('video routes and worker handlers', () => {
 
     await jobHandlers['generate-voiceover']!(job, context);
     await jobHandlers['align-word-timings']!(job, context);
+    await jobHandlers['generate-depth-maps']!(job, context);
     await jobHandlers['render-full-video']!(job, context);
 
     expect(mocks.synthesize).not.toHaveBeenCalled();
-    expect(context.isCancelled).toHaveBeenCalledTimes(3);
+    expect(context.isCancelled).toHaveBeenCalledTimes(4);
   });
 });
 

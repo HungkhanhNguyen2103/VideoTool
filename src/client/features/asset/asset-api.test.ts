@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes } from './api';
 import * as assetApi from './api';
 
 const project = {
@@ -101,7 +101,9 @@ describe('asset API helpers', () => {
   });
 
   it('updates keyword pop-ups with the exact PATCH route and body', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jobId: 'job-1' }), { status: 201, headers: { 'content-type': 'application/json' } }));
 
     await setKeywordPopups('project/1', false);
 
@@ -128,6 +130,16 @@ describe('asset API helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/film-look', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ style: 'always' }),
     }));
+  });
+
+  it('updates parallax and queues depth maps with exact routes and bodies', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jobId: 'job-1' }), { status: 201, headers: { 'content-type': 'application/json' } }));
+    await setParallax('project/1', 'auto');
+    await generateDepthMaps('project/1');
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/parallax', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ style: 'auto' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/scenes/generate-depth-maps', expect.objectContaining({ method: 'POST' }));
   });
 
   it('exposes AI provider options and updates the provider with the exact PATCH route and body', async () => {

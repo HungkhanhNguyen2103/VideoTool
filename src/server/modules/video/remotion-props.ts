@@ -4,6 +4,7 @@ import { RemotionInputPropsSchema, type RemotionInputProps, type RemotionScenePr
 import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
 import { annotateNameKeywords, annotateYearKeywords, resolveFilmLookByScene, selectKeywords } from './keywords';
+import { isDepthMapEligible } from './depth-eligibility';
 
 export type ResolvedRenderFile = {
   absolutePath: string;
@@ -29,7 +30,7 @@ export type RemotionKeywordContext = {
 };
 
 export type RemotionProjectSettings = Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>
-  & Partial<Pick<ProjectDetail, 'transitionStyle' | 'filmLook'>>;
+  & Partial<Pick<ProjectDetail, 'transitionStyle' | 'filmLook' | 'parallax'>>;
 
 const EXTENSION_BY_MIME: Record<string, string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
@@ -104,6 +105,14 @@ export async function resolveRemotionAssets(
     const assetRelPath = `${prefix}-asset.${visual.extension}`;
     sources.push({ absolutePath: visual.file.absolutePath, relativePath: assetRelPath });
 
+    let depthMapRelPath: string | null = null;
+    if (project.parallax === 'auto' && scene.assetType === 'image' && scene.depthMap?.assetFileId === scene.assetFileId && isDepthMapEligible(scene.depthMap.score)) {
+      const depth = await resolveFile(project.id, scene.depthMap.fileId, resolver, 'depth', 'image/', `Scene ${scene.id} depth map`);
+      if (depth.file.mimeType !== 'image/png' || depth.extension !== 'png') throw invalidAsset(`Scene ${scene.id} depth map must be a PNG.`);
+      depthMapRelPath = `${prefix}-depth.png`;
+      sources.push({ absolutePath: depth.file.absolutePath, relativePath: depthMapRelPath });
+    }
+
     let voiceRelPath: string | null = null;
     if (scene.audioFileId) {
       const voice = await resolveFile(project.id, scene.audioFileId, resolver, 'voiceover', 'audio/', `Scene ${scene.id} voiceover`);
@@ -124,6 +133,7 @@ export async function resolveRemotionAssets(
       assetRelPath,
       voiceRelPath,
       sfxRelPath,
+      depthMapRelPath,
       durationSec: scene.durationSec,
       filmLook: filmLookBySceneId.get(scene.id) ?? false,
       keywords: project.keywordPopupsEnabled === false ? [] : keywordsBySceneId.get(scene.id) ?? [],
@@ -144,6 +154,7 @@ export async function resolveRemotionAssets(
     scenes: sceneProps,
     bgmRelPath,
     transitionStyle: project.transitionStyle ?? 'varied',
+    parallax: project.parallax ?? 'off',
   });
   return { inputProps, sources };
 }

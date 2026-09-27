@@ -1,4 +1,4 @@
-import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
+import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ParallaxStyle, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
 import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
 import type { z } from 'zod';
 import { NotFound } from '../../shared/errors';
@@ -37,6 +37,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     keywordPopupsEnabled: doc.keywordPopupsEnabled,
     transitionStyle: doc.transitionStyle,
     filmLook: doc.filmLook,
+    parallax: doc.parallax,
     voiceoverVoice: doc.voiceoverVoice,
     renderFileId: doc.renderFileId,
     bgmMood: doc.bgmMood,
@@ -75,6 +76,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     keywordPopupsEnabled: true,
     transitionStyle: 'varied',
     filmLook: 'auto',
+    parallax: 'off',
     voiceoverVoice: input.voiceoverVoice ?? 'Truc Ly',
     renderFileId: input.renderFileId ?? null,
     bgmMood: input.bgmMood ?? '',
@@ -122,7 +124,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
-    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null })),
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null, depthMap: null })),
     renderFileId: null,
     bgmFileId: null,
     customStyleReferenceFileId: null,
@@ -146,7 +148,11 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
   const safeScenes = scenes.map((scene) => {
     const old = oldById.get(scene.id);
     const sameVoice = old && old.narration === scene.narration && old.audioFileId === scene.audioFileId;
-    return SceneDocSchema.parse({ ...scene, wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null });
+    const parsed = SceneDocSchema.parse({ ...scene, wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null });
+    return {
+      ...parsed,
+      depthMap: old && parsed.assetType === 'image' && parsed.assetFileId === old.assetFileId ? old.depthMap : null,
+    };
   });
   await updateProject(id, { scenes: safeScenes, ...(newStatus ? { status: newStatus } : {}) });
 }
@@ -159,6 +165,7 @@ export async function patchProjectScene(
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(patch)) set[`scenes.$[scene].${field}`] = value;
   if (patch.audioFileId !== undefined) set['scenes.$[scene].wordTimings'] = null;
+  if (patch.assetFileId !== undefined || patch.assetType === 'video') set['scenes.$[scene].depthMap'] = null;
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id, scenes: { $elemMatch: { id: sceneId } } },
     { $set: set, $inc: { version: 1 } },
@@ -169,9 +176,11 @@ export async function patchProjectScene(
 }
 
 export async function setProjectScenesAssetType(id: string, assetType: 'image' | 'video'): Promise<ProjectDetail> {
+  const set: Record<string, unknown> = { 'scenes.$[].assetType': assetType, updatedAt: new Date() };
+  if (assetType === 'video') set['scenes.$[].depthMap'] = null;
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id },
-    { $set: { 'scenes.$[].assetType': assetType, updatedAt: new Date() }, $inc: { version: 1 } },
+    { $set: set, $inc: { version: 1 } },
   );
   if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
   return getProject(id);
@@ -206,6 +215,20 @@ export async function setSceneWordTimings(
   return result.matchedCount > 0;
 }
 
+/** Commit a depth map only while the scene still points at the asset it analyzed. */
+export async function setSceneDepthMap(
+  projectId: string,
+  sceneId: string,
+  expectedAssetFileId: string,
+  depthMap: NonNullable<SceneDoc['depthMap']>,
+): Promise<boolean> {
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: projectId, scenes: { $elemMatch: { id: sceneId, assetType: 'image', assetFileId: expectedAssetFileId } } },
+    { $set: { 'scenes.$.depthMap': depthMap, updatedAt: new Date() }, $inc: { version: 1 } },
+  );
+  return result.matchedCount > 0;
+}
+
 export async function setProjectCustomStyleReferenceFile(id: string, fileId: string | null): Promise<ProjectDetail> {
   await updateProject(id, { customStyleReferenceFileId: fileId });
   return getProject(id);
@@ -233,6 +256,11 @@ export async function setProjectTransitionStyle(id: string, transitionStyle: Tra
 
 export async function setProjectFilmLook(id: string, filmLook: FilmLookStyle): Promise<ProjectDetail> {
   await updateProject(id, { filmLook });
+  return getProject(id);
+}
+
+export async function setProjectParallax(id: string, parallax: ParallaxStyle): Promise<ProjectDetail> {
+  await updateProject(id, { parallax });
   return getProject(id);
 }
 
@@ -264,6 +292,7 @@ export async function applySceneAssets(
   for (const [sceneId, assetFileId] of latest) {
     const identifier = `scene${index}`;
     set[`scenes.$[${identifier}].assetFileId`] = assetFileId;
+    set[`scenes.$[${identifier}].depthMap`] = null;
     arrayFilters.push({ [`${identifier}.id`]: sceneId });
     index += 1;
   }

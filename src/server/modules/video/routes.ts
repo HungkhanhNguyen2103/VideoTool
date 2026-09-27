@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectRenderEngine, setProjectTransitionStyle } from '../project';
-import { FILM_LOOK_STYLES, RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
+import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectTransitionStyle } from '../project';
+import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
+import { getActiveJobByType } from '../job';
 import {
   generateProjectBgm,
   generateSceneSfx,
@@ -25,6 +26,7 @@ const RenderEngineSchema = z.object({ engine: z.enum(RENDER_ENGINES) });
 const KeywordPopupsSchema = z.object({ enabled: z.boolean() }).strict();
 const TransitionStyleSchema = z.object({ style: z.enum(TRANSITION_STYLES) }).strict();
 const FilmLookSchema = z.object({ style: z.enum(FILM_LOOK_STYLES) }).strict();
+const ParallaxSchema = z.object({ style: z.enum(PARALLAX_STYLES) }).strict();
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Router {
   const router = Router();
@@ -44,6 +46,14 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
   router.post('/:id/scenes/generate-all-sfx', async (req, res) => {
     const project = await getProject(req.params.id);
     const job = await options.enqueueJob({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id } });
+    res.status(201).json({ jobId: job.id });
+  });
+
+  router.post('/:id/scenes/generate-depth-maps', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const active = await getActiveJobByType(project.id, 'generate-depth-maps');
+    if (active) { res.status(200).json({ jobId: active.id }); return; }
+    const job = await options.enqueueJob({ type: 'generate-depth-maps', projectId: project.id, payload: { projectId: project.id } });
     res.status(201).json({ jobId: job.id });
   });
 
@@ -94,6 +104,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
   router.patch('/:id/film-look', async (req, res) => {
     const { style } = FilmLookSchema.parse(req.body);
     res.json(await setProjectFilmLook(req.params.id, style));
+  });
+
+  router.patch('/:id/parallax', async (req, res) => {
+    const { style } = ParallaxSchema.parse(req.body);
+    res.json(await setProjectParallax(req.params.id, style));
   });
 
   return router;

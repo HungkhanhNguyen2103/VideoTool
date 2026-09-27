@@ -8,6 +8,7 @@ import { getVideoRenderer, configureVideoRenderer } from './index';
 import { configureVideoTts, generateProjectVoiceovers, generateSceneVoiceover } from './tts-service';
 import type { TtsOptions } from '../../shared/tts';
 import { configureWordTimingService } from './word-timing-service';
+import { configureDepthMapService } from './depth-map-service';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 
@@ -16,6 +17,7 @@ export function configureVideoModule(filesDir: string, remotionPublicDir = './da
   storeFile = store.storeFile;
   configureVideoTts(filesDir);
   configureWordTimingService(filesDir);
+  configureDepthMapService(filesDir);
   configureVideoRenderer(filesDir, remotionPublicDir);
 }
 

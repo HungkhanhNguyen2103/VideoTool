@@ -31,6 +31,12 @@ WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8_float16" if WHISP
 whisper_model = None
 whisper_device = None
 
+DEPTH_MODEL_PATH = Path(os.getenv("DEPTH_MODEL_PATH", str(Path(__file__).resolve().parent.parent / "data" / "models" / "depth-anything-v2-small")))
+DEPTH_DEVICE = os.getenv("DEPTH_DEVICE", "cuda")
+depth_processor = None
+depth_model = None
+depth_device = None
+
 def get_whisper_model():
     global whisper_model, whisper_device
     if whisper_model is not None:
@@ -51,6 +57,42 @@ def get_whisper_model():
         whisper_device = "cpu"
     log.info("Whisper ready on %s from %s", whisper_device, MODEL_PATH)
     return whisper_model
+
+def get_depth_model():
+    global depth_processor, depth_model, depth_device
+    if depth_model is not None and depth_processor is not None:
+        return depth_processor, depth_model, depth_device
+    if not (DEPTH_MODEL_PATH / "config.json").is_file() or not (DEPTH_MODEL_PATH / "model.safetensors").is_file():
+        raise RuntimeError(f"Depth model missing at {DEPTH_MODEL_PATH}; pre-download it with lib/download_depth_model.py")
+    import torch
+    from transformers import AutoImageProcessor, DepthAnythingForDepthEstimation
+    requested_device = "cuda" if DEPTH_DEVICE == "cuda" and torch.cuda.is_available() else "cpu"
+    try:
+        processor = AutoImageProcessor.from_pretrained(str(DEPTH_MODEL_PATH), local_files_only=True)
+        model = DepthAnythingForDepthEstimation.from_pretrained(str(DEPTH_MODEL_PATH), local_files_only=True).to(requested_device).eval()
+    except Exception as error:
+        if requested_device != "cuda":
+            raise
+        log.warning("Depth CUDA load failed; falling back to CPU: %s", error)
+        processor = AutoImageProcessor.from_pretrained(str(DEPTH_MODEL_PATH), local_files_only=True)
+        model = DepthAnythingForDepthEstimation.from_pretrained(str(DEPTH_MODEL_PATH), local_files_only=True).to("cpu").eval()
+        requested_device = "cpu"
+    depth_processor, depth_model, depth_device = processor, model, requested_device
+    log.info("Depth Anything V2 Small ready on %s from %s", depth_device, DEPTH_MODEL_PATH)
+    return depth_processor, depth_model, depth_device
+
+def depth_score(depth):
+    import cv2
+    import numpy as np
+    small = cv2.resize(depth, (256, 144), interpolation=cv2.INTER_AREA)
+    p05, p95 = np.percentile(small, [5, 95])
+    spread = float(p95 - p05)
+    gy, gx = np.gradient(small.astype(np.float32))
+    edge = np.abs(gx) + np.abs(gy)
+    near_edge = float(edge[small >= np.percentile(small, 75)].mean())
+    spread_norm = float(np.clip((spread - 0.45) / 0.25, 0, 1))
+    edge_norm = float(np.clip(near_edge / 0.020, 0, 1))
+    return float(0.6 * spread_norm + 0.4 * edge_norm)
 
 @app.post("/api/align")
 async def align_audio(audio: UploadFile = File(...), text: str = Form(...)):
@@ -89,6 +131,44 @@ async def align_audio(audio: UploadFile = File(...), text: str = Form(...)):
         return {"words": words}
     except Exception as error:
         log.exception("Whisper alignment failed: %s", error)
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+@app.post("/api/depth")
+async def estimate_depth(image: UploadFile = File(...)):
+    if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(status_code=400, detail="Depth input must be a JPEG, PNG, or WebP image.")
+    payload = await image.read()
+    if not payload or len(payload) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be between 1 byte and 50 MB.")
+    try:
+        from io import BytesIO
+        import cv2
+        import numpy as np
+        import torch
+        from PIL import Image
+        decoded = Image.open(BytesIO(payload)).convert("RGB")
+        decoded.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
+        rgb = np.asarray(decoded)
+        async with inference_lock:
+            processor, model, device = get_depth_model()
+            inputs = processor(images=rgb, return_tensors="pt")
+            inputs = {key: value.to(device) for key, value in inputs.items()}
+            with torch.inference_mode():
+                predicted = model(**inputs).predicted_depth.unsqueeze(1)
+                predicted = torch.nn.functional.interpolate(predicted, size=(rgb.shape[0], rgb.shape[1]), mode="bicubic", align_corners=False).squeeze()
+            depth = predicted.detach().float().cpu().numpy()
+            depth -= float(depth.min())
+            depth /= max(float(depth.max()), 1e-6)
+            score = depth_score(depth)
+        depth16 = (depth * 65535).clip(0, 65535).astype("uint16")
+        ok, encoded = cv2.imencode(".png", depth16)
+        if not ok:
+            raise RuntimeError("Could not encode depth PNG.")
+        return Response(content=encoded.tobytes(), media_type="image/png", headers={"X-Depth-Score": f"{score:.6f}"})
+    except HTTPException:
+        raise
+    except Exception as error:
+        log.exception("Depth estimation failed: %s", error)
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 print("Dang nap mo hinh VieNeu-TTS v3 Turbo vao RAM...")

@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useCallback, useState } from 'react';
 import { AbsoluteFill, Audio, Easing, Img, interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import type { RemotionSceneProps } from '../contracts/video';
 import { SFX_VOLUME_NUMBER } from '../contracts/video';
@@ -6,6 +7,7 @@ import type { TransitionPlan } from './frame-math';
 import { kenBurnsTransform } from './frame-math';
 import { KeywordOverlay } from './KeywordOverlay';
 import { FilmLook } from './FilmLook';
+import { ParallaxImage } from './ParallaxImage';
 
 export type SceneSequenceProps = {
   scene: RemotionSceneProps;
@@ -16,7 +18,12 @@ export type SceneSequenceProps = {
 
 function ImageScene({ scene, durationInFrames }: { scene: RemotionSceneProps; durationInFrames: number }) {
   const frame = useCurrentFrame();
+  const [parallaxFallback, setParallaxFallback] = useState(false);
   const { scale, translateXPercent, translateYPercent } = kenBurnsTransform(frame, durationInFrames, scene.id);
+  const onFallback = useCallback(() => setParallaxFallback(true), []);
+  if (scene.depthMapRelPath && !parallaxFallback) {
+    return <ParallaxImage assetRelPath={scene.assetRelPath} depthRelPath={scene.depthMapRelPath} sceneId={scene.id} durationInFrames={durationInFrames} onFallback={onFallback} />;
+  }
   return (
     <Img
       src={staticFile(scene.assetRelPath)}

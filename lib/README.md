@@ -26,3 +26,20 @@ server falls back to CPU/int8. On Windows the server adds the pip-installed
 CUDA 12 cuBLAS and cuDNN 9 DLL directories to its process search path.
 The existing `Truc Ly` project voice name is mapped to VieNeu's `Trúc Ly`
 preset in the Python server.
+
+## Depth Anything V2 Small
+
+Install the depth dependencies in the same Python environment, then download
+the checkpoint before using `/api/depth`:
+
+```powershell
+& $env:TTS_PYTHON_BIN -m pip install torch transformers pillow opencv-python-headless
+& $env:TTS_PYTHON_BIN lib/download_depth_model.py
+```
+
+`POST /api/depth` accepts multipart `image` (JPEG, PNG, or WebP, up to 50 MB)
+and returns a 16-bit grayscale PNG. `X-Depth-Score` contains the deterministic
+scene score used by the Node service; the endpoint never decides eligibility.
+The model is lazy-loaded, local-only, and uses CUDA when available before
+falling back to CPU. It shares the existing inference lock with TTS and
+Whisper.

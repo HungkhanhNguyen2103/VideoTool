@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ProjectDocSchema } from './docs';
+import { ProjectDocSchema, SceneDocSchema } from './docs';
 
 const validLegacyDoc = {
   _id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -36,5 +36,13 @@ describe('ProjectDocSchema visual style compatibility', () => {
 
   it('defaults legacy project documents to automatic film look', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).filmLook).toBe('auto');
+  });
+
+  it('defaults legacy project documents to parallax off', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).parallax).toBe('off');
+  });
+
+  it('defaults legacy scene documents to no depth map', () => {
+    expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).depthMap).toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import { getDb } from './db/client';
 import { errorHandler } from './error-handler';
 import { projectRouter } from './modules/project';
 import { jobRouter } from './modules/job';
-import { enqueueJob } from './modules/job';
+import { enqueueJob, getActiveJobByType } from './modules/job';
 import { configureFileStore, configureVisualStyleSamples, fileStoreRouter, visualStyleSamplesRouter } from './modules/file-store';
 import { createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
@@ -26,7 +26,10 @@ export function createApp(options: AppOptions): Express {
   app.use(express.json({ limit: '1mb' }));
   configureFileStore(options.filesDir);
   configureVisualStyleSamples(options.filesDir);
-  configureAssetModule(options.filesDir);
+  configureAssetModule(options.filesDir, async (projectId, sceneId) => {
+    if (await getActiveJobByType(projectId, 'generate-depth-map', sceneId)) return;
+    await enqueueJob({ type: 'generate-depth-map', projectId, payload: { projectId, sceneId } });
+  });
   configureVideoModule(options.filesDir, options.remotionPublicDir);
 
   app.get('/api/health', async (_req, res) => {

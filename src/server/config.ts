@@ -19,6 +19,8 @@ const EnvSchema = z.object({
   TTS_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   ALIGN_API_URL: z.string().url().default('http://127.0.0.1:8000/api/align'),
   ALIGN_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  DEPTH_API_URL: z.string().url().default('http://127.0.0.1:8000/api/depth'),
+  DEPTH_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
   FREESOUND_API_KEY: z.string().default(''),

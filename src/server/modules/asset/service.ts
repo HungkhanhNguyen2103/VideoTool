@@ -6,9 +6,16 @@ import { AppError } from '../../shared/errors';
 import { expectedAssetType, MIME_BY_EXTENSION, type FlowSceneExport } from './docs';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
+let enqueueDepthMapJob: ((projectId: string, sceneId: string) => Promise<void>) | null = null;
 
-export function configureAssetModule(filesDir: string): void {
+export function configureAssetModule(filesDir: string, depthJobEnqueuer?: (projectId: string, sceneId: string) => Promise<void>): void {
   storeFile = createFileStoreService(filesDir).storeFile;
+  enqueueDepthMapJob = depthJobEnqueuer ?? null;
+}
+
+async function requestDepthMaps(projectId: string, sceneIds: Iterable<string>): Promise<void> {
+  if (!enqueueDepthMapJob) return;
+  await Promise.all([...new Set(sceneIds)].map((sceneId) => enqueueDepthMapJob!(projectId, sceneId).catch(() => undefined)));
 }
 
 function slugifyTitle(value: string, sceneNumber: number): string {
@@ -92,5 +99,11 @@ export async function importAssetsFromZip(
   }
 
   await applySceneAssets(projectId, [...updates].map(([sceneId, assetFileId]) => ({ sceneId, assetFileId })));
+  await requestDepthMaps(projectId, updates.keys());
   return { updated: updates.size, skipped };
+}
+
+export async function requestDepthMapsForImageScenes(projectId: string): Promise<void> {
+  const project = await getProject(projectId);
+  await requestDepthMaps(projectId, project.scenes.filter((scene) => scene.assetType === 'image' && scene.assetFileId).map((scene) => scene.id));
 }
