@@ -10,6 +10,7 @@ export {
   getProject,
   getProjectHistory,
   listProjects,
+  listProjectStyleReferenceCandidates,
   applySceneAssets,
   patchProjectScene,
   setSceneWordTimings,

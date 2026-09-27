@@ -221,6 +221,17 @@
   flex: 0 0 80px;
   width: 80px;
 }
+.styleSampleControls {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.hiddenInput {
+  display: none;
+}
+.styleSampleControls button {
+  white-space: nowrap;
+}
 .stylePreviewImage,
 .stylePreviewPlaceholder {
   display: block;

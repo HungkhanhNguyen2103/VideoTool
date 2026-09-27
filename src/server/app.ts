@@ -5,7 +5,7 @@ import { errorHandler } from './error-handler';
 import { projectRouter } from './modules/project';
 import { jobRouter } from './modules/job';
 import { enqueueJob } from './modules/job';
-import { configureFileStore, fileStoreRouter } from './modules/file-store';
+import { configureFileStore, configureVisualStyleSamples, fileStoreRouter, visualStyleSamplesRouter } from './modules/file-store';
 import { createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
 import { configureVideoModule, createVideoRouter } from './modules/video';
@@ -25,6 +25,7 @@ export function createApp(options: AppOptions): Express {
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
   configureFileStore(options.filesDir);
+  configureVisualStyleSamples(options.filesDir);
   configureAssetModule(options.filesDir);
   configureVideoModule(options.filesDir, options.remotionPublicDir);
 
@@ -38,6 +39,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);
   app.use('/api/project', createVideoRouter({ enqueueJob }));
+  app.use('/api/visual-style-samples', visualStyleSamplesRouter);
   app.use('/api/job', jobRouter);
 
   app.use('/api', (_req, _res, next) => next(new NotFound('Không tìm thấy đường dẫn.')));

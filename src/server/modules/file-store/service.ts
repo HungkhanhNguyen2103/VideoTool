@@ -27,7 +27,7 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'audio/mpeg': 'mp3',
 };
 
-function extensionFor(originalName: string, mimeType: string): string {
+export function extensionFor(originalName: string, mimeType: string): string {
   const fromName = path.extname(originalName).slice(1).toLowerCase();
   return /^[a-z0-9]+$/.test(fromName) ? fromName : MIME_EXTENSIONS[mimeType] ?? 'bin';
 }

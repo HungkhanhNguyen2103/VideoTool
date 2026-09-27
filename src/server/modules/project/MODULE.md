@@ -18,6 +18,7 @@
 - `setProjectBgm` atomically updates `bgmMood` and `bgmFileId`; `setProjectRenderFile` atomically updates `renderFileId` and `status: 'rendered'`. Both increment `version` once.
 - `setProjectRenderEngine` atomically updates the engine selection and increments `version` once; consumers call it through the public module index.
 - `setProjectKeywordPopups` atomically updates the Remotion keyword overlay setting and increments `version` once; duplication preserves it.
+- `listProjectStyleReferenceCandidates` exposes current style/file pointers for shared sample resolution without giving file-store direct collection access.
 - `setProjectAiProvider` atomically updates the AI provider and increments `version` once; script routes own the HTTP surface while calling this public project mutation.
 - `replaceProjectScript` atomically replaces generated chapters, open loops, motif, optional status, and optional history snapshot in one versioned project update.
 - Script continuity fields are additive and default safely for legacy reads: project `coreQuestion`/`openingHook` use `''`; chapter `chapterSummary` uses `null`, `avoidRepeating`/`persistentFacts` use `[]`, and `reviewStatus` uses `'clean'`.

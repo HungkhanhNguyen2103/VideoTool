@@ -1,8 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import cinematicPreview from '../../../assets/visual-style-previews/cinematic.jpg';
 import {
   ASPECT_RATIOS,
   ASPECT_RESOLUTIONS,
@@ -10,14 +9,14 @@ import {
   VISUAL_STYLE_IDS,
   type CreateProjectRequest,
   CreateProjectRequestSchema,
-  type VisualStyleId,
 } from '../../../../contracts/project';
 import { Button } from '../../../shared/ui/Button';
 import { Icon } from '../../../shared/ui/Icon';
 import { toast } from '../../../shared/ui/toast-store';
 import { formatDuration } from '../format';
-import { useCreateProject } from '../hooks';
+import { useCreateProject, useUploadVisualStyleSample, useVisualStyleSamples } from '../hooks';
 import { useProjectUiStore } from '../store';
+import { resolveVisualStylePreview } from '../visual-style-preview';
 import styles from './NewProjectForm.module.css';
 
 const DEFAULT_VALUES: CreateProjectRequest = {
@@ -43,18 +42,13 @@ const DURATION_CHIPS = [
 
 const FIELD_ORDER = ['title', 'brief', 'targetDurationSec', 'chapterCount'] as const;
 
-const VISUAL_STYLE_PREVIEWS: Partial<Record<VisualStyleId, { src: string; alt: string; filename: string }>> = {
-  cinematic: {
-    src: cinematicPreview,
-    alt: 'Ảnh mẫu phong cách Cinematic',
-    filename: 'cinematic-style-preview.jpg',
-  },
-};
-
 export function NewProjectForm() {
   const navigate = useNavigate();
   const setCurrentProjectId = useProjectUiStore((s) => s.setCurrentProjectId);
   const createProject = useCreateProject();
+  const samplesQuery = useVisualStyleSamples();
+  const uploadSample = useUploadVisualStyleSample();
+  const sampleInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -78,7 +72,19 @@ export function NewProjectForm() {
   const width = watch('renderSettings.width');
   const height = watch('renderSettings.height');
   const busy = createProject.isPending;
-  const visualStylePreview = VISUAL_STYLE_PREVIEWS[visualStylePresetId];
+  const visualStylePreview = resolveVisualStylePreview(visualStylePresetId, samplesQuery.data);
+
+  async function uploadVisualStyleSample(file: File) {
+    try {
+      await uploadSample.mutateAsync({ styleId: visualStylePresetId, file });
+      await samplesQuery.refetch();
+      toast('Đã cập nhật ảnh mẫu phong cách.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể upload ảnh mẫu.');
+    } finally {
+      if (sampleInputRef.current) sampleInputRef.current.value = '';
+    }
+  }
 
   // Aspect changed: reset resolution to the first option for that aspect if the
   // current width/height pair no longer belongs to it (mirrors the prototype's fillResolutions()).
@@ -234,17 +240,23 @@ export function NewProjectForm() {
                 <select className={styles.input} id="visual-style" {...register('visualStylePresetId')}>
                   {VISUAL_STYLE_IDS.map((style) => <option key={style} value={style}>{style === 'cinematic' ? 'Cinematic (điện ảnh)' : style === 'anime' ? 'Anime' : style === 'watercolor' ? 'Watercolor (màu nước)' : style === 'photorealistic' ? 'Photorealistic (ảnh thực)' : 'Flat Cartoon'}</option>)}
                 </select>
-                <div className={styles.stylePreview} aria-live="polite">
-                  {visualStylePreview ? (
-                    <>
-                      <img className={styles.stylePreviewImage} src={visualStylePreview.src} alt={visualStylePreview.alt} />
-                      <a className={styles.stylePreviewDownload} href={visualStylePreview.src} download={visualStylePreview.filename}>
-                        Tải ảnh
-                      </a>
-                    </>
-                  ) : (
-                    <span className={styles.stylePreviewPlaceholder}>Chưa có ảnh mẫu</span>
-                  )}
+                <div className={styles.styleSampleControls}>
+                  <div className={styles.stylePreview} aria-live="polite">
+                    {visualStylePreview ? (
+                      <>
+                        <img className={styles.stylePreviewImage} src={visualStylePreview.src} alt={visualStylePreview.alt} />
+                        <a className={styles.stylePreviewDownload} href={visualStylePreview.src} download={visualStylePreview.filename}>
+                          Tải ảnh
+                        </a>
+                      </>
+                    ) : (
+                      <span className={styles.stylePreviewPlaceholder}>Chưa có ảnh mẫu</span>
+                    )}
+                  </div>
+                  <input ref={sampleInputRef} className={styles.hiddenInput} type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void uploadVisualStyleSample(file); }} />
+                  <Button size="sm" disabled={busy || uploadSample.isPending} busy={uploadSample.isPending} onClick={() => sampleInputRef.current?.click()}>
+                    {visualStylePreview ? 'Thay ảnh mẫu' : 'Upload ảnh mẫu'}
+                  </Button>
                 </div>
               </div>
             </div>

@@ -11,6 +11,11 @@ export async function findFileById(id: string): Promise<FileDoc | null> {
   return files().findOne({ _id: id });
 }
 
+export async function findFilesByIds(ids: string[]): Promise<FileDoc[]> {
+  if (ids.length === 0) return [];
+  return files().find({ _id: { $in: ids } }).toArray();
+}
+
 export async function deleteFileById(id: string): Promise<void> {
   await files().deleteOne({ _id: id });
 }

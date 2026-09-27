@@ -40,3 +40,15 @@ export function useDeleteProject() {
   const invalidate = useInvalidateProjects();
   return useMutation({ mutationFn: (id: string) => api.deleteProject(id), onSuccess: invalidate });
 }
+
+export function useVisualStyleSamples() {
+  return useQuery({ queryKey: ['visual-style-samples'], queryFn: api.getVisualStyleSamples });
+}
+
+export function useUploadVisualStyleSample() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ styleId, file }: { styleId: import('../../../contracts/project').VisualStyleId; file: File }) => api.uploadVisualStyleSample(styleId, file),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['visual-style-samples'] }),
+  });
+}

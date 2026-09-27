@@ -1,7 +1,7 @@
 # Module: file-store
 
-**Purpose:** Shared disk-backed storage for project reference files and the file metadata collection.
-**Owns collection(s):** files
+**Purpose:** Shared disk-backed storage for project reference files and shared visual-style samples.
+**Owns collection(s):** files, visual_style_samples
 **Boundary:** This directory is shared infrastructure and intentionally is not listed in `eslint.config.js` `MODULES`.
 
 ## Invariants
@@ -10,9 +10,11 @@
 - File purposes are `reference`, `voiceover`, `sfx`, `bgm`, and `render`; generated audio/video files use the same project-scoped store as references.
 - `resolveFilePath(projectId, fileId)` verifies ownership before returning an absolute path for server-side media processing; clients still use `storedPath` URLs.
 - Database metadata and disk content are coordinated by the service; deleting an already-missing disk file is allowed.
+- Shared style samples use a server-generated filename under `FILES_DIR`; their original name is metadata only. The resolver compares each shared record with image `style-reference` files still selected by matching-style projects and returns the newest source.
 
 ## Flow
 - Routes validate project ownership and upload MIME/size, then call the injected file-store service.
+- `GET /api/visual-style-samples` resolves current shared/project samples. `PUT /api/visual-style-samples/:styleId` accepts JPEG, PNG, or WebP using the existing 100 MB upload limit.
 - Repository methods only query the `files` collection.
 - ZIP import validates scenes and delegates replacement to the project module; it replaces, never merges, scenes.
 
