@@ -25,6 +25,7 @@ export function VideoComposition(props: RemotionInputProps) {
         <SceneSequence
           key={scene.id}
           scene={scene}
+          fps={props.fps}
           boundaryIndex={index}
           audioTiming={audioTimings[index]!}
           visualTiming={visualTimings[index]!}

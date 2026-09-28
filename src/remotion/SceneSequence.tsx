@@ -8,9 +8,11 @@ import { kenBurnsTransform } from './frame-math';
 import { KeywordOverlay } from './KeywordOverlay';
 import { FilmLook } from './FilmLook';
 import { ParallaxImage } from './ParallaxImage';
+import { planVideoKeyframeSegments } from './video-segments';
 
 export type SceneSequenceProps = {
   scene: RemotionSceneProps;
+  fps: number;
   audioTiming: { from: number; durationInFrames: number };
   visualTiming: { from: number; durationInFrames: number; fadeInFrames: number; incomingTransition: TransitionPlan | null; outgoingTransition: TransitionPlan | null };
   boundaryIndex: number;
@@ -34,6 +36,32 @@ function ImageScene({ scene, durationInFrames }: { scene: RemotionSceneProps; du
         transform: `scale(${scale}) translate(${translateXPercent}%, ${translateYPercent}%)`,
       }}
     />
+  );
+}
+
+function VideoScene({ scene, durationInFrames, fps }: { scene: RemotionSceneProps; durationInFrames: number; fps: number }) {
+  const frame = useCurrentFrame();
+  const plan = planVideoKeyframeSegments({
+    sceneDurationInFrames: durationInFrames,
+    fps,
+    videoDurationSec: scene.videoDurationSec,
+    hasKeyframe: Boolean(scene.videoKeyframeRelPath),
+  });
+  const video = <OffthreadVideo muted src={staticFile(scene.assetRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
+  if (!plan || !scene.videoKeyframeRelPath) return video;
+  const videoOpacity = interpolate(frame, [plan.imageFrom, plan.videoFrames], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const imageOpacity = interpolate(frame, [plan.imageFrom, plan.videoFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  return (
+    <>
+      <Sequence from={0} durationInFrames={plan.videoFrames}>
+        <AbsoluteFill style={{ opacity: videoOpacity }}>{video}</AbsoluteFill>
+      </Sequence>
+      <Sequence from={plan.imageFrom} durationInFrames={plan.imageFrames}>
+        <AbsoluteFill style={{ opacity: imageOpacity }}>
+          <Img src={staticFile(scene.videoKeyframeRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </AbsoluteFill>
+      </Sequence>
+    </>
   );
 }
 
@@ -97,8 +125,9 @@ function outgoingTransitionVisual(plan: TransitionPlan, progress: number, direct
   return { contentStyle: {} };
 }
 
-function SceneVisual({ scene, realDurationInFrames, visualTiming, boundaryIndex }: {
+function SceneVisual({ scene, fps, realDurationInFrames, visualTiming, boundaryIndex }: {
   scene: RemotionSceneProps;
+  fps: number;
   realDurationInFrames: number;
   visualTiming: SceneSequenceProps['visualTiming'];
   boundaryIndex: number;
@@ -132,7 +161,7 @@ function SceneVisual({ scene, realDurationInFrames, visualTiming, boundaryIndex 
       >
         <div style={{ position: 'absolute', inset: 0, ...contentStyle }}>
           {scene.assetType === 'video' ? (
-            <OffthreadVideo muted src={staticFile(scene.assetRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            <VideoScene scene={scene} durationInFrames={realDurationInFrames} fps={fps} />
           ) : (
             <ImageScene scene={scene} durationInFrames={realDurationInFrames} />
           )}
@@ -142,11 +171,11 @@ function SceneVisual({ scene, realDurationInFrames, visualTiming, boundaryIndex 
   );
 }
 
-export function SceneSequence({ scene, audioTiming, visualTiming, boundaryIndex }: SceneSequenceProps) {
+export function SceneSequence({ scene, fps, audioTiming, visualTiming, boundaryIndex }: SceneSequenceProps) {
   return (
     <>
       <Sequence from={visualTiming.from} durationInFrames={visualTiming.durationInFrames}>
-        <SceneVisual scene={scene} realDurationInFrames={audioTiming.durationInFrames} visualTiming={visualTiming} boundaryIndex={boundaryIndex} />
+        <SceneVisual scene={scene} fps={fps} realDurationInFrames={audioTiming.durationInFrames} visualTiming={visualTiming} boundaryIndex={boundaryIndex} />
       </Sequence>
       <Sequence from={audioTiming.from} durationInFrames={audioTiming.durationInFrames}>
         {scene.voiceRelPath ? <Audio src={staticFile(scene.voiceRelPath)} /> : null}

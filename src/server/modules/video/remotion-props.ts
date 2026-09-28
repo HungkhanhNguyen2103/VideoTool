@@ -105,6 +105,20 @@ export async function resolveRemotionAssets(
     const assetRelPath = `${prefix}-asset.${visual.extension}`;
     sources.push({ absolutePath: visual.file.absolutePath, relativePath: assetRelPath });
 
+    let videoKeyframeRelPath: string | null = null;
+    if (scene.assetType === 'video' && scene.videoKeyframeFileId) {
+      const keyframe = await resolveFile(
+        project.id,
+        scene.videoKeyframeFileId,
+        resolver,
+        'reference',
+        'image/',
+        `Scene ${scene.id} video keyframe`,
+      );
+      videoKeyframeRelPath = `${prefix}-keyframe.${keyframe.extension}`;
+      sources.push({ absolutePath: keyframe.file.absolutePath, relativePath: videoKeyframeRelPath });
+    }
+
     let depthMapRelPath: string | null = null;
     if (project.parallax === 'auto' && scene.assetType === 'image' && scene.depthMap?.assetFileId === scene.assetFileId && isDepthMapEligible(scene.depthMap.score)) {
       const depth = await resolveFile(project.id, scene.depthMap.fileId, resolver, 'depth', 'image/', `Scene ${scene.id} depth map`);
@@ -133,6 +147,8 @@ export async function resolveRemotionAssets(
       assetRelPath,
       voiceRelPath,
       sfxRelPath,
+      videoKeyframeRelPath,
+      videoDurationSec: scene.assetType === 'video' ? scene.videoDurationSec : null,
       depthMapRelPath,
       durationSec: scene.durationSec,
       filmLook: filmLookBySceneId.get(scene.id) ?? false,

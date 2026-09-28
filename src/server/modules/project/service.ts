@@ -124,7 +124,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
-    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null, depthMap: null })),
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null, videoKeyframeFileId: null, videoDurationSec: null, depthMap: null })),
     renderFileId: null,
     bgmFileId: null,
     customStyleReferenceFileId: null,
@@ -151,6 +151,8 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
     const parsed = SceneDocSchema.parse({ ...scene, wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null });
     return {
       ...parsed,
+      videoKeyframeFileId: parsed.assetType === 'video' ? parsed.videoKeyframeFileId : null,
+      videoDurationSec: parsed.assetType === 'video' ? parsed.videoDurationSec : null,
       depthMap: old && parsed.assetType === 'image' && parsed.assetFileId === old.assetFileId ? old.depthMap : null,
     };
   });
@@ -160,12 +162,16 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
 export async function patchProjectScene(
   id: string,
   sceneId: string,
-  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId'>>,
+  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoDurationSec'>>,
 ): Promise<ProjectDetail> {
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(patch)) set[`scenes.$[scene].${field}`] = value;
   if (patch.audioFileId !== undefined) set['scenes.$[scene].wordTimings'] = null;
   if (patch.assetFileId !== undefined || patch.assetType === 'video') set['scenes.$[scene].depthMap'] = null;
+  if (patch.assetType === 'image') {
+    set['scenes.$[scene].videoKeyframeFileId'] = null;
+    set['scenes.$[scene].videoDurationSec'] = null;
+  }
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id, scenes: { $elemMatch: { id: sceneId } } },
     { $set: set, $inc: { version: 1 } },
@@ -178,6 +184,10 @@ export async function patchProjectScene(
 export async function setProjectScenesAssetType(id: string, assetType: 'image' | 'video'): Promise<ProjectDetail> {
   const set: Record<string, unknown> = { 'scenes.$[].assetType': assetType, updatedAt: new Date() };
   if (assetType === 'video') set['scenes.$[].depthMap'] = null;
+  if (assetType === 'image') {
+    set['scenes.$[].videoKeyframeFileId'] = null;
+    set['scenes.$[].videoDurationSec'] = null;
+  }
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id },
     { $set: set, $inc: { version: 1 } },
@@ -258,11 +268,11 @@ export async function setProjectVisualStylePreset(id: string, visualStylePresetI
 
 export async function applySceneAssets(
   id: string,
-  assetUpdates: Array<{ sceneId: string; assetFileId: string }>,
+  assetUpdates: Array<{ sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoDurationSec?: number | null }>,
 ): Promise<ProjectDetail> {
   const project = await getProject(id);
-  const latest = new Map<string, string>();
-  for (const update of assetUpdates) latest.set(update.sceneId, update.assetFileId);
+  const latest = new Map<string, { sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoDurationSec?: number | null }>();
+  for (const update of assetUpdates) latest.set(update.sceneId, { ...latest.get(update.sceneId), ...update });
   if (latest.size === 0) return project;
   for (const sceneId of latest.keys()) {
     if (!project.scenes.some((scene) => scene.id === sceneId)) throw new NotFound('Không tìm thấy cảnh.');
@@ -271,10 +281,14 @@ export async function applySceneAssets(
   const set: Record<string, unknown> = { updatedAt: new Date() };
   const arrayFilters: Record<string, unknown>[] = [];
   let index = 0;
-  for (const [sceneId, assetFileId] of latest) {
+  for (const [sceneId, update] of latest) {
     const identifier = `scene${index}`;
-    set[`scenes.$[${identifier}].assetFileId`] = assetFileId;
-    set[`scenes.$[${identifier}].depthMap`] = null;
+    if (update.assetFileId !== undefined) {
+      set[`scenes.$[${identifier}].assetFileId`] = update.assetFileId;
+      set[`scenes.$[${identifier}].depthMap`] = null;
+    }
+    if (update.videoKeyframeFileId !== undefined) set[`scenes.$[${identifier}].videoKeyframeFileId`] = update.videoKeyframeFileId;
+    if (update.videoDurationSec !== undefined) set[`scenes.$[${identifier}].videoDurationSec`] = update.videoDurationSec;
     arrayFilters.push({ [`${identifier}.id`]: sceneId });
     index += 1;
   }

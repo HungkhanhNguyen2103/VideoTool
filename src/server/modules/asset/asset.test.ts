@@ -97,7 +97,7 @@ describe('asset contracts', () => {
     );
 
     const loaded = await getProject(project.id);
-    expect(loaded.scenes[0]).toMatchObject({ assetType: 'image', assetFileId: null, motionPrompt: '' });
+    expect(loaded.scenes[0]).toMatchObject({ assetType: 'image', assetFileId: null, motionPrompt: '', videoKeyframeFileId: null, videoDurationSec: null });
   });
 
   it('requires the generated stored path in file summaries', () => {
@@ -150,6 +150,18 @@ describe('asset contracts', () => {
     expect(updated.version).toBe(project.version + 1);
   });
 
+  it('preserves an existing video keyframe and duration when only the video file changes', async () => {
+    const project = await seedProjectWithScenes();
+    await getCollection<{ _id: string }>('projects').updateOne(
+      { _id: project.id },
+      { $set: { 'scenes.1.assetType': 'video', 'scenes.1.assetFileId': 'old-video', 'scenes.1.videoKeyframeFileId': 'old-keyframe', 'scenes.1.videoDurationSec': 2.5 } },
+    );
+
+    const updated = await applySceneAssets(project.id, [{ sceneId: 'scene-2', assetFileId: 'new-video' }]);
+
+    expect(updated.scenes[1]).toMatchObject({ assetFileId: 'new-video', videoKeyframeFileId: 'old-keyframe', videoDurationSec: 2.5 });
+  });
+
   it('exports Flow scenes with one-based numbering and prompts', async () => {
     const project = await seedProjectWithScenes();
 
@@ -180,6 +192,52 @@ describe('asset contracts', () => {
     const updated = await getProject(project.id);
     expect(updated.scenes[0]!.assetFileId).toEqual(expect.any(String));
     expect(await getCollection<{ projectId: string; originalName: string }>('files').findOne({ projectId: project.id })).toMatchObject({ originalName: 'SCENE_001_Opening.png' });
+  });
+
+  it('imports both a video and its keyframe image for a video scene', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 1.25 });
+    const zip = new AdmZip();
+    zip.addFile('SCENE_002_Context.mp4', Buffer.from('video'));
+    zip.addFile('SCENE_002_Context.png', Buffer.from('keyframe'));
+
+    const result = await importAssetsFromZip(project.id, zip.toBuffer());
+
+    expect(result).toEqual({ updated: 1, skipped: [] });
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({
+      assetType: 'video',
+      assetFileId: expect.any(String),
+      videoKeyframeFileId: expect.any(String),
+      videoDurationSec: 1.25,
+    });
+  });
+
+  it('keeps image scenes strict when a video and image share a scene number', async () => {
+    const project = await seedProjectWithScenes();
+    const zip = new AdmZip();
+    zip.addFile('SCENE_001_Opening.mp4', Buffer.from('video'));
+    zip.addFile('SCENE_001_Opening.png', Buffer.from('image'));
+
+    const result = await importAssetsFromZip(project.id, zip.toBuffer());
+
+    expect(result).toEqual({ updated: 1, skipped: ['SCENE_001_Opening.mp4'] });
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ assetType: 'image', assetFileId: expect.any(String) });
+  });
+
+  it('requests depth maps only for imported image scenes', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    const requested: string[] = [];
+    configureAssetModule(filesDir, async (_projectId, sceneId) => { requested.push(sceneId); }, { probeVideoDuration: async () => 1.25 });
+    const zip = new AdmZip();
+    zip.addFile('SCENE_001_Opening.png', Buffer.from('image'));
+    zip.addFile('SCENE_002_Context.mp4', Buffer.from('video'));
+    zip.addFile('SCENE_002_Context.png', Buffer.from('keyframe'));
+
+    await importAssetsFromZip(project.id, zip.toBuffer());
+
+    expect(requested).toEqual(['scene-1']);
   });
 
   it('exports JSON through the route with an attachment filename', async () => {
@@ -223,16 +281,15 @@ describe('asset contracts', () => {
 
     const result = await importAssetsFromZip(project.id, zip.toBuffer());
 
-    expect(result.updated).toBe(1);
-    expect(result.skipped).toHaveLength(4);
+    expect(result.updated).toBe(2);
+    expect(result.skipped).toHaveLength(3);
     expect(result.skipped).toEqual(expect.arrayContaining([
-      'SCENE_002_WrongType.png',
       'SCENE_999_TooFar.png',
       'not-a-scene.txt',
       'SCENE_003_Unsupported.gif',
     ]));
     expect((await getProject(project.id)).scenes[0]!.assetFileId).toEqual(expect.any(String));
-    expect((await getProject(project.id)).scenes[1]!.assetFileId).toBeNull();
+    expect((await getProject(project.id)).scenes[1]!).toMatchObject({ assetFileId: null, videoKeyframeFileId: expect.any(String) });
   });
 
   it('uses the last duplicate scene entry and overwrites on re-import', async () => {

@@ -265,6 +265,8 @@ export async function finalizeScript(projectId: string): Promise<void> {
       sfxPrompt: '',
       motionPrompt: '',
       sfxFileId: null,
+      videoKeyframeFileId: null,
+      videoDurationSec: null,
       depthMap: null,
     })));
     return { ...chapter, scenesCount: paragraphs.length, durationSec: chapterDurations.reduce((sum, value) => sum + value, 0) };

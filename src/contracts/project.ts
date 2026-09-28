@@ -164,6 +164,8 @@ export const SceneSchema = z.object({
   sfxPrompt: z.string().default(''),
   motionPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
+  videoKeyframeFileId: z.string().nullable().default(null),
+  videoDurationSec: z.number().positive().nullable().default(null),
   depthMap: z.object({
     assetFileId: z.string(),
     fileId: z.string(),

@@ -69,7 +69,7 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], depthMapRelPath: null, filmLook: false, keywords: [] }] });
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], videoKeyframeRelPath: null, videoDurationSec: null, depthMapRelPath: null, filmLook: false, keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
@@ -206,6 +206,26 @@ describe('Remotion props and public-dir staging', () => {
       expect(props.parallax).toBe('auto');
       expect(props.scenes[0]?.depthMapRelPath).toBe('renders/render-depth/scene-01-depth.png');
       expect(resolver).toHaveBeenCalledWith('project-1', 'depth-1');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('stages a video scene keyframe image alongside the video asset', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'remotion-keyframe-'));
+    try {
+      const sources = new Map([
+        ['video-1', { absolutePath: path.join(directory, 'scene.mp4'), mimeType: 'video/mp4', purpose: 'reference' as const }],
+        ['keyframe-1', { absolutePath: path.join(directory, 'keyframe.png'), mimeType: 'image/png', purpose: 'reference' as const }],
+      ]);
+      const resolver = vi.fn(async (_projectId: string, fileId: string) => sources.get(fileId)!);
+      const project = { id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true };
+      const scene = { id: 'scene-1', assetType: 'video', assetFileId: 'video-1', videoKeyframeFileId: 'keyframe-1', videoDurationSec: 1.2, audioFileId: null, sfxFileId: null, durationSec: 4 } as unknown as Scene;
+
+      const props = await buildRemotionInputProps(project, [scene], 'render-keyframe', resolver);
+
+      expect(props.scenes[0]).toMatchObject({ assetType: 'video', videoKeyframeRelPath: 'renders/render-keyframe/scene-01-keyframe.png', videoDurationSec: 1.2 });
+      expect(resolver).toHaveBeenCalledWith('project-1', 'keyframe-1');
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
