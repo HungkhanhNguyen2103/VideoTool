@@ -158,9 +158,28 @@ describe('asset contracts', () => {
     expect(updated.version).toBe(before.version + 1);
   });
 
+  it('treats a keyframe-only video as locked during distribution', async () => {
+    const project = await seedProjectWithScenes();
+    await setChapterSceneCounts(project.id, [2, 1]);
+    await patchProjectScene(project.id, 'scene-2', {
+      assetType: 'video',
+      videoKeyframeFileId: 'keyframe-only',
+      videoDurationSec: 1.5,
+    });
+    const before = await getProject(project.id);
+
+    const preview = await previewVideoDistribution(project.id, 0);
+
+    expect(preview).toMatchObject({ lockedCount: 1, videoCount: 1, imageCount: 2, videoSceneNumbers: [2], changes: [] });
+    const updated = await applyVideoDistribution(project.id, 0, before.version);
+
+    expect(updated.version).toBe(before.version);
+    expect(updated.scenes[1]).toMatchObject({ assetType: 'video', assetFileId: null, videoKeyframeFileId: 'keyframe-only', videoDurationSec: 1.5 });
+  });
+
   it('clears video metadata when an unlocked video becomes an image', async () => {
     const project = await seedProjectWithScenes();
-    await patchProjectScene(project.id, 'scene-3', { assetType: 'video', videoKeyframeFileId: 'keyframe-3', videoDurationSec: 4.5 });
+    await patchProjectScene(project.id, 'scene-3', { assetType: 'video', videoDurationSec: 4.5 });
     const before = await getProject(project.id);
 
     const updated = await applyVideoDistribution(project.id, 0, before.version);

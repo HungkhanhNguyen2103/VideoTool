@@ -222,8 +222,8 @@ export async function applyProjectVideoDistribution(
     },
     {
       arrayFilters: [
-        { 'toVideo.id': { $in: toVideoSceneIds }, 'toVideo.assetFileId': null },
-        { 'toImage.id': { $in: toImageSceneIds }, 'toImage.assetFileId': null },
+        { 'toVideo.id': { $in: toVideoSceneIds }, 'toVideo.assetFileId': null, 'toVideo.videoKeyframeFileId': null },
+        { 'toImage.id': { $in: toImageSceneIds }, 'toImage.assetFileId': null, 'toImage.videoKeyframeFileId': null },
       ],
     },
   );

@@ -59,7 +59,7 @@ function videoDistributionIndexes(project: ProjectDetail, targetPercent: number)
   return pickVideoSceneIndexes({
     chapterSceneCounts: project.chapters.map((chapter) => chapter.scenesCount ?? 0),
     currentTypes: project.scenes.map((scene) => scene.assetType),
-    locked: project.scenes.map((scene) => scene.assetFileId !== null),
+    locked: project.scenes.map((scene) => scene.assetFileId !== null || scene.videoKeyframeFileId !== null),
     targetPercent,
   });
 }
@@ -71,7 +71,7 @@ export async function previewVideoDistribution(projectId: string, targetPercent:
     const to: 'image' | 'video' = videoIndexes.has(index) ? 'video' : 'image';
     return scene.assetType === to ? [] : [{ sceneId: scene.id, sceneNumber: index + 1, from: scene.assetType, to }];
   });
-  const lockedCount = project.scenes.filter((scene) => scene.assetFileId !== null).length;
+  const lockedCount = project.scenes.filter((scene) => scene.assetFileId !== null || scene.videoKeyframeFileId !== null).length;
   return {
     total: project.scenes.length,
     videoCount: videoIndexes.size,
@@ -87,10 +87,10 @@ export async function applyVideoDistribution(projectId: string, targetPercent: n
   const project = await getProject(projectId);
   const videoIndexes = videoDistributionIndexes(project, targetPercent);
   const toVideoSceneIds = project.scenes.flatMap((scene, index) => (
-    videoIndexes.has(index) && scene.assetFileId === null && scene.assetType === 'image' ? [scene.id] : []
+    videoIndexes.has(index) && scene.assetFileId === null && scene.videoKeyframeFileId === null && scene.assetType === 'image' ? [scene.id] : []
   ));
   const toImageSceneIds = project.scenes.flatMap((scene, index) => (
-    !videoIndexes.has(index) && scene.assetFileId === null && scene.assetType === 'video' ? [scene.id] : []
+    !videoIndexes.has(index) && scene.assetFileId === null && scene.videoKeyframeFileId === null && scene.assetType === 'video' ? [scene.id] : []
   ));
   if (toVideoSceneIds.length === 0 && toImageSceneIds.length === 0) return project;
   return applyProjectVideoDistribution(projectId, toVideoSceneIds, toImageSceneIds, expectedVersion);
