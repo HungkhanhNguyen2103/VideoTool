@@ -99,17 +99,25 @@ function scriptParseIssue(error: unknown): string {
   return error instanceof Error ? error.message.replace(/^AI returned invalid script structure:\s*/, '') : String(error);
 }
 
+type ParseTruncationNotice = (message: string) => void;
+
 async function requestJsonWithRepair<T>(
   provider: ProjectDetail['aiProvider'],
   aiClient: AiClient,
   messages: ChatMessage[],
-  parse: (raw: string) => T,
+  parse: (raw: string, onTruncate: ParseTruncationNotice) => T,
   context: ScriptGenerationJobContext,
   opts: JsonChatOptions,
 ): Promise<T> {
+  const parseResponse = async (raw: string): Promise<T> => {
+    const notices: string[] = [];
+    const result = parse(raw, (notice) => notices.push(notice));
+    for (const notice of notices) await context.appendLog(notice);
+    return result;
+  };
   const raw = await chatWithFailureLog(provider, aiClient, messages, context, opts);
   try {
-    return parse(raw);
+    return await parseResponse(raw);
   } catch (error) {
     if (!isScriptParseFailure(error)) throw error;
     const issue = scriptParseIssue(error);
@@ -124,7 +132,7 @@ async function requestJsonWithRepair<T>(
     ];
     const repairedRaw = await chatWithFailureLog(provider, aiClient, repairMessages, context, opts);
     try {
-      return parse(repairedRaw);
+      return await parseResponse(repairedRaw);
     } catch (repairError) {
       await logScriptParseFailure(context, repairError, repairedRaw);
       throw repairError;

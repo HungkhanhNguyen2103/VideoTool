@@ -101,6 +101,34 @@ describe('sequential script generation', () => {
     });
   });
 
+  it('persists paragraphs when continuity memory exceeds schema limits and logs truncations', async () => {
+    const singleOutline = JSON.stringify({
+      chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: false }],
+      openLoops: [], coreQuestion: 'Why did the river change?', openingHook: 'At dawn, the river ran backward.',
+    });
+    const paragraphs = ['  Narration must survive memory cleanup.  '];
+    const ctx = context();
+    aiMock.chat
+      .mockResolvedValueOnce(singleOutline)
+      .mockResolvedValueOnce(expansion(paragraphs, `  ${'style '.repeat(100)}  `, {
+        chapterSummary: 'summary '.repeat(50),
+        avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'discarded'],
+        persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+      }));
+    const project = await createProject({ ...projectInput, chapterCount: 1 });
+
+    await generateScript(project.id, ctx);
+
+    const saved = await getProject(project.id);
+    expect(saved.chapters[0]).toMatchObject({ paragraphs, status: 'pending' });
+    expect(saved.chapters[0]!.chapterSummary!.length).toBeLessThanOrEqual(250);
+    expect(saved.chapters[0]!.avoidRepeating).toHaveLength(5);
+    expect(saved.chapters[0]!.persistentFacts).toHaveLength(5);
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Truncated chapterSummary from'));
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Truncated persistentFactsNext from 7 to 5 items'));
+    expect(aiMock.chat).toHaveBeenCalledTimes(2);
+  });
+
   it('repairs an invalid outline once and continues with the corrected response', async () => {
     const smallOutline = outline.replaceAll('targetWords":10', 'targetWords":1');
     const invalidOutline = smallOutline.replace('"role":"hook"', '"role":"introduction"');
@@ -138,7 +166,7 @@ describe('sequential script generation', () => {
 
   it('repairs an invalid chapter expansion once before applying length retry logic', async () => {
     const smallOutline = outline.replaceAll('targetWords":10', 'targetWords":1');
-    const invalidExpansion = JSON.stringify({ paragraphs: ['First'], styleNote: 'x'.repeat(501), chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'] });
+    const invalidExpansion = JSON.stringify({ paragraphs: ['First'], styleNote: 'First style', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'], extra: true });
     aiMock.chat
       .mockResolvedValueOnce(smallOutline)
       .mockResolvedValueOnce(invalidExpansion)

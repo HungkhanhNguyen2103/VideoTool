@@ -155,12 +155,22 @@ describe('script AI parsers', () => {
     }));
   });
 
-  it('requires the four hubris motif fields and rejects motif for other presets', () => {
+  it('requires the four hubris motif fields and drops motif for other presets', () => {
     const motif = { hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The scheme turns inward' };
     const chapter = { no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false };
     expect(parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook', motif }), 'hubris-trap')).toMatchObject({ motif });
     expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook' }), 'hubris-trap')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
-    expect(() => parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook', motif }), 'documentary')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(parseScriptOutline(JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook', motif }), 'documentary')).not.toHaveProperty('motif');
+  });
+
+  it('drops known stray outline root keys for documentary while preserving the hubris motif contract', () => {
+    const chapter = { no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false };
+    const motif = { hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The scheme turns inward' };
+    const stray = { chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook', motif, outline: 'duplicate outline', motifNote: 'duplicate note' };
+
+    expect(parseScriptOutline(JSON.stringify(stray), 'documentary')).not.toHaveProperty('motif');
+    expect(parseScriptOutline(JSON.stringify({ ...stray, outline: undefined, motifNote: undefined }), 'hubris-trap')).toMatchObject({ motif });
+    expect(() => parseScriptOutline(JSON.stringify(stray), 'hubris-trap')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
   });
 
   it('parses expansion and manual document as distinct response shapes', () => {
@@ -169,8 +179,54 @@ describe('script AI parsers', () => {
       chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 2, endsOnTension: false, paragraphs: ['Expanded scene'] }],
       openLoops: [], coreQuestion: 'Question', openingHook: 'Hook',
     }), 'explainer').chapters[0]!.paragraphs).toEqual(['Expanded scene']);
-    expect(() => parseChapterExpansion(JSON.stringify({ paragraphs: ['x'], styleNote: 'x'.repeat(501) }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(() => parseChapterExpansion(JSON.stringify({ paragraphs: ['x'], styleNote: 'Style', chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: [], extra: true }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
     expect(() => parseManualScriptDocument('{"paragraphs":["x"]}', 'explainer')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+  });
+
+  it('truncates only overlong memory fields and leaves paragraphs untouched', () => {
+    const notices: string[] = [];
+    const paragraphs = ['  Keep this narration exactly.  ', 'A second paragraph.'];
+    const result = parseChapterExpansion(JSON.stringify({
+      paragraphs,
+      styleNote: `  ${'style '.repeat(100)}  `,
+      chapterSummary: 'summary '.repeat(50),
+      avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'also discarded'],
+      persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+    }), (notice) => notices.push(notice));
+
+    expect(result.paragraphs).toEqual(paragraphs);
+    expect(result.styleNote.length).toBeLessThanOrEqual(500);
+    expect(result.styleNote).toBe(result.styleNote.trim());
+    expect(result.chapterSummary.length).toBeLessThanOrEqual(250);
+    expect(result.avoidRepeating).toHaveLength(5);
+    expect(result.avoidRepeating[0]!.length).toBeLessThanOrEqual(80);
+    expect(result.persistentFactsNext).toHaveLength(5);
+    expect(result.persistentFactsNext.every((fact) => fact.length <= 120)).toBe(true);
+    expect(notices).toEqual(expect.arrayContaining([
+      expect.stringContaining('Truncated chapterSummary from'),
+      expect.stringContaining('to 250 chars'),
+      expect.stringContaining('Truncated avoidRepeating'),
+      expect.stringContaining('Truncated persistentFactsNext'),
+    ]));
+  });
+
+  it('normalizes regenerated memory fields but still rejects wrong types', () => {
+    const notices: string[] = [];
+    const result = parseRegeneratedParagraphs(JSON.stringify({
+      paragraphs: ['Updated narration'],
+      chapterSummary: 'summary '.repeat(50),
+      avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'discarded'],
+      persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+    }), (notice) => notices.push(notice));
+    expect(result.paragraphs).toEqual(['Updated narration']);
+    expect(result.chapterSummary.length).toBeLessThanOrEqual(250);
+    expect(result.avoidRepeating).toHaveLength(5);
+    expect(result.persistentFactsNext).toHaveLength(5);
+    expect(notices.length).toBeGreaterThan(0);
+
+    expect(() => parseChapterExpansion(JSON.stringify({
+      paragraphs: ['Narration'], styleNote: 'Style', chapterSummary: 123, avoidRepeating: [], persistentFactsNext: [],
+    }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('chapterSummary:') }));
   });
 
   it.each(['chapterSummary', 'avoidRepeating', 'persistentFactsNext'] as const)('rejects chapter expansion missing %s with SCRIPT_PARSE_ERROR', (field) => {
