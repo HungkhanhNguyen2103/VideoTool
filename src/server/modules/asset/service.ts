@@ -114,7 +114,12 @@ export async function importAssetsFromZip(
       update.assetFileId = summary.id;
       if (scene.assetType === 'video') {
         const stored = await resolveFilePath(projectId, summary.id);
-        update.videoDurationSec = await probeVideoDurationFn(stored.absolutePath);
+        try {
+          update.videoDurationSec = await probeVideoDurationFn(stored.absolutePath);
+        } catch {
+          skipped.push(filename);
+          continue;
+        }
       }
     }
     updates.set(scene.id, update);

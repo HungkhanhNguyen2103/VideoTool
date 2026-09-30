@@ -213,6 +213,27 @@ describe('asset contracts', () => {
     });
   });
 
+  it('skips a video whose duration probe fails without losing its companion keyframe', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, {
+      probeVideoDuration: async () => { throw new Error('corrupt video'); },
+    });
+    const zip = new AdmZip();
+    zip.addFile('SCENE_002_Context.png', Buffer.from('keyframe'));
+    zip.addFile('SCENE_002_Context.mp4', Buffer.from('corrupt video'));
+
+    await expect(importAssetsFromZip(project.id, zip.toBuffer())).resolves.toEqual({
+      updated: 1,
+      skipped: ['SCENE_002_Context.mp4'],
+    });
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({
+      assetFileId: null,
+      videoKeyframeFileId: expect.any(String),
+      videoDurationSec: null,
+    });
+  });
+
   it('keeps image scenes strict when a video and image share a scene number', async () => {
     const project = await seedProjectWithScenes();
     const zip = new AdmZip();
