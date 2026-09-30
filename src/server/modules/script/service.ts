@@ -67,6 +67,12 @@ function aiProviderName(provider: ProjectDetail['aiProvider']): AiProviderName {
   return provider === 'deepseek' ? 'DeepSeek' : 'Claude';
 }
 
+async function logScriptParseFailure(context: ScriptGenerationJobContext, error: unknown, raw: string): Promise<void> {
+  if (error instanceof AppError && error.code === 'SCRIPT_PARSE_ERROR') {
+    await context.appendLog(`AI response validation failed: ${error.message}\nRaw response (first 400 chars): ${raw.slice(0, 400)}`);
+  }
+}
+
 async function chatWithFailureLog(
   provider: ProjectDetail['aiProvider'],
   aiClient: AiClient,
@@ -131,7 +137,13 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
     { role: 'user', content: outlinePrompt.user },
   ], context);
   if (await context.isCancelled()) return;
-  const outline = validateScriptOutlineChapterCount(parseScriptOutline(outlineRaw, project.scriptPresetId), project.chapterCount);
+  let outline: ReturnType<typeof parseScriptOutline>;
+  try {
+    outline = validateScriptOutlineChapterCount(parseScriptOutline(outlineRaw, project.scriptPresetId), project.chapterCount);
+  } catch (error) {
+    await logScriptParseFailure(context, error, outlineRaw);
+    throw error;
+  }
   const saved = await saveGeneratedScript(projectId, outline.chapters.map((chapter) => ({
     ...chapter,
     paragraphs: [],

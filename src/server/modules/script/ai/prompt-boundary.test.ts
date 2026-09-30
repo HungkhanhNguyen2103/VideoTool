@@ -140,6 +140,21 @@ describe('script AI parsers', () => {
     expect(result.chapters[0]!.targetWords).toBe(300);
   });
 
+  it('reports the precise path for an invalid outline role', () => {
+    const raw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'introduction', beat: 'Open with a mystery', targetWords: 300, endsOnTension: true }],
+      openLoops: [],
+      coreQuestion: 'Question',
+      openingHook: 'Hook',
+    });
+
+    expect(() => parseScriptOutline(raw, 'documentary')).toThrow(expect.objectContaining({
+      code: 'SCRIPT_PARSE_ERROR',
+      status: 422,
+      message: expect.stringContaining('chapters.0.role:'),
+    }));
+  });
+
   it('requires the four hubris motif fields and rejects motif for other presets', () => {
     const motif = { hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The scheme turns inward' };
     const chapter = { no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false };

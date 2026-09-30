@@ -16,7 +16,13 @@ function parseJson(raw: string): unknown {
 
 function validate<T>(raw: string, schema: z.ZodType<T>): T {
   const result = schema.safeParse(parseJson(raw));
-  if (!result.success) throw new AppError('AI returned invalid script structure.', 422, 'SCRIPT_PARSE_ERROR');
+  if (!result.success) {
+    const issues = result.error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.length ? issue.path.join('.') : 'root'}: ${issue.message}`)
+      .join('; ');
+    throw new AppError(`AI returned invalid script structure: ${issues}`, 422, 'SCRIPT_PARSE_ERROR');
+  }
   return result.data;
 }
 

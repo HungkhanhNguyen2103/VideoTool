@@ -531,6 +531,27 @@ describe('script contracts', () => {
     }
   });
 
+  it('logs outline validation issues and a bounded raw response before failing', async () => {
+    const raw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'introduction', beat: 'Open with a mystery', targetWords: 300, endsOnTension: true }],
+      openLoops: [],
+      coreQuestion: 'Question'.repeat(100),
+      openingHook: 'Hook',
+    });
+    const logs: string[] = [];
+    aiMock.chat.mockResolvedValue(raw);
+    const project = await createProject(projectInput);
+
+    await expect(generateScript(project.id, {
+      appendLog: async (message) => { logs.push(message); },
+      isCancelled: async () => false,
+      reportProgress: vi.fn(),
+    })).rejects.toMatchObject({ code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('chapters.0.role:') });
+
+    expect(logs.some((line) => line.includes('chapters.0.role:') && line.includes(raw.slice(0, 400)))).toBe(true);
+    expect(logs.join('\n')).not.toContain(raw.slice(401));
+  });
+
   it('rejects an empty AI chapter list without writing chapters', async () => {
     aiMock.chat.mockResolvedValue('[]');
     const project = await createProject(projectInput);
