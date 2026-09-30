@@ -12,7 +12,7 @@ function projectJson(zip: AdmZip): ProjectImportSeed {
   return parsed.data;
 }
 
-export function parseProjectImportSeed(buffer: Buffer): ProjectImportSeed {
+export async function parseProjectImportSeed(buffer: Buffer): Promise<ProjectImportSeed> {
   let zip: AdmZip;
   try { zip = new AdmZip(buffer); } catch { throw new Error('ZIP file is invalid.'); }
   const seed = projectJson(zip);
@@ -20,9 +20,11 @@ export function parseProjectImportSeed(buffer: Buffer): ProjectImportSeed {
     .filter((entry) => !entry.isDirectory && entry.entryName.startsWith('references/'))
     .filter((entry) => isReferenceDocument(entry.entryName))
     .sort((a, b) => a.entryName.localeCompare(b.entryName));
-  const extracted = documents
-    .map((entry) => extractReferenceText(entry.entryName, '', entry.getData()).trim())
-    .filter(Boolean);
+  const extracted: string[] = [];
+  for (const entry of documents) {
+    const text = (await extractReferenceText(entry.entryName, '', entry.getData())).trim();
+    if (text) extracted.push(text);
+  }
   if (extracted.length === 0) return seed;
   const referencesText = [seed.referencesText?.trim(), ...extracted].filter(Boolean).join('\n\n');
   return { ...seed, referencesText };

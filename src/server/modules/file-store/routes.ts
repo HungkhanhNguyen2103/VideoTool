@@ -23,7 +23,7 @@ fileStoreRouter.post('/import-seed', uploadZip, async (req, res) => {
     throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
   }
   try {
-    res.json(ProjectImportSeedSchema.parse(parseProjectImportSeed(file.buffer)));
+    res.json(ProjectImportSeedSchema.parse(await parseProjectImportSeed(file.buffer)));
   } catch (error) {
     throw new FieldAppError(error instanceof Error ? error.message : 'ZIP file is invalid.', 400, 'INVALID_PROJECT_SEED', []);
   }
@@ -34,7 +34,7 @@ fileStoreRouter.post('/reference-text', uploadReference, async (req, res) => {
   if (!file) throw new AppError('File is required.', 400, 'FILE_REQUIRED');
   if (!isReferenceDocument(file.originalname, file.mimetype)) throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
   try {
-    res.json({ text: extractReferenceText(file.originalname, file.mimetype, file.buffer) });
+    res.json({ text: await extractReferenceText(file.originalname, file.mimetype, file.buffer) });
   } catch (error) {
     throw new FieldAppError(error instanceof Error ? error.message : 'Cannot read reference document.', 422, 'REFERENCE_TEXT_FAILED', []);
   }

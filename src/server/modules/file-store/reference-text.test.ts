@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import AdmZip from 'adm-zip';
-import { deflateRawSync } from 'node:zlib';
+import { readFile } from 'node:fs/promises';
 import { extractReferenceText, isReferenceDocument } from './reference-text';
 
-function docxBuffer(text: string): Buffer {
-  const zip = new AdmZip();
-  zip.addFile('word/document.xml', Buffer.from(`<w:document><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`));
-  return zip.toBuffer();
+const KODAK_SENTENCE = 'Những bức ảnh Kodak kể lại ký ức của một thời đã qua.';
+
+async function fixtureBuffer(name: string): Promise<Buffer> {
+  const encoded = await readFile(new URL(`./test-fixtures/${name}`, import.meta.url), 'utf8');
+  return Buffer.from(encoded.replace(/\s+/g, ''), 'base64');
 }
 
 describe('reference document extraction', () => {
@@ -18,19 +18,19 @@ describe('reference document extraction', () => {
     expect(isReferenceDocument('image.png', 'image/png')).toBe(false);
   });
 
-  it('extracts plain text and docx paragraphs', () => {
-    expect(extractReferenceText('notes.txt', 'text/plain', Buffer.from('  Hello  '))).toBe('  Hello  ');
-    expect(extractReferenceText('notes.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', docxBuffer('Hello world'))).toBe('Hello world');
+  it('extracts plain text', async () => {
+    await expect(extractReferenceText('notes.txt', 'text/plain', Buffer.from('  Hello  '))).resolves.toBe('  Hello  ');
   });
 
-  it('extracts text operators from a simple PDF', () => {
-    const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nstream\n(Before) Tj\n( after) Tj\nendstream\nendobj\n%%EOF');
-    expect(extractReferenceText('notes.pdf', 'application/pdf', pdf)).toContain('Before after');
-  });
+  it('extracts Vietnamese diacritics from real DOCX and PDF documents', async () => {
+    const [docx, pdf] = await Promise.all([
+      fixtureBuffer('kodak-reference.docx.b64'),
+      fixtureBuffer('kodak-reference.pdf.b64'),
+    ]);
 
-  it('extracts text operators from a Flate-compressed PDF stream', () => {
-    const stream = deflateRawSync(Buffer.from('(Compressed Kodak note) Tj'));
-    const pdf = Buffer.concat([Buffer.from('%PDF-1.4\nstream\n'), stream, Buffer.from('\nendstream\n%%EOF')]);
-    expect(extractReferenceText('notes.pdf', 'application/pdf', pdf)).toContain('Compressed Kodak note');
+    await expect(extractReferenceText('notes.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', docx))
+      .resolves.toContain(KODAK_SENTENCE);
+    await expect(extractReferenceText('notes.pdf', 'application/pdf', pdf))
+      .resolves.toContain(KODAK_SENTENCE);
   });
 });
