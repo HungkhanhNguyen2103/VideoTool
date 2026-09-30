@@ -63,6 +63,8 @@ export type ScriptGenerationJobContext = {
   appendLog: (message: string) => Promise<void>;
 };
 
+type JsonChatOptions = { maxTokens: number; json: true };
+
 function aiProviderName(provider: ProjectDetail['aiProvider']): AiProviderName {
   return provider === 'deepseek' ? 'DeepSeek' : 'Claude';
 }
@@ -78,13 +80,55 @@ async function chatWithFailureLog(
   aiClient: AiClient,
   messages: ChatMessage[],
   context: ScriptGenerationJobContext,
+  opts?: JsonChatOptions,
 ): Promise<string> {
   try {
-    return await withAiRequestTimeout(() => aiClient.chat(messages), aiRequestTimeoutMs());
+    return await withAiRequestTimeout(() => aiClient.chat(messages, opts), aiRequestTimeoutMs());
   } catch (error) {
     const normalized = normalizeAiError(aiProviderName(provider), error);
     await context.appendLog(`AI request failed: ${normalized.message}`);
     throw normalized;
+  }
+}
+
+function isScriptParseFailure(error: unknown): error is AppError {
+  return error instanceof AppError && error.code === 'SCRIPT_PARSE_ERROR';
+}
+
+function scriptParseIssue(error: unknown): string {
+  return error instanceof Error ? error.message.replace(/^AI returned invalid script structure:\s*/, '') : String(error);
+}
+
+async function requestJsonWithRepair<T>(
+  provider: ProjectDetail['aiProvider'],
+  aiClient: AiClient,
+  messages: ChatMessage[],
+  parse: (raw: string) => T,
+  context: ScriptGenerationJobContext,
+  opts: JsonChatOptions,
+): Promise<T> {
+  const raw = await chatWithFailureLog(provider, aiClient, messages, context, opts);
+  try {
+    return parse(raw);
+  } catch (error) {
+    if (!isScriptParseFailure(error)) throw error;
+    const issue = scriptParseIssue(error);
+    await context.appendLog(`AI response invalid; retrying once: ${issue}`);
+    const lastMessage = messages[messages.length - 1];
+    const repairMessages: ChatMessage[] = [
+      ...messages.slice(0, -1),
+      {
+        role: lastMessage?.role ?? 'user',
+        content: `${lastMessage?.content ?? ''}\n\nFailed response:\n${raw}\n\nYour JSON was invalid: ${issue}. Return the corrected JSON only.`,
+      },
+    ];
+    const repairedRaw = await chatWithFailureLog(provider, aiClient, repairMessages, context, opts);
+    try {
+      return parse(repairedRaw);
+    } catch (repairError) {
+      await logScriptParseFailure(context, repairError, repairedRaw);
+      throw repairError;
+    }
   }
 }
 
@@ -132,18 +176,19 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
   if (await context.isCancelled()) return;
   const outlinePrompt = buildOutlinePrompt(project);
   await context.appendLog('Sending outline request to AI…');
-  const outlineRaw = await chatWithFailureLog(project.aiProvider, aiClient, [
+  const outlineMessages: ChatMessage[] = [
     { role: 'system', content: outlinePrompt.system },
     { role: 'user', content: outlinePrompt.user },
-  ], context);
+  ];
+  const outline = await requestJsonWithRepair(
+    project.aiProvider,
+    aiClient,
+    outlineMessages,
+    (raw) => validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId), project.chapterCount),
+    context,
+    { json: true, maxTokens: 4_000 },
+  );
   if (await context.isCancelled()) return;
-  let outline: ReturnType<typeof parseScriptOutline>;
-  try {
-    outline = validateScriptOutlineChapterCount(parseScriptOutline(outlineRaw, project.scriptPresetId), project.chapterCount);
-  } catch (error) {
-    await logScriptParseFailure(context, error, outlineRaw);
-    throw error;
-  }
   const saved = await saveGeneratedScript(projectId, outline.chapters.map((chapter) => ({
     ...chapter,
     paragraphs: [],
@@ -171,23 +216,37 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
       };
       const prompt = buildChapterExpansionPrompt(input);
       await context.appendLog(`Expanding chapter ${index + 1}/${saved.chapters.length}…`);
-      const raw = await chatWithFailureLog(project.aiProvider, aiClient, [
+      const expansionMessages: ChatMessage[] = [
         { role: 'system', content: prompt.system },
         { role: 'user', content: prompt.user },
-      ], context);
+      ];
+      let expansion = await requestJsonWithRepair(
+        project.aiProvider,
+        aiClient,
+        expansionMessages,
+        parseChapterExpansion,
+        context,
+        { json: true, maxTokens: 6_000 },
+      );
       if (await context.isCancelled()) return;
-      let expansion = parseChapterExpansion(raw);
       if (chapter.targetWords !== null && countNarrationWords(expansion.paragraphs.join(' ')) < chapter.targetWords * 0.8) {
         const retryPrompt = {
           ...prompt,
           user: `${prompt.user}\n\nPrevious response was ${countNarrationWords(expansion.paragraphs.join(' '))} words; target is ${chapter.targetWords}. Retry once and reach at least 80% of the target. Every added sentence must provide meaningful progression: new evidence, a concrete consequence, a causal explanation, or escalation. Do not paraphrase the same content, add generic padding, or repeat an already-stated fact just to raise the word count.`,
         };
-        const retryRaw = await chatWithFailureLog(project.aiProvider, aiClient, [
+        const retryMessages: ChatMessage[] = [
           { role: 'system', content: retryPrompt.system },
           { role: 'user', content: retryPrompt.user },
-        ], context);
+        ];
+        expansion = await requestJsonWithRepair(
+          project.aiProvider,
+          aiClient,
+          retryMessages,
+          parseChapterExpansion,
+          context,
+          { json: true, maxTokens: 6_000 },
+        );
         if (await context.isCancelled()) return;
-        expansion = parseChapterExpansion(retryRaw);
       }
       if (await context.isCancelled()) return;
       const updated = await patchProjectChapter(projectId, chapter.id, {

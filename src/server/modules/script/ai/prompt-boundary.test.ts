@@ -22,7 +22,7 @@ describe('script AI prompt boundary', () => {
     const input = { ...project, scriptPresetId: id };
     const preset = loadScriptPreset(id);
     const result = buildScriptPrompt(input);
-    expect(result.promptVersion).toBe(`script-prompt-v1/${id}@${preset.version}`);
+    expect(result.promptVersion).toBe(`script-prompt-v2/${id}@${preset.version}`);
     expect(result.user).toContain(`Script preset: ${id}`);
     expect(result.system.indexOf('professional video script writer')).toBeLessThan(result.system.indexOf(preset.system));
     expect(result.system.indexOf(preset.system)).toBeLessThan(result.system.indexOf(preset.instructions));
@@ -47,7 +47,7 @@ describe('script AI prompt boundary', () => {
       coreQuestion: 'Why did the river change?', openingHook: 'At dawn, it reversed.', openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v1/documentary@2');
+    expect(result.promptVersion).toBe('script-prompt-v2/documentary@2');
     expect(result.system).toContain(loadScriptPreset('documentary').instructions);
     expect(result.user).toContain('Origins');
     expect(result.user).toContain('First beat');
@@ -61,7 +61,7 @@ describe('script AI prompt boundary', () => {
       coreQuestion: 'Why did the river change?', openingHook: null, openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v1/explainer@1');
+    expect(result.promptVersion).toBe('script-prompt-v2/explainer@1');
     expect(result.system).toContain(loadScriptPreset('explainer').instructions);
   });
 
@@ -184,17 +184,32 @@ describe('script AI parsers', () => {
     expect(outline.user).toContain('Total narration word budget: 300 words');
     expect(outline.user).toContain('exactly 2 chapters');
     expect(outline.system).toContain('five-act');
+    for (const role of ['hook', 'context', 'rising', 'climax', 'resolution']) expect(outline.system).toContain(role);
+    expect(outline.system).toContain('no extra keys');
+    expect(outline.system).toContain('targetWords must be an integer');
+    expect(outline.system).toContain('plantedInChapter and resolvedInChapter are positive integers, not strings');
+    expect(outline.system).toContain('Example chapter:');
+    expect(outline.system).toContain('Example openLoop:');
+    expect(outline.promptVersion).toBe('script-prompt-v2/documentary@2');
 
     const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [], openLoops: ['What happens next?'], styleNote: 'Muted palette' });
     expect(expansion.user).toContain('Target words: 300');
     expect(expansion.user).toContain('What happens next?');
     expect(expansion.user).toContain('Muted palette');
     expect(expansion.system).toContain('paragraphs');
+    expect(expansion.system).toContain('styleNote max 500 chars');
+    expect(expansion.system).toContain('chapterSummary max 250 chars');
+    expect(expansion.system).toContain('avoidRepeating max 5 items each max 80 chars');
+    expect(expansion.system).toContain('persistentFactsNext max 5 items each max 120 chars');
 
     const manual = buildManualScriptPrompt(project);
     expect(manual.system).toContain('paragraphs');
     expect(manual.user).toContain('complete script document');
     expect(manual.system).not.toBe(manual.user);
+    for (const role of ['hook', 'context', 'rising', 'climax', 'resolution']) expect(manual.system).toContain(role);
+    expect(manual.system).toContain('Example chapter:');
+    expect(manual.system).toContain('Example openLoop:');
+    expect(manual.promptVersion).toBe('script-prompt-v2/documentary@2');
   });
 
   it('keeps hubris-trap outline guidance distinct from flatter explainer weighting', () => {

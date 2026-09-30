@@ -1,7 +1,7 @@
 import type { AssetType } from '../../../../contracts/asset';
 import type { ProjectDetail, VisualStyleId } from '../../../../contracts/project';
 import type { ChapterDoc, OpenLoop } from '../../../../contracts/script';
-import { NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
+import { NARRATIVE_ROLES, NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
 import { loadScriptPreset, type ScriptPreset } from './presets/loader';
 import { loadVisualStylePreset } from './presets/visual-style-loader';
 import { SCRIPT_PRESET_CONFIG } from './presets/config';
@@ -52,6 +52,14 @@ export type ChapterExpansionPromptInput = {
 };
 
 const PERSISTENT_FACTS_INSTRUCTION = 'persistentFacts is NOT a chapter summary. Keep only facts or narrative state that a later chapter could accidentally contradict, reintroduce as new, or forget while it remains relevant. Drop facts that are no longer useful. Return the COMPLETE next persistentFacts state, not a delta. Maximum 5 items.';
+const SCRIPT_STRUCTURE_CONTRACT = [
+  `Allowed role values are exactly: ${NARRATIVE_ROLES.join(', ')}.`,
+  'Each chapter object must contain exactly no, title, role, beat, targetWords, and endsOnTension; no extra keys. targetWords must be an integer and positive, not a string.',
+  'Example chapter: {"no":1,"title":"The opening","role":"hook","beat":"Raise the central question","targetWords":300,"endsOnTension":true}.',
+  'Each openLoop object must contain exactly question, plantedInChapter, and resolvedInChapter; no extra keys. plantedInChapter and resolvedInChapter are positive integers, not strings.',
+  'Example openLoop: {"question":"What caused the disaster?","plantedInChapter":1,"resolvedInChapter":3}.',
+].join(' ');
+const EXPANSION_LENGTH_CONTRACT = 'styleNote max 500 chars, chapterSummary max 250 chars, avoidRepeating max 5 items each max 80 chars, persistentFactsNext max 5 items each max 120 chars.';
 
 type RegenerationPromptContext = {
   coreQuestion: string;
@@ -63,7 +71,7 @@ type RegenerationPromptContext = {
 };
 
 function version(preset: ScriptPreset): string {
-  return `script-prompt-v1/${preset.id}@${preset.version}`;
+  return `script-prompt-v2/${preset.id}@${preset.version}`;
 }
 
 function language(project: ProjectDetail): string {
@@ -109,14 +117,14 @@ export function buildOutlinePrompt(project: ProjectDetail): BuiltPrompt {
       ? `Use five-act weighting as a guideline: ${weightingConfig.actWeighting!.join('% / ')}%; deviate if pacing calls for it.`
       : `Follow five-act weighting closely as a requirement: ${weightingConfig.actWeighting!.join('% / ')}%.`;
   return {
-    system: systemMessage(preset, `Return one JSON outline object with non-empty coreQuestion, openingHook, chapters, openLoops, and the preset-specific motif rule. coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. Each chapter must have no, title, role, beat, positive targetWords, and endsOnTension. ${shape} ${weighting}`),
+    system: systemMessage(preset, `Return one JSON outline object with non-empty coreQuestion, openingHook, chapters, openLoops, and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. ${shape} ${weighting}`),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
       `References: ${project.referencesText || '(none)'}`,
       `Language: ${language(project)}`,
-      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words`,
-      `Create ${count}.`,
+      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words; the sum of all targetWords must equal this budget.`,
+      `Create ${count}; chapter count must be exact.`,
     ].join('\n'),
     promptVersion: version(preset),
   };
@@ -126,7 +134,7 @@ export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput):
   const { project, chapter, coreQuestion, openingHook, previousChapterSummary, previousAvoidRepeating, previousPersistentFacts, openLoops, styleNote } = input;
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, `Return one JSON object with paragraphs (string array), styleNote (string, at most 500 characters), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). ${PERSISTENT_FACTS_INSTRUCTION}`),
+    system: systemMessage(preset, `Return one JSON object with paragraphs (string array), styleNote (string), chapterSummary (string), avoidRepeating (array), and persistentFactsNext (array). ${EXPANSION_LENGTH_CONTRACT} ${PERSISTENT_FACTS_INSTRUCTION}`),
     user: [
       `Language: ${language(project)}`,
       `Core question: ${coreQuestion}`,
@@ -149,14 +157,14 @@ export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput):
 export function buildManualScriptPrompt(project: ProjectDetail): BuiltPrompt {
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, 'Return one complete script document with non-empty coreQuestion and openingHook at the document root, plus chapters containing no, title, role, beat, positive targetWords, endsOnTension, and paragraphs; also include openLoops and the preset-specific motif rule. coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one.'),
+    system: systemMessage(preset, `Return one complete script document with non-empty coreQuestion and openingHook at the document root, plus chapters containing no, title, role, beat, positive targetWords, endsOnTension, and paragraphs; also include openLoops and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one.`),
     user: [
       `Write the complete script document for project: ${project.title}`,
       `Brief: ${project.brief}`,
       `References: ${project.referencesText || '(none)'}`,
       `Language: ${language(project)}`,
-      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words`,
-      project.chapterCount ? `Use exactly ${project.chapterCount} chapters.` : 'Choose between 1 and 20 chapters.',
+      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words; the sum of all targetWords must equal this budget.`,
+      project.chapterCount ? `Use exactly ${project.chapterCount} chapters; chapter count must be exact.` : 'Choose between 1 and 20 chapters.',
     ].join('\n'),
     promptVersion: version(preset),
   };

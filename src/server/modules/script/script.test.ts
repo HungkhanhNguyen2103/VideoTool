@@ -268,7 +268,7 @@ describe('script contracts', () => {
     const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-prompt`);
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v1/documentary@2' });
+    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v2/documentary@2' });
     expect(body.prompt).toContain('SYSTEM');
     expect(body.prompt).toContain('USER');
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
@@ -500,7 +500,7 @@ describe('script contracts', () => {
       'Expanding chapter 2/2…',
       'Script saved — 2 chapters.',
     ]);
-    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]));
+    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]), expect.objectContaining({ json: true, maxTokens: 4000 }));
   });
 
   it('maps invalid AI JSON to SCRIPT_PARSE_ERROR without writing chapters', async () => {
@@ -1039,7 +1039,7 @@ describe('script contracts', () => {
     });
     const text = await response.text();
     expect(text).toContain('event: error');
-    expect(text).toContain('AI returned invalid script structure.');
+    expect(text).toContain('AI returned invalid script structure: root: invalid JSON');
     expect(text.match(/event: done/g)).toBeNull();
   });
 });

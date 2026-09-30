@@ -10,7 +10,7 @@ function parseJson(raw: string): unknown {
   try {
     return JSON.parse(fenced?.[1] ?? trimmed);
   } catch {
-    throw new AppError('AI returned invalid script structure.', 422, 'SCRIPT_PARSE_ERROR');
+    throw new AppError('AI returned invalid script structure: root: invalid JSON', 422, 'SCRIPT_PARSE_ERROR');
   }
 }
 

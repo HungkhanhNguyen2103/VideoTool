@@ -67,6 +67,8 @@ describe('sequential script generation', () => {
     expect(saved.coreQuestion).toBe('What is at stake?');
     expect(saved.openingHook).toBe('A compelling opening.');
     expect(aiMock.chat).toHaveBeenCalledTimes(5);
+    expect(aiMock.chat.mock.calls[0]![1]).toMatchObject({ json: true, maxTokens: 4000 });
+    expect(aiMock.chat.mock.calls[1]![1]).toMatchObject({ json: true, maxTokens: 6000 });
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Retry style');
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('What caused it?');
     expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Core question: What is at stake?');
@@ -99,6 +101,58 @@ describe('sequential script generation', () => {
     });
   });
 
+  it('repairs an invalid outline once and continues with the corrected response', async () => {
+    const smallOutline = outline.replaceAll('targetWords":10', 'targetWords":1');
+    const invalidOutline = smallOutline.replace('"role":"hook"', '"role":"introduction"');
+    aiMock.chat
+      .mockResolvedValueOnce(invalidOutline)
+      .mockResolvedValueOnce(smallOutline)
+      .mockResolvedValueOnce(expansion(['First'], 'First style'))
+      .mockResolvedValueOnce(expansion(['Second'], 'Second style'));
+    const project = await createProject(projectInput);
+    const ctx = context();
+
+    await generateScript(project.id, ctx);
+
+    expect(aiMock.chat).toHaveBeenCalledTimes(4);
+    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain(invalidOutline);
+    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Your JSON was invalid:');
+    expect((await getProject(project.id)).status).toBe('script');
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('retrying once'));
+  });
+
+  it('fails after one invalid outline repair and logs the final validation details', async () => {
+    const invalidOutline = outline.replace('"role":"hook"', '"role":"introduction"');
+    aiMock.chat.mockResolvedValueOnce(invalidOutline).mockResolvedValueOnce(invalidOutline);
+    const project = await createProject(projectInput);
+    const ctx = context();
+
+    await expect(generateScript(project.id, ctx)).rejects.toMatchObject({
+      code: 'SCRIPT_PARSE_ERROR',
+      message: expect.stringContaining('chapters.0.role:'),
+    });
+    expect(aiMock.chat).toHaveBeenCalledTimes(2);
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Raw response (first 400 chars):'));
+    expect((await getProject(project.id)).chapters).toEqual([]);
+  });
+
+  it('repairs an invalid chapter expansion once before applying length retry logic', async () => {
+    const smallOutline = outline.replaceAll('targetWords":10', 'targetWords":1');
+    const invalidExpansion = JSON.stringify({ paragraphs: ['First'], styleNote: 'x'.repeat(501), chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'] });
+    aiMock.chat
+      .mockResolvedValueOnce(smallOutline)
+      .mockResolvedValueOnce(invalidExpansion)
+      .mockResolvedValueOnce(expansion(['First repaired'], 'First repaired style'))
+      .mockResolvedValueOnce(expansion(['Second'], 'Second style'));
+    const project = await createProject(projectInput);
+
+    await generateScript(project.id, context());
+
+    expect(aiMock.chat).toHaveBeenCalledTimes(4);
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain(invalidExpansion);
+    expect((await getProject(project.id)).chapters.map((chapter) => chapter.paragraphs)).toEqual([['First repaired'], ['Second']]);
+  });
+
   it('marks a failed chapter needs-fix and continues with later chapters', async () => {
     aiMock.chat
       .mockResolvedValueOnce(outline.replaceAll('targetWords":10', 'targetWords":1'))
@@ -126,10 +180,11 @@ describe('sequential script generation', () => {
   });
 
   it('rejects an explicit chapter-count mismatch before outline persistence', async () => {
-    aiMock.chat.mockResolvedValueOnce(JSON.stringify({
+    const invalid = JSON.stringify({
       chapters: [{ no: 1, title: 'Only chapter', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: false }],
       openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
-    }));
+    });
+    aiMock.chat.mockResolvedValueOnce(invalid).mockResolvedValueOnce(invalid);
     const project = await createProject(projectInput);
 
     await expect(generateScript(project.id, context())).rejects.toMatchObject({ code: 'SCRIPT_PARSE_ERROR' });

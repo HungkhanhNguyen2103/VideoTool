@@ -54,6 +54,17 @@ describe('AI client abstraction', () => {
       .resolves.toEqual(['deep ', 'seek']);
   });
 
+  it('sends DeepSeek JSON mode and the requested token limit for JSON chats', async () => {
+    const client = createDeepSeekClient();
+
+    await client.chat([{ role: 'user', content: 'Return JSON.' }], { json: true, maxTokens: 4000 });
+
+    expect(mocks.deepseekCreate).toHaveBeenLastCalledWith(expect.objectContaining({
+      max_tokens: 4000,
+      response_format: { type: 'json_object' },
+    }));
+  });
+
   it('maps Claude text blocks and stream deltas to the common interface', async () => {
     const client = getAiClient('claude');
     await expect(client.chat([{ role: 'user', content: 'hello' }])).resolves.toBe('claude reply');

@@ -18,6 +18,7 @@ export function createDeepSeekClient(): AiClient {
           model: MODEL,
           messages,
           max_tokens: opts.maxTokens,
+          ...(opts.json ? { response_format: { type: 'json_object' as const } } : {}),
         }), timeoutMs);
         return response.choices[0]?.message?.content ?? '';
       } catch (error) {
