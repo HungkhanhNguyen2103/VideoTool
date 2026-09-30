@@ -124,7 +124,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
-    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null, videoKeyframeFileId: null, videoDurationSec: null, depthMap: null })),
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
     renderFileId: null,
     bgmFileId: null,
     customStyleReferenceFileId: null,
@@ -152,6 +152,7 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
     return {
       ...parsed,
       videoKeyframeFileId: parsed.assetType === 'video' ? parsed.videoKeyframeFileId : null,
+      videoTailFileId: parsed.assetType === 'video' ? parsed.videoTailFileId : null,
       videoDurationSec: parsed.assetType === 'video' ? parsed.videoDurationSec : null,
       depthMap: old && parsed.assetType === 'image' && parsed.assetFileId === old.assetFileId ? old.depthMap : null,
     };
@@ -162,14 +163,16 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
 export async function patchProjectScene(
   id: string,
   sceneId: string,
-  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoDurationSec'>>,
+  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
 ): Promise<ProjectDetail> {
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(patch)) set[`scenes.$[scene].${field}`] = value;
   if (patch.audioFileId !== undefined) set['scenes.$[scene].wordTimings'] = null;
   if (patch.assetFileId !== undefined || patch.assetType === 'video') set['scenes.$[scene].depthMap'] = null;
+  if (patch.assetFileId !== undefined && patch.videoTailFileId === undefined) set['scenes.$[scene].videoTailFileId'] = null;
   if (patch.assetType === 'image') {
     set['scenes.$[scene].videoKeyframeFileId'] = null;
+    set['scenes.$[scene].videoTailFileId'] = null;
     set['scenes.$[scene].videoDurationSec'] = null;
   }
   const result = await getCollection<ProjectDoc>('projects').updateOne(
@@ -186,6 +189,7 @@ export async function setProjectScenesAssetType(id: string, assetType: 'image' |
   if (assetType === 'video') set['scenes.$[].depthMap'] = null;
   if (assetType === 'image') {
     set['scenes.$[].videoKeyframeFileId'] = null;
+    set['scenes.$[].videoTailFileId'] = null;
     set['scenes.$[].videoDurationSec'] = null;
   }
   const result = await getCollection<ProjectDoc>('projects').updateOne(
@@ -298,10 +302,10 @@ export async function setProjectVisualStylePreset(id: string, visualStylePresetI
 
 export async function applySceneAssets(
   id: string,
-  assetUpdates: Array<{ sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoDurationSec?: number | null }>,
+  assetUpdates: Array<{ sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoTailFileId?: string | null; videoDurationSec?: number | null }>,
 ): Promise<ProjectDetail> {
   const project = await getProject(id);
-  const latest = new Map<string, { sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoDurationSec?: number | null }>();
+  const latest = new Map<string, { sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoTailFileId?: string | null; videoDurationSec?: number | null }>();
   for (const update of assetUpdates) latest.set(update.sceneId, { ...latest.get(update.sceneId), ...update });
   if (latest.size === 0) return project;
   for (const sceneId of latest.keys()) {
@@ -318,6 +322,7 @@ export async function applySceneAssets(
       set[`scenes.$[${identifier}].depthMap`] = null;
     }
     if (update.videoKeyframeFileId !== undefined) set[`scenes.$[${identifier}].videoKeyframeFileId`] = update.videoKeyframeFileId;
+    if (update.videoTailFileId !== undefined) set[`scenes.$[${identifier}].videoTailFileId`] = update.videoTailFileId;
     if (update.videoDurationSec !== undefined) set[`scenes.$[${identifier}].videoDurationSec`] = update.videoDurationSec;
     arrayFilters.push({ [`${identifier}.id`]: sceneId });
     index += 1;

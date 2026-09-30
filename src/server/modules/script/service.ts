@@ -266,6 +266,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       motionPrompt: '',
       sfxFileId: null,
       videoKeyframeFileId: null,
+      videoTailFileId: null,
       videoDurationSec: null,
       depthMap: null,
     })));

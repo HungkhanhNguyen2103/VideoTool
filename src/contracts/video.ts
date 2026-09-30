@@ -39,6 +39,7 @@ export const RemotionScenePropsSchema = z.object({
   voiceRelPath: z.string().min(1).nullable(),
   sfxRelPath: z.string().min(1).nullable(),
   videoKeyframeRelPath: z.string().min(1).nullable().default(null),
+  videoTailRelPath: z.string().min(1).nullable().default(null),
   videoDurationSec: z.number().positive().nullable().default(null),
   depthMapRelPath: z.string().min(1).nullable().default(null),
   durationSec: z.number().nonnegative(),

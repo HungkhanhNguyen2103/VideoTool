@@ -69,7 +69,7 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], videoKeyframeRelPath: null, videoDurationSec: null, depthMapRelPath: null, filmLook: false, keywords: [] }] });
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], videoKeyframeRelPath: null, videoTailRelPath: null, videoDurationSec: null, depthMapRelPath: null, filmLook: false, keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
@@ -83,6 +83,13 @@ describe('Remotion contracts and frame math', () => {
   it('mutes embedded audio from source video scenes', async () => {
     const source = await readFile('src/remotion/SceneSequence.tsx', 'utf8');
     expect(source).toMatch(/<OffthreadVideo[\s\S]*muted/);
+  });
+
+  it('uses the video tail frame before falling back to the keyframe', async () => {
+    const source = await readFile('src/remotion/SceneSequence.tsx', 'utf8');
+    expect(source).toContain('const trailing = scene.videoTailRelPath ?? scene.videoKeyframeRelPath;');
+    expect(source).toContain('hasKeyframe: Boolean(trailing)');
+    expect(source).toContain('staticFile(trailing)');
   });
 
   it('uses a horizontal-only SVG blur for whip-pan transitions', async () => {
@@ -224,11 +231,59 @@ describe('Remotion props and public-dir staging', () => {
 
       const props = await buildRemotionInputProps(project, [scene], 'render-keyframe', resolver);
 
-      expect(props.scenes[0]).toMatchObject({ assetType: 'video', videoKeyframeRelPath: 'renders/render-keyframe/scene-01-keyframe.png', videoDurationSec: 1.2 });
+      expect(props.scenes[0]).toMatchObject({ assetType: 'video', videoKeyframeRelPath: 'renders/render-keyframe/scene-01-keyframe.png', videoTailRelPath: null, videoDurationSec: 1.2 });
       expect(resolver).toHaveBeenCalledWith('project-1', 'keyframe-1');
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it('prefers and stages a video tail frame alongside the keyframe', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'remotion-tail-'));
+    try {
+      const sources = new Map([
+        ['video-1', { absolutePath: path.join(directory, 'scene.mp4'), mimeType: 'video/mp4', purpose: 'reference' as const }],
+        ['keyframe-1', { absolutePath: path.join(directory, 'keyframe.png'), mimeType: 'image/png', purpose: 'reference' as const }],
+        ['tail-1', { absolutePath: path.join(directory, 'tail.png'), mimeType: 'image/png', purpose: 'reference' as const }],
+      ]);
+      const resolver = vi.fn(async (_projectId: string, fileId: string) => sources.get(fileId)!);
+      const project = { id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true };
+      const scene = { id: 'scene-1', assetType: 'video', assetFileId: 'video-1', videoKeyframeFileId: 'keyframe-1', videoTailFileId: 'tail-1', videoDurationSec: 1.2, audioFileId: null, sfxFileId: null, durationSec: 4 } as unknown as Scene;
+
+      const props = await buildRemotionInputProps(project, [scene], 'render-tail', resolver);
+
+      expect(props.scenes[0]).toMatchObject({ videoKeyframeRelPath: 'renders/render-tail/scene-01-keyframe.png', videoTailRelPath: 'renders/render-tail/scene-01-tail.png' });
+      expect(resolver).toHaveBeenCalledWith('project-1', 'tail-1');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the keyframe when the video tail cannot be resolved', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'remotion-tail-fallback-'));
+    try {
+      const resolver = vi.fn(async (_projectId: string, fileId: string) => {
+        if (fileId === 'tail-1') throw new Error('missing tail');
+        return { absolutePath: path.join(directory, fileId === 'video-1' ? 'scene.mp4' : 'keyframe.png'), mimeType: fileId === 'video-1' ? 'video/mp4' : 'image/png', purpose: 'reference' as const };
+      });
+      const project = { id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true };
+      const scene = { id: 'scene-1', assetType: 'video', assetFileId: 'video-1', videoKeyframeFileId: 'keyframe-1', videoTailFileId: 'tail-1', videoDurationSec: 1.2, audioFileId: null, sfxFileId: null, durationSec: 4 } as unknown as Scene;
+
+      await expect(buildRemotionInputProps(project, [scene], 'render-tail-fallback', resolver)).resolves.toMatchObject({ scenes: [{ videoKeyframeRelPath: 'renders/render-tail-fallback/scene-01-keyframe.png', videoTailRelPath: null }] });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a tail reference on an image scene', async () => {
+    const resolver = vi.fn(async () => ({ absolutePath: path.join(tmpdir(), 'image.png'), mimeType: 'image/png', purpose: 'reference' as const }));
+    const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true } as never;
+    const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', videoTailFileId: 'tail-1', audioFileId: null, sfxFileId: null, durationSec: 2 } as unknown as Scene;
+
+    const props = await buildRemotionInputProps(project, [scene], 'render-image-tail', resolver);
+
+    expect(props.scenes[0]?.videoTailRelPath).toBeNull();
+    expect(resolver).toHaveBeenCalledTimes(1);
   });
 
   it('uses full project scene order for year context when staging a single-scene preview', async () => {

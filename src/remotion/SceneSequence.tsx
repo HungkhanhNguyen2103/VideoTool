@@ -41,14 +41,15 @@ function ImageScene({ scene, durationInFrames }: { scene: RemotionSceneProps; du
 
 function VideoScene({ scene, durationInFrames, fps }: { scene: RemotionSceneProps; durationInFrames: number; fps: number }) {
   const frame = useCurrentFrame();
+  const trailing = scene.videoTailRelPath ?? scene.videoKeyframeRelPath;
   const plan = planVideoKeyframeSegments({
     sceneDurationInFrames: durationInFrames,
     fps,
     videoDurationSec: scene.videoDurationSec,
-    hasKeyframe: Boolean(scene.videoKeyframeRelPath),
+    hasKeyframe: Boolean(trailing),
   });
   const video = <OffthreadVideo muted src={staticFile(scene.assetRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
-  if (!plan || !scene.videoKeyframeRelPath) return video;
+  if (!plan || !trailing) return video;
   const videoOpacity = interpolate(frame, [plan.imageFrom, plan.videoFrames], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const imageOpacity = interpolate(frame, [plan.imageFrom, plan.videoFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   return (
@@ -58,7 +59,7 @@ function VideoScene({ scene, durationInFrames, fps }: { scene: RemotionSceneProp
       </Sequence>
       <Sequence from={plan.imageFrom} durationInFrames={plan.imageFrames}>
         <AbsoluteFill style={{ opacity: imageOpacity }}>
-          <Img src={staticFile(scene.videoKeyframeRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          <Img src={staticFile(trailing)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </AbsoluteFill>
       </Sequence>
     </>

@@ -1,27 +1,32 @@
 import AdmZip from 'adm-zip';
+import path from 'node:path';
 import type { ProjectDetail } from '../../../contracts/project';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
 import { createFileStoreService } from '../file-store';
 import { applyProjectVideoDistribution, applySceneAssets, getProject, pickVideoSceneIndexes } from '../project';
 import { AppError } from '../../shared/errors';
+import { logger } from '../../shared/logger';
 import { expectedAssetType, MIME_BY_EXTENSION, type FlowSceneExport } from './docs';
 import { probeVideoDuration } from '../../shared/ffprobe';
+import { extractLastFrame } from '../../shared/ffmpeg-frames';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
 let enqueueDepthMapJob: ((projectId: string, sceneId: string) => Promise<void>) | null = null;
 let probeVideoDurationFn = probeVideoDuration;
+let extractLastFrameFn = extractLastFrame;
 
 export function configureAssetModule(
   filesDir: string,
   depthJobEnqueuer?: (projectId: string, sceneId: string) => Promise<void>,
-  options: { probeVideoDuration?: typeof probeVideoDuration } = {},
+  options: { probeVideoDuration?: typeof probeVideoDuration; extractLastFrame?: typeof extractLastFrame } = {},
 ): void {
   const service = createFileStoreService(filesDir);
   storeFile = service.storeFile;
   resolveFilePath = service.resolveFilePath;
   enqueueDepthMapJob = depthJobEnqueuer ?? null;
   probeVideoDurationFn = options.probeVideoDuration ?? probeVideoDuration;
+  extractLastFrameFn = options.extractLastFrame ?? extractLastFrame;
 }
 
 async function requestDepthMaps(projectId: string, sceneIds: Iterable<string>): Promise<void> {
@@ -111,7 +116,7 @@ export async function importAssetsFromZip(
   }
 
   const skipped: string[] = [];
-  const updates = new Map<string, { sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoDurationSec?: number | null }>();
+  const updates = new Map<string, { sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoTailFileId?: string | null; videoDurationSec?: number | null }>();
   let entries: ReturnType<AdmZip['getEntries']>;
   try {
     entries = zip.getEntries();
@@ -161,6 +166,20 @@ export async function importAssetsFromZip(
         } catch {
           skipped.push(filename);
           continue;
+        }
+        try {
+          const tailBuffer = await extractLastFrameFn(stored.absolutePath);
+          const tail = await storeFile({
+            projectId,
+            originalName: `${path.basename(filename, path.extname(filename))}.tail.png`,
+            mimeType: 'image/png',
+            buffer: tailBuffer,
+            purpose: 'reference',
+          });
+          update.videoTailFileId = tail.id;
+        } catch (error) {
+          logger.warn(`Last-frame extraction failed for imported video ${filename}; using keyframe fallback.`, error);
+          update.videoTailFileId = null;
         }
       }
     }

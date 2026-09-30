@@ -319,12 +319,30 @@ describe('asset contracts', () => {
     const project = await seedProjectWithScenes();
     await getCollection<{ _id: string }>('projects').updateOne(
       { _id: project.id },
-      { $set: { 'scenes.1.assetType': 'video', 'scenes.1.assetFileId': 'old-video', 'scenes.1.videoKeyframeFileId': 'old-keyframe', 'scenes.1.videoDurationSec': 2.5 } },
+      { $set: { 'scenes.1.assetType': 'video', 'scenes.1.assetFileId': 'old-video', 'scenes.1.videoKeyframeFileId': 'old-keyframe', 'scenes.1.videoTailFileId': 'old-tail', 'scenes.1.videoDurationSec': 2.5 } },
     );
 
     const updated = await applySceneAssets(project.id, [{ sceneId: 'scene-2', assetFileId: 'new-video' }]);
 
-    expect(updated.scenes[1]).toMatchObject({ assetFileId: 'new-video', videoKeyframeFileId: 'old-keyframe', videoDurationSec: 2.5 });
+    expect(updated.scenes[1]).toMatchObject({ assetFileId: 'new-video', videoKeyframeFileId: 'old-keyframe', videoTailFileId: 'old-tail', videoDurationSec: 2.5 });
+  });
+
+  it('writes an explicit null video tail through applySceneAssets', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video', videoTailFileId: 'tail-1' });
+
+    const updated = await applySceneAssets(project.id, [{ sceneId: 'scene-2', videoTailFileId: null }]);
+
+    expect(updated.scenes[1]!.videoTailFileId).toBeNull();
+  });
+
+  it('clears a stale tail when the video asset file is patched without an explicit tail', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video', videoTailFileId: 'tail-1' });
+
+    const updated = await patchProjectScene(project.id, 'scene-2', { assetFileId: 'video-1' });
+
+    expect(updated.scenes[1]).toMatchObject({ assetFileId: 'video-1', videoTailFileId: null });
   });
 
   it('exports Flow scenes with one-based numbering and prompts', async () => {
@@ -362,7 +380,7 @@ describe('asset contracts', () => {
   it('imports both a video and its keyframe image for a video scene', async () => {
     const project = await seedProjectWithScenes();
     await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
-    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 1.25 });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 1.25, extractLastFrame: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]) });
     const zip = new AdmZip();
     zip.addFile('SCENE_002_Context.mp4', Buffer.from('video'));
     zip.addFile('SCENE_002_Context.png', Buffer.from('keyframe'));
@@ -374,8 +392,67 @@ describe('asset contracts', () => {
       assetType: 'video',
       assetFileId: expect.any(String),
       videoKeyframeFileId: expect.any(String),
+      videoTailFileId: expect.any(String),
       videoDurationSec: 1.25,
     });
+    const updated = await getProject(project.id);
+    const tailId = updated.scenes[1]!.videoTailFileId;
+    expect(tailId).toEqual(expect.any(String));
+    if (!tailId) throw new Error('Expected an imported video tail file.');
+    expect(await getCollection<{ _id: string; originalName: string; mimeType: string; purpose: string }>('files').findOne({ _id: tailId })).toMatchObject({ originalName: 'SCENE_002_Context.tail.png', mimeType: 'image/png', purpose: 'reference' });
+  });
+
+  it('keeps a video when tail extraction fails and records an explicit null tail', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, {
+      probeVideoDuration: async () => 1.25,
+      extractLastFrame: async () => { throw new Error('tail extraction failed'); },
+    });
+    const zip = new AdmZip();
+    zip.addFile('SCENE_002_Context.mp4', Buffer.from('video'));
+
+    const result = await importAssetsFromZip(project.id, zip.toBuffer());
+
+    expect(result).toEqual({ updated: 1, skipped: [] });
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({ assetFileId: expect.any(String), videoDurationSec: 1.25, videoTailFileId: null });
+    expect(result.skipped).not.toContain('SCENE_002_Context.mp4');
+  });
+
+  it('clears a previous tail when a video is re-imported and extraction fails', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 1.25, extractLastFrame: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]) });
+    const firstZip = new AdmZip();
+    firstZip.addFile('SCENE_002_First.mp4', Buffer.from('video'));
+    await importAssetsFromZip(project.id, firstZip.toBuffer());
+    expect((await getProject(project.id)).scenes[1]!.videoTailFileId).toEqual(expect.any(String));
+
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 2, extractLastFrame: async () => { throw new Error('tail extraction failed'); } });
+    const secondZip = new AdmZip();
+    secondZip.addFile('SCENE_002_Replacement.mp4', Buffer.from('video'));
+
+    await expect(importAssetsFromZip(project.id, secondZip.toBuffer())).resolves.toEqual({ updated: 1, skipped: [] });
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({ videoDurationSec: 2, videoTailFileId: null });
+  });
+
+  it('leaves an existing tail untouched when importing only a video keyframe', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video', videoKeyframeFileId: 'old-keyframe', videoTailFileId: 'existing-tail', videoDurationSec: 1.25 });
+    const zip = new AdmZip();
+    zip.addFile('SCENE_002_Context.png', Buffer.from('keyframe'));
+
+    await expect(importAssetsFromZip(project.id, zip.toBuffer())).resolves.toEqual({ updated: 1, skipped: [] });
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({ videoKeyframeFileId: expect.any(String), videoTailFileId: 'existing-tail', videoDurationSec: 1.25 });
+  });
+
+  it('clears the tail when a video scene switches to an image', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video', videoTailFileId: 'tail-1', videoDurationSec: 1.25 });
+
+    const updated = await patchProjectScene(project.id, 'scene-2', { assetType: 'image' });
+
+    expect(updated.scenes[1]).toMatchObject({ assetType: 'image', videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null });
   });
 
   it('skips a video whose duration probe fails without losing its companion keyframe', async () => {
@@ -530,11 +607,12 @@ describe('asset contracts', () => {
 
   it('clears asset references when duplicating a project', async () => {
     const project = await seedProjectWithScenes();
-    await applySceneAssets(project.id, [{ sceneId: 'scene-1', assetFileId: 'file-1' }]);
+    await applySceneAssets(project.id, [{ sceneId: 'scene-1', assetFileId: 'file-1', videoTailFileId: 'tail-1' }]);
 
     const duplicate = await duplicateProject(project.id);
 
     expect(duplicate.scenes.map((scene) => scene.assetFileId)).toEqual([null, null, null]);
+    expect(duplicate.scenes.map((scene) => scene.videoTailFileId)).toEqual([null, null, null]);
   });
 
   it('returns no updates for an empty ZIP and rejects malformed ZIP data', async () => {
