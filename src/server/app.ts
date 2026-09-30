@@ -38,7 +38,7 @@ export function createApp(options: AppOptions): Express {
   });
 
   app.use('/api/project', projectRouter);
-  app.use('/api/project', createScriptRouter({ enqueueJob }));
+  app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);
   app.use('/api/project', createVideoRouter({ enqueueJob }));

@@ -511,6 +511,26 @@ describe('script contracts', () => {
     expect((await getProject(project.id)).chapters).toEqual([]);
   });
 
+  it('times out a hanging AI request, logs the readable failure, and leaves the project unchanged', async () => {
+    const previous = process.env.AI_REQUEST_TIMEOUT_MS;
+    process.env.AI_REQUEST_TIMEOUT_MS = '20';
+    const logs: string[] = [];
+    aiMock.chat.mockImplementation(() => new Promise<never>(() => undefined));
+    const project = await createProject(projectInput);
+    try {
+      await expect(generateScript(project.id, {
+        appendLog: async (message) => { logs.push(message); },
+        isCancelled: async () => false,
+        reportProgress: vi.fn(),
+      })).rejects.toMatchObject({ code: 'AI_REQUEST_FAILED', message: 'Cannot reach api.deepseek.com (timeout/network).' });
+      expect(logs).toContain('AI request failed: Cannot reach api.deepseek.com (timeout/network).');
+      expect((await getProject(project.id)).chapters).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.AI_REQUEST_TIMEOUT_MS;
+      else process.env.AI_REQUEST_TIMEOUT_MS = previous;
+    }
+  });
+
   it('rejects an empty AI chapter list without writing chapters', async () => {
     aiMock.chat.mockResolvedValue('[]');
     const project = await createProject(projectInput);
@@ -773,6 +793,21 @@ describe('script contracts', () => {
     const body = await response.json() as { jobId: string };
     expect(body.jobId).toEqual(expect.any(String));
     expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({ type: 'generate-script', payload: { projectId: project.id } });
+  });
+
+  it('reuses an active generate-script job instead of enqueuing a duplicate', async () => {
+    const project = await createProject(projectInput);
+    const base = await startScriptServer();
+
+    const first = await fetch(`${base}/api/project/${project.id}/generate-script`, { method: 'POST' });
+    const firstBody = await first.json() as { jobId: string };
+    const second = await fetch(`${base}/api/project/${project.id}/generate-script`, { method: 'POST' });
+    const secondBody = await second.json() as { jobId: string };
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(secondBody).toEqual(firstBody);
+    expect(await getCollection<JobRecord>('jobs').countDocuments({ projectId: project.id, type: 'generate-script' })).toBe(1);
   });
 
   it('enqueues a visual-prompt job with the exact type and payload for finalized scenes', async () => {

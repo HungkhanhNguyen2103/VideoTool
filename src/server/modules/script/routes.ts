@@ -8,6 +8,7 @@ import { parseManualScriptDocument, validateScriptOutlineChapterCount } from './
 import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
+type GetActiveScriptJob = (projectId: string, type: string) => Promise<{ id: string } | null>;
 
 const PatchChapterSchema = z.object({
   status: z.enum(['pending', 'approved', 'needs-fix']).optional(),
@@ -39,11 +40,16 @@ function assertVisualPromptSourceReady(project: Awaited<ReturnType<typeof getPro
   }
 }
 
-export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob }): Router {
+export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getActiveJob?: GetActiveScriptJob }): Router {
   const router = Router();
 
   router.post('/:id/generate-script', async (req, res) => {
     const project = await getProject(req.params.id);
+    const activeJob = await options.getActiveJob?.(project.id, 'generate-script');
+    if (activeJob) {
+      res.status(200).json({ jobId: activeJob.id });
+      return;
+    }
     const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id } });
     res.status(201).json({ jobId: job.id });
   });

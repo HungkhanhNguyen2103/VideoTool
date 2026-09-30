@@ -1,13 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWorkerLoop } from './main';
 
-const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn(), generateProjectVoiceovers: vi.fn(), generateProjectSfx: vi.fn(), generateProjectDepthMaps: vi.fn(), generateSceneDepthMap: vi.fn(), renderFullProject: vi.fn() }));
+const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn(), generateProjectVoiceovers: vi.fn(), generateProjectSfx: vi.fn(), generateProjectDepthMaps: vi.fn(), generateSceneDepthMap: vi.fn(), renderFullProject: vi.fn(), loggerError: vi.fn() }));
 vi.mock('../server/modules/script/service', () => ({ generateScript: mocks.generateScript }));
 vi.mock('../server/modules/script/visual-prompts', () => ({ generateVisualPrompts: mocks.generateVisualPrompts }));
 vi.mock('../server/modules/script/scene-split', () => ({ splitProjectScenes: mocks.splitProjectScenes }));
 vi.mock('../server/modules/script/qa', () => ({ runFinalQa: mocks.runFinalQa }));
 vi.mock('../server/modules/video', () => ({ generateProjectVoiceovers: mocks.generateProjectVoiceovers, generateProjectSfx: mocks.generateProjectSfx, generateProjectDepthMaps: mocks.generateProjectDepthMaps, generateSceneDepthMap: mocks.generateSceneDepthMap, renderFullProject: mocks.renderFullProject }));
+vi.mock('../server/shared/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: mocks.loggerError } }));
 import { jobHandlers } from './registry';
+import { AiRequestError } from '../server/shared/ai/errors';
 
 describe('worker poll loop', () => {
   it('recovers each tick and drains until no job remains', async () => {
@@ -78,6 +80,18 @@ describe('script job registration', () => {
       progress: 0, result: null, error: null, cancelRequested: true, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });
     expect(mocks.generateScript).not.toHaveBeenCalled();
+  });
+
+  it('logs provider, status, and readable message when script AI fails', async () => {
+    mocks.generateScript.mockRejectedValueOnce(new AiRequestError('DeepSeek', 502, 'Cannot reach api.deepseek.com (timeout/network).'));
+    const handler = jobHandlers['generate-script']!;
+
+    await expect(handler({
+      _id: 'job-3', schemaVersion: 1, type: 'generate-script', projectId: 'project-1', payload: { projectId: 'project-1' },
+      status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
+      progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() })).rejects.toBeInstanceOf(AiRequestError);
+    expect(mocks.loggerError).toHaveBeenCalledWith('AI request failed.', { provider: 'DeepSeek', status: 502, message: 'Cannot reach api.deepseek.com (timeout/network).' });
   });
 
   it('registers visual-prompt generation and maps its payload/context', async () => {

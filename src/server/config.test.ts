@@ -10,6 +10,7 @@ describe('loadConfig', () => {
       MONGODB_DB: 'video_tool',
       FILES_DIR: './data/files',
       WORKER_POLL_MS: 2000,
+      AI_REQUEST_TIMEOUT_MS: 120000,
       NODE_ENV: 'development',
       TTS_API_URL: 'http://127.0.0.1:8000/api/tts',
       TTS_DEFAULT_VOICE: 'Truc Ly',
@@ -25,7 +26,7 @@ describe('loadConfig', () => {
   });
 
   it('coerces numeric strings', () => {
-    expect(loadConfig({ PORT: '4100', WORKER_POLL_MS: '500' })).toMatchObject({ PORT: 4100, WORKER_POLL_MS: 500 });
+    expect(loadConfig({ PORT: '4100', WORKER_POLL_MS: '500', AI_REQUEST_TIMEOUT_MS: '3210' })).toMatchObject({ PORT: 4100, WORKER_POLL_MS: 500, AI_REQUEST_TIMEOUT_MS: 3210 });
   });
 
   it('fails fast with a readable message', () => {

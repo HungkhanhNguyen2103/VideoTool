@@ -9,6 +9,7 @@ const EnvSchema = z.object({
   FILES_DIR: z.string().min(1).default('./data/files'),
   REMOTION_PUBLIC_DIR: z.string().min(1).default('./data/remotion-public'),
   WORKER_POLL_MS: z.coerce.number().int().min(100).default(2000),
+  AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   DEEPSEEK_API_KEY: z.string().default(''),
   ANTHROPIC_API_KEY: z.string().default(''),
   DEFAULT_AI_PROVIDER: z.enum(AI_PROVIDERS).default('deepseek'),

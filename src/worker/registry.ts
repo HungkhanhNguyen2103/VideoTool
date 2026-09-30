@@ -2,6 +2,8 @@ import type { JobHandler } from '../server/modules/job';
 import { handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handleSplitScenes } from '../server/modules/script';
 import { getProject } from '../server/modules/project';
 import { alignProjectWordTimings, generateProjectDepthMaps, generateSceneDepthMap, generateProjectSfx, generateProjectVoiceovers, renderFullProject } from '../server/modules/video';
+import { AiRequestError } from '../server/shared/ai/errors';
+import { logger } from '../server/shared/logger';
 
 function projectIdFrom(job: { payload: unknown }): string {
   const projectId = (job.payload as { projectId?: unknown } | null)?.projectId;
@@ -44,8 +46,23 @@ const handleRenderFullVideo: JobHandler = async (job, context) => {
   await renderFullProject(projectIdFrom(job), context.appendLog, context.reportProgress);
 };
 
+const handleGenerateScriptWithLogging: JobHandler = async (job, context) => {
+  try {
+    await handleGenerateScript(job, context);
+  } catch (error) {
+    if (error instanceof AiRequestError) {
+      logger.error('AI request failed.', {
+        provider: error.provider,
+        status: error.status,
+        message: error.message,
+      });
+    }
+    throw error;
+  }
+};
+
 export const jobHandlers: Record<string, JobHandler> = {
-  'generate-script': handleGenerateScript,
+  'generate-script': handleGenerateScriptWithLogging,
   'generate-visual-prompts': handleGenerateVisualPrompts,
   'split-scenes': handleSplitScenes,
   'final-qa': handleFinalQa,

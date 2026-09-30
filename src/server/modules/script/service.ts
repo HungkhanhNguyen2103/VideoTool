@@ -1,6 +1,7 @@
 import type { ProjectDetail } from '../../../contracts/project';
 import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
-import { getAiClient } from '../../shared/ai';
+import { getAiClient, type AiClient, type ChatMessage } from '../../shared/ai';
+import { aiRequestTimeoutMs, normalizeAiError, withAiRequestTimeout, type AiProviderName } from '../../shared/ai/errors';
 import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import {
@@ -62,6 +63,25 @@ export type ScriptGenerationJobContext = {
   appendLog: (message: string) => Promise<void>;
 };
 
+function aiProviderName(provider: ProjectDetail['aiProvider']): AiProviderName {
+  return provider === 'deepseek' ? 'DeepSeek' : 'Claude';
+}
+
+async function chatWithFailureLog(
+  provider: ProjectDetail['aiProvider'],
+  aiClient: AiClient,
+  messages: ChatMessage[],
+  context: ScriptGenerationJobContext,
+): Promise<string> {
+  try {
+    return await withAiRequestTimeout(() => aiClient.chat(messages), aiRequestTimeoutMs());
+  } catch (error) {
+    const normalized = normalizeAiError(aiProviderName(provider), error);
+    await context.appendLog(`AI request failed: ${normalized.message}`);
+    throw normalized;
+  }
+}
+
 export async function saveGeneratedScript(
   projectId: string,
   chapters: GeneratedScriptChapter[],
@@ -106,10 +126,10 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
   if (await context.isCancelled()) return;
   const outlinePrompt = buildOutlinePrompt(project);
   await context.appendLog('Sending outline request to AI…');
-  const outlineRaw = await aiClient.chat([
+  const outlineRaw = await chatWithFailureLog(project.aiProvider, aiClient, [
     { role: 'system', content: outlinePrompt.system },
     { role: 'user', content: outlinePrompt.user },
-  ]);
+  ], context);
   if (await context.isCancelled()) return;
   const outline = validateScriptOutlineChapterCount(parseScriptOutline(outlineRaw, project.scriptPresetId), project.chapterCount);
   const saved = await saveGeneratedScript(projectId, outline.chapters.map((chapter) => ({
@@ -139,10 +159,10 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
       };
       const prompt = buildChapterExpansionPrompt(input);
       await context.appendLog(`Expanding chapter ${index + 1}/${saved.chapters.length}…`);
-      const raw = await aiClient.chat([
+      const raw = await chatWithFailureLog(project.aiProvider, aiClient, [
         { role: 'system', content: prompt.system },
         { role: 'user', content: prompt.user },
-      ]);
+      ], context);
       if (await context.isCancelled()) return;
       let expansion = parseChapterExpansion(raw);
       if (chapter.targetWords !== null && countNarrationWords(expansion.paragraphs.join(' ')) < chapter.targetWords * 0.8) {
@@ -150,10 +170,10 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
           ...prompt,
           user: `${prompt.user}\n\nPrevious response was ${countNarrationWords(expansion.paragraphs.join(' '))} words; target is ${chapter.targetWords}. Retry once and reach at least 80% of the target. Every added sentence must provide meaningful progression: new evidence, a concrete consequence, a causal explanation, or escalation. Do not paraphrase the same content, add generic padding, or repeat an already-stated fact just to raise the word count.`,
         };
-        const retryRaw = await aiClient.chat([
+        const retryRaw = await chatWithFailureLog(project.aiProvider, aiClient, [
           { role: 'system', content: retryPrompt.system },
           { role: 'user', content: retryPrompt.user },
-        ]);
+        ], context);
         if (await context.isCancelled()) return;
         expansion = parseChapterExpansion(retryRaw);
       }
