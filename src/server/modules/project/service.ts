@@ -1,7 +1,7 @@
 import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ParallaxStyle, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
 import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
 import type { z } from 'zod';
-import { NotFound } from '../../shared/errors';
+import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
 import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
@@ -198,6 +198,36 @@ export async function setProjectScenesAssetType(id: string, assetType: 'image' |
 
 export async function setProjectBgm(id: string, mood: string, bgmFileId: string | null): Promise<ProjectDetail> {
   await updateProject(id, { bgmMood: mood, bgmFileId });
+  return getProject(id);
+}
+
+export async function applyProjectVideoDistribution(
+  id: string,
+  toVideoSceneIds: string[],
+  toImageSceneIds: string[],
+  expectedVersion: number,
+): Promise<ProjectDetail> {
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id, version: expectedVersion },
+    {
+      $set: {
+        'scenes.$[toVideo].assetType': 'video',
+        'scenes.$[toVideo].depthMap': null,
+        'scenes.$[toImage].assetType': 'image',
+        'scenes.$[toImage].videoKeyframeFileId': null,
+        'scenes.$[toImage].videoDurationSec': null,
+        updatedAt: new Date(),
+      },
+      $inc: { version: 1 },
+    },
+    {
+      arrayFilters: [
+        { 'toVideo.id': { $in: toVideoSceneIds }, 'toVideo.assetFileId': null },
+        { 'toImage.id': { $in: toImageSceneIds }, 'toImage.assetFileId': null },
+      ],
+    },
+  );
+  if (result.matchedCount === 0) throw new AppError('Project changed, preview again.', 409, 'PROJECT_CHANGED');
   return getProject(id);
 }
 

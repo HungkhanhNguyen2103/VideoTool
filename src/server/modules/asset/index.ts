@@ -1,3 +1,3 @@
 export { assetRouter } from './routes';
-export { configureAssetModule, exportScenesJson, importAssetsFromZip, requestDepthMapsForImageScenes } from './service';
+export { applyVideoDistribution, configureAssetModule, exportScenesJson, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './service';
 export type { FlowSceneExport } from './docs';

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
+import type { VideoDistributionPreview } from '../../../contracts/asset';
 import type { Scene, VisualStyleId } from '../../../contracts/project';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
+import { ApiError } from '../../shared/api-client';
 import * as api from './api';
 import styles from './StudioPage.module.css';
 
@@ -25,6 +27,9 @@ export function StudioPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [videoDistributionPercent, setVideoDistributionPercent] = useState(20);
+  const [videoDistributionTarget, setVideoDistributionTarget] = useState(20);
+  const [videoDistributionPreview, setVideoDistributionPreview] = useState<VideoDistributionPreview | null>(null);
   const previewUrlsRef = useRef<Record<string, string>>({});
   const refreshedJobRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -120,6 +125,32 @@ export function StudioPage() {
     try { setBusy('voiceover-all'); const result = await api.generateAllVoiceovers(projectId); setJobId(result.jobId); toast('Đã xếp hàng tạo voiceover.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo voiceover.'); }
     finally { setBusy(null); }
+  }
+
+  async function previewVideoDistribution() {
+    try {
+      setBusy('video-distribution-preview');
+      const preview = await api.previewVideoDistribution(projectId, videoDistributionPercent);
+      setVideoDistributionTarget(videoDistributionPercent);
+      setVideoDistributionPreview(preview);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể xem trước phân bổ video.'); }
+    finally { setBusy(null); }
+  }
+
+  async function applyVideoDistribution() {
+    if (!videoDistributionPreview) return;
+    try {
+      setBusy('video-distribution-apply');
+      await api.applyVideoDistribution(projectId, videoDistributionTarget, videoDistributionPreview.projectVersion);
+      setVideoDistributionPreview(null);
+      await refresh();
+      toast('Đã áp dụng phân bổ video.');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setVideoDistributionPreview(null);
+        toast('Dự án vừa thay đổi, xem trước lại.');
+      } else toast(error instanceof Error ? error.message : 'Không thể áp dụng phân bổ video.');
+    } finally { setBusy(null); }
   }
 
   async function alignWordTimings() {
@@ -273,6 +304,19 @@ export function StudioPage() {
         <strong>{filled} / {scenes.length} scenes have assets</strong>
         {uploadProgress !== null && <span className={styles.muted}>Đang upload {uploadProgress}%</span>}
         <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={busy !== null} onClick={() => void setAllAssetType('video')}>All videos</Button><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={busy !== null || !scenes.some((scene) => scene.audioFileId) || api.isProjectJobActive(jobId, progress)} onClick={() => void alignWordTimings()}>Căn thời gian từ</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button><Button size="sm" variant="indigoline" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="amber" disabled={busy !== null || missingScenes.length > 0} onClick={() => void renderProject()}>Render video</Button></div>
+        <div className={styles.videoDistribution}>
+          <div className={styles.videoDistributionControls}>
+            <label className={styles.videoDistributionInput} htmlFor="video-distribution-percent"><span className={styles.label}>% scene video</span><input id="video-distribution-percent" className={styles.audioInput} type="number" min="0" max="100" step="5" value={videoDistributionPercent} disabled={busy !== null || api.isProjectJobActive(jobId, progress)} onChange={(event) => { setVideoDistributionPercent(Number(event.target.value)); setVideoDistributionPreview(null); }} /></label>
+            <Button size="sm" disabled={busy !== null || scenes.length === 0 || api.isProjectJobActive(jobId, progress)} onClick={() => void previewVideoDistribution()}>Xem trước</Button>
+          </div>
+          <p className={styles.videoDistributionHint}>Sau khi áp dụng, bấm 'Tạo visual prompt' để AI điền motion prompt cho scene video mới.</p>
+          {videoDistributionPreview && <div className={styles.videoDistributionPreview}>
+            <p>{videoDistributionPreview.videoCount} scene video / {videoDistributionPreview.imageCount} ảnh · {videoDistributionPreview.lockedCount} scene đã có asset (giữ nguyên)</p>
+            <p className={styles.videoDistributionNumbers}>{videoDistributionPreview.videoSceneNumbers.length > 0 ? `Scene ${videoDistributionPreview.videoSceneNumbers.join(', ')}` : 'Không có scene video.'}</p>
+            {videoDistributionPreview.changes.length === 0 && <p className={styles.muted}>Không có thay đổi.</p>}
+            <div className={styles.actions}><Button size="sm" variant="amber" disabled={busy !== null || api.isProjectJobActive(jobId, progress) || videoDistributionPreview.changes.length === 0} onClick={() => void applyVideoDistribution()}>Áp dụng</Button><Button size="sm" disabled={busy !== null || api.isProjectJobActive(jobId, progress)} onClick={() => setVideoDistributionPreview(null)}>Huỷ</Button></div>
+          </div>}
+        </div>
       </div>
 
       <section className={styles.mediaPanel} aria-label="Âm thanh và render">

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes } from './api';
 
 const project = {
   id: 'project-1',
@@ -19,6 +19,22 @@ const projectPayload = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('asset API helpers', () => {
+  it('previews and applies video distribution through the exact routes and bodies', async () => {
+    const preview = { total: 2, videoCount: 1, imageCount: 1, lockedCount: 0, changes: [], videoSceneNumbers: [1], projectVersion: 7 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(preview), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(previewVideoDistribution('project/1', 20)).resolves.toEqual(preview);
+    await expect(applyVideoDistribution('project/1', 20, 7)).resolves.toMatchObject({ id: 'project-1' });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/scenes/video-distribution/preview', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ targetPercent: 20 }),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/scenes/video-distribution/apply', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ targetPercent: 20, expectedVersion: 7 }),
+    }));
+  });
+
   it('builds a files URL from the generated relative stored path', () => {
     expect(fileUrlForSummary({ storedPath: '01ARZ3NDEKTSV4RRFFQ69G5FAV.png' })).toBe('/files/01ARZ3NDEKTSV4RRFFQ69G5FAV.png');
   });

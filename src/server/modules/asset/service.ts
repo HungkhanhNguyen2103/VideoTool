@@ -1,7 +1,8 @@
 import AdmZip from 'adm-zip';
 import type { ProjectDetail } from '../../../contracts/project';
+import type { VideoDistributionPreview } from '../../../contracts/asset';
 import { createFileStoreService } from '../file-store';
-import { applySceneAssets, getProject } from '../project';
+import { applyProjectVideoDistribution, applySceneAssets, getProject, pickVideoSceneIndexes } from '../project';
 import { AppError } from '../../shared/errors';
 import { expectedAssetType, MIME_BY_EXTENSION, type FlowSceneExport } from './docs';
 import { probeVideoDuration } from '../../shared/ffprobe';
@@ -52,6 +53,47 @@ export function exportScenesJson(project: ProjectDetail): FlowSceneExport[] {
       motionPrompt: scene.motionPrompt,
     };
   });
+}
+
+function videoDistributionIndexes(project: ProjectDetail, targetPercent: number): Set<number> {
+  return pickVideoSceneIndexes({
+    chapterSceneCounts: project.chapters.map((chapter) => chapter.scenesCount ?? 0),
+    currentTypes: project.scenes.map((scene) => scene.assetType),
+    locked: project.scenes.map((scene) => scene.assetFileId !== null),
+    targetPercent,
+  });
+}
+
+export async function previewVideoDistribution(projectId: string, targetPercent: number): Promise<VideoDistributionPreview> {
+  const project = await getProject(projectId);
+  const videoIndexes = videoDistributionIndexes(project, targetPercent);
+  const changes = project.scenes.flatMap((scene, index) => {
+    const to: 'image' | 'video' = videoIndexes.has(index) ? 'video' : 'image';
+    return scene.assetType === to ? [] : [{ sceneId: scene.id, sceneNumber: index + 1, from: scene.assetType, to }];
+  });
+  const lockedCount = project.scenes.filter((scene) => scene.assetFileId !== null).length;
+  return {
+    total: project.scenes.length,
+    videoCount: videoIndexes.size,
+    imageCount: project.scenes.length - videoIndexes.size,
+    lockedCount,
+    changes,
+    videoSceneNumbers: project.scenes.flatMap((scene, index) => videoIndexes.has(index) ? [index + 1] : []),
+    projectVersion: project.version,
+  };
+}
+
+export async function applyVideoDistribution(projectId: string, targetPercent: number, expectedVersion: number): Promise<ProjectDetail> {
+  const project = await getProject(projectId);
+  const videoIndexes = videoDistributionIndexes(project, targetPercent);
+  const toVideoSceneIds = project.scenes.flatMap((scene, index) => (
+    videoIndexes.has(index) && scene.assetFileId === null && scene.assetType === 'image' ? [scene.id] : []
+  ));
+  const toImageSceneIds = project.scenes.flatMap((scene, index) => (
+    !videoIndexes.has(index) && scene.assetFileId === null && scene.assetType === 'video' ? [scene.id] : []
+  ));
+  if (toVideoSceneIds.length === 0 && toImageSceneIds.length === 0) return project;
+  return applyProjectVideoDistribution(projectId, toVideoSceneIds, toImageSceneIds, expectedVersion);
 }
 
 const SCENE_FILE_PATTERN = /^SCENE_(\d{3})_([^/\\]+)\.([A-Za-z0-9]+)$/i;

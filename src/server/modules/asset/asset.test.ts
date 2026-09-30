@@ -17,8 +17,9 @@ import {
   patchProjectScene,
   replaceProjectScenes,
   setProjectScenesAssetType,
+  type ProjectDoc,
 } from '../project';
-import { configureAssetModule, exportScenesJson, importAssetsFromZip } from './index';
+import { applyVideoDistribution, configureAssetModule, exportScenesJson, importAssetsFromZip, previewVideoDistribution } from './index';
 
 const projectInput = {
   title: 'Asset contract project',
@@ -40,6 +41,33 @@ async function seedProjectWithScenes() {
     { id: 'scene-3', narration: 'Close', visualPrompt: 'A window', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
   ]);
   return getProject(project.id);
+}
+
+async function setChapterSceneCounts(projectId: string, counts: Array<number | null>): Promise<void> {
+  await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: projectId },
+    {
+      $set: {
+        chapters: counts.map((scenesCount, index) => ({
+          id: `chapter-${index + 1}`,
+          no: index + 1,
+          title: `Chapter ${index + 1}`,
+          paragraphs: [],
+          status: 'approved',
+          scenesCount,
+          durationSec: null,
+          role: null,
+          beat: '',
+          targetWords: null,
+          endsOnTension: false,
+          chapterSummary: null,
+          avoidRepeating: [],
+          persistentFacts: [],
+          reviewStatus: 'clean',
+        })),
+      },
+    },
+  );
 }
 
 beforeAll(() => startTestMongo());
@@ -85,6 +113,124 @@ function zipWithCorruptCentralDirectory(): Buffer {
 }
 
 describe('asset contracts', () => {
+  it('previews video distribution without changing the project', async () => {
+    const project = await seedProjectWithScenes();
+    await setChapterSceneCounts(project.id, [2, 1]);
+    const before = await getProject(project.id);
+
+    const preview = await previewVideoDistribution(project.id, 50);
+
+    expect(preview).toEqual({
+      total: 3,
+      videoCount: 2,
+      imageCount: 1,
+      lockedCount: 0,
+      changes: [
+        { sceneId: 'scene-1', sceneNumber: 1, from: 'image', to: 'video' },
+        { sceneId: 'scene-3', sceneNumber: 3, from: 'image', to: 'video' },
+      ],
+      videoSceneNumbers: [1, 3],
+      projectVersion: before.version,
+    });
+    expect((await getProject(project.id)).version).toBe(before.version);
+  });
+
+  it('applies only unlocked distribution changes and clears depth metadata for new videos', async () => {
+    const project = await seedProjectWithScenes();
+    await setChapterSceneCounts(project.id, [2, 1]);
+    await getCollection<ProjectDoc>('projects').updateOne(
+      { _id: project.id },
+      {
+        $set: {
+          'scenes.0.assetFileId': 'locked-image',
+          'scenes.0.depthMap': { assetFileId: 'locked-image', fileId: 'depth-1', score: 0.9 },
+          'scenes.1.depthMap': { assetFileId: 'asset-2', fileId: 'depth-2', score: 0.8 },
+        },
+      },
+    );
+    const before = await getProject(project.id);
+
+    const updated = await applyVideoDistribution(project.id, 100, before.version);
+
+    expect(updated.scenes.map((scene) => scene.assetType)).toEqual(['image', 'video', 'video']);
+    expect(updated.scenes[0]).toMatchObject({ assetFileId: 'locked-image', depthMap: { fileId: 'depth-1' } });
+    expect(updated.scenes[1]).toMatchObject({ assetFileId: null, depthMap: null });
+    expect(updated.version).toBe(before.version + 1);
+  });
+
+  it('clears video metadata when an unlocked video becomes an image', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-3', { assetType: 'video', videoKeyframeFileId: 'keyframe-3', videoDurationSec: 4.5 });
+    const before = await getProject(project.id);
+
+    const updated = await applyVideoDistribution(project.id, 0, before.version);
+
+    expect(updated.scenes[2]).toMatchObject({ assetType: 'image', videoKeyframeFileId: null, videoDurationSec: null });
+  });
+
+  it('rejects a stale expected version without changing the project', async () => {
+    const project = await seedProjectWithScenes();
+    const expectedVersion = project.version;
+    await patchProjectScene(project.id, 'scene-1', { visualPrompt: 'Changed after preview' });
+
+    await expect(applyVideoDistribution(project.id, 50, expectedVersion)).rejects.toMatchObject({
+      status: 409,
+      code: 'PROJECT_CHANGED',
+      message: 'Project changed, preview again.',
+    });
+    expect((await getProject(project.id)).scenes[0]!.assetType).toBe('image');
+  });
+
+  it('skips a no-op distribution update', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-1', { assetType: 'video' });
+    const before = await getProject(project.id);
+
+    const updated = await applyVideoDistribution(project.id, 20, before.version);
+
+    expect(updated.version).toBe(before.version);
+    expect(updated.scenes[0]!.assetType).toBe('video');
+  });
+
+  it('falls back to one chapter when stored chapter counts do not match the scene count', async () => {
+    const project = await seedProjectWithScenes();
+    await setChapterSceneCounts(project.id, [2, 2]);
+
+    await expect(previewVideoDistribution(project.id, 50)).resolves.toMatchObject({
+      videoSceneNumbers: [1, 3],
+      projectVersion: project.version,
+    });
+  });
+
+  it.each([101, -1, 12.5])('rejects targetPercent %p with HTTP 422', async (targetPercent) => {
+    const project = await seedProjectWithScenes();
+    const base = await startAssetServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/video-distribution/preview`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ targetPercent }),
+    });
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'validation_error' } });
+  });
+
+  it('returns PROJECT_CHANGED through the apply route for a stale version', async () => {
+    const project = await seedProjectWithScenes();
+    const base = await startAssetServer();
+    await patchProjectScene(project.id, 'scene-1', { visualPrompt: 'Changed after preview' });
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/video-distribution/apply`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ targetPercent: 50, expectedVersion: project.version }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: { code: 'PROJECT_CHANGED', message: 'Project changed, preview again.' } });
+  });
+
   it('defaults asset fields when reading a legacy scene document', async () => {
     const project = await createProject(projectInput);
     await getCollection<{ _id: string }>('projects').updateOne(

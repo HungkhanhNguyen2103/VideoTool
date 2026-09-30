@@ -4,6 +4,7 @@ export { ensureProjectIndexes } from './indexes';
 export {
   applyEmptySceneVisualPrompts,
   applyEmptySceneVisualPromptsWithResult,
+  applyProjectVideoDistribution,
   createProject,
   deleteProject,
   duplicateProject,
@@ -32,3 +33,4 @@ export {
 } from './service';
 export { SceneDocSchema } from './docs';
 export type { ProjectDoc, SceneDoc } from './docs';
+export { pickVideoSceneIndexes } from './video-scene-picker';

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FlowSceneExportSchema, type FlowSceneExport } from '../../../contracts/asset';
+import { FlowSceneExportSchema, VideoDistributionPreviewSchema, type FlowSceneExport, type VideoDistributionPreview } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
 import { AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type FilmLookStyle, type ParallaxStyle, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
@@ -90,6 +90,18 @@ export function setAllAssetType(projectId: string, assetType: 'image' | 'video')
 
 export function generateAllVoiceovers(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-voiceover`, JobResponseSchema, { method: 'POST' });
+}
+
+export function previewVideoDistribution(projectId: string, targetPercent: number): Promise<VideoDistributionPreview> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/video-distribution/preview`, VideoDistributionPreviewSchema, {
+    method: 'POST', body: { targetPercent },
+  });
+}
+
+export function applyVideoDistribution(projectId: string, targetPercent: number, expectedVersion: number): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/video-distribution/apply`, ProjectDetailSchema, {
+    method: 'POST', body: { targetPercent, expectedVersion },
+  });
 }
 
 export function alignWordTimings(projectId: string): Promise<{ jobId: string }> {

@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { VideoDistributionApplyRequestSchema, VideoDistributionRequestSchema } from '../../../contracts/asset';
 import { getProject, patchProjectScene, setProjectScenesAssetType } from '../project';
-import { AppError } from '../../shared/errors';
+import { AppError, FieldAppError } from '../../shared/errors';
 import { uploadAssetZip } from '../../shared/upload';
-import { exportScenesJson, importAssetsFromZip, requestDepthMapsForImageScenes } from './service';
+import { applyVideoDistribution, exportScenesJson, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './service';
 
 const PatchSceneSchema = z.object({
   visualPrompt: z.string().optional(),
@@ -12,6 +13,10 @@ const PatchSceneSchema = z.object({
   motionPrompt: z.string().optional(),
 }).refine((value) => Object.keys(value).length > 0, { message: 'At least one scene field is required.' });
 const AssetTypeSchema = z.object({ assetType: z.enum(['image', 'video']) });
+
+function validationFields(error: z.ZodError): { path: string; message: string }[] {
+  return error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message }));
+}
 
 export const assetRouter = Router();
 
@@ -43,4 +48,16 @@ assetRouter.post('/:id/scenes/set-asset-type', async (req, res) => {
   const project = await setProjectScenesAssetType(projectId, body.assetType);
   if (body.assetType === 'image') await requestDepthMapsForImageScenes(projectId);
   res.json(project);
+});
+
+assetRouter.post('/:id/scenes/video-distribution/preview', async (req, res) => {
+  const parsed = VideoDistributionRequestSchema.safeParse(req.body);
+  if (!parsed.success) throw new FieldAppError('Dữ liệu không hợp lệ.', 422, 'validation_error', validationFields(parsed.error));
+  res.json(await previewVideoDistribution(String(req.params.id), parsed.data.targetPercent));
+});
+
+assetRouter.post('/:id/scenes/video-distribution/apply', async (req, res) => {
+  const parsed = VideoDistributionApplyRequestSchema.safeParse(req.body);
+  if (!parsed.success) throw new FieldAppError('Dữ liệu không hợp lệ.', 422, 'validation_error', validationFields(parsed.error));
+  res.json(await applyVideoDistribution(String(req.params.id), parsed.data.targetPercent, parsed.data.expectedVersion));
 });
