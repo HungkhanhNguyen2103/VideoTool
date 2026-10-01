@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -135,6 +136,27 @@ describe('asset API helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/scene%2F1', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ motionPrompt: 'Slow camera push-in.' }),
     }));
+  });
+
+  it('patches narration with the optimistic project version', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await patchScene('project/1', 'scene/1', { narration: 'Rewritten narration', expectedVersion: 7 });
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/scene%2F1', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ narration: 'Rewritten narration', expectedVersion: 7 }),
+    }));
+  });
+
+  it('formats the bulk voiceover skip summary for the Studio toast', () => {
+    expect(voiceoverSummary({ generated: 4, skippedSceneNumbers: [1, 7], failedSceneNumbers: [] })).toBe('Voiceover done for 4 scenes; skipped 2 scenes with no narration (scene numbers 1, 7).');
+  });
+
+  it('marks empty-narration scenes and disables their voiceover action', async () => {
+    const source = await readFile('src/client/features/asset/StudioPage.tsx', 'utf8');
+
+    expect(source).toContain('Khong co loi dan');
+    expect(source).toContain('!expandedScene.narration.trim()');
   });
 
   it('updates transition style with the exact PATCH route and body', async () => {

@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { HubrisMotifSchema, NARRATIVE_ROLES, OpenLoopSchema } from '../../../../contracts/script';
 import type { ScriptPresetId } from '../../../../contracts/project';
 
+const NarrationParagraphSchema = z.string().trim().min(1);
+
 const OutlineChapterSchema = z.object({
   no: z.number().int().positive(),
   title: z.string().min(1),
@@ -26,7 +28,7 @@ export type ScriptOutline = z.infer<typeof ScriptOutlineSchema>;
 export type ScriptOutlineChapter = z.infer<typeof OutlineChapterSchema>;
 
 export const ChapterExpansionSchema = z.object({
-  paragraphs: z.array(z.string().min(1)).min(1),
+  paragraphs: z.array(NarrationParagraphSchema).min(1),
   styleNote: z.string().max(500),
   chapterSummary: z.string().max(250),
   avoidRepeating: z.array(z.string().max(80)).max(5),
@@ -34,7 +36,7 @@ export const ChapterExpansionSchema = z.object({
 }).strict();
 export type ChapterExpansion = z.infer<typeof ChapterExpansionSchema>;
 
-const ManualChapterSchema = OutlineChapterSchema.extend({ paragraphs: z.array(z.string().min(1)).min(1) }).strict();
+const ManualChapterSchema = OutlineChapterSchema.extend({ paragraphs: z.array(NarrationParagraphSchema).min(1) }).strict();
 const ManualBaseSchema = z.object({
   chapters: z.array(ManualChapterSchema).min(1),
   openLoops: z.array(OpenLoopSchema),
@@ -57,13 +59,13 @@ export function manualSchemaForScriptPreset(presetId: ScriptPresetId) {
 export const GeneratedChapterSchema = z.object({
   no: z.number().int().positive(),
   title: z.string(),
-  paragraphs: z.array(z.string()).min(1),
+  paragraphs: z.array(NarrationParagraphSchema).min(1),
   scenesCount: z.null(),
   durationSec: z.null(),
 });
 
 export const RegeneratedParagraphsSchema = z.object({
-  paragraphs: z.array(z.string()).min(1),
+  paragraphs: z.array(NarrationParagraphSchema).min(1),
   chapterSummary: z.string().max(250),
   avoidRepeating: z.array(z.string().max(80)).max(5),
   persistentFactsNext: z.array(z.string().max(120)).max(5),
@@ -82,6 +84,8 @@ export const VisualPromptBatchSchema = z.object({
 export const SceneSplitBatchSchema = z.object({
   scenes: z.array(z.object({
     sceneIndex: z.number().int().positive(),
-    chunks: z.array(z.string().min(1)).min(1),
+    chunks: z.array(z.string())
+      .transform((chunks) => chunks.map((chunk) => chunk.trim()).filter(Boolean))
+      .pipe(z.array(NarrationParagraphSchema).min(1)),
   })),
 });

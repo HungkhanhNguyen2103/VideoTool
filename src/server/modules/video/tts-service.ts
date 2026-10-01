@@ -4,7 +4,7 @@ import { createFileStoreService } from '../file-store';
 import { getProject, patchProjectScene } from '../project';
 import type { SceneDoc } from '../project';
 import { logger } from '../../shared/logger';
-import { NotFound } from '../../shared/errors';
+import { AppError, NotFound } from '../../shared/errors';
 import { AUDIO_BUFFER_SECONDS } from './docs';
 import { alignSceneWordTimings } from './word-timing-service';
 
@@ -18,6 +18,10 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
   const project = await getProject(projectId);
   const scene = project.scenes.find((candidate) => candidate.id === sceneId);
   if (!scene) throw new NotFound('Không tìm thấy cảnh.');
+  const sceneNumber = project.scenes.findIndex((candidate) => candidate.id === sceneId) + 1;
+  if (!scene.narration.trim()) {
+    throw new AppError(`Scene ${sceneNumber} has no narration text, so no voiceover can be generated.`, 422, 'EMPTY_NARRATION');
+  }
 
   const raw = await getTtsClient().synthesize(scene.narration, {
     ...options,
@@ -38,14 +42,29 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
   return updatedScene;
 }
 
-export async function generateProjectVoiceovers(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<void> {
+export type VoiceoverBatchResult = {
+  generated: number;
+  skippedSceneNumbers: number[];
+  failedSceneNumbers: number[];
+};
+
+export async function generateProjectVoiceovers(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<VoiceoverBatchResult> {
   const project = await getProject(projectId);
   const failed: number[] = [];
+  const skipped: number[] = [];
+  let generated = 0;
   for (const [index, scene] of project.scenes.entries()) {
     const sceneNumber = index + 1;
+    if (!scene.narration.trim()) {
+      skipped.push(sceneNumber);
+      await appendLog(`Skipping voiceover for scene ${sceneNumber}: narration is empty.`);
+      await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
+      continue;
+    }
     await appendLog(`Generating voiceover for scene ${sceneNumber}/${project.scenes.length}…`);
     try {
       await generateSceneVoiceover(projectId, scene.id);
+      generated += 1;
     } catch (error) {
       failed.push(sceneNumber);
       const message = error instanceof Error ? error.message : String(error);
@@ -55,4 +74,9 @@ export async function generateProjectVoiceovers(projectId: string, appendLog: (m
     await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
   }
   if (failed.length > 0) await appendLog(`Voiceover failed for scenes: ${failed.join(', ')}`);
+  const summary = skipped.length > 0
+    ? `Voiceover done for ${generated} scenes; skipped ${skipped.length} scenes with no narration (scene numbers ${skipped.join(', ')}).`
+    : `Voiceover done for ${generated} scenes; skipped 0 scenes with no narration.`;
+  await appendLog(summary);
+  return { generated, skippedSceneNumbers: skipped, failedSceneNumbers: failed };
 }

@@ -56,6 +56,11 @@ export function getReviewStepperState(chapterCount: number, approvedCount: numbe
   return { currentStep, steps };
 }
 
+export function shouldOfferOpeningHook(chapter: Pick<ChapterDoc, 'no' | 'paragraphs'>, openingHook: string): boolean {
+  const hook = openingHook.trim();
+  return chapter.no === 1 && hook.length > 0 && chapter.paragraphs[0]?.trim() !== hook;
+}
+
 export function ReviewScriptPage() {
   const { projectId = '' } = useParams();
   const navigate = useNavigate();
@@ -73,6 +78,7 @@ export function ReviewScriptPage() {
   const [manualPrompt, setManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
   const [manualBusy, setManualBusy] = useState(false);
   const [providerBusy, setProviderBusy] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
   const regenInstructionRef = useRef<HTMLTextAreaElement>(null);
@@ -105,6 +111,7 @@ export function ReviewScriptPage() {
     setEditing(null);
     setRegenInstruction('');
     setRegenLevel('medium');
+    setFinalizeError(null);
     initialExpansionProjectIdRef.current = null;
     return () => {
       if (lifecycleRef.current === lifecycle) lifecycleRef.current += 1;
@@ -275,7 +282,18 @@ export function ReviewScriptPage() {
 
   async function finalize() {
     if (!window.confirm('Chốt kịch bản và chia cảnh?')) return;
-    try { await api.finalizeScript(projectId); toast('Đã chốt kịch bản.'); navigate(`/production/${projectId}/studio`); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chốt kịch bản.'); }
+    setFinalizeError(null);
+    try { await api.finalizeScript(projectId); toast('Đã chốt kịch bản.'); navigate(`/production/${projectId}/studio`); } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể chốt kịch bản.';
+      setFinalizeError(message);
+      toast(message);
+    }
+  }
+
+  async function insertOpeningHook(chapter: ChapterDoc) {
+    const hook = projectQuery.data?.openingHook.trim() ?? '';
+    if (!shouldOfferOpeningHook(chapter, hook)) return;
+    await patch(chapter.id, { paragraphs: [hook, ...chapter.paragraphs] });
   }
 
   if (projectQuery.isLoading) return <section className={styles.panel}><p>Đang tải kịch bản…</p></section>;
@@ -337,6 +355,7 @@ export function ReviewScriptPage() {
                 <Button variant="red" disabled={Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>
             </div>
+            {finalizeError && <div className={styles.errorAlert} role="alert">{finalizeError}</div>}
             <label className={styles.selectAll}><input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={(event) => setSelected(event.target.checked ? new Set(chapters.map((chapter) => chapter.id)) : new Set())} />Chọn tất cả chương</label>
             <div className={styles.chapterList}>
               {chapters.map((chapter) => {
@@ -360,8 +379,9 @@ export function ReviewScriptPage() {
                         <Button variant={chapter.status === 'approved' ? 'green' : 'ghost'} aria-pressed={chapter.status === 'approved'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleApproveStatus(chapter.status) })}><Icon name="check" />{chapter.status === 'approved' ? 'Đã duyệt' : 'Duyệt'}</Button>
                       </>}
                     </div>
-                  </div>
-                  <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
+                     </div>
+                   {shouldOfferOpeningHook(chapter, projectQuery.data?.openingHook ?? '') && <div className={styles.hookCallout}><div><strong>Hook mở đầu đề xuất</strong><p>{projectQuery.data?.openingHook}</p></div><Button variant="amber" disabled={busy} onClick={() => void insertOpeningHook(chapter)}>Chèn hook làm đoạn đầu tiên</Button></div>}
+                   <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
                   {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}
                 </article>;
               })}

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { getReviewStepperState } from './ReviewScriptPage';
+import { getReviewStepperState, shouldOfferOpeningHook } from './ReviewScriptPage';
 
 describe('ReviewScriptPage stepper', () => {
   it('marks script generation as not started when there are no chapters or job', () => {
@@ -61,6 +61,14 @@ describe('ReviewScriptPage stepper', () => {
   });
 });
 
+describe('ReviewScriptPage opening hook action', () => {
+  it('offers the hook only when chapter one does not already start with it', () => {
+    expect(shouldOfferOpeningHook({ no: 1, paragraphs: ['Different first paragraph'] }, 'The opening hook.')).toBe(true);
+    expect(shouldOfferOpeningHook({ no: 1, paragraphs: [' The opening hook. '] }, 'The opening hook.')).toBe(false);
+    expect(shouldOfferOpeningHook({ no: 2, paragraphs: ['Different first paragraph'] }, 'The opening hook.')).toBe(false);
+  });
+});
+
 describe('ReviewScriptPage theme tokens', () => {
   it('uses the shared dark-theme tokens instead of undefined light fallbacks', async () => {
     const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
@@ -71,5 +79,12 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(css).toContain('var(--border)');
     expect(css).toContain('var(--text-3)');
     expect(css).toContain('var(--amber)');
+  });
+
+  it('renders finalization failures as a visible alert', async () => {
+    const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+
+    expect(source).toContain('role="alert"');
+    expect(source).toContain('finalizeError');
   });
 });

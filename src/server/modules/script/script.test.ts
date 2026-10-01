@@ -747,6 +747,25 @@ describe('script contracts', () => {
     expect(await getProjectHistory(project.id)).toHaveLength(1);
   });
 
+  it('drops blank chapter paragraphs on edit and refuses an empty chapter before writing scenes', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['  First paragraph  ', ' ', '\nSecond paragraph\t'] });
+    expect((await getProject(project.id)).chapters[0]!.paragraphs).toEqual(['First paragraph', 'Second paragraph']);
+
+    await replaceProjectScript(project.id, [{ ...(await getProject(project.id)).chapters[0]!, paragraphs: ['  ', '\t'] }], [], null, 'Why?', 'The hook must not become narration automatically.', null, 'script');
+    await patchChapter(project.id, 'chapter-1', { status: 'approved' });
+
+    await expect(finalizeScript(project.id)).rejects.toMatchObject({
+      status: 422,
+      code: 'EMPTY_CHAPTER',
+      message: 'Chapter 1 "Opening" has no narration paragraphs. Regenerate or edit this chapter before finalizing.',
+    });
+    expect((await getProject(project.id)).scenes).toEqual([]);
+    expect((await getProject(project.id)).status).toBe('script');
+  });
+
   it('traces generation retry, finalize, regeneration, manual edit/import, and final QA end to end', async () => {
     const project = await createProject({ ...projectInput, targetDurationSec: 8 });
     aiMock.chat

@@ -34,10 +34,11 @@ export async function patchChapter(
   const project = await getProject(projectId);
   const chapter = project.chapters.find((item) => item.id === chapterId);
   if (!chapter) throw new NotFound('Không tìm thấy chương.');
-  const paragraphsChanged = patch.paragraphs !== undefined && !paragraphsEqual(patch.paragraphs, chapter.paragraphs);
+  const normalizedParagraphs = patch.paragraphs?.map((paragraph) => paragraph.trim()).filter(Boolean);
+  const paragraphsChanged = normalizedParagraphs !== undefined && !paragraphsEqual(normalizedParagraphs, chapter.paragraphs);
   const titleChanged = patch.title !== undefined && patch.title !== chapter.title;
   const normalizedPatch = {
-    ...(paragraphsChanged ? { paragraphs: patch.paragraphs, status: 'pending' as const } : {}),
+    ...(paragraphsChanged ? { paragraphs: normalizedParagraphs, status: 'pending' as const } : {}),
     ...(titleChanged ? { title: patch.title } : {}),
     ...(!paragraphsChanged && patch.status !== undefined ? { status: patch.status } : {}),
   };
@@ -347,10 +348,15 @@ export async function finalizeScript(projectId: string): Promise<void> {
   if (project.chapters.some((chapter) => chapter.status !== 'approved')) {
     throw new AppError('All chapters must be approved before finalizing.', 422, 'NOT_ALL_APPROVED');
   }
+  for (const chapter of project.chapters) {
+    if (!chapter.paragraphs.some((paragraph) => paragraph.trim())) {
+      throw new AppError(`Chapter ${chapter.no} "${chapter.title}" has no narration paragraphs. Regenerate or edit this chapter before finalizing.`, 422, 'EMPTY_CHAPTER');
+    }
+  }
   const snapshot = snapshotOf(project.chapters);
   const scenes: SceneDoc[] = [];
   const finalizedChapters = project.chapters.map((chapter) => {
-    const paragraphs = chapter.paragraphs.length ? chapter.paragraphs : [''];
+    const paragraphs = chapter.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
     const chapterDurations = paragraphs.map(estimateNarrationDurationSec);
     scenes.push(...paragraphs.map((narration, index) => ({
       id: newId(),

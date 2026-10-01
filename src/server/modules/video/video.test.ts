@@ -286,6 +286,18 @@ describe('video orchestration services', () => {
     expect(updated.audioFileId).toEqual(expect.any(String));
     expect((await getProject(project.id)).scenes[0]!.wordTimings).toBeNull();
   });
+
+  it('rejects empty narration before calling TTS', async () => {
+    const project = await seedVoiceProject();
+    await patchProjectScene(project.id, 'scene-1', { narration: '  ' });
+
+    await expect(generateSceneVoiceover(project.id, 'scene-1')).rejects.toMatchObject({
+      status: 422,
+      code: 'EMPTY_NARRATION',
+      message: 'Scene 1 has no narration text, so no voiceover can be generated.',
+    });
+    expect(mocks.synthesize).not.toHaveBeenCalled();
+  });
   it('stores a mastered voiceover and patches the probed duration', async () => {
     const project = await seedVoiceProject();
     mocks.synthesize.mockResolvedValue(Buffer.from('voice')); 
@@ -327,6 +339,24 @@ describe('video orchestration services', () => {
     expect(logs.some((line) => line.includes('scene 1'))).toBe(true);
     expect(logs.some((line) => line.includes('failed'))).toBe(true);
     expect(progress).toEqual([50, 100]);
+  });
+
+  it('skips empty scenes in the batch and reports their scene numbers', async () => {
+    const project = await seedVoiceProject();
+    await patchProjectScene(project.id, 'scene-1', { narration: '  ' });
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(1.1);
+    const logs: string[] = [];
+
+    await expect(generateProjectVoiceovers(project.id, async (message) => { logs.push(message); }, async () => {})).resolves.toEqual({
+      generated: 1,
+      skippedSceneNumbers: [1],
+      failedSceneNumbers: [],
+    });
+
+    expect(mocks.synthesize).toHaveBeenCalledTimes(1);
+    expect(logs.at(-1)).toBe('Voiceover done for 1 scenes; skipped 1 scenes with no narration (scene numbers 1).');
   });
 
   it('generates project SFX sequentially and reports progress for every scene', async () => {

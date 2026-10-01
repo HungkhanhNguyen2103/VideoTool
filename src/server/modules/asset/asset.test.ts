@@ -15,7 +15,9 @@ import {
   duplicateProject,
   getProject,
   patchProjectScene,
+  replaceProjectChapters,
   replaceProjectScenes,
+  setSceneWordTimings,
   setProjectScenesAssetType,
   type ProjectDoc,
 } from '../project';
@@ -289,6 +291,28 @@ describe('asset contracts', () => {
     expect(updated.scenes[1]).toMatchObject({ visualPrompt: 'A bright room', assetType: 'video', assetFileId: null });
     expect(updated.scenes[0]).toMatchObject({ visualPrompt: 'A door', assetType: 'image' });
     expect(updated.version).toBe(project.version + 1);
+  });
+
+  it('edits narration atomically with duration, chapter sync, and stale voiceover cleanup', async () => {
+    const project = await seedProjectWithScenes();
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Opening', 'Context', 'Close'], status: 'approved', scenesCount: 3, durationSec: 15,
+    }], null, 'assets');
+    await patchProjectScene(project.id, 'scene-2', { audioFileId: 'voice-2' });
+    await setSceneWordTimings(project.id, 'scene-2', 'voice-2', 'Context', { audioFileId: 'voice-2', words: [{ text: 'Context', startSec: 0, endSec: 1 }] });
+    const before = await getProject(project.id);
+
+    const updated = await patchProjectScene(project.id, 'scene-2', { narration: '  Rewritten context in detail  ' }, before.version);
+
+    expect(updated.scenes[1]).toMatchObject({ narration: 'Rewritten context in detail', durationSec: 2, audioFileId: null, wordTimings: null, visualPrompt: 'A room' });
+    expect(updated.chapters[0]).toMatchObject({ paragraphs: ['Opening', 'Rewritten context in detail', 'Close'], durationSec: 12 });
+    expect(updated.version).toBe(before.version + 1);
+  });
+
+  it('rejects a narration patch based on a stale project version', async () => {
+    const project = await seedProjectWithScenes();
+    await expect(patchProjectScene(project.id, 'scene-1', { narration: 'New narration' }, project.version)).resolves.toMatchObject({ version: project.version + 1 });
+    await expect(patchProjectScene(project.id, 'scene-1', { narration: 'Stale narration' }, project.version)).rejects.toMatchObject({ status: 409, code: 'PROJECT_CHANGED' });
   });
 
   it('sets the asset type for every scene in one project update', async () => {
@@ -640,6 +664,13 @@ describe('asset contracts', () => {
     });
     expect(rejected.status).toBe(400);
     expect(await rejected.json()).toMatchObject({ error: { code: 'validation_error' } });
+
+    const current = await getProject(project.id);
+    const emptyNarration = await fetch(`${base}/api/project/${project.id}/scenes/scene-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ narration: '  ', expectedVersion: current.version }),
+    });
+    expect(emptyNarration.status).toBe(422);
+    expect(await emptyNarration.json()).toMatchObject({ error: { code: 'validation_error' } });
   });
 
   it('maps an asset ZIP over the 200 MB limit to FILE_TOO_LARGE', async () => {

@@ -7,11 +7,13 @@ import { uploadAssetZip } from '../../shared/upload';
 import { applyVideoDistribution, exportScenesJson, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './service';
 
 const PatchSceneSchema = z.object({
+  narration: z.string().trim().min(1).max(2000).optional(),
   visualPrompt: z.string().optional(),
   assetType: z.enum(['image', 'video']).optional(),
   sfxPrompt: z.string().optional(),
   motionPrompt: z.string().optional(),
-}).refine((value) => Object.keys(value).length > 0, { message: 'At least one scene field is required.' });
+  expectedVersion: z.number().int().positive().optional(),
+}).refine((value) => Object.keys(value).some((key) => key !== 'expectedVersion'), { message: 'At least one scene field is required.' });
 const AssetTypeSchema = z.object({ assetType: z.enum(['image', 'video']) });
 
 function validationFields(error: z.ZodError): { path: string; message: string }[] {
@@ -38,8 +40,14 @@ assetRouter.post('/:id/scenes/import-assets', uploadAssetZip, async (req, res) =
 });
 
 assetRouter.patch('/:id/scenes/:sceneId', async (req, res) => {
-  const body = PatchSceneSchema.parse(req.body);
-  res.json(await patchProjectScene(String(req.params.id), String(req.params.sceneId), body));
+  const parsed = PatchSceneSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const hasNarrationError = parsed.error.issues.some((issue) => issue.path[0] === 'narration');
+    if (hasNarrationError) throw new FieldAppError('Dữ liệu không hợp lệ.', 422, 'validation_error', validationFields(parsed.error));
+    throw parsed.error;
+  }
+  const { expectedVersion, ...patch } = parsed.data;
+  res.json(await patchProjectScene(String(req.params.id), String(req.params.sceneId), patch, expectedVersion));
 });
 
 assetRouter.post('/:id/scenes/set-asset-type', async (req, res) => {

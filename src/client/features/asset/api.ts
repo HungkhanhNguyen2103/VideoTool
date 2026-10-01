@@ -7,6 +7,13 @@ import { ApiError, apiRequest } from '../../shared/api-client';
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
 const FileListSchema = z.array(FileSummarySchema);
 const JobResponseSchema = z.object({ jobId: z.string() });
+const VoiceoverBatchResultSchema = z.object({
+  generated: z.number().int().nonnegative(),
+  skippedSceneNumbers: z.array(z.number().int().positive()),
+  failedSceneNumbers: z.array(z.number().int().positive()),
+});
+
+export type VoiceoverBatchResult = z.infer<typeof VoiceoverBatchResultSchema>;
 
 export type { FlowSceneExport };
 export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
@@ -75,7 +82,7 @@ export function exportScenesJson(projectId: string): Promise<FlowSceneExport[]> 
 export function patchScene(
   projectId: string,
   sceneId: string,
-  body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string; motionPrompt?: string },
+  body: { narration?: string; visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string; motionPrompt?: string; expectedVersion?: number },
 ): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`, ProjectDetailSchema, {
     method: 'PATCH', body,
@@ -90,6 +97,13 @@ export function setAllAssetType(projectId: string, assetType: 'image' | 'video')
 
 export function generateAllVoiceovers(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-voiceover`, JobResponseSchema, { method: 'POST' });
+}
+
+export function voiceoverSummary(result: unknown): string | null {
+  const parsed = VoiceoverBatchResultSchema.safeParse(result);
+  if (!parsed.success) return null;
+  const { generated, skippedSceneNumbers } = parsed.data;
+  return `Voiceover done for ${generated} scenes; skipped ${skippedSceneNumbers.length} scenes with no narration (scene numbers ${skippedSceneNumbers.join(', ')}).`;
 }
 
 export function previewVideoDistribution(projectId: string, targetPercent: number): Promise<VideoDistributionPreview> {

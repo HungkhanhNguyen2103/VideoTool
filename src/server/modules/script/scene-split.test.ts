@@ -133,6 +133,19 @@ describe('splitProjectScenes', () => {
     expect((await getProject(project.id)).scenes.slice(0, 2).map((item) => item.narration)).toEqual(['First visual beat', 'Second   visual beat']);
   });
 
+  it('drops whitespace-only chunks without creating an empty scene', async () => {
+    const project = await projectWithScenes();
+    aiMock.chat.mockResolvedValueOnce(batch(
+      { sceneIndex: 1, chunks: ['  ', 'First visual beat', 'Second visual beat', '   '] },
+      { sceneIndex: 2, chunks: ['Untouched'] },
+    )).mockResolvedValueOnce(batch({ sceneIndex: 4, chunks: ['Later chapter'] }));
+
+    await expect(splitProjectScenes(project.id, context())).resolves.toMatchObject({ splitScenes: 1 });
+    const saved = await getProject(project.id);
+    expect(saved.scenes.every((item) => item.narration.trim().length > 0)).toBe(true);
+    expect(saved.scenes.map((item) => item.narration)).toEqual(['First visual beat', 'Second visual beat', 'Untouched', 'Later chapter']);
+  });
+
   it('persists each validated no-op chapter without making a history snapshot', async () => {
     const project = await projectWithScenes();
     aiMock.chat.mockResolvedValueOnce(batch(
@@ -217,6 +230,11 @@ describe('scene split AI contract', () => {
   it('rejects an empty chunk set for a valid scene index', () => {
     expect(() => parseSceneSplitBatch('{"scenes":[{"sceneIndex":1,"chunks":[]}]}'))
       .toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+  });
+
+  it('removes whitespace-only chunks while parsing', () => {
+    expect(parseSceneSplitBatch('{"scenes":[{"sceneIndex":1,"chunks":["  "," First beat ","\\n"]}]}'))
+      .toEqual({ scenes: [{ sceneIndex: 1, chunks: ['First beat'] }] });
   });
 
   it('gives the model context, global indexes and exact narration without internal IDs', () => {

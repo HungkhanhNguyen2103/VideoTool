@@ -1,5 +1,5 @@
 import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ParallaxStyle, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
-import type { ChapterDoc, ChapterSnapshot, HubrisMotif, OpenLoop } from '../../../contracts/script';
+import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
 import type { z } from 'zod';
 import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
@@ -163,24 +163,57 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
 export async function patchProjectScene(
   id: string,
   sceneId: string,
-  patch: Partial<Pick<SceneDoc, 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
+  patch: Partial<Pick<SceneDoc, 'narration' | 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
+  expectedVersion?: number,
 ): Promise<ProjectDetail> {
+  const current = patch.narration !== undefined ? await getProject(id) : null;
+  const currentScene = current?.scenes.find((scene) => scene.id === sceneId);
+  if (patch.narration !== undefined && !currentScene) throw new NotFound('Không tìm thấy cảnh.');
+  const normalizedNarration = patch.narration?.trim();
+  const narrationChanged = currentScene !== undefined && normalizedNarration !== currentScene.narration;
+  const scenePatch: typeof patch = { ...patch, ...(normalizedNarration !== undefined ? { narration: normalizedNarration } : {}) };
+  if (narrationChanged) {
+    scenePatch.durationSec = estimateNarrationDurationSec(normalizedNarration!);
+    scenePatch.audioFileId = null;
+  }
   const set: Record<string, unknown> = { updatedAt: new Date() };
-  for (const [field, value] of Object.entries(patch)) set[`scenes.$[scene].${field}`] = value;
-  if (patch.audioFileId !== undefined) set['scenes.$[scene].wordTimings'] = null;
-  if (patch.assetFileId !== undefined || patch.assetType === 'video') set['scenes.$[scene].depthMap'] = null;
-  if (patch.assetFileId !== undefined && patch.videoTailFileId === undefined) set['scenes.$[scene].videoTailFileId'] = null;
-  if (patch.assetType === 'image') {
+  for (const [field, value] of Object.entries(scenePatch)) set[`scenes.$[scene].${field}`] = value;
+  if (scenePatch.audioFileId !== undefined || narrationChanged) set['scenes.$[scene].wordTimings'] = null;
+  if (scenePatch.assetFileId !== undefined || scenePatch.assetType === 'video') set['scenes.$[scene].depthMap'] = null;
+  if (scenePatch.assetFileId !== undefined && scenePatch.videoTailFileId === undefined) set['scenes.$[scene].videoTailFileId'] = null;
+  if (scenePatch.assetType === 'image') {
     set['scenes.$[scene].videoKeyframeFileId'] = null;
     set['scenes.$[scene].videoTailFileId'] = null;
     set['scenes.$[scene].videoDurationSec'] = null;
   }
+  if (narrationChanged && current && currentScene) {
+    const sceneIndex = current.scenes.findIndex((scene) => scene.id === sceneId);
+    let start = 0;
+    for (let chapterIndex = 0; chapterIndex < current.chapters.length; chapterIndex += 1) {
+      const chapter = current.chapters[chapterIndex]!;
+      const sceneCount = chapter.scenesCount ?? chapter.paragraphs.length;
+      if (sceneIndex >= start && sceneIndex < start + sceneCount) {
+        const chapterSceneDurations = current.scenes.slice(start, start + sceneCount).map((scene, index) => index === sceneIndex - start ? scenePatch.durationSec! : scene.durationSec);
+        set[`chapters.${chapterIndex}.durationSec`] = chapterSceneDurations.reduce((sum, duration) => sum + duration, 0);
+        // Finalized chapters have a one-to-one paragraph/scene mapping. A scene-split chapter intentionally does not;
+        // in that case the scene duration remains authoritative while the original chapter paragraphs stay intact.
+        if (chapter.paragraphs.length === sceneCount) set[`chapters.${chapterIndex}.paragraphs.${sceneIndex - start}`] = normalizedNarration;
+        break;
+      }
+      start += sceneCount;
+    }
+  }
+  const filter: Record<string, unknown> = { _id: id, scenes: { $elemMatch: { id: sceneId } } };
+  if (expectedVersion !== undefined) filter.version = expectedVersion;
   const result = await getCollection<ProjectDoc>('projects').updateOne(
-    { _id: id, scenes: { $elemMatch: { id: sceneId } } },
+    filter as never,
     { $set: set, $inc: { version: 1 } },
     { arrayFilters: [{ 'scene.id': sceneId }] },
   );
-  if (result.matchedCount === 0) throw new NotFound('Không tìm thấy cảnh.');
+  if (result.matchedCount === 0) {
+    if (expectedVersion !== undefined && await findProjectById(id)) throw new AppError('Project changed, preview again.', 409, 'PROJECT_CHANGED');
+    throw new NotFound('Không tìm thấy cảnh.');
+  }
   return getProject(id);
 }
 

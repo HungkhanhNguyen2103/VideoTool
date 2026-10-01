@@ -183,7 +183,7 @@ describe('script AI parsers', () => {
     expect(() => parseManualScriptDocument('{"paragraphs":["x"]}', 'explainer')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
   });
 
-  it('truncates only overlong memory fields and leaves paragraphs untouched', () => {
+  it('truncates memory fields and normalizes non-blank paragraphs', () => {
     const notices: string[] = [];
     const paragraphs = ['  Keep this narration exactly.  ', 'A second paragraph.'];
     const result = parseChapterExpansion(JSON.stringify({
@@ -194,7 +194,7 @@ describe('script AI parsers', () => {
       persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
     }), (notice) => notices.push(notice));
 
-    expect(result.paragraphs).toEqual(paragraphs);
+    expect(result.paragraphs).toEqual(['Keep this narration exactly.', 'A second paragraph.']);
     expect(result.styleNote.length).toBeLessThanOrEqual(500);
     expect(result.styleNote).toBe(result.styleNote.trim());
     expect(result.chapterSummary.length).toBeLessThanOrEqual(250);
@@ -227,6 +227,15 @@ describe('script AI parsers', () => {
     expect(() => parseChapterExpansion(JSON.stringify({
       paragraphs: ['Narration'], styleNote: 'Style', chapterSummary: 123, avoidRepeating: [], persistentFactsNext: [],
     }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('chapterSummary:') }));
+  });
+
+  it('rejects whitespace-only paragraphs in every script output shape', () => {
+    expect(() => parseChapterExpansion(JSON.stringify({ paragraphs: ['  '], styleNote: 'Style', chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: [] }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(() => parseRegeneratedParagraphs(JSON.stringify({ paragraphs: ['\t'], chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: [] }))).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
+    expect(() => parseManualScriptDocument(JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 2, endsOnTension: false, paragraphs: ['\n'] }],
+      openLoops: [], coreQuestion: 'Question', openingHook: 'Hook',
+    }), 'explainer')).toThrow(expect.objectContaining({ code: 'SCRIPT_PARSE_ERROR' }));
   });
 
   it.each(['chapterSummary', 'avoidRepeating', 'persistentFactsNext'] as const)('rejects chapter expansion missing %s with SCRIPT_PARSE_ERROR', (field) => {

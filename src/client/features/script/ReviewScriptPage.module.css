@@ -49,6 +49,8 @@
 .chapterBody { display: grid; gap: .75rem; padding: 1rem 1.125rem; background: var(--input); border: 1px solid var(--border); border-radius: .625rem; }
 .chapterBody[hidden] { display: none; }
 .chapterBody p { margin: 0; font-size: .9375rem; line-height: 1.75; }
+.hookCallout { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 1rem; background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: .625rem; color: var(--amber-text); }
+.hookCallout p { margin: .25rem 0 0; color: var(--text-2); line-height: 1.5; }
 .textarea { width: 100%; min-height: 7rem; padding: .75rem; resize: vertical; background: var(--input); border: 1px solid var(--border-2); border-radius: .625rem; color: var(--text); font: inherit; line-height: 1.6; }
 .chapterBody .textarea { min-height: 8.75rem; }
 .editorActions { display: flex; justify-content: flex-end; gap: .5rem; }
@@ -77,6 +79,7 @@
 .qaIssueText, .qaIssueAction { color: var(--text-2); font-size: .75rem; line-height: 1.45; }
 .qaIssueAction { color: var(--text-3); }
 .footer { justify-content: flex-end; position: sticky; bottom: .75rem; padding: .75rem; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--border); border-radius: .7rem; }
+.errorAlert { padding: .75rem 1rem; background: var(--red-bg); border: 1px solid var(--red); border-radius: .625rem; color: var(--red); line-height: 1.5; }
 .error { color: var(--red); }
 
 @media (max-width: 1200px) {
@@ -87,6 +90,7 @@
 
 @media (max-width: 900px) {
   .chapterTop { align-items: flex-start; }
+  .hookCallout { align-items: flex-start; flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {

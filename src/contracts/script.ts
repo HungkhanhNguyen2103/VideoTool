@@ -25,6 +25,8 @@ export const ChapterDocSchema = z.object({
   id: z.string(),
   no: z.number().int(),
   title: z.string(),
+  // Keep persisted chapter data tolerant for legacy blank paragraphs; finalization and patchChapter
+  // normalize/reject them at the workflow boundary, while AI output schemas reject them up front.
   paragraphs: z.array(z.string()),
   status: z.enum(CHAPTER_STATUSES),
   scenesCount: z.number().int().nonnegative().nullable(),

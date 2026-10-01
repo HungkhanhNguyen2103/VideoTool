@@ -16,6 +16,17 @@ type VieneuClientOptions = {
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+async function responseErrorMessage(response: Response): Promise<string> {
+  const body = await response.text();
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown };
+    if (typeof parsed.detail === 'string' && parsed.detail.trim()) return `TTS server returned ${response.status}: ${parsed.detail}`;
+  } catch {
+    // Fall through to the status-only message for a non-JSON response.
+  }
+  return `TTS server returned ${response.status}.`;
+}
+
 export function createVieneuClient(options: VieneuClientOptions): TtsClient {
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? defaultSleep;
@@ -40,17 +51,25 @@ export function createVieneuClient(options: VieneuClientOptions): TtsClient {
           body: JSON.stringify(body),
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error(`TTS server returned ${response.status}.`);
+        if (!response.ok) {
+          const message = await responseErrorMessage(response);
+          const error = new Error(message);
+          Object.assign(error, { retryable: response.status >= 500 });
+          throw error;
+        }
         return Buffer.from(await response.arrayBuffer());
       } catch (error) {
         lastError = error;
-        if (attempt === 0) await sleep(1_500);
+        const retryable = !(error instanceof Error) || (error as Error & { retryable?: boolean }).retryable !== false;
+        if (attempt === 0 && retryable) await sleep(1_500);
+        else if (!retryable) break;
       } finally {
         clearTimeout(timer);
       }
     }
-    logger.warn('VieNeu TTS request failed after retry.', lastError);
-    throw new AppError('VieNeu TTS request failed.', 502, 'TTS_REQUEST_FAILED');
+    logger.warn('VieNeu TTS request failed.', lastError);
+    const detail = lastError instanceof Error ? ` ${lastError.message}` : '';
+    throw new AppError(`VieNeu TTS request failed.${detail}`, 502, 'TTS_REQUEST_FAILED');
   }
 
   return { synthesize };

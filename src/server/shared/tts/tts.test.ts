@@ -73,6 +73,17 @@ describe('VieNeu TTS client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('does not retry a 4xx response and includes the server detail', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'Van ban khong duoc de trong.' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const client = createVieneuClient({ apiUrl: 'http://tts.test/api/tts', defaultVoice: 'Truc Ly', timeoutMs: 60_000, fetchImpl: fetchMock, sleep: async () => undefined });
+
+    await expect(client.synthesize('')).rejects.toThrow('TTS server returned 400: Van ban khong duoc de trong.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('maps exhausted retries to TTS_REQUEST_FAILED', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
     const client = createVieneuClient({ apiUrl: 'http://tts.test/api/tts', defaultVoice: 'Truc Ly', timeoutMs: 60_000, fetchImpl: fetchMock, sleep: async () => undefined });

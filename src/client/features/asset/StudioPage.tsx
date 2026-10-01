@@ -19,12 +19,16 @@ export function StudioPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [editingScene, setEditingScene] = useState<string | null>(null);
   const [draftPrompt, setDraftPrompt] = useState('');
+  const [editingNarrationScene, setEditingNarrationScene] = useState<string | null>(null);
+  const [draftNarration, setDraftNarration] = useState('');
   const [editingMotionScene, setEditingMotionScene] = useState<string | null>(null);
   const [draftMotionPrompt, setDraftMotionPrompt] = useState('');
   const [skipped, setSkipped] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [bgmMood, setBgmMood] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
+  const [voiceoverJobId, setVoiceoverJobId] = useState<string | null>(null);
+  const [voiceoverResetSceneIds, setVoiceoverResetSceneIds] = useState<Set<string>>(new Set());
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [videoDistributionPercent, setVideoDistributionPercent] = useState(20);
@@ -44,6 +48,7 @@ export function StudioPage() {
   const missingScenes = project ? api.missingSceneNumbers(project) : [];
   const expandedScene = scenes.find((scene) => scene.id === expandedSceneId) ?? null;
   const expandedEditing = expandedScene !== null && editingScene === expandedScene.id;
+  const expandedNarrationEditing = expandedScene !== null && editingNarrationScene === expandedScene.id;
   const expandedMotionEditing = expandedScene !== null && editingMotionScene === expandedScene.id;
   const expandedSceneBusy = expandedScene !== null && busy === `scene:${expandedScene.id}`;
   const expandedVoiceoverFile = expandedScene?.audioFileId ? filesById.get(expandedScene.audioFileId) : undefined;
@@ -55,8 +60,13 @@ export function StudioPage() {
   useEffect(() => {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;
     refreshedJobRef.current = jobId;
+    if (progress.status === 'done' && voiceoverJobId === jobId) {
+      const summary = api.voiceoverSummary(progress.result);
+      if (summary) toast(summary);
+      setVoiceoverJobId(null);
+    }
     void refresh();
-  }, [jobId, progress?.status]);
+  }, [jobId, progress?.status, progress?.result, voiceoverJobId]);
   useEffect(() => {
     if (!jobId || refreshedJobRef.current === jobId) return undefined;
     const interval = setInterval(() => { void refresh(); }, 15_000);
@@ -109,9 +119,9 @@ export function StudioPage() {
     finally { setBusy(null); setUploadProgress(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
   }
 
-  async function patchScene(sceneId: string, body: { visualPrompt?: string; assetType?: 'image' | 'video'; sfxPrompt?: string; motionPrompt?: string }) {
-    try { setBusy(`scene:${sceneId}`); await api.patchScene(projectId, sceneId, body); await refresh(); }
-    catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật scene.'); }
+  async function patchScene(sceneId: string, body: Parameters<typeof api.patchScene>[2]): Promise<boolean> {
+    try { setBusy(`scene:${sceneId}`); await api.patchScene(projectId, sceneId, body); await refresh(); return true; }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật scene.'); return false; }
     finally { setBusy(null); }
   }
 
@@ -122,7 +132,7 @@ export function StudioPage() {
   }
 
   async function generateAllVoiceovers() {
-    try { setBusy('voiceover-all'); const result = await api.generateAllVoiceovers(projectId); setJobId(result.jobId); toast('Đã xếp hàng tạo voiceover.'); }
+    try { setBusy('voiceover-all'); const result = await api.generateAllVoiceovers(projectId); setVoiceoverJobId(result.jobId); setJobId(result.jobId); toast('Đã xếp hàng tạo voiceover.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo voiceover.'); }
     finally { setBusy(null); }
   }
@@ -178,7 +188,7 @@ export function StudioPage() {
   }
 
   async function regenerateVoiceover(sceneId: string) {
-    try { setBusy(`voice:${sceneId}`); await api.regenerateVoiceover(projectId, sceneId); await refresh(); toast('Đã tạo lại voiceover.'); }
+    try { setBusy(`voice:${sceneId}`); await api.regenerateVoiceover(projectId, sceneId); await refresh(); setVoiceoverResetSceneIds((current) => { const next = new Set(current); next.delete(sceneId); return next; }); toast('Đã tạo lại voiceover.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo lại voiceover.'); }
     finally { setBusy(null); }
   }
@@ -274,7 +284,17 @@ export function StudioPage() {
   }
 
   function startEdit(scene: Scene) { setEditingScene(scene.id); setDraftPrompt(scene.visualPrompt); }
+  function startNarrationEdit(scene: Scene) { setEditingNarrationScene(scene.id); setDraftNarration(scene.narration); }
   function startMotionEdit(scene: Scene) { setEditingMotionScene(scene.id); setDraftMotionPrompt(scene.motionPrompt); }
+
+  async function saveNarration(scene: Scene) {
+    if (!project) return;
+    const hadVoiceover = scene.audioFileId !== null;
+    const saved = await patchScene(scene.id, { narration: draftNarration, expectedVersion: project.version });
+    if (!saved) return;
+    setEditingNarrationScene(null);
+    if (hadVoiceover) setVoiceoverResetSceneIds((current) => new Set(current).add(scene.id));
+  }
 
   if (projectQuery.isLoading) return <section className={styles.panel}><p>Đang tải Studio…</p></section>;
   if (projectQuery.error || !project) return <section className={styles.panel}><p className={styles.error}>Không thể tải dự án.</p></section>;
@@ -339,22 +359,24 @@ export function StudioPage() {
           return <article className={styles.card} key={scene.id}>
             <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><span className={styles.muted}>{scene.durationSec}s</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={busy !== null} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
             <div className={`${styles.preview} ${styles.cardPreview}`}>{previewUrls[scene.id] ? <video controls src={previewUrls[scene.id]} /> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
-            <div className={styles.cardFooter}><div className={styles.statusBadges}><Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? 'green' : 'muted'}>{scene.audioFileId ? 'Đã có voiceover' : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
+            <div className={styles.cardFooter}><div className={styles.statusBadges}>{!scene.narration.trim() && <Badge tone="amber">Khong co loi dan</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? 'green' : 'muted'}>{scene.audioFileId ? 'Đã có voiceover' : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
           </article>;
         })}
       </section>
 
-      <dialog ref={detailDialogRef} className={styles.detailDialog} aria-labelledby="scene-detail-title" onClose={() => { setExpandedSceneId(null); setEditingScene(null); setEditingMotionScene(null); }}>
+      <dialog ref={detailDialogRef} className={styles.detailDialog} aria-labelledby="scene-detail-title" onClose={() => { setExpandedSceneId(null); setEditingScene(null); setEditingNarrationScene(null); setEditingMotionScene(null); }}>
         {expandedScene ? <div key={expandedScene.id} className={styles.detailContent}>
-          <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(scenes.findIndex((scene) => scene.id === expandedScene.id) + 1).padStart(2, '0')}</h2><p className={styles.detailNarration}>{expandedScene.narration}</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); setEditingMotionScene(null); }}>Đóng</Button></div>
+          <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(scenes.findIndex((scene) => scene.id === expandedScene.id) + 1).padStart(2, '0')}</h2><p className={styles.muted}>Chi tiết scene</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); setEditingNarrationScene(null); setEditingMotionScene(null); }}>Đóng</Button></div>
           <div className={styles.detailBody}>
+            <div className={styles.prompt}><span className={styles.label}>Lời dẫn</span>{expandedNarrationEditing ? <><textarea className={styles.textarea} value={draftNarration} onChange={(event) => setDraftNarration(event.target.value)} aria-label={`Sửa lời dẫn scene ${scenes.findIndex((scene) => scene.id === expandedScene.id) + 1}`} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingNarrationScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => void saveNarration(expandedScene)}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.narration || 'Khong co loi dan'}</span><Button size="sm" disabled={busy !== null} onClick={() => startNarrationEdit(expandedScene)}>Edit</Button></div>}</div>
             <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{expandedEditing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startEdit(expandedScene)}>Edit</Button></div>}</div>
             {expandedScene.assetType === 'video' && <div className={styles.prompt}><span className={styles.label}>Motion prompt</span>{expandedMotionEditing ? <><textarea className={styles.textarea} value={draftMotionPrompt} onChange={(event) => setDraftMotionPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingMotionScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { motionPrompt: draftMotionPrompt }); setEditingMotionScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.motionPrompt || 'Chưa có motion prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startMotionEdit(expandedScene)}>Edit</Button></div>}</div>}
             <div className={styles.audioControls}>
               <section className={styles.prompt}>
                 <span className={styles.label}>Voiceover</span>
                 {expandedVoiceoverFile?.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(expandedVoiceoverFile)} /> : <span className={styles.placeholder}>Chưa có voiceover.</span>}
-                <div className={styles.actions}><Button size="sm" disabled={busy !== null} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button></div>
+                {voiceoverResetSceneIds.has(expandedScene.id) && <span className={styles.warning}>Tao lai voiceover</span>}
+                <div className={styles.actions}><Button size="sm" disabled={busy !== null || !expandedScene.narration.trim()} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button></div>
               </section>
               <section className={styles.prompt}>
                 <label className={styles.label} htmlFor={`sfx-${expandedScene.id}`}>SFX prompt</label>

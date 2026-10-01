@@ -120,7 +120,7 @@ describe('sequential script generation', () => {
     await generateScript(project.id, ctx);
 
     const saved = await getProject(project.id);
-    expect(saved.chapters[0]).toMatchObject({ paragraphs, status: 'pending' });
+    expect(saved.chapters[0]).toMatchObject({ paragraphs: paragraphs.map((paragraph) => paragraph.trim()), status: 'pending' });
     expect(saved.chapters[0]!.chapterSummary!.length).toBeLessThanOrEqual(250);
     expect(saved.chapters[0]!.avoidRepeating).toHaveLength(5);
     expect(saved.chapters[0]!.persistentFacts).toHaveLength(5);
