@@ -239,6 +239,14 @@ describe('Remotion props and public-dir staging', () => {
     }
   });
 
+  it('rejects a video scene with only a keyframe because the clip asset is required', async () => {
+    const resolver = vi.fn(async () => ({ absolutePath: path.join(tmpdir(), 'keyframe.png'), mimeType: 'image/png', purpose: 'reference' as const }));
+    const project = { id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true };
+    const scene = { id: 'scene-1', assetType: 'video', assetFileId: null, videoKeyframeFileId: 'keyframe-1', videoDurationSec: null, audioFileId: null, sfxFileId: null, durationSec: 4 } as unknown as Scene;
+
+    await expect(buildRemotionInputProps(project, [scene], 'render-keyframe-only', resolver)).rejects.toMatchObject({ status: 422, code: 'INVALID_RENDER_ASSET' });
+  });
+
   it('prefers and stages a video tail frame alongside the keyframe', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'remotion-tail-'));
     try {

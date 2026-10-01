@@ -236,6 +236,14 @@ describe('video renderer builders', () => {
     expect(videoArgs.join(' ')).toContain('tpad=stop_mode=clone:stop_duration=5');
   });
 
+  it('does not silently use a keyframe when a video scene has no visual asset', async () => {
+    const project = await seedProject();
+    const scene = { ...project.scenes[0]!, assetType: 'video' as const, assetFileId: null, videoKeyframeFileId: 'keyframe-1' };
+    const renderer = new FfmpegRenderer({ resolveFilePath: async () => ({ absolutePath: 'keyframe.png', mimeType: 'image/png', purpose: 'reference' }) });
+
+    await expect(renderer.renderScenePreview(project, scene)).rejects.toThrow('has no visual asset');
+  });
+
   it('builds the concat and BGM second-pass graph with fixed volume', () => {
     expect(buildConcatArguments('segments.txt', 'concat.mp4')).toEqual(['-y', '-f', 'concat', '-safe', '0', '-i', 'segments.txt', '-c', 'copy', 'concat.mp4']);
     expect(buildBgmFilterGraph(42)).toContain(`volume=${BGM_VOLUME}`);

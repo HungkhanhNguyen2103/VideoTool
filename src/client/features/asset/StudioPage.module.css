@@ -30,6 +30,11 @@
 .progress progress { width: 100%; accent-color: var(--amber); }
 .progress ul { grid-column: 1 / -1; max-height: 7rem; margin: 0; padding-left: 1.2rem; overflow: auto; color: var(--text-3); }
 .renderPlayer { width: min(100%, 42rem); max-height: 24rem; border-radius: .6rem; background: var(--input); }
+.readinessSummary { display: grid; gap: .5rem; padding: .7rem .8rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); font-size: .85rem; }
+.readinessSummary p { margin: .3rem 0 0; }
+.readinessSummary ul, .renderConfirmList { margin: .5rem 0 0; padding-left: 1.2rem; color: var(--text-2); }
+.readinessSummary li, .renderConfirmList li { margin: .3rem 0; }
+.renderConfirmList { color: var(--text); }
 .sceneList { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .85rem; }
 .card { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; }
 .cardHead { justify-content: space-between; flex-wrap: wrap; }

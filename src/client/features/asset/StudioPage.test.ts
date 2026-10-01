@@ -16,5 +16,10 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('Kéo dài scene = clip');
     expect(source).toContain('Tạo lại voiceover có thể hoàn tác thay đổi này');
     expect(source).toContain('api.fitSceneToClip(projectId, scene.id, project.version)');
+    expect(source).toContain('{renderReadiness.total} scenes:');
+    expect(source).toContain('renderReadiness.confirmations.length > 0');
+    expect(source).toContain('Tiếp tục render');
+    expect(source).toContain('Cảnh cảnh báo chỉ cần xác nhận');
+    expect(source).toContain('disabled={busy !== null || missingScenes.length > 0}');
   });
 });
