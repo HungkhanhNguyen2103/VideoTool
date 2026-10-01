@@ -171,7 +171,7 @@ describe('asset API helpers', () => {
   it('marks empty-narration scenes and disables their voiceover action', async () => {
     const source = await readFile('src/client/features/asset/StudioPage.tsx', 'utf8');
 
-    expect(source).toContain('Khong co loi dan');
+    expect(source).toContain('Không có lời dẫn');
     expect(source).toContain('!expandedScene.narration.trim()');
   });
 
