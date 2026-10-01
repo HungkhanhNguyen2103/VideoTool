@@ -12,13 +12,13 @@ import { configureDepthMapService } from './depth-map-service';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 
-export function configureVideoModule(filesDir: string, remotionPublicDir = './data/remotion-public'): void {
+export function configureVideoModule(filesDir: string, remotionPublicDir = './data/remotion-public', remotionConcurrency?: number): void {
   const store = createFileStoreService(filesDir);
   storeFile = store.storeFile;
   configureVideoTts(filesDir);
   configureWordTimingService(filesDir);
   configureDepthMapService(filesDir);
-  configureVideoRenderer(filesDir, remotionPublicDir);
+  configureVideoRenderer(filesDir, remotionPublicDir, remotionConcurrency);
 }
 
 export { generateProjectVoiceovers, generateSceneVoiceover };

@@ -577,8 +577,8 @@ describe('video routes and worker handlers', () => {
   it('passes one configured Remotion public directory into both web and worker startup', async () => {
     const appSource = await readFile('src/server/app.ts', 'utf8');
     const workerSource = await readFile('src/worker/main.ts', 'utf8');
-    expect(appSource).toContain('configureVideoModule(options.filesDir, options.remotionPublicDir)');
-    expect(workerSource).toContain('configureVideoModule(config.FILES_DIR, config.REMOTION_PUBLIC_DIR)');
+    expect(appSource).toContain('configureVideoModule(options.filesDir, options.remotionPublicDir, options.remotionConcurrency)');
+    expect(workerSource).toContain('configureVideoModule(config.FILES_DIR, config.REMOTION_PUBLIC_DIR, config.REMOTION_CONCURRENCY)');
   });
 
   it('enqueues project voiceover and render jobs with the project payload', async () => {

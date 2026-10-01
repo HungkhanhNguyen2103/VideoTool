@@ -1,5 +1,5 @@
 import { readFile, rm } from 'node:fs/promises';
-import { freemem } from 'node:os';
+import { cpus, freemem } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { AppError } from '../../shared/errors';
@@ -8,6 +8,7 @@ import { createFileStoreService } from '../file-store';
 import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
 import { stageRemotionRender, type StagedRemotionRender } from './remotion-staging';
 import type { RenderFileResolver } from './remotion-props';
+import { hasUsableDepthScene } from './depth-eligibility';
 import type { VideoRenderer } from './ffmpeg-renderer';
 import { renderMedia as remotionRenderMedia, selectComposition as remotionSelectComposition } from '@remotion/renderer';
 import type { RenderMediaOptions } from '@remotion/renderer';
@@ -26,6 +27,7 @@ export type RemotionRendererOptions = {
   selectComposition?: SelectCompositionFunction;
   renderMedia?: RenderMediaFunction;
   readFile?: typeof readFile;
+  remotionConcurrency?: number;
 };
 
 function asRenderFailure(error: unknown): AppError {
@@ -48,6 +50,7 @@ export class RemotionRenderer implements VideoRenderer {
   private readonly selectComposition: SelectCompositionFunction;
   private readonly renderMedia: RenderMediaFunction;
   private readonly readOutput: typeof readFile;
+  private readonly remotionConcurrency: number | undefined;
   private bundlePromise: Promise<string> | null = null;
 
   constructor(options: RemotionRendererOptions = {}) {
@@ -57,6 +60,7 @@ export class RemotionRenderer implements VideoRenderer {
     this.selectComposition = options.selectComposition ?? remotionSelectComposition;
     this.renderMedia = options.renderMedia ?? remotionRenderMedia;
     this.readOutput = options.readFile ?? readFile;
+    this.remotionConcurrency = options.remotionConcurrency;
   }
 
   async renderScenePreview(project: ProjectDetail, scene: Scene): Promise<Buffer> {
@@ -94,8 +98,13 @@ export class RemotionRenderer implements VideoRenderer {
       });
       await this.logMessage(`Remotion selectComposition time: ${seconds(performance.now() - selectStartedAt)}s.`, appendLog);
       await this.logMessage('Remotion render started.', appendLog);
-      const legacyConcurrency = staged.inputProps.parallax === 'auto' ? '1' : 'default';
-      await this.logMessage(`Remotion concurrency ${legacyConcurrency}.`, appendLog);
+      const depthScenesPresent = hasUsableDepthScene(staged.inputProps.parallax, scenes);
+      const cappedEnvConcurrency = this.remotionConcurrency === undefined ? undefined : Math.min(this.remotionConcurrency, Math.max(1, cpus().length));
+      const effectiveConcurrency = depthScenesPresent ? 1 : cappedEnvConcurrency;
+      const concurrencyRule = depthScenesPresent
+        ? 'concurrency 1: depth scenes present'
+        : cappedEnvConcurrency === undefined ? 'default' : `concurrency ${cappedEnvConcurrency}: env override`;
+      await this.logMessage(`Remotion ${concurrencyRule}.`, appendLog);
       if (reportProgress) await reportProgress(15);
 
       let lastBucket = -1;
@@ -153,7 +162,7 @@ export class RemotionRenderer implements VideoRenderer {
         inputProps: staged.inputProps,
         onProgress,
         chromiumOptions: REMOTION_CHROMIUM_OPTIONS,
-        ...(staged.inputProps.parallax === 'auto' ? { concurrency: 1 } : {}),
+        ...(effectiveConcurrency === undefined ? {} : { concurrency: effectiveConcurrency }),
       };
       const renderStartedAt = performance.now();
       await this.renderMedia(renderOptions);
@@ -170,7 +179,7 @@ export class RemotionRenderer implements VideoRenderer {
       await this.logMessage(`Remotion memory: peak RSS ${megabytes(peakRss)} MB; free memory at start ${megabytes(freeMemoryAtStart)} MB.`, appendLog);
       const frameCount = lastRenderedFrames || composition.durationInFrames;
       const outputMegabytes = megabytes((output as Buffer).byteLength);
-      await this.logMessage(`Remotion render done: ${frameCount} frames in ${seconds(renderMilliseconds)}s (${(frameCount / (renderMilliseconds / 1000 || 1)).toFixed(2)} frames/s), concurrency ${legacyConcurrency}, ${composition.width}x${composition.height}@${composition.fps}, scenes ${staged.inputProps.scenes.length} (video ${staged.inputProps.scenes.filter((scene) => scene.assetType === 'video').length}, depth ${staged.inputProps.scenes.filter((scene) => scene.depthMapRelPath !== null).length}), output ${outputMegabytes} MB`, appendLog);
+      await this.logMessage(`Remotion render done: ${frameCount} frames in ${seconds(renderMilliseconds)}s (${(frameCount / (renderMilliseconds / 1000 || 1)).toFixed(2)} frames/s), concurrency ${effectiveConcurrency ?? 'default'}, ${composition.width}x${composition.height}@${composition.fps}, scenes ${staged.inputProps.scenes.length} (video ${staged.inputProps.scenes.filter((scene) => scene.assetType === 'video').length}, depth ${staged.inputProps.scenes.filter((scene) => scene.depthMapRelPath !== null).length}), output ${outputMegabytes} MB`, appendLog);
       await this.logMessage(`Remotion total time: ${seconds(performance.now() - totalStartedAt)}s.`, appendLog);
       await this.logMessage('Remotion render complete.', appendLog);
       if (reportProgress) await reportProgress(100);

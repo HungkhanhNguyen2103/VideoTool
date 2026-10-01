@@ -1,5 +1,6 @@
 import { mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import * as os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -485,7 +486,7 @@ describe('Remotion renderer orchestration', () => {
       });
       const renderer = new RemotionRenderer({ resolver, bundle, selectComposition, renderMedia, readFile: vi.fn().mockResolvedValue(Buffer.alloc(2 * 1024 * 1024)) });
       const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
-      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'off', scenes: [scene] } as never;
       const logs: string[] = [];
       const appendLog = async (message: string) => { logs.push(message); };
 
@@ -504,8 +505,96 @@ describe('Remotion renderer orchestration', () => {
       expect(progress).toMatch(/elapsed [\d.]+s/);
       expect(progress).toMatch(/[\d.]+ frames\/s/);
       expect(logs.some((message) => message.startsWith('Remotion render done: 30 frames in') && message.includes('scenes 1 (video 0, depth 0)') && message.includes('output 2.00 MB'))).toBe(true);
-      expect(logs.some((message) => message.includes('concurrency 1'))).toBe(true);
+      expect(logs.some((message) => message.includes('concurrency default'))).toBe(true);
       expect(bundle).toHaveBeenCalledOnce();
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not force concurrency for auto parallax without an eligible depth scene', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-image-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-bundle-'));
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
+      const renderMedia = vi.fn(async () => ({ buffer: null, slowestFrames: [], contentType: 'video/mp4' }));
+      const renderer = new RemotionRenderer({
+        resolver,
+        bundle: vi.fn().mockResolvedValue(bundleDir),
+        selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 }),
+        renderMedia,
+        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
+      });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: null } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
+
+      await renderer.renderFullVideo(project, async () => undefined, async () => undefined);
+
+      expect(renderMedia.mock.calls[0]?.[0]).not.toHaveProperty('concurrency');
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('forces concurrency one and logs the depth-scene rule when parallax has an eligible depth scene', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-depth-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-depth-bundle-'));
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      await writeFile(path.join(sourceDir, 'depth.png'), 'depth');
+      const resolver = async (_projectId: string, fileId: string) => ({
+        absolutePath: path.join(sourceDir, fileId === 'depth-1' ? 'depth.png' : 'image.png'),
+        mimeType: 'image/png',
+        purpose: fileId === 'depth-1' ? 'depth' as const : 'reference' as const,
+      });
+      const renderMedia = vi.fn(async () => ({ buffer: null, slowestFrames: [], contentType: 'video/mp4' }));
+      const renderer = new RemotionRenderer({
+        resolver,
+        bundle: vi.fn().mockResolvedValue(bundleDir),
+        selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 }),
+        renderMedia,
+        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
+      });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.99 } } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
+      const logs: string[] = [];
+
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined);
+
+      expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ concurrency: 1 });
+      expect(logs).toContain('Remotion concurrency 1: depth scenes present.');
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('honors the Remotion concurrency override and caps it to CPU count', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-env-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-env-bundle-'));
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
+      const renderMedia = vi.fn(async () => ({ buffer: null, slowestFrames: [], contentType: 'video/mp4' }));
+      const renderer = new RemotionRenderer({
+        resolver,
+        remotionConcurrency: 999999,
+        bundle: vi.fn().mockResolvedValue(bundleDir),
+        selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 }),
+        renderMedia,
+        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
+      });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: null } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
+      const logs: string[] = [];
+
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined);
+
+      expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ concurrency: os.cpus().length });
+      expect(logs).toContain(`Remotion concurrency ${os.cpus().length}: env override.`);
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });

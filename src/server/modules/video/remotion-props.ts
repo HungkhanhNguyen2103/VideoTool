@@ -5,7 +5,7 @@ import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../shared/logger';
 import { annotateNameKeywords, annotateYearKeywords, resolveFilmLookByScene, selectKeywords } from './keywords';
-import { isDepthMapEligible } from './depth-eligibility';
+import { isDepthSceneEligible } from './depth-eligibility';
 
 export type ResolvedRenderFile = {
   absolutePath: string;
@@ -139,7 +139,7 @@ export async function resolveRemotionAssets(
     }
 
     let depthMapRelPath: string | null = null;
-    if (project.parallax === 'auto' && scene.assetType === 'image' && scene.depthMap?.assetFileId === scene.assetFileId && isDepthMapEligible(scene.depthMap.score)) {
+    if (isDepthSceneEligible(project.parallax ?? 'off', scene)) {
       const depth = await resolveFile(project.id, scene.depthMap.fileId, resolver, 'depth', 'image/', `Scene ${scene.id} depth map`);
       if (depth.file.mimeType !== 'image/png' || depth.extension !== 'png') throw invalidAsset(`Scene ${scene.id} depth map must be a PNG.`);
       depthMapRelPath = `${prefix}-depth.png`;

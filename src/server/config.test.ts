@@ -33,4 +33,12 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ PORT: 'abc', WORKER_POLL_MS: '5' })).toThrowError(ConfigError);
     expect(() => loadConfig({ PORT: 'abc' })).toThrowError(/PORT/);
   });
+
+  it('validates the optional Remotion concurrency override', () => {
+    expect(loadConfig({ REMOTION_CONCURRENCY: '' }).REMOTION_CONCURRENCY).toBeUndefined();
+    expect(loadConfig({ REMOTION_CONCURRENCY: '3' }).REMOTION_CONCURRENCY).toBe(3);
+    expect(() => loadConfig({ REMOTION_CONCURRENCY: '0' })).toThrowError(ConfigError);
+    expect(() => loadConfig({ REMOTION_CONCURRENCY: '1.5' })).toThrowError(ConfigError);
+    expect(() => loadConfig({ REMOTION_CONCURRENCY: 'not-a-number' })).toThrowError(ConfigError);
+  });
 });

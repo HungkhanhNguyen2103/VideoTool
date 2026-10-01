@@ -16,6 +16,8 @@ export type AppOptions = {
   filesDir: string;
   /** Stable output directory used by the Remotion bundle. */
   remotionPublicDir?: string;
+  /** Optional Remotion concurrency override; undefined keeps Remotion's default. */
+  remotionConcurrency?: number;
   /** Absolute path of the built SPA (dist/client). null = do not serve it (development). */
   clientDir: string | null;
 };
@@ -30,7 +32,7 @@ export function createApp(options: AppOptions): Express {
     if (await getActiveJobByType(projectId, 'generate-depth-map', sceneId)) return;
     await enqueueJob({ type: 'generate-depth-map', projectId, payload: { projectId, sceneId } });
   });
-  configureVideoModule(options.filesDir, options.remotionPublicDir);
+  configureVideoModule(options.filesDir, options.remotionPublicDir, options.remotionConcurrency);
 
   app.get('/api/health', async (_req, res) => {
     await getDb().command({ ping: 1 });

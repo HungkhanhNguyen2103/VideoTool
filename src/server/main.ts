@@ -13,6 +13,7 @@ async function main(): Promise<void> {
   const app = createApp({
     filesDir: path.resolve(config.FILES_DIR),
     remotionPublicDir: path.resolve(config.REMOTION_PUBLIC_DIR),
+    remotionConcurrency: config.REMOTION_CONCURRENCY,
     clientDir: config.NODE_ENV === 'production' ? path.resolve('dist/client') : null,
   });
   const server = app.listen(config.PORT, () => {

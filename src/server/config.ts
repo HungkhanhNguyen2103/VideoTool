@@ -8,6 +8,7 @@ const EnvSchema = z.object({
   MONGODB_DB: z.string().min(1).default('video_tool'),
   FILES_DIR: z.string().min(1).default('./data/files'),
   REMOTION_PUBLIC_DIR: z.string().min(1).default('./data/remotion-public'),
+  REMOTION_CONCURRENCY: z.preprocess((value) => value === '' ? undefined : value, z.coerce.number().int().positive().optional()),
   WORKER_POLL_MS: z.coerce.number().int().min(100).default(2000),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   DEEPSEEK_API_KEY: z.string().default(''),
