@@ -15,6 +15,11 @@
   background: var(--green-bg);
   border-color: var(--green-bd);
 }
+.red {
+  color: var(--red);
+  background: var(--red-bg);
+  border-color: var(--red-bd);
+}
 .amber {
   color: var(--amber-text);
   background: var(--amber-bg);

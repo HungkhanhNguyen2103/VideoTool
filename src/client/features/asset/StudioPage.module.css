@@ -37,6 +37,12 @@
 .sceneText { display: grid; gap: .2rem; }
 .statusBadges { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .cardFooter { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-top: auto; padding-top: .75rem; }
+.videoFacts { display: grid; gap: .75rem; padding: .75rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--panel-2); }
+.videoFactsHeader { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.videoFactsGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+.videoFact { display: grid; gap: .4rem; min-width: 0; }
+.videoFactPreview, .videoFactPlaceholder { display: grid; place-items: center; width: 100%; min-height: 5rem; max-height: 9rem; object-fit: contain; overflow: hidden; border-radius: .45rem; background: var(--input); color: var(--text-3); }
+.videoFactDuration { margin: 0; color: var(--text-2); font-size: .85rem; }
 .prompt { display: grid; gap: .45rem; align-content: start; }
 .label { font-size: .8rem; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
 .promptLine { align-items: flex-start; justify-content: space-between; white-space: pre-wrap; line-height: 1.5; }
@@ -58,3 +64,4 @@
 .error { color: var(--red); }
 .mismatch { color: var(--amber-text); font-size: .8rem; padding: .4rem .6rem; }
 @media (max-width: 760px) { .detailHeader { flex-direction: column; } }
+@media (max-width: 560px) { .videoFactsGrid { grid-template-columns: 1fr; } }

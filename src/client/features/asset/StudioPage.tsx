@@ -3,12 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
 import type { Scene, VisualStyleId } from '../../../contracts/project';
+import { analyzeScene } from '../../../contracts/scene-readiness';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import { ApiError } from '../../shared/api-client';
 import * as api from './api';
+import { readinessBadgeForStatus } from './scene-readiness-ui';
 import styles from './StudioPage.module.css';
 
 const statusTone = { draft: 'muted', script: 'indigo', assets: 'green', rendered: 'green' } as const;
@@ -46,6 +48,7 @@ export function StudioPage() {
   const filesById = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);
   const filled = scenes.filter((scene) => scene.assetFileId !== null).length;
   const missingScenes = project ? api.missingSceneNumbers(project) : [];
+  const readinessBySceneId = useMemo(() => new Map(scenes.map((scene) => [scene.id, analyzeScene(scene)])), [scenes]);
   const expandedScene = scenes.find((scene) => scene.id === expandedSceneId) ?? null;
   const expandedEditing = expandedScene !== null && editingScene === expandedScene.id;
   const expandedNarrationEditing = expandedScene !== null && editingNarrationScene === expandedScene.id;
@@ -53,6 +56,7 @@ export function StudioPage() {
   const expandedSceneBusy = expandedScene !== null && busy === `scene:${expandedScene.id}`;
   const expandedVoiceoverFile = expandedScene?.audioFileId ? filesById.get(expandedScene.audioFileId) : undefined;
   const expandedSfxFile = expandedScene?.sfxFileId ? filesById.get(expandedScene.sfxFileId) : undefined;
+  const expandedReadiness = expandedScene ? readinessBySceneId.get(expandedScene.id) : undefined;
   const progress = useJobProgress(jobId);
 
   useEffect(() => { if (project) setBgmMood(project.bgmMood); }, [project?.id, project?.bgmMood]);
@@ -357,10 +361,12 @@ export function StudioPage() {
           const actualType = file ? api.mediaTypeForMime(file.mimeType) : null;
           const previewType = actualType ?? scene.assetType;
           const typeMismatch = actualType !== null && actualType !== scene.assetType;
+          const readiness = readinessBySceneId.get(scene.id)!;
+          const readinessBadge = readinessBadgeForStatus(readiness.status);
           return <article className={styles.card} key={scene.id}>
-            <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><span className={styles.muted}>{scene.durationSec}s</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={busy !== null} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
+            <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><span className={styles.muted}>{scene.durationSec}s</span>{scene.assetType === 'video' && scene.videoDurationSec !== null && <span className={styles.muted}>clip {scene.videoDurationSec.toFixed(1)}s</span>}</div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={busy !== null} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
             <div className={`${styles.preview} ${styles.cardPreview}`}>{previewUrls[scene.id] ? <video controls src={previewUrls[scene.id]} /> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
-            <div className={styles.cardFooter}><div className={styles.statusBadges}>{!scene.narration.trim() && <Badge tone="amber">Khong co loi dan</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? 'green' : 'muted'}>{scene.audioFileId ? 'Đã có voiceover' : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
+            <div className={styles.cardFooter}><div className={styles.statusBadges}>{readinessBadge && <span title={readiness.messages.join(' · ')}><Badge tone={readinessBadge.tone}>{readinessBadge.label}</Badge></span>}{!scene.narration.trim() && <Badge tone="amber">Khong co loi dan</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? 'green' : 'muted'}>{scene.audioFileId ? 'Đã có voiceover' : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={busy !== null} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
           </article>;
         })}
       </section>
@@ -369,6 +375,18 @@ export function StudioPage() {
         {expandedScene ? <div key={expandedScene.id} className={styles.detailContent}>
           <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(scenes.findIndex((scene) => scene.id === expandedScene.id) + 1).padStart(2, '0')}</h2><p className={styles.muted}>Chi tiết scene</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); setEditingNarrationScene(null); setEditingMotionScene(null); }}>Đóng</Button></div>
           <div className={styles.detailBody}>
+            {expandedScene.assetType === 'video' && <section className={styles.videoFacts} aria-label="Khung hinh video">
+              <div className={styles.videoFactsHeader}><span className={styles.label}>Khung hinh video</span><span className={styles.muted}>{expandedReadiness?.messages.join(' · ')}</span></div>
+              <div className={styles.videoFactsGrid}>
+                {([['Keyframe', expandedScene.videoKeyframeFileId ?? (expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('image/') ? expandedScene.assetFileId : null)], ['Khung cuoi', expandedScene.videoTailFileId], ['Clip', expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('video/') ? expandedScene.assetFileId : null]] as const).map(([label, fileId]) => {
+                  const file = fileId ? filesById.get(fileId) : undefined;
+                  const src = file ? api.fileUrlForSummary(file) : null;
+                  const mediaType = file ? api.mediaTypeForMime(file.mimeType) : null;
+                  return <div className={styles.videoFact} key={label}><span className={styles.muted}>{label}</span>{src && mediaType === 'image' ? <img className={styles.videoFactPreview} src={src} alt={label} /> : src && mediaType === 'video' ? <video className={styles.videoFactPreview} controls src={src} /> : <span className={styles.videoFactPlaceholder}>Chưa có</span>}</div>;
+                })}
+              </div>
+              <p className={styles.videoFactDuration}>Thời lượng scene: {expandedScene.durationSec}s ({expandedScene.audioFileId ? 'từ voiceover' : 'ước tính'})</p>
+            </section>}
             <div className={styles.prompt}><span className={styles.label}>Lời dẫn</span>{expandedNarrationEditing ? <><textarea className={styles.textarea} value={draftNarration} onChange={(event) => setDraftNarration(event.target.value)} aria-label={`Sửa lời dẫn scene ${scenes.findIndex((scene) => scene.id === expandedScene.id) + 1}`} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingNarrationScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => void saveNarration(expandedScene)}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.narration || 'Khong co loi dan'}</span><Button size="sm" disabled={busy !== null} onClick={() => startNarrationEdit(expandedScene)}>Edit</Button></div>}</div>
             <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{expandedEditing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startEdit(expandedScene)}>Edit</Button></div>}</div>
             {expandedScene.assetType === 'video' && <div className={styles.prompt}><span className={styles.label}>Motion prompt</span>{expandedMotionEditing ? <><textarea className={styles.textarea} value={draftMotionPrompt} onChange={(event) => setDraftMotionPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingMotionScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { motionPrompt: draftMotionPrompt }); setEditingMotionScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.motionPrompt || 'Chưa có motion prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startMotionEdit(expandedScene)}>Edit</Button></div>}</div>}
