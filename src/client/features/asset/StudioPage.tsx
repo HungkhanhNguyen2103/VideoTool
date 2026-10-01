@@ -10,6 +10,7 @@ import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import { ApiError } from '../../shared/api-client';
 import * as api from './api';
+import { computePipelineProgress } from './pipeline-progress';
 import { summarizeRenderReadiness } from './render-readiness';
 import { readinessBadgeForStatus } from './scene-readiness-ui';
 import styles from './StudioPage.module.css';
@@ -53,6 +54,7 @@ export function StudioPage() {
   const missingScenes = project ? api.missingSceneNumbers(project) : [];
   const readinessBySceneId = useMemo(() => new Map(scenes.map((scene) => [scene.id, analyzeScene(scene)])), [scenes]);
   const renderReadiness = useMemo(() => summarizeRenderReadiness(scenes), [scenes]);
+  const pipelineProgress = useMemo(() => project ? computePipelineProgress(project) : null, [project]);
   const expandedScene = scenes.find((scene) => scene.id === expandedSceneId) ?? null;
   const expandedEditing = expandedScene !== null && editingScene === expandedScene.id;
   const expandedNarrationEditing = expandedScene !== null && editingNarrationScene === expandedScene.id;
@@ -387,6 +389,26 @@ export function StudioPage() {
         {missingScenes.length > 0 && <p className={styles.warning}>Chưa sẵn sàng render: scene {missingScenes.join(', ')} thiếu asset.</p>}
         {progress && <div className={styles.progress}><strong>Job {progress.status}</strong><progress max="100" value={progress.progress}>{progress.progress}%</progress><span>{progress.progress}%</span>{progress.logs.length > 0 && <ul>{progress.logs.map((line, index) => <li key={`${line}-${index}`}>{line}</li>)}</ul>}</div>}
       </section>
+
+      {pipelineProgress && <details className={styles.pipelineProgress}>
+        <summary className={styles.pipelineSummary}>
+          <span className={styles.pipelineTitle}>Tiến độ pipeline</span>
+          <span className={styles.pipelineOverview}>
+            <span className={styles.pipelineBar} role="progressbar" aria-label="Tiến độ pipeline" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pipelineProgress.percent}><span className={styles.pipelineBarFill} style={{ width: `${pipelineProgress.percent}%` }} /></span>
+            <strong>{pipelineProgress.percent}%</strong>
+          </span>
+        </summary>
+        <div className={styles.pipelineSteps}>
+          {pipelineProgress.steps.map((step) => {
+            const complete = step.done === step.total && step.total > 0;
+            return <div className={styles.pipelineStep} key={step.key}>
+              <span>{step.label}</span>
+              <span className={styles.pipelineCount}>{step.done}/{step.total}</span>
+              {complete ? <span className={styles.pipelineCheck} aria-label="Hoàn thành">✓</span> : <span className={styles.pipelineStepBar}><span className={styles.pipelineStepBarFill} style={{ width: `${step.ratio * 100}%` }} /></span>}
+            </div>;
+          })}
+        </div>
+      </details>}
 
       {skipped.length > 0 && <details className={styles.skipped}><summary>Bỏ qua {skipped.length} file</summary><ul>{skipped.map((name) => <li key={name}>{name}</li>)}</ul></details>}
 

@@ -35,6 +35,19 @@
 .readinessSummary ul, .renderConfirmList { margin: .5rem 0 0; padding-left: 1.2rem; color: var(--text-2); }
 .readinessSummary li, .renderConfirmList li { margin: .3rem 0; }
 .renderConfirmList { color: var(--text); }
+.pipelineProgress { padding: .75rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
+.pipelineSummary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; cursor: pointer; list-style: none; }
+.pipelineSummary::-webkit-details-marker { display: none; }
+.pipelineTitle { font-weight: 800; }
+.pipelineOverview { display: flex; align-items: center; gap: .6rem; min-width: min(18rem, 55%); }
+.pipelineBar, .pipelineStepBar { display: block; overflow: hidden; background: var(--input); border: 1px solid var(--border); border-radius: 999px; }
+.pipelineBar { flex: 1 1 auto; height: .6rem; }
+.pipelineBarFill, .pipelineStepBarFill { display: block; height: 100%; background: var(--amber); border-radius: inherit; transition: width .2s ease; }
+.pipelineSteps { display: grid; gap: .45rem; margin-top: .8rem; }
+.pipelineStep { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(4rem, 10rem); align-items: center; gap: .6rem; color: var(--text-2); font-size: .8rem; }
+.pipelineCount { color: var(--text-3); font-family: var(--mono); white-space: nowrap; }
+.pipelineStepBar { height: .45rem; }
+.pipelineCheck { color: var(--green); font-size: 1rem; font-weight: 800; text-align: center; }
 .sceneList { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .85rem; align-items: stretch; }
 .card { display: flex; flex-direction: column; height: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; }
 .cardHead { justify-content: space-between; flex-wrap: nowrap; min-height: 2.25rem; }
@@ -73,4 +86,5 @@
 .error { color: var(--red); }
 .mismatch { color: var(--amber-text); font-size: .8rem; padding: .4rem .6rem; }
 @media (max-width: 760px) { .detailHeader { flex-direction: column; } }
+@media (max-width: 560px) { .pipelineSummary { align-items: flex-start; flex-direction: column; } .pipelineOverview { width: 100%; min-width: 0; } .pipelineStep { grid-template-columns: minmax(0, 1fr) auto 4rem; } }
 @media (max-width: 560px) { .videoFactsGrid { grid-template-columns: 1fr; } }
