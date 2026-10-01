@@ -141,6 +141,19 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function fitSceneToClip(scene: Scene) {
+    if (!project || scene.videoDurationSec === null) return;
+    const sceneNumber = scenes.findIndex((candidate) => candidate.id === scene.id) + 1;
+    try {
+      setBusy(`fit-to-clip:${scene.id}`);
+      const updated = await api.fitSceneToClip(projectId, scene.id, project.version);
+      const nextScene = updated.scenes.find((candidate) => candidate.id === scene.id);
+      await refresh();
+      if (nextScene) toast(`Scene ${sceneNumber}: ${scene.durationSec}s -> ${nextScene.durationSec}s`);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể kéo dài scene theo clip.'); }
+    finally { setBusy(null); }
+  }
+
   async function previewVideoDistribution() {
     try {
       setBusy('video-distribution-preview');
@@ -386,6 +399,7 @@ export function StudioPage() {
                 })}
               </div>
               <p className={styles.videoFactDuration}>Thời lượng scene: {expandedScene.durationSec}s ({expandedScene.audioFileId ? 'từ voiceover' : 'ước tính'})</p>
+              <div className={styles.actions}><Button size="sm" variant="amber" title="Tạo lại voiceover có thể hoàn tác thay đổi này" disabled={busy !== null || expandedScene.videoDurationSec === null || Math.ceil(expandedScene.videoDurationSec) <= expandedScene.durationSec} onClick={() => void fitSceneToClip(expandedScene)}>Kéo dài scene = clip</Button></div>
             </section>}
             <div className={styles.prompt}><span className={styles.label}>Lời dẫn</span>{expandedNarrationEditing ? <><textarea className={styles.textarea} value={draftNarration} onChange={(event) => setDraftNarration(event.target.value)} aria-label={`Sửa lời dẫn scene ${scenes.findIndex((scene) => scene.id === expandedScene.id) + 1}`} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingNarrationScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => void saveNarration(expandedScene)}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.narration || 'Khong co loi dan'}</span><Button size="sm" disabled={busy !== null} onClick={() => startNarrationEdit(expandedScene)}>Edit</Button></div>}</div>
             <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{expandedEditing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy} onClick={() => { void patchScene(expandedScene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={busy !== null} onClick={() => startEdit(expandedScene)}>Edit</Button></div>}</div>

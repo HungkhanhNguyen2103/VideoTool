@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ProjectDetail } from '../../../contracts/project';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
 import { createFileStoreService } from '../file-store';
-import { applyProjectVideoDistribution, applySceneAssets, getProject, pickVideoSceneIndexes } from '../project';
+import { applyProjectVideoDistribution, applySceneAssets, getProject, patchProjectScene, pickVideoSceneIndexes } from '../project';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../shared/logger';
 import { expectedAssetType, MIME_BY_EXTENSION, type FlowSceneExport } from './docs';
@@ -99,6 +99,17 @@ export async function applyVideoDistribution(projectId: string, targetPercent: n
   ));
   if (toVideoSceneIds.length === 0 && toImageSceneIds.length === 0) return project;
   return applyProjectVideoDistribution(projectId, toVideoSceneIds, toImageSceneIds, expectedVersion);
+}
+
+export async function fitSceneToClip(projectId: string, sceneId: string, expectedVersion: number): Promise<ProjectDetail> {
+  const project = await getProject(projectId);
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId);
+  if (!scene) throw new AppError('Không tìm thấy cảnh.', 404, 'not_found');
+  if (scene.assetType !== 'video') throw new AppError('Chỉ scene video mới có thể kéo dài theo clip.', 422, 'FIT_TO_CLIP_NOT_VIDEO');
+  if (scene.videoDurationSec === null) throw new AppError('Scene video chưa có thời lượng clip đã đo.', 422, 'VIDEO_DURATION_UNAVAILABLE');
+  const durationSec = Math.ceil(scene.videoDurationSec);
+  if (durationSec <= scene.durationSec) throw new AppError('Thời lượng clip không dài hơn thời lượng scene.', 422, 'CLIP_NOT_LONGER_THAN_SCENE');
+  return patchProjectScene(projectId, sceneId, { durationSec }, expectedVersion);
 }
 
 const SCENE_FILE_PATTERN = /^SCENE_(\d{3})_([^/\\]+)\.([A-Za-z0-9]+)$/i;

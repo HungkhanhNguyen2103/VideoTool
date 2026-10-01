@@ -21,7 +21,7 @@ import {
   setProjectScenesAssetType,
   type ProjectDoc,
 } from '../project';
-import { applyVideoDistribution, configureAssetModule, exportScenesJson, importAssetsFromZip, previewVideoDistribution } from './index';
+import { applyVideoDistribution, configureAssetModule, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution } from './index';
 
 const projectInput = {
   title: 'Asset contract project',
@@ -252,6 +252,25 @@ describe('asset contracts', () => {
     await expect(response.json()).resolves.toEqual({ error: { code: 'PROJECT_CHANGED', message: 'Project changed, preview again.' } });
   });
 
+  it('fits a scene through the strict versioned route', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-1', { assetType: 'video', assetFileId: 'clip-1', videoDurationSec: 5.2 });
+    const before = await getProject(project.id);
+    const base = await startAssetServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/fit-to-clip`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedVersion: before.version }),
+    });
+
+    expect(response.status).toBe(200);
+    const responseBody = await response.json() as { scenes: Array<{ durationSec: number }> };
+    expect(responseBody.scenes[0]?.durationSec).toBe(6);
+    const strictResponse = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/fit-to-clip`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedVersion: before.version + 1, extra: true }),
+    });
+    expect(strictResponse.status).toBe(422);
+  });
+
   it('defaults asset fields when reading a legacy scene document', async () => {
     const project = await createProject(projectInput);
     await getCollection<{ _id: string }>('projects').updateOne(
@@ -307,6 +326,39 @@ describe('asset contracts', () => {
     expect(updated.scenes[1]).toMatchObject({ narration: 'Rewritten context in detail', durationSec: 2, audioFileId: null, wordTimings: null, visualPrompt: 'A room' });
     expect(updated.chapters[0]).toMatchObject({ paragraphs: ['Opening', 'Rewritten context in detail', 'Close'], durationSec: 12 });
     expect(updated.version).toBe(before.version + 1);
+  });
+
+  it('fits a measured video scene to the ceil of its clip and updates the chapter total', async () => {
+    const project = await seedProjectWithScenes();
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Opening', 'Context', 'Close'], status: 'approved', scenesCount: 3, durationSec: 15,
+    }], null, 'assets');
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video', assetFileId: 'clip-2', videoDurationSec: 5.2 });
+    const before = await getProject(project.id);
+
+    const updated = await fitSceneToClip(project.id, 'scene-2', before.version);
+
+    expect(updated.scenes[1]).toMatchObject({ durationSec: 6, assetType: 'video', assetFileId: 'clip-2', videoDurationSec: 5.2 });
+    expect(updated.chapters[0]).toMatchObject({ durationSec: 16 });
+    expect(updated.version).toBe(before.version + 1);
+  });
+
+  it('rejects fit-to-clip when the video duration has not been measured', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-1', { assetType: 'video', assetFileId: 'clip-1', videoDurationSec: null });
+    const before = await getProject(project.id);
+
+    await expect(fitSceneToClip(project.id, 'scene-1', before.version)).rejects.toMatchObject({ status: 422, code: 'VIDEO_DURATION_UNAVAILABLE' });
+  });
+
+  it('rejects fit-to-clip from a stale project version without changing the scene', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-1', { assetType: 'video', assetFileId: 'clip-1', videoDurationSec: 5.2 });
+    const before = await getProject(project.id);
+    await patchProjectScene(project.id, 'scene-1', { visualPrompt: 'Changed after preview' });
+
+    await expect(fitSceneToClip(project.id, 'scene-1', before.version)).rejects.toMatchObject({ status: 409, code: 'PROJECT_CHANGED' });
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ durationSec: 5, visualPrompt: 'Changed after preview' });
   });
 
   it('rejects a narration patch based on a stale project version', async () => {

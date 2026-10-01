@@ -13,5 +13,8 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain("['Clip'");
     expect(source).toContain('Chưa có');
     expect(source).toContain("expandedScene.audioFileId ? 'từ voiceover' : 'ước tính'");
+    expect(source).toContain('Kéo dài scene = clip');
+    expect(source).toContain('Tạo lại voiceover có thể hoàn tác thay đổi này');
+    expect(source).toContain('api.fitSceneToClip(projectId, scene.id, project.version)');
   });
 });

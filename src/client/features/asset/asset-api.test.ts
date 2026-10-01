@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -82,6 +82,15 @@ describe('asset API helpers', () => {
 
     await expect(renderProject('project/1', true)).resolves.toEqual({ jobId: 'job-draft' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/render', expect.objectContaining({ method: 'POST', body: JSON.stringify({ draft: true }) }));
+  });
+
+  it('fits a scene to its clip through the versioned route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(fitSceneToClip('project/1', 'scene/1', 7)).resolves.toMatchObject({ id: 'project-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/scene%2F1/fit-to-clip', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ expectedVersion: 7 }),
+    }));
   });
 
   it('queues bulk SFX generation through the project route', async () => {

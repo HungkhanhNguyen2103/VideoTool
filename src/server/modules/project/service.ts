@@ -169,11 +169,11 @@ export async function patchProjectScene(
   patch: Partial<Pick<SceneDoc, 'narration' | 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
   expectedVersion?: number,
 ): Promise<ProjectDetail> {
-  const current = patch.narration !== undefined ? await getProject(id) : null;
+  const current = patch.narration !== undefined || patch.durationSec !== undefined ? await getProject(id) : null;
   const currentScene = current?.scenes.find((scene) => scene.id === sceneId);
   if (patch.narration !== undefined && !currentScene) throw new NotFound('Không tìm thấy cảnh.');
   const normalizedNarration = patch.narration?.trim();
-  const narrationChanged = currentScene !== undefined && normalizedNarration !== currentScene.narration;
+  const narrationChanged = patch.narration !== undefined && currentScene !== undefined && normalizedNarration !== currentScene.narration;
   const scenePatch: typeof patch = { ...patch, ...(normalizedNarration !== undefined ? { narration: normalizedNarration } : {}) };
   if (narrationChanged) {
     scenePatch.durationSec = estimateNarrationDurationSec(normalizedNarration!);
@@ -189,18 +189,18 @@ export async function patchProjectScene(
     set['scenes.$[scene].videoTailFileId'] = null;
     set['scenes.$[scene].videoDurationSec'] = null;
   }
-  if (narrationChanged && current && currentScene) {
+  if ((narrationChanged || patch.durationSec !== undefined) && current && currentScene) {
     const sceneIndex = current.scenes.findIndex((scene) => scene.id === sceneId);
     let start = 0;
     for (let chapterIndex = 0; chapterIndex < current.chapters.length; chapterIndex += 1) {
       const chapter = current.chapters[chapterIndex]!;
       const sceneCount = chapter.scenesCount ?? chapter.paragraphs.length;
       if (sceneIndex >= start && sceneIndex < start + sceneCount) {
-        const chapterSceneDurations = current.scenes.slice(start, start + sceneCount).map((scene, index) => index === sceneIndex - start ? scenePatch.durationSec! : scene.durationSec);
+        const chapterSceneDurations = current.scenes.slice(start, start + sceneCount).map((scene, index) => index === sceneIndex - start ? scenePatch.durationSec ?? scene.durationSec : scene.durationSec);
         set[`chapters.${chapterIndex}.durationSec`] = chapterSceneDurations.reduce((sum, duration) => sum + duration, 0);
         // Finalized chapters have a one-to-one paragraph/scene mapping. A scene-split chapter intentionally does not;
         // in that case the scene duration remains authoritative while the original chapter paragraphs stay intact.
-        if (chapter.paragraphs.length === sceneCount) set[`chapters.${chapterIndex}.paragraphs.${sceneIndex - start}`] = normalizedNarration;
+        if (narrationChanged && chapter.paragraphs.length === sceneCount) set[`chapters.${chapterIndex}.paragraphs.${sceneIndex - start}`] = normalizedNarration;
         break;
       }
       start += sceneCount;

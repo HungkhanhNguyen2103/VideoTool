@@ -4,7 +4,7 @@ import { VideoDistributionApplyRequestSchema, VideoDistributionRequestSchema } f
 import { getProject, patchProjectScene, setProjectScenesAssetType } from '../project';
 import { AppError, FieldAppError } from '../../shared/errors';
 import { uploadAssetZip } from '../../shared/upload';
-import { applyVideoDistribution, exportScenesJson, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './service';
+import { applyVideoDistribution, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './service';
 
 const PatchSceneSchema = z.object({
   narration: z.string().trim().min(1).max(2000).optional(),
@@ -15,6 +15,7 @@ const PatchSceneSchema = z.object({
   expectedVersion: z.number().int().positive().optional(),
 }).refine((value) => Object.keys(value).some((key) => key !== 'expectedVersion'), { message: 'At least one scene field is required.' });
 const AssetTypeSchema = z.object({ assetType: z.enum(['image', 'video']) });
+const FitToClipSchema = z.object({ expectedVersion: z.number().int().positive() }).strict();
 
 function validationFields(error: z.ZodError): { path: string; message: string }[] {
   return error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message }));
@@ -48,6 +49,12 @@ assetRouter.patch('/:id/scenes/:sceneId', async (req, res) => {
   }
   const { expectedVersion, ...patch } = parsed.data;
   res.json(await patchProjectScene(String(req.params.id), String(req.params.sceneId), patch, expectedVersion));
+});
+
+assetRouter.post('/:id/scenes/:sceneId/fit-to-clip', async (req, res) => {
+  const parsed = FitToClipSchema.safeParse(req.body);
+  if (!parsed.success) throw new FieldAppError('Dữ liệu không hợp lệ.', 422, 'validation_error', validationFields(parsed.error));
+  res.json(await fitSceneToClip(String(req.params.id), String(req.params.sceneId), parsed.data.expectedVersion));
 });
 
 assetRouter.post('/:id/scenes/set-asset-type', async (req, res) => {

@@ -99,6 +99,12 @@ export function generateAllVoiceovers(projectId: string): Promise<{ jobId: strin
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-voiceover`, JobResponseSchema, { method: 'POST' });
 }
 
+export function fitSceneToClip(projectId: string, sceneId: string, expectedVersion: number): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/fit-to-clip`, ProjectDetailSchema, {
+    method: 'POST', body: { expectedVersion },
+  });
+}
+
 export function voiceoverSummary(result: unknown): string | null {
   const parsed = VoiceoverBatchResultSchema.safeParse(result);
   if (!parsed.success) return null;
