@@ -40,6 +40,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     parallax: doc.parallax,
     voiceoverVoice: doc.voiceoverVoice,
     renderFileId: doc.renderFileId,
+    draftRenderFileId: doc.draftRenderFileId,
     bgmMood: doc.bgmMood,
     bgmFileId: doc.bgmFileId,
     customStyleReferenceFileId: doc.customStyleReferenceFileId,
@@ -79,6 +80,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     parallax: 'off',
     voiceoverVoice: input.voiceoverVoice ?? 'Truc Ly',
     renderFileId: input.renderFileId ?? null,
+    draftRenderFileId: null,
     bgmMood: input.bgmMood ?? '',
     bgmFileId: input.bgmFileId ?? null,
     customStyleReferenceFileId: null,
@@ -126,6 +128,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     // at metadata and disk content owned by the source project.
     scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
     renderFileId: null,
+    draftRenderFileId: null,
     bgmFileId: null,
     customStyleReferenceFileId: null,
     version: 1,
@@ -295,6 +298,11 @@ export async function setSceneDepthMap(
 
 export async function setProjectRenderFile(id: string, renderFileId: string): Promise<ProjectDetail> {
   await updateProject(id, { renderFileId, status: 'rendered' });
+  return getProject(id);
+}
+
+export async function setProjectDraftRenderFile(id: string, draftRenderFileId: string): Promise<ProjectDetail> {
+  await updateProject(id, { draftRenderFileId });
   return getProject(id);
 }
 

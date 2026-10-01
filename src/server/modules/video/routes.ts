@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectTransitionStyle } from '../project';
 import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
 import { getActiveJobByType } from '../job';
+import { AppError } from '../../shared/errors';
 import {
   generateProjectBgm,
   generateSceneSfx,
@@ -27,6 +28,7 @@ const KeywordPopupsSchema = z.object({ enabled: z.boolean() }).strict();
 const TransitionStyleSchema = z.object({ style: z.enum(TRANSITION_STYLES) }).strict();
 const FilmLookSchema = z.object({ style: z.enum(FILM_LOOK_STYLES) }).strict();
 const ParallaxSchema = z.object({ style: z.enum(PARALLAX_STYLES) }).strict();
+const RenderSchema = z.object({ draft: z.boolean().optional().default(false) }).strict();
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Router {
   const router = Router();
@@ -80,9 +82,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
   });
 
   router.post('/:id/render', async (req, res) => {
+    const { draft } = RenderSchema.parse(req.body ?? {});
     const project = await getProject(req.params.id);
     assertProjectRenderReady(project);
-    const job = await options.enqueueJob({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } });
+    if (draft && project.renderEngine === 'ffmpeg') throw new AppError('Draft render is available only with Remotion.', 422, 'DRAFT_REQUIRES_REMOTION');
+    const job = await options.enqueueJob({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id, draft } });
     res.status(201).json({ jobId: job.id });
   });
 

@@ -2,10 +2,10 @@ import path from 'node:path';
 import express, { type Express } from 'express';
 import { getDb } from './db/client';
 import { errorHandler } from './error-handler';
-import { projectRouter } from './modules/project';
+import { createProjectRouter } from './modules/project';
 import { jobRouter } from './modules/job';
 import { enqueueJob, getActiveJobByType } from './modules/job';
-import { configureFileStore, configureVisualStyleSamples, fileStoreRouter, visualStyleSamplesRouter } from './modules/file-store';
+import { configureFileStore, configureVisualStyleSamples, createFileStoreService, fileStoreRouter, visualStyleSamplesRouter } from './modules/file-store';
 import { createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
 import { configureVideoModule, createVideoRouter } from './modules/video';
@@ -39,7 +39,10 @@ export function createApp(options: AppOptions): Express {
     res.json({ ok: true, db: true });
   });
 
-  app.use('/api/project', projectRouter);
+  const fileStore = createFileStoreService(options.filesDir);
+  app.use('/api/project', createProjectRouter({
+    beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId]),
+  }));
   app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);

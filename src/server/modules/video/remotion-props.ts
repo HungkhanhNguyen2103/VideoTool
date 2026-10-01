@@ -139,7 +139,7 @@ export async function resolveRemotionAssets(
     }
 
     let depthMapRelPath: string | null = null;
-    if (isDepthSceneEligible(project.parallax ?? 'off', scene)) {
+    if (isDepthSceneEligible(project.parallax ?? 'off', scene) && scene.depthMap) {
       const depth = await resolveFile(project.id, scene.depthMap.fileId, resolver, 'depth', 'image/', `Scene ${scene.id} depth map`);
       if (depth.file.mimeType !== 'image/png' || depth.extension !== 'png') throw invalidAsset(`Scene ${scene.id} depth map must be a PNG.`);
       depthMapRelPath = `${prefix}-depth.png`;

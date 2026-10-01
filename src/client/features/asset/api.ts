@@ -158,8 +158,11 @@ export function generateBgm(projectId: string, mood: string): Promise<ProjectDet
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-bgm`, ProjectDetailSchema, { method: 'POST', body: { mood } });
 }
 
-export function renderProject(projectId: string): Promise<{ jobId: string }> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/render`, JobResponseSchema, { method: 'POST' });
+export function renderProject(projectId: string, draft = false): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/render`, JobResponseSchema, {
+    method: 'POST',
+    ...(draft ? { body: { draft: true } } : {}),
+  });
 }
 
 export function setRenderEngine(projectId: string, engine: RenderEngine): Promise<ProjectDetail> {

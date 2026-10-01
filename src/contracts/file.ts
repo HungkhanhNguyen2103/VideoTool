@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const FILE_PURPOSES = ['reference', 'style-reference', 'voiceover', 'sfx', 'bgm', 'render', 'depth'] as const;
+export const FILE_PURPOSES = ['reference', 'style-reference', 'voiceover', 'sfx', 'bgm', 'render', 'render-draft', 'depth'] as const;
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
 
 export const ALLOWED_MIME_TYPES = [

@@ -205,6 +205,7 @@ export const ProjectDetailSchema = z.object({
   parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
+  draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),
   bgmFileId: z.string().nullable().default(null),
   customStyleReferenceFileId: z.string().nullable().default(null),

@@ -42,6 +42,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).parallax).toBe('off');
   });
 
+  it('defaults legacy project documents to no draft render file', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).draftRenderFileId).toBeNull();
+  });
+
   it('defaults legacy scene documents to no depth map', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).depthMap).toBeNull();
   });

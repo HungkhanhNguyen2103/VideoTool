@@ -519,7 +519,7 @@ describe('Remotion renderer orchestration', () => {
     try {
       await writeFile(path.join(sourceDir, 'image.png'), 'image');
       const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
-      const renderMedia = vi.fn(async () => ({ buffer: null, slowestFrames: [], contentType: 'video/mp4' }));
+      const renderMedia = vi.fn(async (_options: RenderMediaOptions) => { void _options; return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
       const renderer = new RemotionRenderer({
         resolver,
         bundle: vi.fn().mockResolvedValue(bundleDir),
@@ -550,7 +550,7 @@ describe('Remotion renderer orchestration', () => {
         mimeType: 'image/png',
         purpose: fileId === 'depth-1' ? 'depth' as const : 'reference' as const,
       });
-      const renderMedia = vi.fn(async () => ({ buffer: null, slowestFrames: [], contentType: 'video/mp4' }));
+      const renderMedia = vi.fn(async (_options: RenderMediaOptions) => { void _options; return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
       const renderer = new RemotionRenderer({
         resolver,
         bundle: vi.fn().mockResolvedValue(bundleDir),
@@ -578,7 +578,7 @@ describe('Remotion renderer orchestration', () => {
     try {
       await writeFile(path.join(sourceDir, 'image.png'), 'image');
       const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
-      const renderMedia = vi.fn(async () => ({ buffer: null, slowestFrames: [], contentType: 'video/mp4' }));
+      const renderMedia = vi.fn(async (_options: RenderMediaOptions) => { void _options; return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
       const renderer = new RemotionRenderer({
         resolver,
         remotionConcurrency: 999999,
@@ -594,7 +594,36 @@ describe('Remotion renderer orchestration', () => {
       await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined);
 
       expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ concurrency: os.cpus().length });
-      expect(logs).toContain(`Remotion concurrency ${os.cpus().length}: env override.`);
+      expect(logs).toContain(`Remotion env override ${os.cpus().length}.`);
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses low-resolution scale-only draft options and disables parallax', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-draft-source-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-draft-bundle-'));
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
+      const selectComposition = vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
+        options.onProgress?.({ renderedFrames: 15, encodedFrames: 15, encodedDoneIn: 1, renderedDoneIn: 1, renderEstimatedTime: 0, progress: 1, stitchStage: 'muxing' });
+        return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
+      });
+      const renderer = new RemotionRenderer({ resolver, bundle: vi.fn().mockResolvedValue(bundleDir), selectComposition, renderMedia, readFile: vi.fn().mockResolvedValue(Buffer.from('draft')) });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.99 } } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
+      const logs: string[] = [];
+
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { draft: true });
+
+      expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ scale: 0.5 });
+      expect(renderMedia.mock.calls[0]?.[0]).not.toHaveProperty('everyNthFrame');
+      expect(selectComposition.mock.calls[0]?.[0].inputProps).toMatchObject({ parallax: 'off' });
+      expect(selectComposition.mock.calls[0]?.[0].inputProps.scenes[0].depthMapRelPath).toBeNull();
+      expect(logs.some((message) => message.startsWith('DRAFT Remotion render done:'))).toBe(true);
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });

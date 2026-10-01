@@ -43,7 +43,8 @@ const handleGenerateDepthMap: JobHandler = async (job, context) => {
 
 const handleRenderFullVideo: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  await renderFullProject(projectIdFrom(job), context.appendLog, context.reportProgress);
+  const payload = job.payload as { draft?: unknown };
+  await renderFullProject(projectIdFrom(job), context.appendLog, context.reportProgress, payload.draft === true ? { draft: true } : undefined);
 };
 
 const handleGenerateScriptWithLogging: JobHandler = async (job, context) => {

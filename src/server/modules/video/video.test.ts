@@ -16,6 +16,7 @@ import {
   setProjectBgm,
   setProjectRenderEngine,
   setProjectParallax,
+  setProjectDraftRenderFile,
   setProjectRenderFile,
   setSceneWordTimings,
   setSceneDepthMap,
@@ -148,10 +149,12 @@ describe('video project mutations', () => {
     await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', sfxFileId: 'sfx-1' });
     await setProjectBgm(project.id, 'calm', 'bgm-1');
     await setProjectRenderFile(project.id, 'render-1');
+    await setProjectDraftRenderFile(project.id, 'draft-1');
 
     const duplicate = await duplicateProject(project.id);
 
     expect(duplicate.renderFileId).toBeNull();
+    expect(duplicate.draftRenderFileId).toBeNull();
     expect(duplicate.bgmFileId).toBeNull();
     expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, sfxFileId: null });
   });
@@ -436,6 +439,21 @@ describe('video orchestration services', () => {
     expect(renderer.renderFullVideo).toHaveBeenCalledOnce();
     expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), reportProgress);
   });
+
+  it('stores draft output separately without changing final render metadata or status', async () => {
+    const project = await seedProject();
+    await setProjectRenderFile(project.id, 'existing-final-render');
+    await setProjectRenderEngine(project.id, 'remotion');
+    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('draft-mp4')) };
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+
+    await renderFullProject(project.id, async () => undefined, async () => undefined, { draft: true });
+
+    const updated = await getProject(project.id);
+    expect(updated).toMatchObject({ status: 'rendered', renderFileId: 'existing-final-render', draftRenderFileId: expect.any(String) });
+    expect(await createFileStoreService(filesDir).listProjectFiles(project.id)).toContainEqual(expect.objectContaining({ purpose: 'render-draft', originalName: 'render-draft.mp4' }));
+    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), expect.any(Function), { draft: true });
+  });
 });
 
 type VideoEnqueue = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
@@ -598,7 +616,25 @@ describe('video routes and worker handlers', () => {
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'align-word-timings', projectId: project.id, payload: { projectId: project.id } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id } }));
-    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } }));
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id, draft: false } }));
+
+    const strictDraft = await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ draft: true, unexpected: true }) });
+    expect(strictDraft.status).toBe(400);
+
+    const ffmpegDraft = await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ draft: true }) });
+    expect(ffmpegDraft.status).toBe(422);
+    expect(await ffmpegDraft.json()).toMatchObject({ error: { code: 'DRAFT_REQUIRES_REMOTION' } });
+  });
+
+  it('enqueues a Remotion draft flag and worker carries it to render service', async () => {
+    const project = await seedProject();
+    await setProjectRenderEngine(project.id, 'remotion');
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-draft' });
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    const response = await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ draft: true }) });
+    expect(response.status).toBe(201);
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', payload: { projectId: project.id, draft: true } }));
   });
 
   it('rejects an unready render before enqueueing a job', async () => {

@@ -9,7 +9,7 @@ import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
 import { stageRemotionRender, type StagedRemotionRender } from './remotion-staging';
 import type { RenderFileResolver } from './remotion-props';
 import { hasUsableDepthScene } from './depth-eligibility';
-import type { VideoRenderer } from './ffmpeg-renderer';
+import type { RenderVideoOptions, VideoRenderer } from './ffmpeg-renderer';
 import { renderMedia as remotionRenderMedia, selectComposition as remotionSelectComposition } from '@remotion/renderer';
 import type { RenderMediaOptions } from '@remotion/renderer';
 
@@ -67,15 +67,18 @@ export class RemotionRenderer implements VideoRenderer {
     return this.render({ ...project, bgmFileId: null }, [scene]);
   }
 
-  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<Buffer> {
-    return this.render(project, project.scenes, appendLog, reportProgress);
+  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<Buffer> {
+    return this.render(project, project.scenes, appendLog, reportProgress, options);
   }
 
-  private async render(project: ProjectDetail, scenes: ReadonlyArray<Scene>, appendLog?: (message: string) => Promise<void>, reportProgress?: (percent: number) => Promise<void>): Promise<Buffer> {
+  private async render(project: ProjectDetail, scenes: ReadonlyArray<Scene>, appendLog?: (message: string) => Promise<void>, reportProgress?: (percent: number) => Promise<void>, options: RenderVideoOptions = {}): Promise<Buffer> {
     let staged: StagedRemotionRender | null = null;
     const totalStartedAt = performance.now();
     const freeMemoryAtStart = freemem();
     let peakRss = process.memoryUsage().rss;
+    const draft = options.draft === true;
+    const renderScenes = draft ? scenes.map((scene) => ({ ...scene, depthMap: null })) : scenes;
+    const renderProject = draft ? { ...project, parallax: 'off' as const } : project;
     try {
       await this.logMessage(`Remotion free memory at start: ${megabytes(freeMemoryAtStart)} MB.`, appendLog);
 
@@ -85,7 +88,7 @@ export class RemotionRenderer implements VideoRenderer {
       await this.logMessage(`Remotion bundle time: ${seconds(performance.now() - bundleStartedAt)}s${bundleWasCached ? ' (bundle cached)' : ''}.`, appendLog);
 
       const stagingStartedAt = performance.now();
-      staged = await stageRemotionRender({ serveUrl, project, scenes, resolver: this.resolver, keywordContextScenes: project.scenes });
+      staged = await stageRemotionRender({ serveUrl, project: renderProject, scenes: renderScenes, resolver: this.resolver, keywordContextScenes: project.scenes });
       await this.logMessage(`Remotion staging time: ${seconds(performance.now() - stagingStartedAt)}s.`, appendLog);
       if (reportProgress) await reportProgress(10);
 
@@ -103,7 +106,7 @@ export class RemotionRenderer implements VideoRenderer {
       const effectiveConcurrency = depthScenesPresent ? 1 : cappedEnvConcurrency;
       const concurrencyRule = depthScenesPresent
         ? 'concurrency 1: depth scenes present'
-        : cappedEnvConcurrency === undefined ? 'default' : `concurrency ${cappedEnvConcurrency}: env override`;
+        : cappedEnvConcurrency === undefined ? 'default' : `env override ${cappedEnvConcurrency}`;
       await this.logMessage(`Remotion ${concurrencyRule}.`, appendLog);
       if (reportProgress) await reportProgress(15);
 
@@ -163,6 +166,7 @@ export class RemotionRenderer implements VideoRenderer {
         onProgress,
         chromiumOptions: REMOTION_CHROMIUM_OPTIONS,
         ...(effectiveConcurrency === undefined ? {} : { concurrency: effectiveConcurrency }),
+        ...(draft ? { scale: 0.5 } : {}),
       };
       const renderStartedAt = performance.now();
       await this.renderMedia(renderOptions);
@@ -177,9 +181,13 @@ export class RemotionRenderer implements VideoRenderer {
       const output = await this.readOutput(staged.outputPath);
       await this.logMessage(`Remotion read output time: ${seconds(performance.now() - readStartedAt)}s.`, appendLog);
       await this.logMessage(`Remotion memory: peak RSS ${megabytes(peakRss)} MB; free memory at start ${megabytes(freeMemoryAtStart)} MB.`, appendLog);
-      const frameCount = lastRenderedFrames || composition.durationInFrames;
+      const frameStep = 1;
+      const outputFps = composition.fps / frameStep;
+      const outputWidth = Math.round(composition.width * (draft ? 0.5 : 1));
+      const outputHeight = Math.round(composition.height * (draft ? 0.5 : 1));
+      const frameCount = lastRenderedFrames || Math.ceil(composition.durationInFrames / frameStep);
       const outputMegabytes = megabytes((output as Buffer).byteLength);
-      await this.logMessage(`Remotion render done: ${frameCount} frames in ${seconds(renderMilliseconds)}s (${(frameCount / (renderMilliseconds / 1000 || 1)).toFixed(2)} frames/s), concurrency ${effectiveConcurrency ?? 'default'}, ${composition.width}x${composition.height}@${composition.fps}, scenes ${staged.inputProps.scenes.length} (video ${staged.inputProps.scenes.filter((scene) => scene.assetType === 'video').length}, depth ${staged.inputProps.scenes.filter((scene) => scene.depthMapRelPath !== null).length}), output ${outputMegabytes} MB`, appendLog);
+      await this.logMessage(`${draft ? 'DRAFT ' : ''}Remotion render done: ${frameCount} frames in ${seconds(renderMilliseconds)}s (${(frameCount / (renderMilliseconds / 1000 || 1)).toFixed(2)} frames/s), concurrency ${effectiveConcurrency ?? 'default'}, ${outputWidth}x${outputHeight}@${outputFps}, scenes ${staged.inputProps.scenes.length} (video ${staged.inputProps.scenes.filter((scene) => scene.assetType === 'video').length}, depth ${staged.inputProps.scenes.filter((scene) => scene.depthMapRelPath !== null).length}), output ${outputMegabytes} MB`, appendLog);
       await this.logMessage(`Remotion total time: ${seconds(performance.now() - totalStartedAt)}s.`, appendLog);
       await this.logMessage('Remotion render complete.', appendLog);
       if (reportProgress) await reportProgress(100);

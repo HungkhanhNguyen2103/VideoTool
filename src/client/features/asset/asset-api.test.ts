@@ -12,7 +12,7 @@ const project = {
 } as unknown as ProjectDetail;
 const projectPayload = {
   id: 'project-1', title: 'Project', status: 'assets', language: 'vi', brief: 'Brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null,
-  aiProvider: 'deepseek', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null,
+  aiProvider: 'deepseek', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, draftRenderFileId: null, bgmMood: '', bgmFileId: null,
   customStyleReferenceFileId: null,
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: project.scenes, chapters: [], version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 };
@@ -75,6 +75,13 @@ describe('asset API helpers', () => {
 
     await expect(generateVisualPrompts('project/1')).resolves.toEqual({ jobId: 'job-1' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-visual-prompts', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('sends the draft flag to the render route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-draft' }), { status: 201, headers: { 'content-type': 'application/json' } }));
+
+    await expect(renderProject('project/1', true)).resolves.toEqual({ jobId: 'job-draft' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/render', expect.objectContaining({ method: 'POST', body: JSON.stringify({ draft: true }) }));
   });
 
   it('queues bulk SFX generation through the project route', async () => {
@@ -157,6 +164,14 @@ describe('asset API helpers', () => {
 
     expect(source).toContain('Khong co loi dan');
     expect(source).toContain('!expandedScene.narration.trim()');
+  });
+
+  it('exposes the draft render preview contract in Studio', async () => {
+    const source = await readFile('src/client/features/asset/StudioPage.tsx', 'utf8');
+    expect(source).toContain('Render nháp (nhanh)');
+    expect(source).toContain('Chi co o engine Remotion');
+    expect(source).toContain('Bản nháp');
+    expect(source).toContain("purpose === 'render-draft'");
   });
 
   it('updates transition style with the exact PATCH route and body', async () => {

@@ -8,8 +8,10 @@ import { buildBgmArguments, buildConcatArguments, buildSceneArguments } from './
 
 export interface VideoRenderer {
   renderScenePreview(project: ProjectDetail, scene: Scene): Promise<Buffer>;
-  renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<Buffer>;
+  renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<Buffer>;
 }
+
+export type RenderVideoOptions = { draft?: boolean };
 
 type RendererOptions = { filesDir?: string; ffmpegPath?: string; resolveFilePath?: ReturnType<typeof createFileStoreService>['resolveFilePath'] };
 
@@ -47,7 +49,8 @@ export class FfmpegRenderer implements VideoRenderer {
     }
   }
 
-  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<Buffer> {
+  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, _options?: RenderVideoOptions): Promise<Buffer> {
+    void _options;
     const directory = await mkdtemp(path.join(tmpdir(), 'video-tool-render-'));
     try {
       const segmentPaths: string[] = [];

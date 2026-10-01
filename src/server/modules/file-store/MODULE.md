@@ -7,7 +7,7 @@
 ## Invariants
 - `storedPath` is relative to `FILES_DIR` and is generated from a new ULID, never from a user path.
 - File summaries expose the generated relative `storedPath` so clients can build safe `/files/<storedPath>` preview URLs.
-- File purposes are `reference`, `voiceover`, `sfx`, `bgm`, and `render`; generated audio/video files use the same project-scoped store as references.
+- File purposes are `reference`, `style-reference`, `voiceover`, `sfx`, `bgm`, `render`, `render-draft`, and `depth`; generated audio/video files use the same project-scoped store as references.
 - `resolveFilePath(projectId, fileId)` verifies ownership before returning an absolute path for server-side media processing; clients still use `storedPath` URLs.
 - Database metadata and disk content are coordinated by the service; deleting an already-missing disk file is allowed.
 - Shared style samples use a server-generated filename under `FILES_DIR`; their original name is metadata only. The create-project sample resolver reads this shared collection only.
@@ -19,7 +19,7 @@
 - ZIP import validates scenes and delegates replacement to the project module; it replaces, never merges, scenes.
 
 ## Service surface
-- `createFileStoreService(filesDir)` injects the disk root for production and isolated tests.
+- `createFileStoreService(filesDir)` injects the disk root for production and isolated tests; `deleteProjectFiles` removes owned render metadata and disk files during project deletion.
 - `storeFile` writes a generated `{id}.{ext}` path before inserting metadata; `deleteFile` tolerates missing disk files.
 
 ## Known pitfalls

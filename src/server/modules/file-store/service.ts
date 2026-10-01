@@ -4,7 +4,7 @@ import { FileSummarySchema, type FilePurpose, type FileSummary } from '../../../
 import { NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import type { FileDoc } from './docs';
-import { deleteFileById, findFileById, insertFile, listFilesByProjectId } from './repo';
+import { deleteFileById, findFileById, findFilesByIds, insertFile, listFilesByProjectId } from './repo';
 
 export type StoreFileParams = {
   projectId: string;
@@ -73,11 +73,19 @@ export function createFileStoreService(filesDir: string) {
     return (await listFilesByProjectId(projectId)).map(summaryOf);
   }
 
+  async function deleteProjectFiles(projectId: string, fileIds: Array<string | null | undefined>): Promise<void> {
+    const ids = [...new Set(fileIds.filter((id): id is string => Boolean(id)))];
+    const files = await findFilesByIds(ids);
+    for (const file of files) {
+      if (file.projectId === projectId) await deleteFile(file._id);
+    }
+  }
+
   async function resolveFilePath(projectId: string, fileId: string): Promise<{ absolutePath: string; mimeType: string; purpose: FilePurpose }> {
     const doc = await findFileById(fileId);
     if (!doc || doc.projectId !== projectId) throw new NotFound('Không tìm thấy tệp.');
     return { absolutePath: path.join(filesDir, doc.storedPath), mimeType: doc.mimeType, purpose: doc.purpose };
   }
 
-  return { storeFile, deleteFile, listProjectFiles, resolveFilePath };
+  return { storeFile, deleteFile, deleteProjectFiles, listProjectFiles, resolveFilePath };
 }

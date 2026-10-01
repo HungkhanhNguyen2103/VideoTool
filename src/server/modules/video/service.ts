@@ -2,13 +2,14 @@ import { AppError, NotFound } from '../../shared/errors';
 import { logger } from '../../shared/logger';
 import type { ProjectDetail } from '../../../contracts/project';
 import { createFileStoreService } from '../file-store';
-import { getProject, patchProjectScene, setProjectBgm, setProjectRenderFile } from '../project';
+import { getProject, patchProjectScene, setProjectBgm, setProjectDraftRenderFile, setProjectRenderFile } from '../project';
 import { getFreesoundClient } from '../../shared/freesound';
 import { getVideoRenderer, configureVideoRenderer } from './index';
 import { configureVideoTts, generateProjectVoiceovers, generateSceneVoiceover } from './tts-service';
 import type { TtsOptions } from '../../shared/tts';
 import { configureWordTimingService } from './word-timing-service';
 import { configureDepthMapService } from './depth-map-service';
+import type { RenderVideoOptions } from './ffmpeg-renderer';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 
@@ -82,12 +83,24 @@ export async function generateProjectBgm(projectId: string, mood: string): Promi
   await setProjectBgm(projectId, normalizedMood, stored.id);
 }
 
-export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<void> {
+export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<void> {
   const project = await getProject(projectId);
   assertProjectRenderReady(project);
-  const output = await getVideoRenderer(project.renderEngine).renderFullVideo(project, appendLog, reportProgress);
-  const stored = await storeFile({ projectId, originalName: 'render.mp4', mimeType: 'video/mp4', buffer: output, purpose: 'render' });
-  await setProjectRenderFile(projectId, stored.id);
+  const draft = options?.draft === true;
+  if (draft && project.renderEngine === 'ffmpeg') throw new AppError('Draft render is available only with Remotion.', 422, 'DRAFT_REQUIRES_REMOTION');
+  const renderer = getVideoRenderer(project.renderEngine);
+  const output = draft
+    ? await renderer.renderFullVideo(project, appendLog, reportProgress, { draft: true })
+    : await renderer.renderFullVideo(project, appendLog, reportProgress);
+  const stored = await storeFile({
+    projectId,
+    originalName: draft ? 'render-draft.mp4' : 'render.mp4',
+    mimeType: 'video/mp4',
+    buffer: output,
+    purpose: draft ? 'render-draft' : 'render',
+  });
+  if (draft) await setProjectDraftRenderFile(projectId, stored.id);
+  else await setProjectRenderFile(projectId, stored.id);
 }
 
 export async function renderScenePreviewBuffer(projectId: string, sceneId: string): Promise<Buffer> {
