@@ -437,7 +437,7 @@ describe('Remotion renderer orchestration', () => {
       });
 
       await expect(renderer.renderFullVideo(project, appendLog, async () => undefined)).rejects.toMatchObject({ code: 'REMOTION_RENDER_FAILED', status: 502 });
-      expect(appendLog).toHaveBeenCalledWith('Remotion render progress 50%.');
+      expect(appendLog).toHaveBeenCalledWith(expect.stringMatching(/^Remotion render progress 50% \(elapsed .* frames\/s/));
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });
@@ -464,6 +464,48 @@ describe('Remotion renderer orchestration', () => {
       await expect(renderer.renderFullVideo(project, async () => undefined, async (percent) => { progress.push(percent); })).resolves.toEqual(Buffer.from('mp4'));
 
       expect(progress).toEqual([10, 15, 55, 100]);
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('logs timing stages, memory telemetry, and the final render summary', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-timing-source-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-timing-bundle-'));
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
+      const bundle = vi.fn().mockResolvedValue(bundleDir);
+      const selectComposition = vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
+        options.onProgress?.({ renderedFrames: 3, encodedFrames: 3, encodedDoneIn: 1, renderedDoneIn: 1, renderEstimatedTime: 9, progress: 0.1, stitchStage: 'encoding' });
+        options.onProgress?.({ renderedFrames: 30, encodedFrames: 30, encodedDoneIn: 2, renderedDoneIn: 2, renderEstimatedTime: 0, progress: 1, stitchStage: 'muxing' });
+        return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
+      });
+      const renderer = new RemotionRenderer({ resolver, bundle, selectComposition, renderMedia, readFile: vi.fn().mockResolvedValue(Buffer.alloc(2 * 1024 * 1024)) });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
+      const logs: string[] = [];
+      const appendLog = async (message: string) => { logs.push(message); };
+
+      await renderer.renderFullVideo(project, appendLog, async () => undefined);
+      await renderer.renderFullVideo(project, appendLog, async () => undefined);
+
+      expect(logs.some((message) => message.includes('Remotion bundle') && message.includes('time'))).toBe(true);
+      expect(logs.some((message) => message.includes('bundle cached'))).toBe(true);
+      expect(logs.some((message) => message.includes('Remotion staging') && message.includes('time'))).toBe(true);
+      expect(logs.some((message) => message.includes('selectComposition') && message.includes('time'))).toBe(true);
+      expect(logs.some((message) => message.includes('renderMedia') && message.includes('time'))).toBe(true);
+      expect(logs.some((message) => message.includes('read output') && message.includes('time'))).toBe(true);
+      expect(logs.some((message) => message.includes('Remotion total') && message.includes('time'))).toBe(true);
+      expect(logs.some((message) => message.includes('free memory at start'))).toBe(true);
+      const progress = logs.find((message) => message.includes('Remotion render progress 10%'));
+      expect(progress).toMatch(/elapsed [\d.]+s/);
+      expect(progress).toMatch(/[\d.]+ frames\/s/);
+      expect(logs.some((message) => message.startsWith('Remotion render done: 30 frames in') && message.includes('scenes 1 (video 0, depth 0)') && message.includes('output 2.00 MB'))).toBe(true);
+      expect(logs.some((message) => message.includes('concurrency 1'))).toBe(true);
+      expect(bundle).toHaveBeenCalledOnce();
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });

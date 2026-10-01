@@ -1,4 +1,6 @@
 import { readFile, rm } from 'node:fs/promises';
+import { freemem } from 'node:os';
+import { performance } from 'node:perf_hooks';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../shared/logger';
@@ -32,6 +34,14 @@ function asRenderFailure(error: unknown): AppError {
   return new AppError(`Remotion render failed: ${message}`, 502, 'REMOTION_RENDER_FAILED');
 }
 
+function seconds(milliseconds: number): string {
+  return (milliseconds / 1000).toFixed(2);
+}
+
+function megabytes(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(2);
+}
+
 export class RemotionRenderer implements VideoRenderer {
   private readonly resolver: RenderFileResolver;
   private readonly bundle: BundleFunction;
@@ -59,35 +69,53 @@ export class RemotionRenderer implements VideoRenderer {
 
   private async render(project: ProjectDetail, scenes: ReadonlyArray<Scene>, appendLog?: (message: string) => Promise<void>, reportProgress?: (percent: number) => Promise<void>): Promise<Buffer> {
     let staged: StagedRemotionRender | null = null;
+    const totalStartedAt = performance.now();
+    const freeMemoryAtStart = freemem();
+    let peakRss = process.memoryUsage().rss;
     try {
+      await this.logMessage(`Remotion free memory at start: ${megabytes(freeMemoryAtStart)} MB.`, appendLog);
+
+      const bundleWasCached = this.bundlePromise !== null;
+      const bundleStartedAt = performance.now();
       const serveUrl = await this.getBundle();
+      await this.logMessage(`Remotion bundle time: ${seconds(performance.now() - bundleStartedAt)}s${bundleWasCached ? ' (bundle cached)' : ''}.`, appendLog);
+
+      const stagingStartedAt = performance.now();
       staged = await stageRemotionRender({ serveUrl, project, scenes, resolver: this.resolver, keywordContextScenes: project.scenes });
-      if (appendLog) await appendLog('Remotion staging complete.');
+      await this.logMessage(`Remotion staging time: ${seconds(performance.now() - stagingStartedAt)}s.`, appendLog);
       if (reportProgress) await reportProgress(10);
+
+      const selectStartedAt = performance.now();
       const composition = await this.selectComposition({
         serveUrl,
         id: 'VideoComposition',
         inputProps: staged.inputProps,
         chromiumOptions: REMOTION_CHROMIUM_OPTIONS,
       });
-      if (appendLog) await appendLog('Remotion render started.');
+      await this.logMessage(`Remotion selectComposition time: ${seconds(performance.now() - selectStartedAt)}s.`, appendLog);
+      await this.logMessage('Remotion render started.', appendLog);
+      const legacyConcurrency = staged.inputProps.parallax === 'auto' ? '1' : 'default';
+      await this.logMessage(`Remotion concurrency ${legacyConcurrency}.`, appendLog);
       if (reportProgress) await reportProgress(15);
 
       let lastBucket = -1;
       let lastProgress = 15;
+      let lastRenderedFrames = 0;
       let progressLogChain = Promise.resolve();
       let progressLogError: unknown;
       let progressReportChain = Promise.resolve();
       let progressReportError: unknown;
       const queueProgressLog = (message: string) => {
-        if (!appendLog) return;
-        progressLogChain = progressLogChain.then(async () => {
-          try {
-            await appendLog(message);
-          } catch (error) {
-            progressLogError ??= error;
-          }
-        });
+        logger.info(message);
+        if (appendLog) {
+          progressLogChain = progressLogChain.then(async () => {
+            try {
+              await appendLog(message);
+            } catch (error) {
+              progressLogError ??= error;
+            }
+          });
+        }
       };
       const queueProgressReport = (percent: number) => {
         if (!reportProgress) return;
@@ -99,12 +127,17 @@ export class RemotionRenderer implements VideoRenderer {
           }
         });
       };
-      const onProgress = (progress: { progress: number }) => {
+      const onProgress = (progress: { progress: number; renderedFrames?: number }) => {
         const fraction = Math.max(0, Math.min(1, progress.progress));
+        const renderedFrames = typeof progress.renderedFrames === 'number' ? progress.renderedFrames : 0;
+        lastRenderedFrames = Math.max(lastRenderedFrames, renderedFrames);
+        peakRss = Math.max(peakRss, process.memoryUsage().rss);
+        const elapsedSeconds = (performance.now() - totalStartedAt) / 1000;
+        const currentFps = elapsedSeconds > 0 ? renderedFrames / elapsedSeconds : 0;
         const bucket = Math.floor(fraction * 10);
-        if (appendLog && bucket > lastBucket) {
+        if (bucket > lastBucket) {
           lastBucket = bucket;
-          queueProgressLog(`Remotion render progress ${bucket * 10}%.`);
+          queueProgressLog(`Remotion render progress ${bucket * 10}% (elapsed ${elapsedSeconds.toFixed(2)}s, ${currentFps.toFixed(2)} frames/s, peak RSS ${megabytes(peakRss)} MB).`);
         }
         const percent = Math.round(15 + (fraction * 80));
         if (percent > lastProgress) {
@@ -122,13 +155,24 @@ export class RemotionRenderer implements VideoRenderer {
         chromiumOptions: REMOTION_CHROMIUM_OPTIONS,
         ...(staged.inputProps.parallax === 'auto' ? { concurrency: 1 } : {}),
       };
+      const renderStartedAt = performance.now();
       await this.renderMedia(renderOptions);
+      const renderMilliseconds = performance.now() - renderStartedAt;
+      await this.logMessage(`Remotion renderMedia time: ${seconds(renderMilliseconds)}s.`, appendLog);
       await progressLogChain;
       await progressReportChain;
       if (progressLogError) throw progressLogError;
       if (progressReportError) throw progressReportError;
+
+      const readStartedAt = performance.now();
       const output = await this.readOutput(staged.outputPath);
-      if (appendLog) await appendLog('Remotion render complete.');
+      await this.logMessage(`Remotion read output time: ${seconds(performance.now() - readStartedAt)}s.`, appendLog);
+      await this.logMessage(`Remotion memory: peak RSS ${megabytes(peakRss)} MB; free memory at start ${megabytes(freeMemoryAtStart)} MB.`, appendLog);
+      const frameCount = lastRenderedFrames || composition.durationInFrames;
+      const outputMegabytes = megabytes((output as Buffer).byteLength);
+      await this.logMessage(`Remotion render done: ${frameCount} frames in ${seconds(renderMilliseconds)}s (${(frameCount / (renderMilliseconds / 1000 || 1)).toFixed(2)} frames/s), concurrency ${legacyConcurrency}, ${composition.width}x${composition.height}@${composition.fps}, scenes ${staged.inputProps.scenes.length} (video ${staged.inputProps.scenes.filter((scene) => scene.assetType === 'video').length}, depth ${staged.inputProps.scenes.filter((scene) => scene.depthMapRelPath !== null).length}), output ${outputMegabytes} MB`, appendLog);
+      await this.logMessage(`Remotion total time: ${seconds(performance.now() - totalStartedAt)}s.`, appendLog);
+      await this.logMessage('Remotion render complete.', appendLog);
       if (reportProgress) await reportProgress(100);
       return output as Buffer;
     } catch (error) {
@@ -157,5 +201,10 @@ export class RemotionRenderer implements VideoRenderer {
       });
     }
     return this.bundlePromise;
+  }
+
+  private async logMessage(message: string, appendLog?: (message: string) => Promise<void>): Promise<void> {
+    logger.info(message);
+    if (appendLog) await appendLog(message);
   }
 }
