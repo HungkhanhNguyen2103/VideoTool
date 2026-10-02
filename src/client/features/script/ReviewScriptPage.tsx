@@ -40,16 +40,21 @@ const qaActionLabel: Record<QAResult['issues'][number]['suggestedAction'], strin
   REMOVE_DUPLICATION: 'Loại bỏ trùng lặp', REGENERATE: 'Tái tạo', SHORTEN: 'Rút gọn', MOVE_REVEAL: 'Dời tiết lộ', REVIEW_FACT: 'Kiểm tra dữ kiện',
 };
 const aiProviderLabel: Record<AiProvider, string> = { deepseek: 'DeepSeek', claude: 'Claude' };
-const qaSameProviderHint = 'Cùng nhà cung cấp với bước viết kịch bản; kết quả có thể bỏ sót các lỗi tương tự. Hãy đối chiếu số liệu với tài liệu tham khảo.';
+const qaSameProviderHint = 'Model kiểm tra có thể bỏ sót các lỗi giống model đã viết kịch bản nếu hai bên cùng nhà cung cấp. Hãy đối chiếu số liệu với tài liệu tham khảo.';
 
-export function qaReviewerDisplay(projectProvider: AiProvider, result: QAResult | null): { line: string; hint: string | null } {
-  if (!result) return { line: `Sẽ kiểm tra bằng: ${aiProviderLabel[projectProvider]}`, hint: null };
+export function qaReviewerDisplay(projectProvider: AiProvider, result: QAResult | null): { lines: string[]; hint: string | null } {
+  if (!result) return { lines: [`Sẽ kiểm tra bằng: ${aiProviderLabel[projectProvider]}`], hint: null };
   const reviewer = result.reviewedBy;
-  const provider = reviewer?.provider ?? projectProvider;
-  const model = reviewer?.model ?? 'Model: không có thông tin';
+  if (!reviewer) return { lines: ['Đã kiểm tra: không có thông tin về model'], hint: null };
+  if (reviewer.provider !== projectProvider) {
+    return {
+      lines: [`Lần kiểm tra trước: ${aiProviderLabel[reviewer.provider]} · ${reviewer.model}`, `Lần chạy tiếp theo: ${aiProviderLabel[projectProvider]}`],
+      hint: null,
+    };
+  }
   return {
-    line: `Đã kiểm tra bằng: ${aiProviderLabel[provider]} · ${model}`,
-    hint: reviewer?.provider === projectProvider ? qaSameProviderHint : null,
+    lines: [`Đã kiểm tra bằng: ${aiProviderLabel[reviewer.provider]} · ${reviewer.model}`],
+    hint: qaSameProviderHint,
   };
 }
 
@@ -429,7 +434,7 @@ export function ReviewScriptPage() {
             <section className={styles.panel} aria-labelledby="qa-title">
               <h2 className={styles.panelTitle} id="qa-title"><Icon name="check" />Kiểm tra cuối (QA)</h2>
               <Button variant="indigoline" disabled={chapters.length === 0 || qaBusy} onClick={() => void runQa()}>Chạy kiểm tra QA</Button>
-              <p className={styles.muted}>{qaReviewer.line}</p>
+              {qaReviewer.lines.map((line) => <p className={styles.muted} key={line}>{line}</p>)}
               {qaReviewer.hint && <p className={styles.muted}>{qaReviewer.hint}</p>}
               {qaProgress && (qaProgress.status === 'queued' || qaProgress.status === 'running') && <div className={styles.generationStatus} role="status"><strong>Đang kiểm tra QA… {Math.round(qaProgress.progress)}%</strong></div>}
               {qaResult && (qaResult.issues.length === 0 ? <p className={styles.muted}>Không phát hiện vấn đề.</p> : <div className={styles.qaIssues}>

@@ -70,18 +70,28 @@ describe('ReviewScriptPage opening hook action', () => {
 });
 
 describe('ReviewScriptPage QA reviewer display', () => {
-  it('shows the provider before QA, the returned model after QA, and the legacy fallback', () => {
+  it('shows the provider before QA and does not attribute a legacy result', () => {
     expect(qaReviewerDisplay('deepseek', null)).toEqual({
-      line: 'Sẽ kiểm tra bằng: DeepSeek',
+      lines: ['Sẽ kiểm tra bằng: DeepSeek'],
       hint: null,
-    });
-    expect(qaReviewerDisplay('deepseek', { issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } })).toEqual({
-      line: 'Đã kiểm tra bằng: DeepSeek · deepseek-chat',
-      hint: 'Cùng nhà cung cấp với bước viết kịch bản; kết quả có thể bỏ sót các lỗi tương tự. Hãy đối chiếu số liệu với tài liệu tham khảo.',
     });
     expect(qaReviewerDisplay('claude', { issues: [] })).toEqual({
-      line: 'Đã kiểm tra bằng: Claude · Model: không có thông tin',
+      lines: ['Đã kiểm tra: không có thông tin về model'],
       hint: null,
+    });
+  });
+
+  it('shows the previous reviewer and next provider when the provider changed', () => {
+    expect(qaReviewerDisplay('claude', { issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } })).toEqual({
+      lines: ['Lần kiểm tra trước: DeepSeek · deepseek-chat', 'Lần chạy tiếp theo: Claude'],
+      hint: null,
+    });
+  });
+
+  it('shows the same-provider result and the qualified caution hint', () => {
+    expect(qaReviewerDisplay('deepseek', { issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } })).toEqual({
+      lines: ['Đã kiểm tra bằng: DeepSeek · deepseek-chat'],
+      hint: 'Model kiểm tra có thể bỏ sót các lỗi giống model đã viết kịch bản nếu hai bên cùng nhà cung cấp. Hãy đối chiếu số liệu với tài liệu tham khảo.',
     });
   });
 });
@@ -111,6 +121,8 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain('qaReviewerDisplay');
     expect(source).toContain('Sẽ kiểm tra bằng:');
     expect(source).toContain('Đã kiểm tra bằng:');
-    expect(source).toContain('Model: không có thông tin');
+    expect(source).toContain('Đã kiểm tra: không có thông tin về model');
+    expect(source).toContain('Lần kiểm tra trước:');
+    expect(source).toContain('Lần chạy tiếp theo:');
   });
 });
