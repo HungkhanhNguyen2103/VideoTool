@@ -1,13 +1,14 @@
 import tseslint from 'typescript-eslint';
 
 // Boundary rules. Keep ALLOWED in sync with each modules/<name>/MODULE.md and AGENTS.md.
-const MODULES = ['project', 'script', 'asset', 'video', 'job'];
+const MODULES = ['project', 'script', 'asset', 'video', 'job', 'seo'];
 const ALLOWED = {
   project: [],
   job: [],
   script: ['project'],
   asset: ['project', 'job'],
   video: ['project', 'asset', 'job'],
+  seo: ['project'],
 };
 
 const UP = '(?:\\.\\./)+'; // one or more "../"

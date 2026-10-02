@@ -70,8 +70,9 @@ describe('script preset packaging', () => {
 
     const destination = path.join(root, 'dist/presets');
     const copied = await readdir(destination);
-    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md', 'strategist.md', 'visual-styles']);
+    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md', 'seo-documentary.md', 'strategist.md', 'visual-styles']);
     expect(await readFile(path.join(destination, 'documentary.md'), 'utf8')).toContain('id: documentary');
+    expect(await readFile(path.join(destination, 'seo-documentary.md'), 'utf8')).toContain('id: seo-documentary');
     const visualStyles = await readdir(path.join(destination, 'visual-styles'));
     expect(visualStyles.sort()).toEqual(['anime.md', 'cinematic.md', 'flat-cartoon.md', 'photorealistic.md', 'strategic-map.md', 'watercolor.md']);
     expect(await readFile(path.join(destination, 'visual-styles/cinematic.md'), 'utf8')).toContain('id: cinematic');
