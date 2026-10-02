@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-02 · Phase 8 Task 4 adds SEO AI generation structure_
+_Last updated: 2026-10-02 · Phase 8 Task 5 adds SEO routes, jobs, and thumbnail handling_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (638 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (659 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -37,6 +37,7 @@ _Last updated: 2026-10-02 · Phase 8 Task 4 adds SEO AI generation structure_
 - Phase 8 Task 2 adds the shared SEO package contract, named YouTube limits, canonical hashtag normalization/validation, legacy defaults, duplicate semantics, and atomic project-owned SEO mutations. Focused SEO/project tests pass 17/17; the full suite passes 638 tests with 1 skipped; typecheck and lint pass.
 - Phase 8 Task 3 adds pure timestamp/description/limit/fact-guard helpers. Chapter starts use the same per-scene rounded frames as Remotion; transition layers do not shift starts. Focused format/parity tests pass 6/6; the full suite passes 644 tests with 1 skipped; typecheck and lint pass.
 - Phase 8 Task 4 adds the `seo` module boundary, placeholder preset copied to `dist/presets`, pure prompt builder, snake_case output schema/parser, fixture coverage, and one validation retry with no write after repeated failure. Focused SEO AI tests pass 7/7; the full suite passes 651 tests with 1 skipped; typecheck and lint pass. Preset wording remains intentionally deferred for content review.
+- Phase 8 Task 5 adds explicit SEO generation/manual-import/patch routes, the `generate-seo` worker handler, active-job deduplication, and project-owned PNG/JPEG thumbnail replacement/deletion with cleanup. Focused SEO route/worker tests pass 22/22; the full suite passes 659 tests with 1 skipped; typecheck and lint pass. Automatic SEO generation remains structurally ready but its preset wording is still a reviewed placeholder.
 
 ### Modules
 | Module | State | Notes |
@@ -46,7 +47,7 @@ _Last updated: 2026-10-02 · Phase 8 Task 4 adds SEO AI generation structure_
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 and Task 67 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection/logo routes, matching web/worker wiring, Studio media controls, Chromium integration, and build-isolation scan. FFmpeg ignores project logos. |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
-| seo | partial | Phase 8 Tasks 2–4: shared package contract/storage, pure formatting, and placeholder AI generation structure. Routes, jobs, thumbnail handling, and client page remain in Tasks 5–6. |
+| seo | partial | Phase 8 Tasks 2–5: shared package contract/storage, pure formatting, placeholder AI generation structure, routes/jobs, and thumbnail handling. Client page remains in Task 6. |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
 
@@ -71,6 +72,11 @@ Existing project/file/job routes were exercised against live MongoDB on Windows;
 - `POST /api/project/:id/generate-bgm` -> updated `ProjectDetail`
 - `POST /api/project/:id/render` -> 201 `{ jobId }`
 - `PUT /api/project/:id/logo` / `DELETE /api/project/:id/logo` -> updated `ProjectDetail`
+- `POST /api/project/:id/seo/generate` -> 201 `{ jobId }` (or active job 200)
+- `GET /api/project/:id/seo/manual-prompt` -> `{ prompt, promptVersion }`
+- `POST /api/project/:id/seo/manual-import` -> updated `ProjectDetail`
+- `PATCH /api/project/:id/seo` -> updated `ProjectDetail`
+- `PUT /api/project/:id/seo/thumbnail` / `DELETE /api/project/:id/seo/thumbnail` -> updated `ProjectDetail`
 - `PATCH /api/project/:id/render-engine` -> updated `ProjectDetail` (`{ engine: 'ffmpeg' | 'remotion' }`)
 - `PATCH /api/project/:id/scenes/:sceneId` -> updated `ProjectDetail`
 - `POST /api/project/:id/scenes/set-asset-type` -> updated `ProjectDetail`
@@ -105,10 +111,11 @@ Unknown `/api/*` returns JSON 404.
 - Live VieNeu and Freesound calls are not made in automated tests; provider adapters are covered with mocks, and an empty `FREESOUND_API_KEY` intentionally disables optional audio generation.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 - Task 67 adds a nullable per-project logo file, Studio upload/replace/remove controls, and a faint composition-level Remotion watermark; FFmpeg ignores the logo. Focused logo tests and the real Remotion verification script cover staging, z-order, aspect ratios, and cleanup.
-- Phase 8 Task 1 remains a prototype reference under `docs/prototypes/seo-dong-goi-kenh/`; Tasks 2–4 now add reviewed production contracts, storage, pure formatting, and placeholder AI structure only. SEO routes, jobs, and client page remain pending Tasks 5–6.
+- Phase 8 Task 1 remains a prototype reference under `docs/prototypes/seo-dong-goi-kenh/`; Tasks 2–5 now add reviewed production contracts, storage, pure formatting, placeholder AI structure, routes, jobs, and thumbnail handling. The production client page remains pending Task 6.
 
 ### Decisions log (newest first, keep the last 15)
 - 2026-10-02: Phase 8 Task 4 keeps the SEO AI preset as a frontmatter-validated placeholder until content review; the module validates snake_case output, normalizes only accepted hashtags, retries one schema failure, and writes no project section after repeated failure.
+- 2026-10-02: Phase 8 Task 5 keeps SEO route handlers thin, deduplicates active generation jobs, checks cancellation before the worker generation path, and stores thumbnails with MIME-derived extensions before replacing/deleting the project pointer.
 - 2026-10-02: Phase 8 Task 3 computes chapter starts from per-scene rounded Remotion frames; crossfade/wipe visual extensions do not move audio starts, so no transition overlap is added to chapter timestamps. YouTube readiness stays warn-only through an `{ok, reason}` result.
 - 2026-10-02: Phase 8 Task 2 stores SEO as an additive embedded project package with zod defaults for legacy reads; duplicate projects retain generated text but clear the thumbnail file pointer, and section mutations increment project version once.
 - 2026-10-02: Phase 8 Task 1 keeps SEO packaging as a standalone vanilla prototype until the UI gate is approved; the sample uses Điện Biên Phủ 1954 and treats fact warnings and chapter-readiness notes as warn-only.
@@ -193,7 +200,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Phase 8 Task 4 is committed after Hung/Claude approval. Continue with Task 5 (SEO routes, job, and thumbnail file handling).
+Phase 8 Task 5 is committed after Hung/Claude approval. Continue with Task 6 (SEO client page).
 
 ## 2. Stack
 

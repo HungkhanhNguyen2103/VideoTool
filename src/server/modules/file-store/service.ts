@@ -12,6 +12,7 @@ export type StoreFileParams = {
   mimeType: string;
   buffer: Buffer;
   purpose: FilePurpose;
+  extension?: string;
 };
 
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -40,7 +41,7 @@ export function createFileStoreService(filesDir: string) {
   async function storeFile(params: StoreFileParams): Promise<FileSummary> {
     await mkdir(filesDir, { recursive: true });
     const id = newId();
-    const ext = extensionFor(params.originalName, params.mimeType);
+    const ext = params.extension ?? extensionFor(params.originalName, params.mimeType);
     const storedPath = `${id}.${ext}`;
     await writeFile(path.join(filesDir, storedPath), params.buffer);
     const doc: FileDoc = {

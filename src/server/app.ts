@@ -9,6 +9,7 @@ import { configureFileStore, configureVisualStyleSamples, createFileStoreService
 import { createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
 import { configureVideoModule, createVideoRouter } from './modules/video';
+import { configureSeoModule, createSeoRouter } from './modules/seo';
 import { NotFound } from './shared/errors';
 
 export type AppOptions = {
@@ -33,6 +34,7 @@ export function createApp(options: AppOptions): Express {
     await enqueueJob({ type: 'generate-depth-map', projectId, payload: { projectId, sceneId } });
   });
   configureVideoModule(options.filesDir, options.remotionPublicDir, options.remotionConcurrency);
+  configureSeoModule(options.filesDir);
 
   app.get('/api/health', async (_req, res) => {
     await getDb().command({ ping: 1 });
@@ -41,12 +43,13 @@ export function createApp(options: AppOptions): Express {
 
   const fileStore = createFileStoreService(options.filesDir);
   app.use('/api/project', createProjectRouter({
-    beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId, project.logoFileId]),
+    beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId, project.logoFileId, project.seo.thumbnail.fileId]),
   }));
   app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);
   app.use('/api/project', createVideoRouter({ enqueueJob }));
+  app.use('/api/project', createSeoRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
   app.use('/api/visual-style-samples', visualStyleSamplesRouter);
   app.use('/api/job', jobRouter);
 

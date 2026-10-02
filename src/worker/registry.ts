@@ -1,6 +1,8 @@
 import type { JobHandler } from '../server/modules/job';
 import { handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handleSplitScenes } from '../server/modules/script';
 import { getProject } from '../server/modules/project';
+import { generateSeoPackage } from '../server/modules/seo';
+import { SEO_SECTIONS, type SeoSection } from '../contracts/seo';
 import { alignProjectWordTimings, generateProjectDepthMaps, generateSceneDepthMap, generateProjectSfx, generateProjectVoiceovers, renderFullProject } from '../server/modules/video';
 import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
@@ -47,6 +49,15 @@ const handleRenderFullVideo: JobHandler = async (job, context) => {
   await renderFullProject(projectIdFrom(job), context.appendLog, context.reportProgress, payload.draft === true ? { draft: true } : undefined);
 };
 
+const handleGenerateSeo: JobHandler = async (job, context) => {
+  if (await context.isCancelled()) return;
+  const payload = job.payload as { sections?: unknown };
+  const sections = Array.isArray(payload.sections)
+    ? payload.sections as SeoSection[]
+    : [...SEO_SECTIONS];
+  await generateSeoPackage(projectIdFrom(job), sections, context);
+};
+
 const handleGenerateScriptWithLogging: JobHandler = async (job, context) => {
   try {
     await handleGenerateScript(job, context);
@@ -73,4 +84,5 @@ export const jobHandlers: Record<string, JobHandler> = {
   'generate-depth-maps': handleGenerateDepthMaps,
   'generate-depth-map': handleGenerateDepthMap,
   'render-full-video': handleRenderFullVideo,
+  'generate-seo': handleGenerateSeo,
 };

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWorkerLoop } from './main';
 
-const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn(), generateProjectVoiceovers: vi.fn(), generateProjectSfx: vi.fn(), generateProjectDepthMaps: vi.fn(), generateSceneDepthMap: vi.fn(), renderFullProject: vi.fn(), loggerError: vi.fn() }));
+const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn(), generateSeoPackage: vi.fn(), generateProjectVoiceovers: vi.fn(), generateProjectSfx: vi.fn(), generateProjectDepthMaps: vi.fn(), generateSceneDepthMap: vi.fn(), renderFullProject: vi.fn(), loggerError: vi.fn() }));
 vi.mock('../server/modules/script/service', () => ({ generateScript: mocks.generateScript }));
 vi.mock('../server/modules/script/visual-prompts', () => ({ generateVisualPrompts: mocks.generateVisualPrompts }));
 vi.mock('../server/modules/script/scene-split', () => ({ splitProjectScenes: mocks.splitProjectScenes }));
 vi.mock('../server/modules/script/qa', () => ({ runFinalQa: mocks.runFinalQa }));
+vi.mock('../server/modules/seo', () => ({ generateSeoPackage: mocks.generateSeoPackage }));
 vi.mock('../server/modules/video', () => ({ generateProjectVoiceovers: mocks.generateProjectVoiceovers, generateProjectSfx: mocks.generateProjectSfx, generateProjectDepthMaps: mocks.generateProjectDepthMaps, generateSceneDepthMap: mocks.generateSceneDepthMap, renderFullProject: mocks.renderFullProject }));
 vi.mock('../server/shared/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: mocks.loggerError } }));
 import { jobHandlers } from './registry';
@@ -166,6 +167,33 @@ describe('script job registration', () => {
       progress: 0, result: null, error: null, cancelRequested: true, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });
     expect(mocks.runFinalQa).not.toHaveBeenCalled();
+  });
+});
+
+describe('SEO job registration', () => {
+  it('registers generate-seo and forwards selected sections/context', async () => {
+    mocks.generateSeoPackage.mockResolvedValue(undefined);
+    const context = { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() };
+    const handler = jobHandlers['generate-seo'];
+    expect(handler).toBeDefined();
+    await handler!({
+      _id: 'job-seo-1', schemaVersion: 1, type: 'generate-seo', projectId: 'project-1',
+      payload: { projectId: 'project-2', sections: ['titles', 'tags'] }, status: 'running', attempts: 1, maxAttempts: 3,
+      runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(), progress: 0, result: null, error: null,
+      cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, context);
+    expect(mocks.generateSeoPackage).toHaveBeenCalledWith('project-2', ['titles', 'tags'], context);
+  });
+
+  it('does not start SEO generation when the job is already cancelled', async () => {
+    mocks.generateSeoPackage.mockReset();
+    await jobHandlers['generate-seo']!({
+      _id: 'job-seo-2', schemaVersion: 1, type: 'generate-seo', projectId: 'project-1',
+      payload: { projectId: 'project-1' }, status: 'running', attempts: 1, maxAttempts: 3,
+      runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(), progress: 0, result: null, error: null,
+      cancelRequested: true, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });
+    expect(mocks.generateSeoPackage).not.toHaveBeenCalled();
   });
 });
 

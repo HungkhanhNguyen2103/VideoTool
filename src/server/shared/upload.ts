@@ -20,3 +20,8 @@ export const uploadLogo = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
 }).single('file');
+
+export const uploadThumbnail = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+}).single('file');

@@ -49,7 +49,7 @@ fileStoreRouter.post('/:id/files', uploadReference, async (req, res) => {
   if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.mimetype)) {
     throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
   }
-  if ((purpose === 'style-reference' || purpose === 'logo') && !file.mimetype.startsWith('image/')) {
+  if ((purpose === 'style-reference' || purpose === 'logo' || purpose === 'thumbnail') && !file.mimetype.startsWith('image/')) {
     throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
   }
   const params: StoreFileParams = { projectId: project.id, originalName: file.originalname, mimeType: file.mimetype, buffer: file.buffer, purpose };

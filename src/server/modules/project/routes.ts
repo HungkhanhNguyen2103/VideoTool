@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { CreateProjectRequestSchema, ListProjectsQuerySchema } from '../../../contracts/project';
 import * as service from './service';
 
-export type ProjectDeleteHook = (project: Pick<Awaited<ReturnType<typeof service.getProject>>, 'id' | 'renderFileId' | 'draftRenderFileId' | 'logoFileId'>) => Promise<void>;
+export type ProjectDeleteHook = (project: Pick<Awaited<ReturnType<typeof service.getProject>>, 'id' | 'renderFileId' | 'draftRenderFileId' | 'logoFileId' | 'seo'>) => Promise<void>;
 
 export function createProjectRouter(options: { beforeDelete?: ProjectDeleteHook } = {}): Router {
   const router = Router();
