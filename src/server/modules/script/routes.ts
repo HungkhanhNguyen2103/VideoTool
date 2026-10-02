@@ -4,8 +4,8 @@ import { VISUAL_STYLE_IDS } from '../../../contracts/project';
 import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
 import { buildManualScriptPrompt } from './ai/build-prompt';
-import { parseManualScriptDocument, validateScriptOutlineChapterCount } from './ai/parse-output';
-import { applyRegeneratedChapter, buildRegenerationPromptForChapter, finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
+import { parseManualScriptDocument, parseRegeneratedParagraphs, validateScriptOutlineChapterCount } from './ai/parse-output';
+import { applyRegeneratedChapter, buildRegenerationPromptForChapter, finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 type GetActiveScriptJob = (projectId: string, type: string) => Promise<{ id: string } | null>;
@@ -158,9 +158,11 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.post('/:id/chapters/:chapterId/regenerate/manual-import', async (req, res) => {
     const body = ManualImportSchema.parse(req.body);
+    const regenerated = parseRegeneratedParagraphs(body.raw);
     const project = await getProject(req.params.id);
+    const snapshot = snapshotOf(project.chapters);
     const { chapter, nextChapter } = buildRegenerationPromptForChapter(project, req.params.chapterId, { instruction: '', level: 'medium' });
-    res.json(await applyRegeneratedChapter(project.id, chapter, nextChapter, body.raw));
+    res.json(await applyRegeneratedChapter(project.id, chapter, nextChapter, regenerated, snapshot));
   });
 
   router.get('/:id/chapters/history', async (req, res) => {

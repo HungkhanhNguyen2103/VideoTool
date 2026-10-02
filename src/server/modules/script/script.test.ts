@@ -8,7 +8,7 @@ import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
 import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider } from '../project';
-import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, saveGeneratedScript } from './service';
+import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
 import { runFinalQa } from './qa';
 
 const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), stream: vi.fn() }));
@@ -303,24 +303,32 @@ describe('script contracts', () => {
       { id: 'chapter-2', no: 2, title: 'Middle', paragraphs: ['Old middle'], status: 'approved', scenesCount: null, durationSec: null, reviewStatus: 'clean' },
       { id: 'chapter-3', no: 3, title: 'Close', paragraphs: ['Old close'], status: 'pending', scenesCount: null, durationSec: null, reviewStatus: 'clean' },
     ], null, 'script');
+    const before = await getProject(project.id);
     const baseUrl = await startScriptServer();
     const response = await fetch(`${baseUrl}/api/project/${project.id}/chapters/chapter-2/regenerate/manual-import`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: regeneratedResponse(['Manual middle']) }),
     });
     const body = await response.json();
     const saved = await getProject(project.id);
+    const history = await getProjectHistory(project.id);
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ id: 'chapter-2', paragraphs: ['Manual middle'], status: 'pending', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'], reviewStatus: 'clean' });
     expect(saved.chapters[1]).toMatchObject({ paragraphs: ['Manual middle'], status: 'pending', reviewStatus: 'clean' });
     expect(saved.chapters[2]).toMatchObject({ reviewStatus: 'upstream-changed' });
     expect(saved.chapters[0]).toMatchObject({ status: 'approved', reviewStatus: 'clean' });
+    expect(history).toHaveLength(1);
+    expect(history[0]!.chapters).toEqual(before.chapters);
+
+    const restored = await restoreChapters(project.id, 0);
+    expect(restored.find((chapter) => chapter.id === 'chapter-2')?.paragraphs).toEqual(['Old middle']);
   });
 
   it('rejects invalid regenerated JSON without changing the chapter', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
     const before = await getProject(project.id);
+    const historyBefore = await getProjectHistory(project.id);
     const baseUrl = await startScriptServer();
     const response = await fetch(`${baseUrl}/api/project/${project.id}/chapters/chapter-1/regenerate/manual-import`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: '{bad json' }),
@@ -330,6 +338,26 @@ describe('script contracts', () => {
     expect(response.status).toBe(422);
     expect(body.error.code).toBe('SCRIPT_PARSE_ERROR');
     expect(await getProject(project.id)).toEqual(before);
+    expect(await getProjectHistory(project.id)).toEqual(historyBefore);
+  });
+
+  it('keeps only the ten newest manual-import chapter snapshots', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Original'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+    const baseUrl = await startScriptServer();
+
+    for (let index = 0; index < 12; index += 1) {
+      const response = await fetch(`${baseUrl}/api/project/${project.id}/chapters/chapter-1/regenerate/manual-import`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ raw: regeneratedResponse([`Manual ${index}`]) }),
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const history = await getProjectHistory(project.id);
+    expect(history).toHaveLength(10);
+    expect(history[0]!.chapters.find((chapter) => chapter.id === 'chapter-1')?.paragraphs).toEqual(['Manual 10']);
   });
 
   it('returns 404 for a manual regeneration prompt for an unknown chapter', async () => {

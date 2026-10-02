@@ -303,9 +303,10 @@ export async function applyRegeneratedChapter(
   projectId: string,
   chapter: ChapterDoc,
   nextChapter: ChapterDoc | undefined,
-  raw: string,
+  raw: string | ReturnType<typeof parseRegeneratedParagraphs>,
+  snapshot: ChapterSnapshot | null = null,
 ): Promise<ChapterDoc> {
-  const regenerated = parseRegeneratedParagraphs(raw);
+  const regenerated = typeof raw === 'string' ? parseRegeneratedParagraphs(raw) : raw;
   const updated: ChapterDoc = {
     ...chapter,
     paragraphs: regenerated.paragraphs,
@@ -322,8 +323,8 @@ export async function applyRegeneratedChapter(
     avoidRepeating: updated.avoidRepeating,
     persistentFacts: updated.persistentFacts,
     reviewStatus: updated.reviewStatus,
-  });
-  if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' });
+  }, snapshot);
+  if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' }, null);
   return result.chapters.find((item) => item.id === chapter.id) ?? updated;
 }
 
