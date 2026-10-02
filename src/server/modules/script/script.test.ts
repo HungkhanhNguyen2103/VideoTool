@@ -337,8 +337,26 @@ describe('script contracts', () => {
 
     expect(response.status).toBe(422);
     expect(body.error.code).toBe('SCRIPT_PARSE_ERROR');
+    expect(body.error.message).toBe('JSON của chương không hợp lệ. Hãy dán nguyên văn JSON do AI trả về, không kèm chữ giải thích bên ngoài; kiểm tra dấu ngoặc và dấu phẩy.');
+    expect(body.error.message).not.toContain('AI returned');
     expect(await getProject(project.id)).toEqual(before);
     expect(await getProjectHistory(project.id)).toEqual(historyBefore);
+  });
+
+  it('translates a manual chapter schema error while preserving the field path and state', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
+    const before = await getProject(project.id);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/chapters/chapter-1/regenerate/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: JSON.stringify({ paragraphs: 'not an array', chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: [] }) }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toMatchObject({ code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('JSON của chương thiếu hoặc sai trường: paragraphs:') });
+    expect(body.error.message).not.toContain('AI returned');
+    expect(await getProject(project.id)).toEqual(before);
   });
 
   it('keeps only the ten newest manual-import chapter snapshots', async () => {
@@ -423,6 +441,7 @@ describe('script contracts', () => {
     const body = await response.json();
     expect(response.status).toBe(422);
     expect(body.error.code).toBe('SCRIPT_PARSE_ERROR');
+    expect(body.error.message).toBe('Số chương trong bản thảo không khớp với số chương đã chọn cho dự án.');
     expect(await getProject(project.id)).toEqual(project);
   });
 
@@ -435,8 +454,37 @@ describe('script contracts', () => {
     const body = await response.json();
     expect(response.status).toBe(422);
     expect(body.error.code).toBe('SCRIPT_PARSE_ERROR');
+    expect(body.error.message).toBe('JSON của bản thảo kịch bản không hợp lệ. Hãy dán nguyên văn JSON do AI trả về, không kèm chữ giải thích bên ngoài; kiểm tra dấu ngoặc và dấu phẩy.');
+    expect(body.error.message).not.toContain('AI returned');
     expect(await getProject(project.id)).toEqual(project);
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('translates a manual script schema error while preserving the field path and state', async () => {
+    const project = await createProject(projectInput);
+    const before = await getProject(project.id);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: JSON.stringify({ chapters: 'not an array' }) }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toMatchObject({ code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('JSON của bản thảo kịch bản thiếu hoặc sai trường: chapters:') });
+    expect(body.error.message).not.toContain('AI returned');
+    expect(await getProject(project.id)).toEqual(before);
+  });
+
+  it('keeps trailing text after a fenced manual JSON block invalid', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: '```json\n{"chapters":[]}\n``` trailing text' }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toMatchObject({ code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('JSON của bản thảo kịch bản không hợp lệ.') });
   });
 
   it('changes the AI provider through one project-owned versioned mutation', async () => {

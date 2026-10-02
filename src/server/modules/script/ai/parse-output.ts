@@ -14,6 +14,38 @@ function parseJson(raw: string): unknown {
   }
 }
 
+export type ManualParseKind = 'script' | 'chapter' | 'qa';
+
+const manualParseKindLabel: Record<ManualParseKind, string> = {
+  script: 'bản thảo kịch bản',
+  chapter: 'chương',
+  qa: 'kết quả QA',
+};
+
+export function translateManualParseError(error: unknown, kind: ManualParseKind): never {
+  if (!(error instanceof AppError)) throw error;
+  if (kind === 'script' && error.message === 'AI returned an invalid chapter count.') {
+    throw new AppError('Số chương trong bản thảo không khớp với số chương đã chọn cho dự án.', error.status, error.code);
+  }
+  if (error.code !== 'SCRIPT_PARSE_ERROR') throw error;
+
+  const detail = error.message.startsWith('AI returned invalid script structure: ')
+    ? error.message.slice('AI returned invalid script structure: '.length)
+    : error.message;
+  if (detail === 'root: invalid JSON') {
+    throw new AppError(
+      `JSON của ${manualParseKindLabel[kind]} không hợp lệ. Hãy dán nguyên văn JSON do AI trả về, không kèm chữ giải thích bên ngoài; kiểm tra dấu ngoặc và dấu phẩy.`,
+      error.status,
+      error.code,
+    );
+  }
+  throw new AppError(
+    `JSON của ${manualParseKindLabel[kind]} thiếu hoặc sai trường: ${detail}${detail.endsWith('.') ? '' : '.'}`,
+    error.status,
+    error.code,
+  );
+}
+
 type TruncationNotice = (message: string) => void;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

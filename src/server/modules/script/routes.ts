@@ -4,7 +4,7 @@ import { VISUAL_STYLE_IDS } from '../../../contracts/project';
 import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
 import { buildManualScriptPrompt, buildQaPrompt } from './ai/build-prompt';
-import { parseManualScriptDocument, parseQaResult, parseRegeneratedParagraphs, validateScriptOutlineChapterCount } from './ai/parse-output';
+import { parseManualScriptDocument, parseQaResult, parseRegeneratedParagraphs, translateManualParseError, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { applyRegeneratedChapter, buildRegenerationPromptForChapter, finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
@@ -72,7 +72,12 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.post('/:id/qa/manual-import', async (req, res) => {
     const body = ManualImportSchema.parse(req.body);
-    const result = parseQaResult(body.raw);
+    let result: ReturnType<typeof parseQaResult>;
+    try {
+      result = parseQaResult(body.raw);
+    } catch (error) {
+      translateManualParseError(error, 'qa');
+    }
     const project = await getProject(req.params.id);
     const chapterCount = project.chapterCount ?? project.chapters.length;
     const invalidChapter = result.issues.find((issue) => issue.chapter > chapterCount);
@@ -104,8 +109,13 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
   router.post('/:id/generate-script/manual-import', async (req, res) => {
     const body = ManualImportSchema.parse(req.body);
     const project = await getProject(req.params.id);
-    const document = parseManualScriptDocument(body.raw, project.scriptPresetId);
-    validateScriptOutlineChapterCount(document, project.chapterCount);
+    let document: ReturnType<typeof parseManualScriptDocument>;
+    try {
+      document = parseManualScriptDocument(body.raw, project.scriptPresetId);
+      validateScriptOutlineChapterCount(document, project.chapterCount);
+    } catch (error) {
+      translateManualParseError(error, 'script');
+    }
     const saved = await saveGeneratedScript(project.id, document.chapters, document.openLoops, 'motif' in document ? document.motif : null, document.coreQuestion, document.openingHook);
     res.json(saved);
   });
@@ -179,7 +189,12 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.post('/:id/chapters/:chapterId/regenerate/manual-import', async (req, res) => {
     const body = ManualImportSchema.parse(req.body);
-    const regenerated = parseRegeneratedParagraphs(body.raw);
+    let regenerated: ReturnType<typeof parseRegeneratedParagraphs>;
+    try {
+      regenerated = parseRegeneratedParagraphs(body.raw);
+    } catch (error) {
+      translateManualParseError(error, 'chapter');
+    }
     const project = await getProject(req.params.id);
     const snapshot = snapshotOf(project.chapters);
     const { chapter, nextChapter } = buildRegenerationPromptForChapter(project, req.params.chapterId, { instruction: '', level: 'medium' });

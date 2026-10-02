@@ -195,11 +195,23 @@ describe('final QA route', () => {
 
     const broken = await post('{not json');
     expect(broken.status).toBe(422);
-    expect(await broken.json()).toMatchObject({ error: { code: 'SCRIPT_PARSE_ERROR' } });
+    const brokenBody = await broken.json();
+    expect(brokenBody).toMatchObject({ error: { code: 'SCRIPT_PARSE_ERROR', message: 'JSON của kết quả QA không hợp lệ. Hãy dán nguyên văn JSON do AI trả về, không kèm chữ giải thích bên ngoài; kiểm tra dấu ngoặc và dấu phẩy.' } });
+    expect(brokenBody.error.message).not.toContain('AI returned');
 
     const extra = await post(JSON.stringify({ issues: [], extra: true }));
     expect(extra.status).toBe(422);
     expect(await extra.json()).toMatchObject({ error: { code: 'SCRIPT_PARSE_ERROR' } });
+
+    const wrongField = await post(JSON.stringify({ reviewedBy: { provider: 'manual', model: 'Dán thủ công' } }));
+    expect(wrongField.status).toBe(422);
+    const wrongFieldBody = await wrongField.json();
+    expect(wrongFieldBody).toMatchObject({ error: { code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('JSON của kết quả QA thiếu hoặc sai trường: issues:') } });
+    expect(wrongFieldBody.error.message).not.toContain('AI returned');
+
+    const fencedTrailing = await post('```json\n{"issues":[]}\n``` trailing text');
+    expect(fencedTrailing.status).toBe(422);
+    expect(await fencedTrailing.json()).toMatchObject({ error: { code: 'SCRIPT_PARSE_ERROR', message: expect.stringContaining('JSON của kết quả QA không hợp lệ.') } });
 
     const outOfRange = await post(JSON.stringify({ issues: [{ chapter: 2, type: 'REPETITION', severity: 'low', reason: 'Lặp ý.', suggestedAction: 'SHORTEN' }] }));
     expect(outOfRange.status).toBe(422);
