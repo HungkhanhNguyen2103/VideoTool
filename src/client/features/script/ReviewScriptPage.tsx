@@ -116,6 +116,8 @@ export function ReviewScriptPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
   const regenInstructionRef = useRef<HTMLTextAreaElement>(null);
+  const manualRegenBoxRef = useRef<HTMLDivElement>(null);
+  const manualRegenTextareaRef = useRef<HTMLTextAreaElement>(null);
   const lifecycleRef = useRef(0);
   const initialExpansionProjectIdRef = useRef<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -199,6 +201,15 @@ export function ReviewScriptPage() {
     }
   }, [qaProgress?.status, qaProgress?.result]);
 
+  useEffect(() => {
+    if (!manualRegen) return;
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    manualRegenBoxRef.current?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    manualRegenTextareaRef.current?.focus();
+  }, [manualRegen?.chapterId, manualRegen?.prompt]);
+
   async function generate() {
     try { setJobId((await api.generateScript(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo kịch bản.'); }
   }
@@ -276,6 +287,7 @@ export function ReviewScriptPage() {
     try {
       const prompt = await api.getRegenerationManualPrompt(projectId, chapter.id, { instruction: regenInstruction, level: regenLevel });
       setManualRegen({ chapterId: chapter.id, prompt: prompt.prompt, promptVersion: prompt.promptVersion, raw: '', error: null });
+      toast(`Đã tải prompt tái tạo chương ${chapter.no}. Sao chép rồi dán JSON kết quả vào ô bên dưới.`);
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Không thể tải prompt tái tạo.');
     } finally { setManualRegenBusy(false); }
@@ -485,20 +497,21 @@ export function ReviewScriptPage() {
                       {isCurrentRegen ? <Button size="sm" variant="red" onClick={() => regen.controller.abort()}>Hủy</Button> : <>
                         <Button size="icon" active={chapter.status === 'needs-fix'} aria-label={`Đánh dấu cần sửa chương ${chapter.no}`} aria-pressed={chapter.status === 'needs-fix'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleFlagStatus(chapter.status) })}><Icon name="flag" /></Button>
                         <Button disabled={busy} onClick={() => startEdit(chapter)}><Icon name="edit" />Sửa</Button>
-                        {regenMode === 'manual' ? <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void loadManualRegenPrompt(chapter)}><Icon name="refresh" />Lấy prompt tái tạo</Button> : <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void regenerate(chapter)}><Icon name="refresh" />Tái tạo</Button>}
+                        {regenMode === 'manual' ? <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void loadManualRegenPrompt(chapter)}>{manualRegenBusy ? 'Đang lấy prompt…' : <><Icon name="refresh" />Lấy prompt tái tạo</>}</Button> : <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void regenerate(chapter)}><Icon name="refresh" />Tái tạo</Button>}
                         <Button variant={chapter.status === 'approved' ? 'green' : 'ghost'} aria-pressed={chapter.status === 'approved'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleApproveStatus(chapter.status) })}><Icon name="check" />{chapter.status === 'approved' ? 'Đã duyệt' : 'Duyệt'}</Button>
                       </>}
                     </div>
                      </div>
-                   {shouldOfferOpeningHook(chapter, projectQuery.data?.openingHook ?? '') && <div className={styles.hookCallout}><div><strong>Hook mở đầu đề xuất</strong><p>{projectQuery.data?.openingHook}</p></div><Button variant="amber" disabled={busy} onClick={() => void insertOpeningHook(chapter)}>Chèn hook làm đoạn đầu tiên</Button></div>}
-                   <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
-                   {manualRegen?.chapterId === chapter.id && <div className={styles.manualBox}>
-                     <p className={styles.muted}>Prompt {manualRegen.promptVersion}</p>
+                   {manualRegen?.chapterId === chapter.id && <div ref={manualRegenBoxRef} className={`${styles.manualBox} ${styles.chapterManualBox}`}>
+                     <div className={styles.manualBoxHeader}><div><strong>{`Chương ${chapter.no}: ${chapter.title}`}</strong><p className={styles.muted}>Prompt {manualRegen.promptVersion}</p></div><Button size="sm" onClick={() => setManualRegen(null)}>Đóng</Button></div>
+                     <p className={`${styles.muted} ${styles.manualBoxSteps}`}>Bước 1: Sao chép prompt · Bước 2: dán vào AI bất kỳ · Bước 3: dán JSON kết quả vào ô rồi bấm "Nhập chương".</p>
                      <div className={styles.actions}><Button variant="indigoline" disabled={manualRegenBusy} onClick={() => void copyManualRegenPrompt()}>Sao chép</Button></div>
-                     <textarea className={styles.textarea} value={manualRegen.raw} onChange={(event) => setManualRegen((current) => current ? { ...current, raw: event.target.value, error: null } : current)} placeholder='{"paragraphs":[…],"chapterSummary":"…","avoidRepeating":[…],"persistentFactsNext":[…]}' aria-label={`JSON tái tạo chương ${chapter.no}`} />
+                     <textarea ref={manualRegenTextareaRef} className={styles.textarea} value={manualRegen.raw} onChange={(event) => setManualRegen((current) => current ? { ...current, raw: event.target.value, error: null } : current)} placeholder='{"paragraphs":[…],"chapterSummary":"…","avoidRepeating":[…],"persistentFactsNext":[…]}' aria-label={`JSON tái tạo chương ${chapter.no}`} />
                      {manualRegen.error && <p className={styles.error}>{manualRegen.error}</p>}
                      <Button variant="amber" disabled={manualRegenBusy || !manualRegen.raw.trim()} onClick={() => void importManualRegen(chapter)}>Nhập chương</Button>
                    </div>}
+                   {shouldOfferOpeningHook(chapter, projectQuery.data?.openingHook ?? '') && <div className={styles.hookCallout}><div><strong>Hook mở đầu đề xuất</strong><p>{projectQuery.data?.openingHook}</p></div><Button variant="amber" disabled={busy} onClick={() => void insertOpeningHook(chapter)}>Chèn hook làm đoạn đầu tiên</Button></div>}
+                   <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
                    {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}
                 </article>;
               })}

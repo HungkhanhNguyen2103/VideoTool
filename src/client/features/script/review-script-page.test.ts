@@ -167,4 +167,23 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain('{"paragraphs":[…],"chapterSummary":"…","avoidRepeating":[…],"persistentFactsNext":[…]}');
     expect(source).toContain('Đã nhập chương ${chapter.no}.');
   });
+
+  it('surfaces the manual regeneration result beside its chapter controls', async () => {
+    const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const manualBoxIndex = source.indexOf('{manualRegen?.chapterId === chapter.id && <div ref={manualRegenBoxRef}');
+    const chapterBodyIndex = source.indexOf('<div className={styles.chapterBody}');
+
+    expect(manualBoxIndex).toBeGreaterThan(-1);
+    expect(manualBoxIndex).toBeLessThan(chapterBodyIndex);
+    expect(source).toContain('Chương ${chapter.no}: ${chapter.title}');
+    expect(source).toContain('Bước 1: Sao chép prompt · Bước 2: dán vào AI bất kỳ · Bước 3: dán JSON kết quả vào ô rồi bấm "Nhập chương".');
+    expect(source).toContain("manualRegenBusy ? 'Đang lấy prompt…'");
+    expect(source).toContain('Lấy prompt tái tạo');
+    expect(source).toContain('Đã tải prompt tái tạo chương ${chapter.no}. Sao chép rồi dán JSON kết quả vào ô bên dưới.');
+    expect(source).toContain('onClick={() => setManualRegen(null)}>Đóng</Button>');
+    expect(source).toContain('manualRegenTextareaRef');
+    expect(source).toContain('manualRegenBoxRef.current?.scrollIntoView');
+    expect(source).toContain("'(prefers-reduced-motion: reduce)'");
+    expect(source).toContain('manualRegenTextareaRef.current?.focus()');
+  });
 });

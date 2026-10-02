@@ -30,6 +30,10 @@
 .modeControls { display: flex; gap: .75rem; margin: 0; padding: 0; border: 0; color: var(--text-2); font-size: .8125rem; }
 .modeControls legend { width: 100%; margin-bottom: .35rem; color: var(--text-3); font-size: .6875rem; font-weight: 600; text-transform: uppercase; }
 .manualBox { display: grid; gap: .75rem; }
+.chapterManualBox { padding: .75rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
+.manualBoxHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.manualBoxHeader p { margin: .25rem 0 0; }
+.manualBoxSteps { margin: 0; line-height: 1.5; }
 .regenToolbar { display: flex; align-items: center; gap: .75rem; min-width: 0; padding: .5rem .75rem; flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
 .regenToolbar .compactField { flex: 0 0 auto; min-width: 0; }
 .regenToolbar .input { min-height: 36px; }
