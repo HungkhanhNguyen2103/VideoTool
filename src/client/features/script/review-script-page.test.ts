@@ -168,6 +168,21 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain('Đã nhập chương ${chapter.no}.');
   });
 
+  it('keeps bulk regeneration instructions scoped and exposes review warnings', async () => {
+    const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+
+    expect(source).toContain('instructionForChapter(instructionOrigin, regenInstruction, chapterId)');
+    expect(source).toContain("setInstructionOrigin({ kind: 'qa', chapterId })");
+    expect(source).toContain('Tái tạo ${regenerateAllIds.length} chương');
+    expect(source).toContain('Bản cũ vẫn nằm trong lịch sử.');
+    expect(source).toContain('Chọn ít nhất một chương để tái tạo.');
+    expect(source).toContain('Cần xem lại: chương trước đã đổi');
+    expect(source).toContain('chapter.reviewStatus === \'upstream-changed\'');
+    expect(source).toContain('chapterWordBudgetNote(chapter)');
+    expect(source).toContain('còn đánh dấu "cần xem lại"');
+    expect(source).toContain("{ status: 'approved' });");
+  });
+
   it('surfaces the manual regeneration result beside its chapter controls', async () => {
     const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
     const manualBoxIndex = source.indexOf('{manualRegen?.chapterId === chapter.id && <div ref={manualRegenBoxRef}');

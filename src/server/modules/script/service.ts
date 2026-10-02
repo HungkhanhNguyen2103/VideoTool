@@ -37,10 +37,12 @@ export async function patchChapter(
   const normalizedParagraphs = patch.paragraphs?.map((paragraph) => paragraph.trim()).filter(Boolean);
   const paragraphsChanged = normalizedParagraphs !== undefined && !paragraphsEqual(normalizedParagraphs, chapter.paragraphs);
   const titleChanged = patch.title !== undefined && patch.title !== chapter.title;
+  const acknowledgesUpstreamChange = paragraphsChanged || titleChanged || patch.status === 'approved';
   const normalizedPatch = {
     ...(paragraphsChanged ? { paragraphs: normalizedParagraphs, status: 'pending' as const } : {}),
     ...(titleChanged ? { title: patch.title } : {}),
     ...(!paragraphsChanged && patch.status !== undefined ? { status: patch.status } : {}),
+    ...(acknowledgesUpstreamChange ? { reviewStatus: 'clean' as const } : {}),
   };
   if (Object.keys(normalizedPatch).length === 0) return project.chapters;
   const updated = await patchProjectChapter(projectId, chapterId, normalizedPatch, paragraphsChanged || titleChanged ? snapshotOf(project.chapters) : null);
@@ -341,18 +343,36 @@ export async function regenerateChapter(
   await patchProjectChapter(projectId, chapterId, { status: 'generating' }, snapshot);
 
   try {
-    let raw = '';
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    for await (const chunk of getAiClient(project.aiProvider).stream([
+    const aiClient = getAiClient(project.aiProvider);
+    const streamResponse = async (messages: ChatMessage[]): Promise<string> => {
+      let raw = '';
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      for await (const chunk of aiClient.stream(messages, { signal })) {
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        raw += chunk;
+        onChunk(chunk);
+      }
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      return raw;
+    };
+    const messages: ChatMessage[] = [
       { role: 'system', content: prompt.system },
       { role: 'user', content: prompt.user },
-    ], { signal })) {
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      raw += chunk;
-      onChunk(chunk);
+    ];
+    let regenerated = parseRegeneratedParagraphs(await streamResponse(messages));
+    const targetWords = chapter.targetWords;
+    if (targetWords != null && !opts.instruction.trim() && countNarrationWords(regenerated.paragraphs.join(' ')) < targetWords * 0.8) {
+      const currentWords = countNarrationWords(regenerated.paragraphs.join(' '));
+      const retryMessages: ChatMessage[] = [
+        { role: 'system', content: prompt.system },
+        {
+          role: 'user',
+          content: `${prompt.user}\n\nPrevious response was ${currentWords} words; target is ${targetWords}. Retry once and reach at least 80% of the target. Every added sentence must provide meaningful progression: new evidence, a concrete consequence, a causal explanation, or escalation. Do not paraphrase the same content, add generic padding, or repeat an already-stated fact just to raise the word count.`,
+        },
+      ];
+      regenerated = parseRegeneratedParagraphs(await streamResponse(retryMessages));
     }
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    return applyRegeneratedChapter(projectId, chapter, nextChapter, raw);
+    return applyRegeneratedChapter(projectId, chapter, nextChapter, regenerated);
   } catch (error) {
     const aborted = signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
     await patchProjectChapter(projectId, chapterId, { status: 'needs-fix' });

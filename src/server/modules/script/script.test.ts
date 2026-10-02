@@ -724,6 +724,33 @@ describe('script contracts', () => {
     expect(aiMock.stream).toHaveBeenCalledTimes(1);
   });
 
+  it('retries one short regeneration when there is no user length instruction', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null, targetWords: 10 }], null, 'script');
+    const short = regeneratedResponse(['one']);
+    const accepted = regeneratedResponse([Array.from({ length: 8 }, (_, index) => `word${index}`).join(' ')]);
+    aiMock.stream
+      .mockReturnValueOnce((async function* () { yield short; })())
+      .mockReturnValueOnce((async function* () { yield accepted; })());
+
+    await regenerateChapter(project.id, 'chapter-1', { instruction: '', level: 'medium' }, vi.fn(), new AbortController().signal);
+
+    expect(aiMock.stream).toHaveBeenCalledTimes(2);
+    expect(aiMock.stream.mock.calls[1]![0][1].content).toContain('at least 80% of the target');
+    expect(aiMock.stream.mock.calls[1]![0][1].content).toContain('meaningful progression');
+    expect((await getProject(project.id)).chapters[0]!.paragraphs[0]).toContain('word7');
+  });
+
+  it('does not retry a short regeneration when the user supplied an instruction', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null, targetWords: 10 }], null, 'script');
+    aiMock.stream.mockReturnValueOnce((async function* () { yield regeneratedResponse(['one']); })());
+
+    await regenerateChapter(project.id, 'chapter-1', { instruction: 'shorter', level: 'light' }, vi.fn(), new AbortController().signal);
+
+    expect(aiMock.stream).toHaveBeenCalledTimes(1);
+  });
+
   it('passes regeneration narrative context and marks only the next chapter upstream-changed', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [
@@ -825,6 +852,15 @@ describe('script contracts', () => {
       expect.objectContaining({ id: 'chapter-1', status: 'pending', reviewStatus: 'clean' }),
       expect.objectContaining({ id: 'chapter-2', reviewStatus: 'upstream-changed' }),
     ]);
+  });
+
+  it('clears upstream-changed when that chapter is approved', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null, reviewStatus: 'upstream-changed' }], null, 'script');
+
+    await patchChapter(project.id, 'chapter-1', { status: 'approved' });
+
+    expect((await getProject(project.id)).chapters[0]).toMatchObject({ status: 'approved', reviewStatus: 'clean' });
   });
 
   it('keeps changed paragraph edits pending when a status is submitted alongside them', async () => {

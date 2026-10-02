@@ -12,6 +12,7 @@ import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import * as api from './api';
 import {
   approveAllTargets,
+  chapterWordBudgetNote,
   chapterMetaText,
   chaptersSummaryText,
   buildQaRegenInstruction,
@@ -19,6 +20,7 @@ import {
   generationModeForChapters,
   groupQaIssuesByChapter,
   historyVersionLabel,
+  instructionForChapter,
   manualTextAfterImport,
   runRegenerationQueue,
   selectedRegenTargets,
@@ -103,6 +105,7 @@ export function ReviewScriptPage() {
   const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
   const [regen, setRegen] = useState<{ id: string; instruction: string; level: 'light' | 'medium' | 'rewrite'; preview: string; controller: AbortController } | null>(null);
   const [regenInstruction, setRegenInstruction] = useState('');
+  const [instructionOrigin, setInstructionOrigin] = useState<{ kind: 'user' } | { kind: 'qa'; chapterId: string }>({ kind: 'user' });
   const [regenLevel, setRegenLevel] = useState<'light' | 'medium' | 'rewrite'>('medium');
   const [regenMode, setRegenMode] = useState<'automatic' | 'manual'>('automatic');
   const [manualRegen, setManualRegen] = useState<{ chapterId: string; prompt: string; promptVersion: string; raw: string; error: string | null } | null>(null);
@@ -148,6 +151,7 @@ export function ReviewScriptPage() {
     setExpanded(new Set());
     setEditing(null);
     setRegenInstruction('');
+    setInstructionOrigin({ kind: 'user' });
     setRegenLevel('medium');
     setManualRegen(null);
     setFinalizeError(null);
@@ -250,6 +254,7 @@ export function ReviewScriptPage() {
     setSelected(new Set([chapterId]));
     setExpanded((current) => new Set(current).add(chapterId));
     setRegenInstruction(buildQaRegenInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]));
+    setInstructionOrigin({ kind: 'qa', chapterId });
     regenInstructionRef.current?.focus();
   }
 
@@ -362,20 +367,22 @@ export function ReviewScriptPage() {
     await runRegenerationQueue(chapterIds, async (chapterId) => {
       if (lifecycleRef.current !== lifecycle) return true;
       const chapter = chapterById.get(chapterId);
-      return chapter ? regenerate(chapter) : false;
+      return chapter ? regenerate(chapter, instructionForChapter(instructionOrigin, regenInstruction, chapterId)) : false;
     });
   }
 
   async function regenerateSelected() { await regenerateChapterIds(selectedRegenIds); }
 
   async function regenerateAll() {
-    if (!window.confirm('Tái tạo toàn bộ kịch bản?')) return;
+    const approvedInRun = chapters.filter((chapter) => regenerateAllIds.includes(chapter.id) && chapter.status === 'approved').length;
+    const approvedNote = approvedInRun > 0 ? ` (${approvedInRun} đã duyệt sẽ về "Chưa duyệt")` : '';
+    if (!window.confirm(`Tái tạo ${regenerateAllIds.length} chương${approvedNote}? Bản cũ vẫn nằm trong lịch sử.`)) return;
     await regenerateChapterIds(regenerateAllIds);
   }
 
   async function approveAll() {
     try {
-      for (const chapterId of regenerateAllIds) {
+      for (const chapterId of regenerateAllIds.filter((chapterId) => chapters.find((chapter) => chapter.id === chapterId)?.status !== 'approved')) {
         await api.patchChapter(projectId, chapterId, { status: 'approved' });
       }
       await refresh();
@@ -391,7 +398,11 @@ export function ReviewScriptPage() {
   }
 
   async function finalize() {
-    if (!window.confirm('Chốt kịch bản và chia cảnh?')) return;
+    const upstreamChanged = chapters.filter((chapter) => chapter.reviewStatus === 'upstream-changed');
+    const upstreamNote = upstreamChanged.length > 0
+      ? `\n${upstreamChanged.length} chương còn đánh dấu "cần xem lại" (chương ${upstreamChanged.map((chapter) => chapter.no).join(', ')}). Vẫn chốt?`
+      : '';
+    if (!window.confirm(`Chốt kịch bản và chia cảnh?${upstreamNote}`)) return;
     setFinalizeError(null);
     try { await api.finalizeScript(projectId); toast('Đã chốt kịch bản.'); navigate(`/production/${projectId}/studio`); } catch (error) {
       const message = error instanceof Error ? error.message : 'Không thể chốt kịch bản.';
@@ -486,13 +497,17 @@ export function ReviewScriptPage() {
                 const isEditing = editing === chapter.id;
                 const isExpanded = expanded.has(chapter.id);
                 const meta = chapterMetaText(chapter);
+                const budgetNote = chapterWordBudgetNote(chapter);
                 return <article className={styles.chapter} data-selected={selected.has(chapter.id)} key={chapter.id}>
                   <div className={styles.chapterTop}>
                     <input type="checkbox" checked={selected.has(chapter.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(chapter.id); else next.delete(chapter.id); return next; })} aria-label={`Chọn chương ${chapter.no}`} />
                     <button type="button" className={styles.chapterToggle} aria-expanded={isExpanded || isEditing} aria-controls={`chapter-body-${chapter.id}`} onClick={() => toggleExpanded(chapter.id)}>
                       <span className={styles.chapterNo}>{String(chapter.no).padStart(2, '0')}</span><span className={styles.chapterTitle}>{chapter.title}</span>{meta && <span className={styles.chapterMeta}>{meta}</span>}<Icon name="chevron" className={styles.chapterChevron} />
                     </button>
-                    <Badge tone={statusTone[chapter.status]}>{statusLabel[chapter.status]}</Badge><span className={styles.spacer} />
+                    <Badge tone={statusTone[chapter.status]}>{statusLabel[chapter.status]}</Badge>
+                    {chapter.reviewStatus === 'upstream-changed' && <span title="Chương trước đã thay đổi; hãy xem lại chương này trước khi chốt."><Badge tone="amber">Cần xem lại: chương trước đã đổi</Badge></span>}
+                    {budgetNote && <Badge tone={budgetNote.tone}>{budgetNote.text}</Badge>}
+                    <span className={styles.spacer} />
                     <div className={styles.actions}>
                       {isCurrentRegen ? <Button size="sm" variant="red" onClick={() => regen.controller.abort()}>Hủy</Button> : <>
                         <Button size="icon" active={chapter.status === 'needs-fix'} aria-label={`Đánh dấu cần sửa chương ${chapter.no}`} aria-pressed={chapter.status === 'needs-fix'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleFlagStatus(chapter.status) })}><Icon name="flag" /></Button>
@@ -523,12 +538,13 @@ export function ReviewScriptPage() {
               <h2 className={`${styles.panelTitle} ${styles.panelTitleIndigo}`} id="regen-title"><Icon name="sparkles" />Yêu cầu tái tạo</h2>
               <div className={styles.selectedCount}>{selectedChapters.length ? `Áp dụng cho ${selectedChapters.length} chương đã chọn` : 'Chưa chọn chương nào'}</div>
               <label className="sr-only" htmlFor="regen-instruction">Yêu cầu cho lần tái tạo</label>
-              <textarea ref={regenInstructionRef} id="regen-instruction" className={styles.textarea} rows={5} value={regenInstruction} onChange={(event) => setRegenInstruction(event.target.value)} placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…" />
+              <textarea ref={regenInstructionRef} id="regen-instruction" className={styles.textarea} rows={5} value={regenInstruction} onChange={(event) => { setRegenInstruction(event.target.value); setInstructionOrigin({ kind: 'user' }); }} placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…" />
               <fieldset className={styles.segmented}>
                 <legend>Mức thay đổi</legend>
                 {([['light', 'Nhẹ'], ['medium', 'Vừa'], ['rewrite', 'Viết lại']] as const).map(([value, label]) => <label key={value}><input type="radio" name="regen-level" value={value} checked={regenLevel === value} onChange={() => setRegenLevel(value)} /><span>{label}</span></label>)}
               </fieldset>
                <Button variant="indigo" size="lg" className={styles.blockButton} title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />Tái tạo chương đã chọn</Button>
+               {selectedRegenIds.length === 0 && <p className={styles.muted}>Chọn ít nhất một chương để tái tạo.</p>}
             </section>
 
             <section className={styles.panel} aria-labelledby="history-title">

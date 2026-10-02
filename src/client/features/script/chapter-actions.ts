@@ -4,6 +4,8 @@ import type { QAIssue } from './api';
 
 type ReviewDecisionStatus = Exclude<ChapterStatus, 'generating'>;
 export type ScriptGenerationMode = 'automatic' | 'manual';
+export type InstructionOrigin = { kind: 'user' } | { kind: 'qa'; chapterId: string };
+export type ChapterWordBudgetNote = { text: string; tone: 'amber' | 'muted' };
 
 export function qaSeverityTone(severity: QAIssue['severity']): 'green' | 'amber' | 'indigo' | 'muted' {
   return severity === 'high' ? 'amber' : severity === 'medium' ? 'indigo' : 'muted';
@@ -51,14 +53,14 @@ export function approveAllTargets(chapters: readonly ChapterDoc[]): string[] {
   return chapters.filter((chapter) => chapter.status !== 'generating').map((chapter) => chapter.id);
 }
 
-/** The shared regeneration panel targets selected, non-generating chapters. With an
- * empty selection, it falls back to the first eligible chapter. */
+/** The shared regeneration panel targets selected, non-generating chapters. */
 export function selectedRegenTargets(chapters: readonly ChapterDoc[], selected: ReadonlySet<string>): string[] {
-  const selectedTargets = chapters.filter((chapter) => selected.has(chapter.id) && chapter.status !== 'generating').map((chapter) => chapter.id);
-  if (selectedTargets.length) return selectedTargets;
-  if (selected.size) return [];
-  const fallback = chapters.find((chapter) => chapter.status !== 'generating');
-  return fallback ? [fallback.id] : [];
+  return chapters.filter((chapter) => selected.has(chapter.id) && chapter.status !== 'generating').map((chapter) => chapter.id);
+}
+
+export function instructionForChapter(origin: InstructionOrigin, instruction: string, chapterId: string): string {
+  if (origin.kind === 'qa' && origin.chapterId !== chapterId) return '';
+  return instruction;
 }
 
 export function chapterWordCount(chapter: Pick<ChapterDoc, 'paragraphs'>): number {
@@ -75,6 +77,18 @@ export function chapterMetaText(chapter: Pick<ChapterDoc, 'paragraphs'>): string
   const durationSec = chapterEstimatedDurationSec(chapter);
   if (durationSec == null) return null;
   return `${chapter.paragraphs.length} cảnh · ${durationSec}s · ${chapterWordCount(chapter)} từ`;
+}
+
+export function chapterWordBudgetNote(chapter: Pick<ChapterDoc, 'paragraphs' | 'targetWords'>): ChapterWordBudgetNote | null {
+  if (chapter.targetWords == null) return null;
+  const currentWords = chapterWordCount(chapter);
+  const ratio = currentWords / chapter.targetWords;
+  const difference = Math.round(Math.abs(ratio - 1) * 100);
+  const sign = currentWords >= chapter.targetWords ? '+' : '−';
+  return {
+    text: `mục tiêu ${chapter.targetWords} từ · hiện ${currentWords} (${sign}${difference}%)`,
+    tone: ratio < 0.8 || ratio > 1.2 ? 'amber' : 'muted',
+  };
 }
 
 export function chaptersSummaryText(chapters: readonly ChapterDoc[]): string {

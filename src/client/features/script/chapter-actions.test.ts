@@ -15,8 +15,10 @@ import {
   toggleFlagStatus,
   manualTextAfterImport,
   buildQaRegenInstruction,
+  chapterWordBudgetNote,
   findChapterIdByNumber,
   groupQaIssuesByChapter,
+  instructionForChapter,
   qaSeverityTone,
 } from './chapter-actions';
 
@@ -63,13 +65,46 @@ describe('selectedRegenTargets', () => {
     const chapters = [chapter('c1', 'pending'), chapter('c2', 'pending')];
     expect(selectedRegenTargets(chapters, new Set(['c2']))).toEqual(['c2']);
   });
-  it('falls back to the first non-generating chapter when none are selected', () => {
+  it('returns no targets when none are selected', () => {
     const chapters = [chapter('c1', 'generating'), chapter('c2', 'pending'), chapter('c3', 'approved')];
-    expect(selectedRegenTargets(chapters, new Set())).toEqual(['c2']);
+    expect(selectedRegenTargets(chapters, new Set())).toEqual([]);
   });
   it('does not replace a generating-only selection with an unselected chapter', () => {
     const chapters = [chapter('c1', 'generating'), chapter('c2', 'pending')];
     expect(selectedRegenTargets(chapters, new Set(['c1']))).toEqual([]);
+  });
+});
+
+describe('regeneration instruction targeting', () => {
+  it('keeps a user instruction for every bulk target', () => {
+    expect(instructionForChapter({ kind: 'user' }, 'make it clearer', 'c2')).toBe('make it clearer');
+  });
+
+  it('keeps a QA instruction only for its source chapter', () => {
+    const origin = { kind: 'qa' as const, chapterId: 'c2' };
+    expect(instructionForChapter(origin, 'fix this issue', 'c2')).toBe('fix this issue');
+    expect(instructionForChapter(origin, 'fix this issue', 'c3')).toBe('');
+  });
+});
+
+describe('chapter word budget note', () => {
+  it('returns null when no target word budget exists', () => {
+    expect(chapterWordBudgetNote(chapter('c1', 'pending'))).toBeNull();
+  });
+
+  it('shows the signed percentage and amber tone outside the 80-120% band', () => {
+    expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 520, paragraphs: [' '.repeat(0) + Array.from({ length: 330 }, (_, index) => `word${index}`).join(' ')] }))).toEqual({
+      text: 'mục tiêu 520 từ · hiện 330 (−37%)',
+      tone: 'amber',
+    });
+  });
+
+  it('uses muted tone inside the target band and amber when over target', () => {
+    expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 100, paragraphs: [Array.from({ length: 100 }, (_, index) => `word${index}`).join(' ')] }))).toEqual({
+      text: 'mục tiêu 100 từ · hiện 100 (+0%)',
+      tone: 'muted',
+    });
+    expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 100, paragraphs: [Array.from({ length: 121 }, (_, index) => `word${index}`).join(' ')] }))).toMatchObject({ tone: 'amber' });
   });
 });
 
