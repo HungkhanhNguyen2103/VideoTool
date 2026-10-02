@@ -254,6 +254,7 @@ export function buildQaPrompt(project: ProjectDetail): BuiltPrompt {
     user: [
       `Project title: ${project.title}`,
       `Language: ${language(project)}`,
+      `Write each issue reason in ${language(project)}.`,
       `Core question: ${project.coreQuestion || '(none)'}`,
       `Opening hook: ${project.openingHook || '(none)'}`,
       `Open loops: ${project.openLoops.map((loop) => `chapter ${loop.plantedInChapter}->${loop.resolvedInChapter}: ${loop.question}`).join(' | ') || '(none)'}`,

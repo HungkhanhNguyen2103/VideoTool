@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { QAResultSchema } from './ai/qa-schema';
+import { buildQaPrompt } from './ai/build-prompt';
 import { runFinalQa } from './qa';
 import { createProject, getProject } from '../project';
 import { getCollection } from '../../db/client';
@@ -37,6 +38,18 @@ function context() {
 }
 
 describe('final QA contract', () => {
+  it('requests issue reasons in the project language while keeping enum tokens in English', async () => {
+    const project = await createProject({ ...projectInput, language: 'vi' });
+    const vietnamese = buildQaPrompt(await getProject(project.id));
+    const english = buildQaPrompt({ ...(await getProject(project.id)), language: 'en' });
+    const enumTokens = 'REPETITION, CONTRADICTION, DEAD_CHAPTER, POSSIBLE_FILLER, WEAK_HOOK, FLAT_PACING, PREMATURE_REVEAL, UNRESOLVED_LOOP, WEAK_PAYOFF, AWKWARD_TRANSITION, TONE_DRIFT, CREDIBILITY_RISK';
+
+    expect(vietnamese.user).toContain('Write each issue reason in Vietnamese.');
+    expect(english.user).toContain('Write each issue reason in English.');
+    expect(vietnamese.system).toContain(enumTokens);
+    expect(vietnamese.system).toContain('REMOVE_DUPLICATION, REGENERATE, SHORTEN, MOVE_REVEAL, REVIEW_FACT');
+  });
+
   it('parses a well-formed result with all supported issue types and actions', () => {
     const result = QAResultSchema.parse({
       issues: [
