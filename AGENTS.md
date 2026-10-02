@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-02 · Phase 8 Task 6 adds the production SEO client page_
+_Last updated: 2026-10-02 · Phase 8 Task 7 adds publish checklist and package export_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (662 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (665 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -39,6 +39,7 @@ _Last updated: 2026-10-02 · Phase 8 Task 6 adds the production SEO client page_
 - Phase 8 Task 4 adds the `seo` module boundary, placeholder preset copied to `dist/presets`, pure prompt builder, snake_case output schema/parser, fixture coverage, and one validation retry with no write after repeated failure. Focused SEO AI tests pass 7/7; the full suite passes 651 tests with 1 skipped; typecheck and lint pass. Preset wording remains intentionally deferred for content review.
 - Phase 8 Task 5 adds explicit SEO generation/manual-import/patch routes, the `generate-seo` worker handler, active-job deduplication, and project-owned PNG/JPEG thumbnail replacement/deletion with cleanup. Focused SEO route/worker tests pass 22/22; the full suite passes 659 tests with 1 skipped; typecheck and lint pass. Automatic SEO generation remains structurally ready but its preset wording is still a reviewed placeholder.
 - Phase 8 Task 6 replaces the SEO placeholder route with a production client page: automatic/manual controls, centralized Vietnamese title-angle labels, debounced section edits with blur/unmount flush, preserved manual JSON on errors, fact warnings, and thumbnail controls. Focused client helper tests pass 3/3; the full suite passes 662 tests with 1 skipped; typecheck and lint pass.
+- Phase 8 Task 7 adds pure publish-readiness/checklist and Markdown export helpers, a Vietnamese-safe filename slug, copy/download actions, and render/thumbnail download links. Focused SEO helper tests pass 6/6; the full suite passes 665 tests with 1 skipped; typecheck and lint pass.
 
 ### Modules
 | Module | State | Notes |
@@ -90,7 +91,7 @@ Unknown `/api/*` returns JSON 404.
 | Route | State |
 |---|---|
 | `/production/init` | implemented and browser-verified: NewProjectForm (react-hook-form + zodResolver, error summary, focus-first-invalid, duration chips, aspect->resolution) + RecentProjects (server-side search/status filter, debounced 300ms, open/duplicate/delete) + ConfirmDeleteDialog (native `<dialog>`) |
-| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO production page implements automatic/manual package editing and thumbnail upload, with publish checklist/export pending Task 7 |
+| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO production page implements package editing, thumbnail upload, publish checklist, Markdown export, and download links |
 
 ### Run and verify
 `npm run typecheck`, `npm run lint`, `npm test` (184 passed; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
@@ -112,12 +113,13 @@ Unknown `/api/*` returns JSON 404.
 - Live VieNeu and Freesound calls are not made in automated tests; provider adapters are covered with mocks, and an empty `FREESOUND_API_KEY` intentionally disables optional audio generation.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 - Task 67 adds a nullable per-project logo file, Studio upload/replace/remove controls, and a faint composition-level Remotion watermark; FFmpeg ignores the logo. Focused logo tests and the real Remotion verification script cover staging, z-order, aspect ratios, and cleanup.
-- Phase 8 Task 1 remains a prototype reference under `docs/prototypes/seo-dong-goi-kenh/`; Tasks 2–6 now add reviewed production contracts, storage, pure formatting, placeholder AI structure, routes, jobs, thumbnail handling, and the production client page. Publish checklist/export and browser acceptance remain pending Tasks 7–8.
+- Phase 8 Task 1 remains a prototype reference under `docs/prototypes/seo-dong-goi-kenh/`; Tasks 2–7 now add reviewed production contracts, storage, pure formatting, placeholder AI structure, routes, jobs, thumbnail handling, the production client page, and publish export. Browser acceptance remains pending Task 8.
 
 ### Decisions log (newest first, keep the last 15)
 - 2026-10-02: Phase 8 Task 4 keeps the SEO AI preset as a frontmatter-validated placeholder until content review; the module validates snake_case output, normalizes only accepted hashtags, retries one schema failure, and writes no project section after repeated failure.
 - 2026-10-02: Phase 8 Task 5 keeps SEO route handlers thin, deduplicates active generation jobs, checks cancellation before the worker generation path, and stores thumbnails with MIME-derived extensions before replacing/deleting the project pointer.
 - 2026-10-02: Phase 8 Task 6 keeps the SEO UI server-state driven, centralizes title-angle labels, debounces PATCH writes while flushing on blur/unmount, and preserves pasted manual JSON when import fails. The preset remains a placeholder by design.
+- 2026-10-02: Phase 8 Task 7 keeps publish readiness derived from current project/file data, exports generated chapter timestamps through the shared formatter, and treats missing checklist items as warnings while keeping copy/download actions available.
 - 2026-10-02: Phase 8 Task 3 computes chapter starts from per-scene rounded Remotion frames; crossfade/wipe visual extensions do not move audio starts, so no transition overlap is added to chapter timestamps. YouTube readiness stays warn-only through an `{ok, reason}` result.
 - 2026-10-02: Phase 8 Task 2 stores SEO as an additive embedded project package with zod defaults for legacy reads; duplicate projects retain generated text but clear the thumbnail file pointer, and section mutations increment project version once.
 - 2026-10-02: Phase 8 Task 1 keeps SEO packaging as a standalone vanilla prototype until the UI gate is approved; the sample uses Điện Biên Phủ 1954 and treats fact warnings and chapter-readiness notes as warn-only.
@@ -202,7 +204,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Phase 8 Task 6 is committed after Hung/Claude approval. Continue with Task 7 (publish checklist and package export).
+Phase 8 Task 7 is committed after Hung/Claude approval. Continue with Task 8 (build verification and browser acceptance).
 
 ## 2. Stack
 

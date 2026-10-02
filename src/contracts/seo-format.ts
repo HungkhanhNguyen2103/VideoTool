@@ -1,6 +1,7 @@
 import type { ProjectDetail } from './project';
 import {
   SEO_HASHTAGS_MAX_COUNT,
+  SEO_THUMBNAIL_MAX_BYTES,
   SEO_TAGS_MAX_CHARS,
   SEO_THUMBNAIL_MAX_WORDS,
   SEO_TITLE_MAX_CHARS,
@@ -186,4 +187,70 @@ export function findUnsupportedFacts(texts: readonly string[], sourceText: strin
     }
   }
   return unsupported;
+}
+
+export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'video';
+export type PublishChecklistItem = { key: PublishChecklistKey; label: string; done: boolean; detail: string };
+export type PublishThumbnailFile = { id: string; mimeType: string; sizeBytes: number };
+
+/** Build the warn-only publish checklist from the project package and optional file metadata. */
+export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: PublishThumbnailFile): PublishChecklistItem[] {
+  const seo = project.seo;
+  const title = seo.titles.find((item) => item.id === seo.chosenTitleId);
+  const tags = tagBudget(seo.tags);
+  const hashtags = hashtagStatus(seo.hashtags);
+  const thumbnailOk = thumbnailFile
+    ? thumbnailFile.id === seo.thumbnail.fileId
+      && (thumbnailFile.mimeType === 'image/png' || thumbnailFile.mimeType === 'image/jpeg')
+      && thumbnailFile.sizeBytes <= SEO_THUMBNAIL_MAX_BYTES
+    : Boolean(seo.thumbnail.fileId);
+  return [
+    { key: 'title', label: 'Đã chọn tiêu đề', done: Boolean(title && titleStatus(title.text).length <= SEO_TITLE_MAX_CHARS), detail: title?.text ?? 'Chưa chọn tiêu đề.' },
+    { key: 'description', label: 'Có mô tả', done: seo.descriptionIntro.trim().length > 0, detail: seo.descriptionIntro.trim() ? 'Mô tả đã có phần mở đầu.' : 'Chưa có phần mở đầu mô tả.' },
+    { key: 'tags', label: 'Tags trong ngân sách', done: !tags.overLimit && seo.tags.length > 0, detail: `${tags.used}/${tags.max} ký tự.` },
+    { key: 'hashtag', label: 'Có hashtag', done: hashtags.ok && hashtags.count > 0, detail: `${hashtags.count}/${hashtags.max} hashtag.` },
+    { key: 'pinnedComment', label: 'Có bình luận ghim', done: seo.pinnedComment.trim().length > 0, detail: seo.pinnedComment.trim() ? 'Đã có bình luận.' : 'Chưa có bình luận.' },
+    { key: 'thumbnail', label: 'Thumbnail hợp lệ', done: thumbnailOk, detail: thumbnailOk ? 'PNG/JPEG, trong giới hạn.' : 'Cần thumbnail PNG/JPEG không quá 2 MB.' },
+    { key: 'video', label: 'Video đã render', done: Boolean(project.renderFileId), detail: project.renderFileId ? 'Đã có file render.' : 'Chưa render video cuối.' },
+  ];
+}
+
+export function buildPackageMarkdown(project: ProjectDetail): string {
+  const seo = project.seo;
+  const title = seo.titles.find((item) => item.id === seo.chosenTitleId)?.text ?? '';
+  const idea = seo.thumbnail.ideas.find((item) => item.id === seo.thumbnail.chosenIdeaId);
+  const hashtags = normalizeHashtags(seo.hashtags, seo.tags);
+  return [
+    '# Gói đăng YouTube',
+    `Ngày tạo gói: ${project.updatedAt}`,
+    '',
+    '## Tiêu đề',
+    title || '(chưa chọn)',
+    '',
+    '## Mô tả',
+    assembleDescription(seo, project),
+    '',
+    '## Tags',
+    seo.tags.join(', '),
+    '',
+    '## Hashtag',
+    hashtags.join(' '),
+    '',
+    '## Bình luận ghim',
+    seo.pinnedComment,
+    '',
+    '## Thumbnail',
+    idea ? `Chữ: ${idea.overlayText}\nConcept: ${idea.concept}\nPrompt ảnh: ${idea.imagePrompt}` : '(chưa chọn ý tưởng)',
+    '',
+  ].join('\n');
+}
+
+export function slugifyPackageTitle(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'goi-dang-youtube';
 }

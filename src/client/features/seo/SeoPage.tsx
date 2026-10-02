@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { SEO_SECTIONS, SEO_THUMBNAIL_MAX_BYTES, type SeoSection } from '../../../contracts/seo';
+import { buildPackageMarkdown, slugifyPackageTitle } from '../../../contracts/seo-format';
 import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
@@ -14,6 +15,7 @@ import { TagsPanel } from './components/TagsPanel';
 import { PinnedCommentPanel } from './components/PinnedCommentPanel';
 import { ThumbnailPanel } from './components/ThumbnailPanel';
 import { ManualSeoPanel } from './components/ManualSeoPanel';
+import { PublishPanel } from './components/PublishPanel';
 import styles from './SeoPage.module.css';
 
 export function SeoPage() {
@@ -31,6 +33,7 @@ export function SeoPage() {
   const seo = draft ?? project?.seo;
   const files = filesQuery.data ?? [];
   const thumbnailFile = seo?.thumbnail.fileId ? files.find((file) => file.id === seo.thumbnail.fileId) : undefined;
+  const renderFile = project?.renderFileId ? files.find((file) => file.id === project.renderFileId) : undefined;
   const activeJob = progress !== null && ['queued', 'running'].includes(progress.status);
   const allSections = useMemo<SeoSection[]>(() => [...SEO_SECTIONS], []);
 
@@ -111,6 +114,25 @@ export function SeoPage() {
     finally { setBusy(null); }
   }
 
+  async function copyPackage() {
+    if (!project || !seo) return;
+    try { await flush(); await navigator.clipboard.writeText(buildPackageMarkdown({ ...project, seo })); toast('Đã sao chép toàn bộ gói đăng.'); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể sao chép gói đăng.'); }
+  }
+
+  async function downloadPackage() {
+    if (!project || !seo) return;
+    try {
+      await flush();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([buildPackageMarkdown({ ...project, seo })], { type: 'text/markdown;charset=utf-8' }));
+      link.download = `${slugifyPackageTitle(seo.titles.find((title) => title.id === seo.chosenTitleId)?.text ?? project.title)}.md`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast('Đã tải gói đăng Markdown.');
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tải gói đăng.'); }
+  }
+
   if (projectQuery.isLoading) return <div className={styles.loading}>Đang tải gói SEO…</div>;
   if (projectQuery.error || !project || !seo) return <div className={styles.errorBox}>Không thể tải dữ liệu SEO.</div>;
   if (project.chapters.length === 0) return <main className={styles.page}><section className={styles.emptyState}><h1>SEO &amp; Đóng Gói Kênh</h1><p>Dự án chưa có chương. Hãy quay lại tab 2 để tạo và duyệt kịch bản trước.</p></section></main>;
@@ -130,7 +152,7 @@ export function SeoPage() {
       <PinnedCommentPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['pinnedComment'])} onFlush={() => void flush()} />
       <ThumbnailPanel seo={seo} thumbnailFile={thumbnailFile} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['thumbnail'])} onUpload={(file) => void uploadThumbnail(file)} onRemove={() => void removeThumbnail()} />
     </div>
-    <section className={styles.panel}><div className={styles.panelHead}><div><h2>Sẵn sàng đăng</h2><p className={styles.muted}>Checklist và tải gói đăng sẽ xuất hiện ở Task 7.</p></div><Button disabled>Gói đăng (.md)</Button></div><p className={styles.muted}>Đã chọn tiêu đề: {readyDisplay.selectedTitle?.text ?? 'chưa có'}.</p></section>
+    <PublishPanel project={{ ...project, seo }} thumbnailFile={thumbnailFile} renderFile={renderFile} onCopy={() => void copyPackage()} onDownload={() => void downloadPackage()} />
     <div className={styles.flush}><Button size="sm" onClick={() => void flush()} disabled={saveState !== 'error'}>Thử lưu lại</Button></div>
   </main>;
 }
