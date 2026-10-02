@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
+import { SeoPackageSchema } from '../../../contracts/seo';
 
 export const SceneDocSchema = z.object({
   id: z.string(),
@@ -49,6 +50,7 @@ export const ProjectDocSchema = z.object({
   bgmFileId: z.string().nullable().default(null),
   logoFileId: z.string().nullable().default(null),
   customStyleReferenceFileId: z.string().nullable().default(null),
+  seo: SeoPackageSchema,
   renderSettings: z.object({
     aspect: z.enum(ASPECT_RATIOS),
     width: z.number().int(),

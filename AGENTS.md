@@ -10,10 +10,10 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-02 · Phase 8 Task 1 adds the SEO packaging prototype_
+_Last updated: 2026-10-02 · Phase 8 Task 2 adds SEO contracts and project storage_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (638 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -34,11 +34,12 @@ _Last updated: 2026-10-02 · Phase 8 Task 1 adds the SEO packaging prototype_
 - Phase 7 acceptance adds the final regression matrix for preset distinction, motif/count validation, sequential outline expansion, provider/manual routes, cancellation/failure isolation, client controls, and word-based duration parity. The full suite passes 282 tests across 22 files with the pre-existing project todo skipped; typecheck, lint, build, packaging, secret-scan, and module-boundary checks all pass.
 - Task 6/6 integration audit completes the Tasks 1-5 feature set: generation, continuity-aware regeneration, manual import/edit, word-based finalization, and manual read-only Final QA were traced end to end. The audit adds the missing N+1 `upstream-changed` marker for manual paragraph edits; full regression, typecheck, lint, and production build checks pass, with the pre-existing skipped project todo unchanged.
 - Phase 8 Task 1 adds the standalone SEO & Đóng Gói Kênh prototype with automatic/manual modes, title/description/tags/comment/thumbnail panels, fact warnings, publish checklist, export actions, and simulated empty/generating/result/manual/error states. It was checked with Node syntax validation, Chrome headless screenshots at 1440px and 900px, and browser interactions; production SEO implementation remains gated on review.
+- Phase 8 Task 2 adds the shared SEO package contract, named YouTube limits, canonical hashtag normalization/validation, legacy defaults, duplicate semantics, and atomic project-owned SEO mutations. Focused SEO/project tests pass 17/17; the full suite passes 638 tests with 1 skipped; typecheck and lint pass.
 
 ### Modules
 | Module | State | Notes |
 |---|---|---|
-| project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine/logo mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
+| project | done | server: contracts + service/repo/routes plus chapter/history/SEO persistence, atomic scene/status/SEO replacement, public render-engine/logo mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets and visual-prompt orchestration; Phase 7 adds narrative metadata, outline/expansion generation, manual/provider routes, client controls, and word-based duration estimates. |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
 | video | done | Phase 5 Prompt 1 plus Prompt 2 and Task 67 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection/logo routes, matching web/worker wiring, Studio media controls, Chromium integration, and build-isolation scan. FFmpeg ignores project logos. |
@@ -101,9 +102,10 @@ Unknown `/api/*` returns JSON 404.
 - Live VieNeu and Freesound calls are not made in automated tests; provider adapters are covered with mocks, and an empty `FREESOUND_API_KEY` intentionally disables optional audio generation.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 - Task 67 adds a nullable per-project logo file, Studio upload/replace/remove controls, and a faint composition-level Remotion watermark; FFmpeg ignores the logo. Focused logo tests and the real Remotion verification script cover staging, z-order, aspect ratios, and cleanup.
-- Phase 8 Task 1 is a prototype-only gate: the SEO layout and interaction states live under `docs/prototypes/seo-dong-goi-kenh/`; no production contracts, routes, jobs, or client page were changed before UI review.
+- Phase 8 Task 1 remains a prototype reference under `docs/prototypes/seo-dong-goi-kenh/`; Task 2 now adds only the reviewed production contracts and project storage. SEO routes, jobs, and client page remain pending Tasks 3–6.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-10-02: Phase 8 Task 2 stores SEO as an additive embedded project package with zod defaults for legacy reads; duplicate projects retain generated text but clear the thumbnail file pointer, and section mutations increment project version once.
 - 2026-10-02: Phase 8 Task 1 keeps SEO packaging as a standalone vanilla prototype until the UI gate is approved; the sample uses Điện Biên Phủ 1954 and treats fact warnings and chapter-readiness notes as warn-only.
 - 2026-10-02: Task 67 stores one project-owned logo with purpose `logo`, replaces it by storing and pointing to the new file before best-effort old-file cleanup, removes it by clearing the project pointer before cleanup, and renders it once at Remotion composition level outside FilmLook; FFmpeg intentionally ignores the logo.
 - 2026-09-23: Task 4 review fixes seed visual style from all existing non-empty prompts at job start; failed and skipped chapters preserve that context. `project.applyEmptySceneVisualPromptsWithResult` uses a single `findOneAndUpdate` pre-image to report exactly which empty prompts the atomic write filled; the original `ProjectDetail` wrapper delegates to it.
@@ -186,7 +188,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Phase 8 Task 1 prototype is committed and awaiting Hung/Claude UI review. Do not start Task 2–8 until Hung says `go`.
+Phase 8 Task 2 is committed after Hung/Claude approval. Continue with Task 3 (pure SEO formatting and frame-math parity).
 
 ## 2. Stack
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ChapterDocSchema, HubrisMotifSchema, OpenLoopSchema } from './script';
+import { SeoPackageSchema } from './seo';
 
 export const PROJECT_STATUSES = ['draft', 'script', 'assets', 'rendered'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -210,6 +211,7 @@ export const ProjectDetailSchema = z.object({
   bgmFileId: z.string().nullable().default(null),
   logoFileId: z.string().nullable().default(null),
   customStyleReferenceFileId: z.string().nullable().default(null),
+  seo: SeoPackageSchema,
   renderSettings: RenderSettingsSchema,
   scenes: z.array(SceneSchema),
   chapters: z.array(ChapterDocSchema).default([]),

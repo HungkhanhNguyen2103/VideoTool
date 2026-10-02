@@ -1,4 +1,5 @@
 import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ParallaxStyle, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
+import { SeoPackageSchema, SeoPatchSchema, type GeneratedSeoSections, type SeoPatch, type SeoSection } from '../../../contracts/seo';
 import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
 import type { z } from 'zod';
 import { AppError, NotFound } from '../../shared/errors';
@@ -45,6 +46,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     bgmFileId: doc.bgmFileId,
     logoFileId: doc.logoFileId,
     customStyleReferenceFileId: doc.customStyleReferenceFileId,
+    seo: doc.seo,
     renderSettings: doc.renderSettings,
     scenes: doc.scenes,
     chapters: doc.chapters,
@@ -86,6 +88,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     bgmFileId: input.bgmFileId ?? null,
     logoFileId: null,
     customStyleReferenceFileId: null,
+    seo: SeoPackageSchema.parse({}),
     renderSettings: input.renderSettings,
     status: 'draft',
     scenes: [],
@@ -134,6 +137,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     bgmFileId: null,
     logoFileId: null,
     customStyleReferenceFileId: null,
+    seo: { ...src.seo, thumbnail: { ...src.seo.thumbnail, fileId: null } },
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -247,6 +251,67 @@ export async function setProjectBgm(id: string, mood: string, bgmFileId: string 
 export async function setProjectLogo(id: string, logoFileId: string | null): Promise<ProjectDetail> {
   await updateProject(id, { logoFileId });
   return getProject(id);
+}
+
+export async function patchProjectSeo(id: string, patch: SeoPatch): Promise<ProjectDetail> {
+  const parsed = SeoPatchSchema.parse(patch);
+  const current = await getProject(id);
+  SeoPackageSchema.parse({
+    ...current.seo,
+    ...parsed,
+    thumbnail: parsed.thumbnail ? { ...current.seo.thumbnail, ...parsed.thumbnail } : current.seo.thumbnail,
+  });
+  const fields = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [`seo.${key}`, value]));
+  if (Object.keys(fields).length === 0) return getProject(id);
+  await updateSeoFields(id, fields);
+  return getProject(id);
+}
+
+export async function applyGeneratedSeoSections(
+  id: string,
+  sections: readonly SeoSection[],
+  generated: GeneratedSeoSections,
+): Promise<ProjectDetail> {
+  const current = await getProject(id);
+  const candidate = SeoPackageSchema.parse({
+    ...current.seo,
+    ...generated,
+    thumbnail: generated.thumbnail ? { ...current.seo.thumbnail, ...generated.thumbnail } : current.seo.thumbnail,
+  });
+  const requested = new Set(sections);
+  const fields: Record<string, unknown> = { 'seo.generatedBy': candidate.generatedBy };
+  if (requested.has('titles')) {
+    fields['seo.titles'] = candidate.titles;
+    fields['seo.chosenTitleId'] = candidate.titles.some((item) => item.id === current.seo.chosenTitleId) ? current.seo.chosenTitleId : null;
+  }
+  if (requested.has('description')) fields['seo.descriptionIntro'] = candidate.descriptionIntro;
+  if (requested.has('tags')) {
+    fields['seo.tags'] = candidate.tags;
+    fields['seo.hashtags'] = candidate.hashtags;
+  }
+  if (requested.has('pinnedComment')) fields['seo.pinnedComment'] = candidate.pinnedComment;
+  if (requested.has('thumbnail')) {
+    fields['seo.thumbnail.ideas'] = candidate.thumbnail.ideas;
+    fields['seo.thumbnail.chosenIdeaId'] = candidate.thumbnail.ideas.some((item) => item.id === current.seo.thumbnail.chosenIdeaId)
+      ? current.seo.thumbnail.chosenIdeaId
+      : null;
+    fields['seo.thumbnail.fileId'] = current.seo.thumbnail.fileId;
+  }
+  await updateSeoFields(id, fields);
+  return getProject(id);
+}
+
+export async function setSeoThumbnailFile(id: string, fileId: string | null): Promise<ProjectDetail> {
+  await updateSeoFields(id, { 'seo.thumbnail.fileId': fileId });
+  return getProject(id);
+}
+
+async function updateSeoFields(id: string, fields: Record<string, unknown>): Promise<void> {
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id },
+    { $set: { ...fields, updatedAt: new Date() }, $inc: { version: 1 } },
+  );
+  if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
 }
 
 export async function applyProjectVideoDistribution(

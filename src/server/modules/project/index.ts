@@ -32,6 +32,9 @@ export {
   setProjectVisualStylePreset,
   setProjectRenderFile,
   setProjectDraftRenderFile,
+  patchProjectSeo,
+  applyGeneratedSeoSections,
+  setSeoThumbnailFile,
 } from './service';
 export { SceneDocSchema } from './docs';
 export type { ProjectDoc, SceneDoc } from './docs';

@@ -47,6 +47,19 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).logoFileId).toBeNull();
   });
 
+  it('defaults legacy project documents to an empty SEO package', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).seo).toEqual({
+      titles: [],
+      chosenTitleId: null,
+      descriptionIntro: '',
+      tags: [],
+      hashtags: [],
+      pinnedComment: '',
+      thumbnail: { ideas: [], chosenIdeaId: null, fileId: null },
+      generatedBy: null,
+    });
+  });
+
   it('defaults legacy scene documents to no depth map', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).depthMap).toBeNull();
   });
