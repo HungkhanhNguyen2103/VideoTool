@@ -43,6 +43,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     draftRenderFileId: doc.draftRenderFileId,
     bgmMood: doc.bgmMood,
     bgmFileId: doc.bgmFileId,
+    logoFileId: doc.logoFileId,
     customStyleReferenceFileId: doc.customStyleReferenceFileId,
     renderSettings: doc.renderSettings,
     scenes: doc.scenes,
@@ -83,6 +84,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     draftRenderFileId: null,
     bgmMood: input.bgmMood ?? '',
     bgmFileId: input.bgmFileId ?? null,
+    logoFileId: null,
     customStyleReferenceFileId: null,
     renderSettings: input.renderSettings,
     status: 'draft',
@@ -130,6 +132,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     renderFileId: null,
     draftRenderFileId: null,
     bgmFileId: null,
+    logoFileId: null,
     customStyleReferenceFileId: null,
     version: 1,
     createdAt: now,
@@ -238,6 +241,11 @@ export async function setProjectScenesAssetType(id: string, assetType: 'image' |
 
 export async function setProjectBgm(id: string, mood: string, bgmFileId: string | null): Promise<ProjectDetail> {
   await updateProject(id, { bgmMood: mood, bgmFileId });
+  return getProject(id);
+}
+
+export async function setProjectLogo(id: string, logoFileId: string | null): Promise<ProjectDetail> {
+  await updateProject(id, { logoFileId });
   return getProject(id);
 }
 

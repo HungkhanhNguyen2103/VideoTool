@@ -41,7 +41,7 @@ export function createApp(options: AppOptions): Express {
 
   const fileStore = createFileStoreService(options.filesDir);
   app.use('/api/project', createProjectRouter({
-    beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId]),
+    beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId, project.logoFileId]),
   }));
   app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
   app.use('/api/project', fileStoreRouter);

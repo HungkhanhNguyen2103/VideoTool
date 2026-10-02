@@ -23,6 +23,7 @@
 .transitionSelect .audioInput { min-width: 8.5rem; padding: .35rem .5rem; font-size: .8rem; }
 .renderHint { color: var(--text-3); font-size: .75rem; }
 .audioControls { display: grid; gap: 1rem; align-content: start; }
+.mediaAssets { display: flex; align-items: stretch; gap: .75rem; flex-wrap: wrap; }
 .audioInput { min-width: 12rem; padding: .5rem .65rem; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: .45rem; font: inherit; }
 .styleSelector { display: flex; align-items: center; gap: .5rem; }
 .warning { margin: 0; color: var(--amber-text); font-size: .85rem; }

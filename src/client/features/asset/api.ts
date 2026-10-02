@@ -3,6 +3,7 @@ import { FlowSceneExportSchema, VideoDistributionPreviewSchema, type FlowSceneEx
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
 import { AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type FilmLookStyle, type ParallaxStyle, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
+import { ApiErrorBodySchema } from '../../../contracts/common';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
 const FileListSchema = z.array(FileSummarySchema);
@@ -163,6 +164,28 @@ export function generateSceneSfx(projectId: string, sceneId: string): Promise<Pr
 
 export function generateBgm(projectId: string, mood: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-bgm`, ProjectDetailSchema, { method: 'POST', body: { mood } });
+}
+
+async function projectLogoRequest(projectId: string, init: RequestInit): Promise<ProjectDetail> {
+  const response = await fetch(`/api/project/${encodeURIComponent(projectId)}/logo`, init);
+  if (!response.ok) {
+    let payload: unknown;
+    try { payload = await response.json(); } catch { payload = null; }
+    const parsed = ApiErrorBodySchema.safeParse(payload);
+    if (parsed.success) throw new ApiError(parsed.data.error.message, response.status, parsed.data.error.code, parsed.data.error.fields);
+    throw new ApiError(`Yêu cầu thất bại (${response.status}).`, response.status, 'unknown_error');
+  }
+  return ProjectDetailSchema.parse(await response.json());
+}
+
+export function uploadProjectLogo(projectId: string, file: File): Promise<ProjectDetail> {
+  const body = new FormData();
+  body.append('file', file);
+  return projectLogoRequest(projectId, { method: 'PUT', body });
+}
+
+export function removeProjectLogo(projectId: string): Promise<ProjectDetail> {
+  return projectLogoRequest(projectId, { method: 'DELETE' });
 }
 
 export function renderProject(projectId: string, draft = false): Promise<{ jobId: string }> {

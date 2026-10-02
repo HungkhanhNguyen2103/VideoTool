@@ -11,7 +11,7 @@ import type { FileDoc } from './docs';
 import { createFileStoreService } from './service';
 import { NotFound } from '../../shared/errors';
 import { createApp } from '../../app';
-import { createProject, setProjectDraftRenderFile, setProjectRenderFile } from '../project/service';
+import { createProject, setProjectDraftRenderFile, setProjectLogo, setProjectRenderFile } from '../project/service';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import AdmZip from 'adm-zip';
@@ -77,6 +77,7 @@ describe('file-store schema and repository', () => {
     expect(FileDocSchema.parse(makeFile()).purpose).toBe('reference');
     expect(FileDocSchema.parse({ ...makeFile(), purpose: 'voiceover' }).purpose).toBe('voiceover');
     expect(FileDocSchema.parse({ ...makeFile(), purpose: 'style-reference' }).purpose).toBe('style-reference');
+    expect(FileDocSchema.parse({ ...makeFile(), purpose: 'logo' }).purpose).toBe('logo');
     expect(FileDocSchema.parse({ ...makeFile(), purpose: 'render-draft' }).purpose).toBe('render-draft');
   });
 
@@ -89,7 +90,7 @@ describe('file-store schema and repository', () => {
       createdAt: new Date(), updatedAt: new Date(),
     };
     const parsed = ProjectDocSchema.parse(legacy);
-    expect(parsed).toMatchObject({ renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, customStyleReferenceFileId: null });
+    expect(parsed).toMatchObject({ renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, logoFileId: null, customStyleReferenceFileId: null });
     expect(parsed.scenes[0]).toMatchObject({ audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null });
   });
 
@@ -119,14 +120,17 @@ describe('file-store schema and repository', () => {
     expect(summary).toMatchObject({ purpose: 'render-draft', originalName: 'render-draft.mp4', mimeType: 'video/mp4' });
   });
 
-  it('deletes both final and draft render files when deleting a project', async () => {
+  it('deletes final, draft, and logo files when deleting a project', async () => {
     const project = await createProject(projectInput);
     const finalFile = await service.storeFile({ projectId: project.id, originalName: 'render.mp4', mimeType: 'video/mp4', buffer: Buffer.from('final'), purpose: 'render' });
     const draftFile = await service.storeFile({ projectId: project.id, originalName: 'render-draft.mp4', mimeType: 'video/mp4', buffer: Buffer.from('draft'), purpose: 'render-draft' });
+    const logoFile = await service.storeFile({ projectId: project.id, originalName: 'logo.png', mimeType: 'image/png', buffer: Buffer.from('logo'), purpose: 'logo' });
     await setProjectRenderFile(project.id, finalFile.id);
     await setProjectDraftRenderFile(project.id, draftFile.id);
+    await setProjectLogo(project.id, logoFile.id);
     const finalPath = path.join(filesDir, finalFile.storedPath);
     const draftPath = path.join(filesDir, draftFile.storedPath);
+    const logoPath = path.join(filesDir, logoFile.storedPath);
     const base = await startServer();
 
     const response = await fetch(`${base}/api/project/${project.id}`, { method: 'DELETE' });
@@ -134,8 +138,10 @@ describe('file-store schema and repository', () => {
     expect(response.status).toBe(204);
     expect(await findFileById(finalFile.id)).toBeNull();
     expect(await findFileById(draftFile.id)).toBeNull();
+    expect(await findFileById(logoFile.id)).toBeNull();
     expect(existsSync(finalPath)).toBe(false);
     expect(existsSync(draftPath)).toBe(false);
+    expect(existsSync(logoPath)).toBe(false);
   });
 
   it('stores audio purposes and resolves only files owned by the requested project', async () => {
@@ -194,6 +200,20 @@ describe('file-store schema and repository', () => {
     const invalidResponse = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: invalidForm });
     expect(invalidResponse.status).toBe(400);
     expect(await invalidResponse.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
+
+    const logoForm = new FormData();
+    logoForm.append('file', new Blob([Buffer.from('png')], { type: 'image/png' }), 'logo.png');
+    logoForm.append('purpose', 'logo');
+    const logoUploadResponse = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: logoForm });
+    expect(logoUploadResponse.status).toBe(201);
+    expect(await logoUploadResponse.json()).toMatchObject({ purpose: 'logo', mimeType: 'image/png' });
+
+    const logoPdf = new FormData();
+    logoPdf.append('file', new Blob([Buffer.from('pdf')], { type: 'application/pdf' }), 'logo.pdf');
+    logoPdf.append('purpose', 'logo');
+    const logoResponse = await fetch(`${base}/api/project/${project.id}/files`, { method: 'POST', body: logoPdf });
+    expect(logoResponse.status).toBe(400);
+    expect(await logoResponse.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
   });
 
   it('rejects a disallowed upload MIME type', async () => {

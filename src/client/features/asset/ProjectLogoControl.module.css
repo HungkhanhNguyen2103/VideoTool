@@ -1,0 +1,9 @@
+.block { display: grid; gap: .55rem; min-width: 15rem; padding: .7rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.heading p { margin: .2rem 0 0; }
+.muted, .hint { color: var(--text-3); font-size: .75rem; }
+.preview { display: grid; place-items: center; width: 4rem; height: 2.5rem; overflow: hidden; border-radius: .35rem; color: var(--text-3); font-size: .7rem; background-color: var(--input); background-image: linear-gradient(45deg, var(--panel-2) 25%, transparent 25%), linear-gradient(-45deg, var(--panel-2) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--panel-2) 75%), linear-gradient(-45deg, transparent 75%, var(--panel-2) 75%); background-position: 0 0, 0 .35rem, .35rem -.35rem, -.35rem 0; background-size: .7rem .7rem; }
+.preview img { width: 100%; height: 100%; object-fit: contain; }
+.actions { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.hiddenInput { display: none; }
+@media (max-width: 560px) { .block { min-width: 0; } }

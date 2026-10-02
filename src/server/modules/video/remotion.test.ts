@@ -10,7 +10,7 @@ import {
 } from '../../../contracts/video';
 import { loadConfig } from '../../config';
 import { sceneDurationInFrames, sceneFrameTimings, totalDurationInFrames } from '../../../remotion/frame-math';
-import { buildRemotionInputProps } from './remotion-props';
+import { buildRemotionInputProps, resolveRemotionAssets } from './remotion-props';
 import { stageRemotionRender } from './remotion-staging';
 import { RemotionRenderer } from './remotion-renderer';
 import { configureRemotionBundle, getRemotionBundle } from './remotion-bundle';
@@ -70,7 +70,7 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], videoKeyframeRelPath: null, videoTailRelPath: null, videoDurationSec: null, depthMapRelPath: null, filmLook: false, keywords: [] }] });
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, logoRelPath: null, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], videoKeyframeRelPath: null, videoTailRelPath: null, videoDurationSec: null, depthMapRelPath: null, filmLook: false, keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
@@ -98,6 +98,17 @@ describe('Remotion contracts and frame math', () => {
     expect(source).toContain('feGaussianBlur');
     expect(source).toContain('stdDeviation={`${blurX} 0`}');
   });
+
+  it('keeps the logo at composition level above scenes while keyword overlays stay in SceneSequence', async () => {
+    const composition = await readFile('src/remotion/VideoComposition.tsx', 'utf8');
+    const sceneMap = composition.indexOf('props.scenes.map');
+    const logo = composition.indexOf('<ProjectLogo');
+    expect(sceneMap).toBeGreaterThanOrEqual(0);
+    expect(logo).toBeGreaterThan(sceneMap);
+    expect(composition).toContain("{props.logoRelPath ? <ProjectLogo");
+    const sequence = await readFile('src/remotion/SceneSequence.tsx', 'utf8');
+    expect(sequence.indexOf('<KeywordOverlay')).toBeGreaterThan(sequence.indexOf('<SceneVisual'));
+  });
 });
 
 describe('Remotion build isolation', () => {
@@ -118,6 +129,33 @@ describe('Remotion build isolation', () => {
 });
 
 describe('Remotion props and public-dir staging', () => {
+  it('stages a valid project logo and rejects invalid logo references', async () => {
+    const resolver = async (_projectId: string, fileId: string) => {
+      if (fileId === 'missing') throw new Error('missing file');
+      if (fileId === 'logo-pdf') return { absolutePath: path.join(tmpdir(), 'logo.pdf'), mimeType: 'application/pdf', purpose: 'logo' as const };
+      return { absolutePath: path.join(tmpdir(), 'logo.png'), mimeType: 'image/png', purpose: 'logo' as const };
+    };
+    const project = { id: 'project-1', renderSettings: { aspect: '16:9' as const, fps: 30 as const, width: 1920, height: 1080 }, bgmFileId: null, logoFileId: 'logo-1', keywordPopupsEnabled: true };
+    const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
+    const validResolver = async (_projectId: string, fileId: string) => fileId === 'asset-1'
+      ? { absolutePath: path.join(tmpdir(), 'image.png'), mimeType: 'image/png', purpose: 'reference' as const }
+      : resolver(_projectId, fileId);
+    const resolved = await resolveRemotionAssets(project, [scene], 'logo-render', validResolver);
+    expect(resolved.inputProps.logoRelPath).toBe('renders/logo-render/logo.png');
+    expect(resolved.sources).toContainEqual({ absolutePath: path.join(tmpdir(), 'logo.png'), relativePath: 'renders/logo-render/logo.png' });
+
+    await expect(resolveRemotionAssets({ ...project, logoFileId: 'logo-pdf' }, [scene], 'bad-logo', validResolver)).rejects.toMatchObject({ code: 'INVALID_RENDER_ASSET' });
+    await expect(resolveRemotionAssets({ ...project, logoFileId: 'logo-wrong-purpose' }, [scene], 'wrong-purpose-logo', async (_projectId, fileId) => fileId === 'asset-1'
+      ? { absolutePath: path.join(tmpdir(), 'image.png'), mimeType: 'image/png', purpose: 'reference' as const }
+      : { absolutePath: path.join(tmpdir(), 'logo.png'), mimeType: 'image/png', purpose: 'reference' as const })).rejects.toMatchObject({ code: 'INVALID_RENDER_ASSET' });
+    await expect(resolveRemotionAssets({ ...project, logoFileId: 'missing' }, [scene], 'missing-logo', validResolver)).rejects.toMatchObject({ code: 'INVALID_RENDER_ASSET' });
+    await expect(resolveRemotionAssets({ ...project, logoFileId: 'logo-none' }, [scene], 'null-logo', async (_projectId, fileId) => fileId === 'asset-1'
+      ? { absolutePath: path.join(tmpdir(), 'image.png'), mimeType: 'image/png', purpose: 'reference' as const }
+      : { absolutePath: path.join(tmpdir(), 'logo.svg'), mimeType: 'image/svg+xml', purpose: 'logo' as const })).rejects.toMatchObject({ code: 'INVALID_RENDER_ASSET' });
+    const noLogo = await resolveRemotionAssets({ ...project, logoFileId: null }, [scene], 'no-logo', validResolver);
+    expect(noLogo.inputProps.logoRelPath).toBeNull();
+  });
+
   it('passes only timings bound to the current voiceover into Remotion', async () => {
     const resolver = async (_projectId: string, fileId: string) => ({
       absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),

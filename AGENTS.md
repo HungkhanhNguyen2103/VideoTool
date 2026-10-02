@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-09-27 · Task 39 adds shared visual-style samples resolved from explicit uploads and current project references_
+_Last updated: 2026-10-02 · Task 67 adds per-project logo upload and Remotion watermarking_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -37,10 +37,10 @@ _Last updated: 2026-09-27 · Task 39 adds shared visual-style samples resolved f
 ### Modules
 | Module | State | Notes |
 |---|---|---|
-| project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
+| project | done | server: contracts + service/repo/routes plus chapter/history persistence, atomic scene/status replacement, public render-engine/logo mutation, and empty-only AI visual-prompt batch mutation; client: ProjectInitPage + form/list/dialog. Live MongoDB and browser acceptance verified on Windows; automated project-module tests remain intentionally omitted by request |
 | script | done | Phase 3 Prompt 1 complete; Phase 6 adds versioned presets and visual-prompt orchestration; Phase 7 adds narrative metadata, outline/expansion generation, manual/provider routes, client controls, and word-based duration estimates. |
 | asset | done | Phase 4 complete: SceneDoc asset references, project-owned scene mutation APIs, Flow export, tolerant ZIP import, routes, integration tests, and Studio UI |
-| video | done | Phase 5 Prompt 1 plus Prompt 2 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection route, matching web/worker wiring, Studio selector, Chromium integration, and build-isolation scan |
+| video | done | Phase 5 Prompt 1 plus Prompt 2 and Task 67 complete: FFmpeg and Remotion renderers, cached bundle/public staging, atomic engine selection/logo routes, matching web/worker wiring, Studio media controls, Chromium integration, and build-isolation scan. FFmpeg ignores project logos. |
 | job | done | Prompt 1 complete plus append-only logs/SSE extension |
 
 State values: `stub` (files exist, empty), `partial` (some behaviour), `done` (implemented and tested).
@@ -65,6 +65,7 @@ Existing project/file/job routes were exercised against live MongoDB on Windows;
 - `POST /api/project/:id/scenes/:sceneId/generate-sfx` -> updated `ProjectDetail`
 - `POST /api/project/:id/generate-bgm` -> updated `ProjectDetail`
 - `POST /api/project/:id/render` -> 201 `{ jobId }`
+- `PUT /api/project/:id/logo` / `DELETE /api/project/:id/logo` -> updated `ProjectDetail`
 - `PATCH /api/project/:id/render-engine` -> updated `ProjectDetail` (`{ engine: 'ffmpeg' | 'remotion' }`)
 - `PATCH /api/project/:id/scenes/:sceneId` -> updated `ProjectDetail`
 - `POST /api/project/:id/scenes/set-asset-type` -> updated `ProjectDetail`
@@ -98,8 +99,10 @@ Unknown `/api/*` returns JSON 404.
 - Task 6 verified a real one-second image-only Remotion MP4 with local Chrome Headless Shell and no staged render leftovers; the artifact scan found no composition imports in server/worker/client outputs. Studio exposes mutually exclusive FFmpeg/Remotion choices, disables them while busy, refreshes project state on success, and preserves the prior state on failure.
 - Live VieNeu and Freesound calls are not made in automated tests; provider adapters are covered with mocks, and an empty `FREESOUND_API_KEY` intentionally disables optional audio generation.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
+- Task 67 adds a nullable per-project logo file, Studio upload/replace/remove controls, and a faint composition-level Remotion watermark; FFmpeg ignores the logo. Focused logo tests and the real Remotion verification script cover staging, z-order, aspect ratios, and cleanup.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-10-02: Task 67 stores one project-owned logo with purpose `logo`, replaces it by storing and pointing to the new file before best-effort old-file cleanup, removes it by clearing the project pointer before cleanup, and renders it once at Remotion composition level outside FilmLook; FFmpeg intentionally ignores the logo.
 - 2026-09-23: Task 4 review fixes seed visual style from all existing non-empty prompts at job start; failed and skipped chapters preserve that context. `project.applyEmptySceneVisualPromptsWithResult` uses a single `findOneAndUpdate` pre-image to report exactly which empty prompts the atomic write filled; the original `ProjectDetail` wrapper delegates to it.
 - 2026-09-23: Script Task 4 maps each chapter to a stable slice of the finalized project scene array, validates complete global-index echoes before any write, and retries only parse/schema/index failures once. It carries a maximum 500-character continuity note, counts only empty scenes filled by the project mutation, and stops on cooperative cancellation without writing an in-flight response.
 - 2026-09-23: Script Task 6 adds the Studio visual-prompt enqueue action and tests `isProjectJobActive` for no job, the enqueue-to-progress gap, and terminal job states; the action stays disabled while a project job is active.

@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json && tsc -p tsconfig.remotion.json",
     "lint": "eslint src",
     "test": "vitest run",
-    "verify:keyword-font": "tsx scripts/verify-remotion-keyword-font.ts"
+    "verify:keyword-font": "tsx scripts/verify-remotion-keyword-font.ts",
+    "verify:remotion-logo": "tsx scripts/verify-remotion-logo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

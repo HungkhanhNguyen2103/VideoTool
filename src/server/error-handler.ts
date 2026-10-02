@@ -25,7 +25,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
   if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-    res.status(400).json(body('FILE_TOO_LARGE', 'File exceeds the size limit.'));
+    res.status(400).json(body('FILE_TOO_LARGE', 'File vượt quá giới hạn kích thước cho phép.'));
     return;
   }
   if (err instanceof AppError) {

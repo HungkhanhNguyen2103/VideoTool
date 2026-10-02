@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -13,7 +13,7 @@ const project = {
 const projectPayload = {
   id: 'project-1', title: 'Project', status: 'assets', language: 'vi', brief: 'Brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null,
   aiProvider: 'deepseek', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, draftRenderFileId: null, bgmMood: '', bgmFileId: null,
-  customStyleReferenceFileId: null,
+  customStyleReferenceFileId: null, logoFileId: null,
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: project.scenes, chapters: [], version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 };
 
@@ -82,6 +82,19 @@ describe('asset API helpers', () => {
 
     await expect(renderProject('project/1', true)).resolves.toEqual({ jobId: 'job-draft' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/render', expect.objectContaining({ method: 'POST', body: JSON.stringify({ draft: true }) }));
+  });
+
+  it('uploads and removes a project logo through the dedicated routes', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const file = new File(['png'], 'logo.png', { type: 'image/png' });
+    await uploadProjectLogo('project/1', file);
+    await removeProjectLogo('project/1');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/project/project%2F1/logo');
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'PUT' });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeInstanceOf(FormData);
+    expect(fetchMock.mock.calls[1]).toEqual(['/api/project/project%2F1/logo', { method: 'DELETE' }]);
   });
 
   it('fits a scene to its clip through the versioned route', async () => {

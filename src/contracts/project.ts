@@ -208,6 +208,7 @@ export const ProjectDetailSchema = z.object({
   draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),
   bgmFileId: z.string().nullable().default(null),
+  logoFileId: z.string().nullable().default(null),
   customStyleReferenceFileId: z.string().nullable().default(null),
   renderSettings: RenderSettingsSchema,
   scenes: z.array(SceneSchema),

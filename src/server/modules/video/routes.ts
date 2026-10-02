@@ -4,6 +4,7 @@ import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectPara
 import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
 import { getActiveJobByType } from '../job';
 import { AppError } from '../../shared/errors';
+import { uploadLogo } from '../../shared/upload';
 import {
   generateProjectBgm,
   generateSceneSfx,
@@ -11,6 +12,7 @@ import {
   assertProjectRenderReady,
   renderScenePreviewBuffer,
 } from './service';
+import { LOGO_MIME_TYPES, removeProjectLogo, replaceProjectLogo } from './logo-service';
 
 type EnqueueVideoJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 
@@ -79,6 +81,17 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
     const { mood } = BgmSchema.parse(req.body);
     await generateProjectBgm(req.params.id, mood);
     res.json(await getProject(req.params.id));
+  });
+
+  router.put('/:id/logo', uploadLogo, async (req, res) => {
+    const file = req.file;
+    if (!file) throw new AppError('Vui lòng chọn tệp logo.', 400, 'FILE_REQUIRED');
+    if (!LOGO_MIME_TYPES.has(file.mimetype)) throw new AppError('Logo phải là PNG, JPEG hoặc WebP.', 400, 'INVALID_FILE_TYPE');
+    res.json(await replaceProjectLogo(String(req.params.id), file));
+  });
+
+  router.delete('/:id/logo', async (req, res) => {
+    res.json(await removeProjectLogo(String(req.params.id)));
   });
 
   router.post('/:id/render', async (req, res) => {

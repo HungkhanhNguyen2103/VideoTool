@@ -47,6 +47,7 @@ export const ProjectDocSchema = z.object({
   draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),
   bgmFileId: z.string().nullable().default(null),
+  logoFileId: z.string().nullable().default(null),
   customStyleReferenceFileId: z.string().nullable().default(null),
   renderSettings: z.object({
     aspect: z.enum(ASPECT_RATIOS),

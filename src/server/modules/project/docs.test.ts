@@ -44,6 +44,7 @@ describe('ProjectDocSchema visual style compatibility', () => {
 
   it('defaults legacy project documents to no draft render file', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).draftRenderFileId).toBeNull();
+    expect(ProjectDocSchema.parse(validLegacyDoc).logoFileId).toBeNull();
   });
 
   it('defaults legacy scene documents to no depth map', () => {

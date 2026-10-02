@@ -54,6 +54,7 @@ export const RemotionInputPropsSchema = z.object({
   height: z.number().int().positive(),
   scenes: z.array(RemotionScenePropsSchema),
   bgmRelPath: z.string().min(1).nullable(),
+  logoRelPath: z.string().min(1).nullable().default(null),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
   parallax: z.enum(PARALLAX_STYLES).default('off'),
 });

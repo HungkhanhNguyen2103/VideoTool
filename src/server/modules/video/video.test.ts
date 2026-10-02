@@ -7,6 +7,7 @@ import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
+import { createApp } from '../../app';
 import {
   createProject,
   getProject,
@@ -18,6 +19,7 @@ import {
   setProjectParallax,
   setProjectDraftRenderFile,
   setProjectRenderFile,
+  setProjectLogo,
   setSceneWordTimings,
   setSceneDepthMap,
 } from '../project';
@@ -150,12 +152,14 @@ describe('video project mutations', () => {
     await setProjectBgm(project.id, 'calm', 'bgm-1');
     await setProjectRenderFile(project.id, 'render-1');
     await setProjectDraftRenderFile(project.id, 'draft-1');
+    await setProjectLogo(project.id, 'logo-1');
 
     const duplicate = await duplicateProject(project.id);
 
     expect(duplicate.renderFileId).toBeNull();
     expect(duplicate.draftRenderFileId).toBeNull();
     expect(duplicate.bgmFileId).toBeNull();
+    expect(duplicate.logoFileId).toBeNull();
     expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, sfxFileId: null });
   });
 
@@ -175,6 +179,12 @@ describe('video project mutations', () => {
 
     expect(updated).toMatchObject({ bgmMood: 'epic cinematic', bgmFileId: 'bgm-1' });
     expect(updated.version).toBe(project.version + 1);
+  });
+
+  it('updates the project logo reference with one version increment', async () => {
+    const project = await seedProject();
+    const updated = await setProjectLogo(project.id, 'logo-1');
+    expect(updated).toMatchObject({ logoFileId: 'logo-1', version: project.version + 1 });
   });
 
   it('sets the final render file and rendered status atomically', async () => {
@@ -480,6 +490,56 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue): Promise<string>
 }
 
 describe('video routes and worker handlers', () => {
+  it('uploads, replaces, and removes the project logo through the dedicated routes', async () => {
+    const project = await seedProject();
+    const base = await startVideoRouterServer(vi.fn().mockResolvedValue({ id: 'job-1' }) as unknown as VideoEnqueue);
+    const form = () => { const value = new FormData(); value.append('file', new Blob([Buffer.from('png')], { type: 'image/png' }), 'logo.png'); return value; };
+
+    const uploaded = await fetch(`${base}/api/project/${project.id}/logo`, { method: 'PUT', body: form() });
+    expect(uploaded.status).toBe(200);
+    const first = await uploaded.json() as { logoFileId: string };
+    expect(first.logoFileId).toEqual(expect.any(String));
+    const store = createFileStoreService(filesDir);
+    expect(await store.listProjectFiles(project.id)).toContainEqual(expect.objectContaining({ id: first.logoFileId, purpose: 'logo' }));
+
+    const replaced = await fetch(`${base}/api/project/${project.id}/logo`, { method: 'PUT', body: form() });
+    const second = await replaced.json() as { logoFileId: string };
+    expect(second.logoFileId).not.toBe(first.logoFileId);
+    const filesAfterReplace = await store.listProjectFiles(project.id);
+    expect(filesAfterReplace.filter((file) => file.purpose === 'logo')).toHaveLength(1);
+    expect(filesAfterReplace.find((file) => file.id === first.logoFileId)).toBeUndefined();
+
+    const removed = await fetch(`${base}/api/project/${project.id}/logo`, { method: 'DELETE' });
+    expect((await removed.json()).logoFileId).toBeNull();
+    expect((await store.listProjectFiles(project.id)).filter((file) => file.purpose === 'logo')).toHaveLength(0);
+    const removedAgain = await fetch(`${base}/api/project/${project.id}/logo`, { method: 'DELETE' });
+    expect(removedAgain.status).toBe(200);
+  });
+
+  it('rejects missing and non-image logos with Vietnamese 4xx errors', async () => {
+    const project = await seedProject();
+    const base = await startVideoRouterServer(vi.fn().mockResolvedValue({ id: 'job-1' }) as unknown as VideoEnqueue);
+    const missing = await fetch(`${base}/api/project/${project.id}/logo`, { method: 'PUT' });
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toMatchObject({ error: { code: 'FILE_REQUIRED' } });
+    const pdf = new FormData();
+    pdf.append('file', new Blob([Buffer.from('pdf')], { type: 'application/pdf' }), 'logo.pdf');
+    const invalid = await fetch(`${base}/api/project/${project.id}/logo`, { method: 'PUT', body: pdf });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: { code: 'INVALID_FILE_TYPE' } });
+  });
+
+  it('maps an oversized logo upload to a Vietnamese 4xx error', async () => {
+    const project = await seedProject();
+    const app = createApp({ filesDir, clientDir: null });
+    await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
+    const form = new FormData();
+    form.append('file', new Blob([Buffer.alloc(5 * 1024 * 1024 + 1)], { type: 'image/png' }), 'large.png');
+    const response = await fetch(`http://127.0.0.1:${(server!.address() as AddressInfo).port}/api/project/${project.id}/logo`, { method: 'PUT', body: form });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'FILE_TOO_LARGE', message: expect.stringContaining('vượt quá') } });
+  }, 30_000);
+
   it('persists true and false keyword pop-up settings through the route', async () => {
     const project = await seedProject();
     const enqueueJob = vi.fn();

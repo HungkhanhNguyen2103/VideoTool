@@ -15,3 +15,8 @@ export const uploadAssetZip = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 200 * 1024 * 1024 },
 }).single('file');
+
+export const uploadLogo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('file');

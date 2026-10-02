@@ -22,6 +22,7 @@ export {
   restoreProjectChapters,
   setProjectScenesAssetType,
   setProjectBgm,
+  setProjectLogo,
   setProjectKeywordPopups,
   setProjectTransitionStyle,
   setProjectFilmLook,

@@ -3,6 +3,7 @@ import type { RemotionInputProps } from '../contracts/video';
 import { BGM_VOLUME_NUMBER } from '../contracts/video';
 import { sceneFrameTimings, sceneVisualTimings, totalDurationInFrames } from './frame-math';
 import { SceneSequence } from './SceneSequence';
+import { ProjectLogo } from './ProjectLogo';
 
 export const VIDEO_COMPOSITION_ID = 'VideoComposition';
 
@@ -12,6 +13,7 @@ export const DEFAULT_REMOTION_PROPS: RemotionInputProps = {
   height: 1080,
   scenes: [],
   bgmRelPath: null,
+  logoRelPath: null,
   transitionStyle: 'varied',
   parallax: 'off',
 };
@@ -31,6 +33,7 @@ export function VideoComposition(props: RemotionInputProps) {
           visualTiming={visualTimings[index]!}
         />
       ))}
+      {props.logoRelPath ? <ProjectLogo logoRelPath={props.logoRelPath} width={props.width} height={props.height} /> : null}
       {props.bgmRelPath ? <Audio src={staticFile(props.bgmRelPath)} volume={BGM_VOLUME_NUMBER} loop /> : null}
     </AbsoluteFill>
   );

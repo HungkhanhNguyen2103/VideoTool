@@ -30,6 +30,7 @@ export { RemotionRenderer } from './remotion-renderer';
 export { createVideoRouter } from './routes';
 export { alignProjectWordTimings } from './word-timing-service';
 export { configureDepthMapService, generateProjectDepthMaps, generateSceneDepthMap } from './depth-map-service';
+export { configureLogoService, removeProjectLogo, replaceProjectLogo } from './logo-service';
 export {
   assertProjectRenderReady,
   configureVideoModule,

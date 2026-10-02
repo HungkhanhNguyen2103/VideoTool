@@ -31,7 +31,7 @@ export type RemotionKeywordContext = {
 };
 
 export type RemotionProjectSettings = Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>
-  & Partial<Pick<ProjectDetail, 'transitionStyle' | 'filmLook' | 'parallax'>>;
+  & Partial<Pick<ProjectDetail, 'transitionStyle' | 'filmLook' | 'parallax' | 'logoFileId'>>;
 
 const EXTENSION_BY_MIME: Record<string, string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
@@ -183,12 +183,24 @@ export async function resolveRemotionAssets(
     sources.push({ absolutePath: bgm.file.absolutePath, relativePath: bgmRelPath });
   }
 
+  let logoRelPath: string | null = null;
+  if (project.logoFileId) {
+    try {
+      const logo = await resolveFile(project.id, project.logoFileId, resolver, 'logo', 'image/', 'Project logo');
+      logoRelPath = `renders/${renderId}/logo.${logo.extension}`;
+      sources.push({ absolutePath: logo.file.absolutePath, relativePath: logoRelPath });
+    } catch {
+      throw invalidAsset('Project logo is missing or invalid.');
+    }
+  }
+
   const inputProps = RemotionInputPropsSchema.parse({
     fps: project.renderSettings.fps,
     width: project.renderSettings.width,
     height: project.renderSettings.height,
     scenes: sceneProps,
     bgmRelPath,
+    logoRelPath,
     transitionStyle: project.transitionStyle ?? 'varied',
     parallax: project.parallax ?? 'off',
   });

@@ -11,7 +11,7 @@
 - Every FFmpeg input path is resolved through file-store ownership checks for the current project.
 - Scene segments always have H.264 video plus stereo 48 kHz AAC audio, including generated silence when voiceover or SFX is absent.
 - SFX is mixed at `0.31622777` (~-10 dB); BGM is mixed at `0.1` (-20 dB). SFX is never looped.
-- The Remotion composition is isolated under `src/remotion`; the server renderer resolves only project-owned media, stages generated names under the bundle-output `public/renders/<renderId>/`, and cleans that directory after each render.
+- The Remotion composition is isolated under `src/remotion`; the server renderer resolves only project-owned media, stages generated names under the bundle-output `public/renders/<renderId>/`, and cleans that directory after each render. An optional project logo is resolved with purpose `logo`, staged as `logo.<ext>`, and rendered once at composition level at 25% opacity outside FilmLook. FFmpeg intentionally ignores it.
 
 ## Rendering flow
 
@@ -26,6 +26,8 @@ The scene graph scales/pads visuals, adds temporal last-frame padding for short 
 The orchestration services call VieNeu and Freesound adapters, store generated voiceover/SFX/BGM/render files through the configured file-store service, and mutate scene/project references only through the public project API. Freesound keyword normalization and query extraction use the Vietnamese reference dictionary verbatim, including its matching order, delimiter splitting, two-word fallback prefix, and first-seen deduplication. Voiceover batches run sequentially and continue after an individual failure; a failed scene keeps its previous reference and duration.
 
 The router is mounted explicitly at `/api/project`. Project-wide voiceover and render requests enqueue jobs; single-scene voiceover regeneration, SFX/BGM generation, and preview rendering remain synchronous. Worker handlers check cancellation before invoking the service and forward `appendLog` for progress events.
+
+Logo uploads use a dedicated 5 MB memory-upload route. Replacement stores the new logo and updates the project pointer before best-effort cleanup of the old file; removal clears the pointer before cleanup. Studio previews and Remotion drafts retain the logo; only the existing preview BGM omission remains special-cased.
 
 ## Word-timing groundwork (Task 34)
 
