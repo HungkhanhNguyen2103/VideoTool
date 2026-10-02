@@ -18,6 +18,14 @@ export class AiRequestError extends AppError {
   }
 }
 
+export function missingAiKeyError(variable: string): AppError {
+  return new AppError(
+    `Chưa cấu hình ${variable} trong .env. Hãy đổi sang nhà cung cấp khác hoặc dùng chế độ thủ công.`,
+    400,
+    'AI_KEY_MISSING',
+  );
+}
+
 function statusOf(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
   const value = (error as { status?: unknown; statusCode?: unknown; response?: { status?: unknown } }).status

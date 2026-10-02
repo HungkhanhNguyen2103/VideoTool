@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { AiClient, ChatMessage } from './types';
 import { logger } from '../logger';
-import { aiRequestTimeoutMs, normalizeAiError, withAiRequestTimeout } from './errors';
+import { aiRequestTimeoutMs, missingAiKeyError, normalizeAiError, withAiRequestTimeout } from './errors';
 
 const MODEL = 'claude-opus-4-5';
 const DEFAULT_MAX_TOKENS = 4_096;
@@ -26,6 +26,7 @@ export function createClaudeClient(): AiClient {
     model: MODEL,
 
     async chat(messages: ChatMessage[], opts = {}) {
+      if (!apiKey) throw missingAiKeyError('ANTHROPIC_API_KEY');
       try {
         const response = await withAiRequestTimeout(() => client.messages.create(toRequest(messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS)), timeoutMs);
         return response.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
@@ -35,6 +36,7 @@ export function createClaudeClient(): AiClient {
     },
 
     async *stream(messages: ChatMessage[], opts = {}) {
+      if (!apiKey) throw missingAiKeyError('ANTHROPIC_API_KEY');
       try {
         const stream = await withAiRequestTimeout(() => Promise.resolve(client.messages.stream(toRequest(messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS), { signal: opts.signal })), timeoutMs);
         for await (const event of stream) {

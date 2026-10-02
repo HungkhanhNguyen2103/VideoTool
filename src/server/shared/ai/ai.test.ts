@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   deepseekCreate: vi.fn(),
@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   deepseekOptions: vi.fn(),
   anthropicOptions: vi.fn(),
 }));
+
+let previousDeepSeekKey: string | undefined;
+let previousAnthropicKey: string | undefined;
 
 vi.mock('openai', () => ({
   default: class FakeOpenAI {
@@ -28,6 +31,10 @@ import { createDeepSeekClient } from './deepseek';
 
 describe('AI client abstraction', () => {
   beforeEach(() => {
+    previousDeepSeekKey = process.env.DEEPSEEK_API_KEY;
+    previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
     vi.clearAllMocks();
     mocks.deepseekCreate.mockResolvedValue({ choices: [{ message: { content: 'deepseek reply' } }] });
     mocks.anthropicCreate.mockResolvedValue({ content: [{ type: 'text', text: 'claude reply' }] });
@@ -35,6 +42,13 @@ describe('AI client abstraction', () => {
       yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'claude ' } };
       yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'stream' } };
     })());
+  });
+
+  afterEach(() => {
+    if (previousDeepSeekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = previousDeepSeekKey;
+    if (previousAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
   });
 
   it('returns singleton clients for each provider', () => {
@@ -78,6 +92,51 @@ describe('AI client abstraction', () => {
   it('constructs without provider keys', async () => {
     const clients = [getAiClient('deepseek'), getAiClient('claude')];
     expect(clients).toHaveLength(2);
+  });
+
+  it('fails fast for missing DeepSeek API keys in chat and stream', async () => {
+    const previous = process.env.DEEPSEEK_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
+    try {
+      const client = createDeepSeekClient();
+      const message = 'Chưa cấu hình DEEPSEEK_API_KEY trong .env. Hãy đổi sang nhà cung cấp khác hoặc dùng chế độ thủ công.';
+
+      await expect(client.chat([{ role: 'user', content: 'hello' }])).rejects.toMatchObject({
+        status: 400,
+        code: 'AI_KEY_MISSING',
+        message,
+      });
+      await expect((async () => {
+        for await (const value of client.stream([{ role: 'user', content: 'hello' }])) void value;
+      })()).rejects.toMatchObject({ status: 400, code: 'AI_KEY_MISSING', message });
+      expect(mocks.deepseekCreate).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previous;
+    }
+  });
+
+  it('fails fast for missing Anthropic API keys in chat and stream', async () => {
+    const previous = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const client = createClaudeClient();
+      const message = 'Chưa cấu hình ANTHROPIC_API_KEY trong .env. Hãy đổi sang nhà cung cấp khác hoặc dùng chế độ thủ công.';
+
+      await expect(client.chat([{ role: 'user', content: 'hello' }])).rejects.toMatchObject({
+        status: 400,
+        code: 'AI_KEY_MISSING',
+        message,
+      });
+      await expect((async () => {
+        for await (const value of client.stream([{ role: 'user', content: 'hello' }])) void value;
+      })()).rejects.toMatchObject({ status: 400, code: 'AI_KEY_MISSING', message });
+      expect(mocks.anthropicCreate).not.toHaveBeenCalled();
+      expect(mocks.anthropicStream).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = previous;
+    }
   });
 
   it('configures both SDK clients with the bounded timeout and one retry', () => {

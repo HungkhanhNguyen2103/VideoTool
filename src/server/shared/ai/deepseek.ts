@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import type { AiClient, ChatMessage } from './types';
 import { logger } from '../logger';
-import { aiRequestTimeoutMs, normalizeAiError, withAiRequestTimeout } from './errors';
+import { aiRequestTimeoutMs, missingAiKeyError, normalizeAiError, withAiRequestTimeout } from './errors';
 
 const MODEL = 'deepseek-chat';
 
@@ -15,6 +15,7 @@ export function createDeepSeekClient(): AiClient {
     model: MODEL,
 
     async chat(messages: ChatMessage[], opts = {}) {
+      if (!apiKey) throw missingAiKeyError('DEEPSEEK_API_KEY');
       try {
         const response = await withAiRequestTimeout(() => client.chat.completions.create({
           model: MODEL,
@@ -29,6 +30,7 @@ export function createDeepSeekClient(): AiClient {
     },
 
     async *stream(messages: ChatMessage[], opts = {}) {
+      if (!apiKey) throw missingAiKeyError('DEEPSEEK_API_KEY');
       try {
         const response = await withAiRequestTimeout(() => client.chat.completions.create({
           model: MODEL,
