@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { AI_PROVIDERS } from '../../../../contracts/project';
 
+const QA_REVIEWER_PROVIDERS = [...AI_PROVIDERS, 'manual'] as const;
+
 export const QA_ISSUE_TYPES = [
   'REPETITION', 'CONTRADICTION', 'DEAD_CHAPTER', 'POSSIBLE_FILLER', 'WEAK_HOOK', 'FLAT_PACING',
   'PREMATURE_REVEAL', 'UNRESOLVED_LOOP', 'WEAK_PAYOFF', 'AWKWARD_TRANSITION', 'TONE_DRIFT', 'CREDIBILITY_RISK',
@@ -18,7 +20,7 @@ export const QAIssueSchema = z.object({
 
 export const QAResultSchema = z.object({
   issues: z.array(QAIssueSchema),
-  reviewedBy: z.object({ provider: z.enum(AI_PROVIDERS), model: z.string().min(1) }).strict().optional(),
+  reviewedBy: z.object({ provider: z.enum(QA_REVIEWER_PROVIDERS), model: z.string().min(1) }).strict().optional(),
 }).strict();
 export type QAIssue = z.infer<typeof QAIssueSchema>;
 export type QAResult = z.infer<typeof QAResultSchema>;

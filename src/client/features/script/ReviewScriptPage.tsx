@@ -49,9 +49,10 @@ export function regenerationStatusLabel(mode: 'automatic' | 'manual', provider: 
 const qaSameProviderHint = 'Model kiểm tra có thể bỏ sót các lỗi giống model đã viết kịch bản nếu hai bên cùng nhà cung cấp. Hãy đối chiếu số liệu với tài liệu tham khảo.';
 
 export function qaReviewerDisplay(projectProvider: AiProvider, result: QAResult | null): { lines: string[]; hint: string | null } {
-  if (!result) return { lines: [`Sẽ kiểm tra bằng: ${aiProviderLabel[projectProvider]}`], hint: null };
+  if (!result) return { lines: [`Tự động bằng ${aiProviderLabel[projectProvider]}`], hint: null };
   const reviewer = result.reviewedBy;
   if (!reviewer) return { lines: ['Đã kiểm tra: không có thông tin về model'], hint: null };
+  if (reviewer.provider === 'manual') return { lines: ['Đã kiểm tra: thủ công (dán JSON)'], hint: null };
   if (reviewer.provider !== projectProvider) {
     return {
       lines: [`Lần kiểm tra trước: ${aiProviderLabel[reviewer.provider]} · ${reviewer.model}`, `Lần chạy tiếp theo: ${aiProviderLabel[projectProvider]}`],
@@ -92,6 +93,11 @@ export function ReviewScriptPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [qaJobId, setQaJobId] = useState<string | null>(null);
   const [qaResult, setQaResult] = useState<QAResult | null>(null);
+  const [qaMode, setQaMode] = useState<'automatic' | 'manual'>('automatic');
+  const [qaManualPrompt, setQaManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
+  const [qaManualRaw, setQaManualRaw] = useState('');
+  const [qaManualError, setQaManualError] = useState<string | null>(null);
+  const [qaManualBusy, setQaManualBusy] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
@@ -131,6 +137,7 @@ export function ReviewScriptPage() {
   const effectiveGenerationMode = generationModeForChapters(chapters.length, generationMode);
   const controlsBusy = Boolean(jobId) || hasGenerating || manualBusy || manualRegenBusy || providerBusy;
   const qaBusy = Boolean(qaJobId);
+  const qaControlsBusy = qaBusy || qaManualBusy;
   const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
 
   useEffect(() => {
@@ -142,6 +149,12 @@ export function ReviewScriptPage() {
     setRegenLevel('medium');
     setManualRegen(null);
     setFinalizeError(null);
+    setQaJobId(null);
+    setQaResult(null);
+    setQaMode('automatic');
+    setQaManualPrompt(null);
+    setQaManualRaw('');
+    setQaManualError(null);
     initialExpansionProjectIdRef.current = null;
     return () => {
       if (lifecycleRef.current === lifecycle) lifecycleRef.current += 1;
@@ -191,7 +204,33 @@ export function ReviewScriptPage() {
   }
 
   async function runQa() {
-    try { setQaResult(null); setQaJobId((await api.runFinalQa(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chạy kiểm tra QA.'); }
+    try { setQaResult(null); setQaManualError(null); setQaJobId((await api.runFinalQa(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chạy kiểm tra QA.'); }
+  }
+
+  async function loadQaManualPrompt() {
+    setQaManualBusy(true);
+    setQaManualError(null);
+    try {
+      setQaManualPrompt(await api.getFinalQaManualPrompt(projectId));
+    } catch (error) {
+      setQaManualError(error instanceof Error ? error.message : 'Không thể tải prompt QA.');
+    } finally { setQaManualBusy(false); }
+  }
+
+  async function copyQaManualPrompt() {
+    if (!qaManualPrompt) return;
+    try { await navigator.clipboard.writeText(qaManualPrompt.prompt); toast('Đã sao chép prompt QA.'); } catch { toast('Không thể sao chép prompt QA.'); }
+  }
+
+  async function importQaManual() {
+    setQaManualBusy(true);
+    setQaManualError(null);
+    try {
+      setQaResult(await api.importFinalQa(projectId, qaManualRaw));
+      toast('Đã nhập kết quả QA.');
+    } catch (error) {
+      setQaManualError(error instanceof Error ? error.message : 'Không thể nhập kết quả QA.');
+    } finally { setQaManualBusy(false); }
   }
 
   function applyQaIssue(issue: QAIssue) {
@@ -491,9 +530,26 @@ export function ReviewScriptPage() {
 
             <section className={styles.panel} aria-labelledby="qa-title">
               <h2 className={styles.panelTitle} id="qa-title"><Icon name="check" />Kiểm tra cuối (QA)</h2>
-              <Button variant="indigoline" disabled={chapters.length === 0 || qaBusy} onClick={() => void runQa()}>Chạy kiểm tra QA</Button>
-              {qaReviewer.lines.map((line) => <p className={styles.muted} key={line}>{line}</p>)}
+              <fieldset className={`${styles.segmented} ${styles.qaMode}`} aria-label="Chế độ kiểm tra QA" disabled={qaControlsBusy}>
+                <label><input type="radio" name="qa-mode" value="automatic" checked={qaMode === 'automatic'} onChange={() => setQaMode('automatic')} /><span>Tự động</span></label>
+                <label><input type="radio" name="qa-mode" value="manual" checked={qaMode === 'manual'} onChange={() => setQaMode('manual')} /><span>Thủ công (JSON)</span></label>
+              </fieldset>
+              {qaMode === 'manual' && !qaResult ? <p className={styles.muted}>Thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào</p> : qaReviewer.lines.map((line) => <p className={styles.muted} key={line}>{line}</p>)}
               {qaReviewer.hint && <p className={styles.muted}>{qaReviewer.hint}</p>}
+              {qaMode === 'automatic' ? <Button variant="indigoline" disabled={chapters.length === 0 || qaBusy} onClick={() => void runQa()}>Chạy kiểm tra QA</Button> : <div className={styles.manualBox}>
+                <div className={styles.actions}>
+                  <Button variant="indigoline" disabled={qaControlsBusy} onClick={() => void loadQaManualPrompt()}>Lấy prompt QA</Button>
+                  {qaManualPrompt && <Button disabled={qaControlsBusy} onClick={() => void copyQaManualPrompt()}>Sao chép</Button>}
+                </div>
+                {qaManualPrompt && <>
+                  <p className={styles.muted}>Prompt {qaManualPrompt.promptVersion}</p>
+                  <textarea className={styles.textarea} value={qaManualRaw} onChange={(event) => { setQaManualRaw(event.target.value); setQaManualError(null); }} placeholder='{"issues":[{"chapter":1,"type":"REPETITION","severity":"low","reason":"…","suggestedAction":"REMOVE_DUPLICATION"}]}' aria-label="JSON kết quả QA" />
+                  <p className={styles.muted}>Loại: {api.QA_ISSUE_TYPES.join(', ')} · Mức độ: {api.QA_SEVERITIES.join(', ')} · Đề xuất: {api.QA_SUGGESTED_ACTIONS.join(', ')}</p>
+                  {qaManualError && <p className={styles.error}>{qaManualError}</p>}
+                  <Button variant="amber" disabled={qaControlsBusy || !qaManualRaw.trim()} onClick={() => void importQaManual()}>Nhập kết quả QA</Button>
+                </>}
+                {!qaManualPrompt && qaManualError && <p className={styles.error}>{qaManualError}</p>}
+              </div>}
               {qaProgress && (qaProgress.status === 'queued' || qaProgress.status === 'running') && <div className={styles.generationStatus} role="status"><strong>Đang kiểm tra QA… {Math.round(qaProgress.progress)}%</strong></div>}
               {qaResult && (qaResult.issues.length === 0 ? <p className={styles.muted}>Không phát hiện vấn đề.</p> : <div className={styles.qaIssues}>
                 {[...groupQaIssuesByChapter(qaResult.issues)].map(([chapter, issues]) => <div key={chapter}>

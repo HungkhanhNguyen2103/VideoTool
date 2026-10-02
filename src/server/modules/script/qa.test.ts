@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import { QAResultSchema } from './ai/qa-schema';
 import { buildQaPrompt } from './ai/build-prompt';
 import { runFinalQa } from './qa';
-import { createProject, getProject } from '../project';
+import { createProject, getProject, replaceProjectChapters } from '../project';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
@@ -68,6 +68,9 @@ describe('final QA contract', () => {
     expect(QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } })).toMatchObject({
       reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' },
     });
+    expect(QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } })).toMatchObject({
+      reviewedBy: { provider: 'manual', model: 'Dán thủ công' },
+    });
   });
 
   it.each([
@@ -79,6 +82,7 @@ describe('final QA contract', () => {
   it('rejects score-like extra fields', () => {
     expect(() => QAResultSchema.parse({ issues: [], score: 0.5 })).toThrow();
     expect(() => QAResultSchema.parse({ issues: [{ chapter: 1, type: 'REPETITION', severity: 'low', reason: 'Reason', suggestedAction: 'SHORTEN', score: 1 }] })).toThrow();
+    expect(() => QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công', extra: true } })).toThrow();
   });
 });
 
@@ -114,6 +118,19 @@ describe('runFinalQa', () => {
 describe('final QA route', () => {
   let server: Server | null = null;
 
+  async function startServer(): Promise<string> {
+    const app = createApp({ filesDir: './data/files', clientDir: null });
+    await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
+    return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+  }
+
+  async function addChapter(projectId: string): Promise<void> {
+    await replaceProjectChapters(projectId, [{
+      id: 'chapter-1', no: 1, title: 'Chapter one', paragraphs: ['Text'], status: 'approved', scenesCount: null, durationSec: null,
+      role: null, beat: '', targetWords: null, endsOnTension: false, chapterSummary: null, avoidRepeating: [], persistentFacts: [], reviewStatus: 'clean',
+    }], null);
+  }
+
   afterEach(async () => {
     const current = server;
     server = null;
@@ -122,9 +139,7 @@ describe('final QA route', () => {
 
   it('enqueues exactly one final-qa job and returns its id', async () => {
     const project = await createProject(projectInput);
-    const app = createApp({ filesDir: './data/files', clientDir: null });
-    await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
-    const base = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+    const base = await startServer();
 
     const response = await fetch(`${base}/api/project/${project.id}/qa`, { method: 'POST' });
     expect(response.status).toBe(201);
@@ -134,5 +149,60 @@ describe('final QA route', () => {
     expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({
       type: 'final-qa', projectId: project.id, payload: { projectId: project.id },
     });
+  });
+
+  it('returns the exact manual prompt without creating a job', async () => {
+    const project = await createProject(projectInput);
+    const expected = buildQaPrompt(await getProject(project.id));
+    const base = await startServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/qa/manual-prompt`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      prompt: `SYSTEM\n${expected.system}\n\nUSER\n${expected.user}`,
+      promptVersion: expected.promptVersion,
+    });
+    expect(await getCollection('jobs').countDocuments({})).toBe(0);
+    expect(aiMock.chat).not.toHaveBeenCalled();
+  });
+
+  it('imports fenced manual JSON, validates chapters, and overwrites pasted reviewer metadata', async () => {
+    const project = await createProject(projectInput);
+    await addChapter(project.id);
+    const base = await startServer();
+    const raw = `\`\`\`json\n${JSON.stringify({
+      issues: [{ chapter: 1, type: 'REPETITION', severity: 'low', reason: 'Lặp ý.', suggestedAction: 'SHORTEN' }],
+      reviewedBy: { provider: 'deepseek', model: 'pasted-model' },
+    })}\n\`\`\``;
+
+    const response = await fetch(`${base}/api/project/${project.id}/qa/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      issues: [{ chapter: 1, type: 'REPETITION', severity: 'low', reason: 'Lặp ý.', suggestedAction: 'SHORTEN' }],
+      reviewedBy: { provider: 'manual', model: 'Dán thủ công' },
+    });
+  });
+
+  it('rejects broken JSON, extra keys, and issue chapters outside the project', async () => {
+    const project = await createProject(projectInput);
+    await addChapter(project.id);
+    const base = await startServer();
+    const post = (raw: string) => fetch(`${base}/api/project/${project.id}/qa/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw }),
+    });
+
+    const broken = await post('{not json');
+    expect(broken.status).toBe(422);
+    expect(await broken.json()).toMatchObject({ error: { code: 'SCRIPT_PARSE_ERROR' } });
+
+    const extra = await post(JSON.stringify({ issues: [], extra: true }));
+    expect(extra.status).toBe(422);
+    expect(await extra.json()).toMatchObject({ error: { code: 'SCRIPT_PARSE_ERROR' } });
+
+    const outOfRange = await post(JSON.stringify({ issues: [{ chapter: 2, type: 'REPETITION', severity: 'low', reason: 'Lặp ý.', suggestedAction: 'SHORTEN' }] }));
+    expect(outOfRange.status).toBe(422);
+    expect(await outOfRange.json()).toMatchObject({ error: { code: 'QA_CHAPTER_OUT_OF_RANGE', message: expect.stringContaining('2') } });
   });
 });

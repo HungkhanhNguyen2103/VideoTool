@@ -30,9 +30,10 @@ const ChaptersResponseSchema = z.object({ chapters: z.array(ChapterDocSchema) })
 const JobResponseSchema = z.object({ jobId: z.string() });
 const HistoryResponseSchema = z.array(z.object({ takenAt: z.coerce.date(), chapters: z.array(ChapterDocSchema) }));
 const ManualPromptResponseSchema = z.object({ prompt: z.string(), promptVersion: z.string() });
-const QA_ISSUE_TYPES = ['REPETITION', 'CONTRADICTION', 'DEAD_CHAPTER', 'POSSIBLE_FILLER', 'WEAK_HOOK', 'FLAT_PACING', 'PREMATURE_REVEAL', 'UNRESOLVED_LOOP', 'WEAK_PAYOFF', 'AWKWARD_TRANSITION', 'TONE_DRIFT', 'CREDIBILITY_RISK'] as const;
-const QA_SEVERITIES = ['low', 'medium', 'high'] as const;
-const QA_SUGGESTED_ACTIONS = ['REMOVE_DUPLICATION', 'REGENERATE', 'SHORTEN', 'MOVE_REVEAL', 'REVIEW_FACT'] as const;
+export const QA_ISSUE_TYPES = ['REPETITION', 'CONTRADICTION', 'DEAD_CHAPTER', 'POSSIBLE_FILLER', 'WEAK_HOOK', 'FLAT_PACING', 'PREMATURE_REVEAL', 'UNRESOLVED_LOOP', 'WEAK_PAYOFF', 'AWKWARD_TRANSITION', 'TONE_DRIFT', 'CREDIBILITY_RISK'] as const;
+export const QA_SEVERITIES = ['low', 'medium', 'high'] as const;
+export const QA_SUGGESTED_ACTIONS = ['REMOVE_DUPLICATION', 'REGENERATE', 'SHORTEN', 'MOVE_REVEAL', 'REVIEW_FACT'] as const;
+const QA_REVIEWER_PROVIDERS = [...AI_PROVIDERS, 'manual'] as const;
 const QAIssueSchema = z.object({
   chapter: z.number().int().positive(),
   type: z.enum(QA_ISSUE_TYPES),
@@ -42,7 +43,7 @@ const QAIssueSchema = z.object({
 }).strict();
 export const QAResultSchema = z.object({
   issues: z.array(QAIssueSchema),
-  reviewedBy: z.object({ provider: z.enum(AI_PROVIDERS), model: z.string().min(1) }).strict().optional(),
+  reviewedBy: z.object({ provider: z.enum(QA_REVIEWER_PROVIDERS), model: z.string().min(1) }).strict().optional(),
 }).strict();
 export type QAIssue = z.infer<typeof QAIssueSchema>;
 export type QAResult = z.infer<typeof QAResultSchema>;
@@ -57,6 +58,14 @@ export function generateScript(projectId: string): Promise<{ jobId: string }> {
 
 export function runFinalQa(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/qa`, JobResponseSchema, { method: 'POST' });
+}
+
+export function getFinalQaManualPrompt(projectId: string): Promise<{ prompt: string; promptVersion: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/qa/manual-prompt`, ManualPromptResponseSchema);
+}
+
+export function importFinalQa(projectId: string, raw: string): Promise<QAResult> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/qa/manual-import`, QAResultSchema, { method: 'POST', body: { raw } });
 }
 
 export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {

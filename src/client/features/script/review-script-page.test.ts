@@ -80,7 +80,7 @@ describe('ReviewScriptPage regeneration toolbar', () => {
 describe('ReviewScriptPage QA reviewer display', () => {
   it('shows the provider before QA and does not attribute a legacy result', () => {
     expect(qaReviewerDisplay('deepseek', null)).toEqual({
-      lines: ['Sẽ kiểm tra bằng: DeepSeek'],
+      lines: ['Tự động bằng DeepSeek'],
       hint: null,
     });
     expect(qaReviewerDisplay('claude', { issues: [] })).toEqual({
@@ -100,6 +100,13 @@ describe('ReviewScriptPage QA reviewer display', () => {
     expect(qaReviewerDisplay('deepseek', { issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } })).toEqual({
       lines: ['Đã kiểm tra bằng: DeepSeek · deepseek-chat'],
       hint: 'Model kiểm tra có thể bỏ sót các lỗi giống model đã viết kịch bản nếu hai bên cùng nhà cung cấp. Hãy đối chiếu số liệu với tài liệu tham khảo.',
+    });
+  });
+
+  it('labels a manually pasted result without a same-provider hint', () => {
+    expect(qaReviewerDisplay('claude', { issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } })).toEqual({
+      lines: ['Đã kiểm tra: thủ công (dán JSON)'],
+      hint: null,
     });
   });
 });
@@ -127,11 +134,21 @@ describe('ReviewScriptPage theme tokens', () => {
     const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
 
     expect(source).toContain('qaReviewerDisplay');
-    expect(source).toContain('Sẽ kiểm tra bằng:');
+    expect(source).toContain('Tự động bằng');
     expect(source).toContain('Đã kiểm tra bằng:');
     expect(source).toContain('Đã kiểm tra: không có thông tin về model');
     expect(source).toContain('Lần kiểm tra trước:');
     expect(source).toContain('Lần chạy tiếp theo:');
+    expect(source).toContain("useState<'automatic' | 'manual'>('automatic')");
+    expect(source).toContain('Lấy prompt QA');
+    expect(source).toContain('Nhập kết quả QA');
+    expect(source).toContain('getFinalQaManualPrompt');
+    expect(source).toContain('importFinalQa');
+    expect(source).toContain('QA_ISSUE_TYPES');
+    expect(source).toContain('Thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào');
+    expect(source).toContain('value={qaManualRaw}');
+    expect(source).toContain('setQaManualError(error instanceof Error ? error.message');
+    expect(source).toContain('setQaManualRaw(event.target.value)');
   });
 
   it('exposes the visible regeneration modes and manual chapter import controls', async () => {

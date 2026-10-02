@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getManualScriptPrompt, getRegenerationManualPrompt, importManualScript, importRegeneratedChapter, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
+import { getFinalQaManualPrompt, getManualScriptPrompt, getRegenerationManualPrompt, importFinalQa, importManualScript, importRegeneratedChapter, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -42,6 +42,9 @@ describe('final QA API', () => {
     expect(QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'claude', model: 'claude-opus-4-5' } })).toMatchObject({
       reviewedBy: { provider: 'claude', model: 'claude-opus-4-5' },
     });
+    expect(QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } })).toMatchObject({
+      reviewedBy: { provider: 'manual', model: 'Dán thủ công' },
+    });
     expect(() => QAResultSchema.parse({ issues: [], extra: true })).toThrow();
   });
 
@@ -50,6 +53,18 @@ describe('final QA API', () => {
 
     await expect(runFinalQa('project/1')).resolves.toEqual({ jobId: 'job-qa-1' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/qa', expect.objectContaining({ method: 'POST' }));
+    fetchMock.mockRestore();
+  });
+
+  it('gets the manual prompt and imports the manual result', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt: 'SYSTEM\n...', promptVersion: 'qa-prompt-v1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } }), { status: 200 }));
+
+    await expect(getFinalQaManualPrompt('project/1')).resolves.toEqual({ prompt: 'SYSTEM\n...', promptVersion: 'qa-prompt-v1' });
+    await expect(importFinalQa('project/1', '{"issues":[]}')).resolves.toEqual({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/qa/manual-prompt', expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/qa/manual-import', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raw: '{"issues":[]}' }) }));
     fetchMock.mockRestore();
   });
 });

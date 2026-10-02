@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { VISUAL_STYLE_IDS } from '../../../contracts/project';
 import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
-import { buildManualScriptPrompt } from './ai/build-prompt';
-import { parseManualScriptDocument, parseRegeneratedParagraphs, validateScriptOutlineChapterCount } from './ai/parse-output';
+import { buildManualScriptPrompt, buildQaPrompt } from './ai/build-prompt';
+import { parseManualScriptDocument, parseQaResult, parseRegeneratedParagraphs, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { applyRegeneratedChapter, buildRegenerationPromptForChapter, finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
@@ -59,6 +59,27 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
     const project = await getProject(req.params.id);
     const job = await options.enqueueJob({ type: 'final-qa', projectId: project.id, payload: { projectId: project.id } });
     res.status(201).json({ jobId: job.id });
+  });
+
+  router.get('/:id/qa/manual-prompt', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const prompt = buildQaPrompt(project);
+    res.json({
+      prompt: `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`,
+      promptVersion: prompt.promptVersion,
+    });
+  });
+
+  router.post('/:id/qa/manual-import', async (req, res) => {
+    const body = ManualImportSchema.parse(req.body);
+    const result = parseQaResult(body.raw);
+    const project = await getProject(req.params.id);
+    const chapterCount = project.chapterCount ?? project.chapters.length;
+    const invalidChapter = result.issues.find((issue) => issue.chapter > chapterCount);
+    if (invalidChapter) {
+      throw new AppError(`Kết quả QA tham chiếu chương ${invalidChapter.chapter}, nhưng dự án chỉ có ${chapterCount} chương.`, 422, 'QA_CHAPTER_OUT_OF_RANGE');
+    }
+    res.json({ ...result, reviewedBy: { provider: 'manual', model: 'Dán thủ công' } });
   });
 
   router.patch('/:id/ai-provider', async (req, res) => {
