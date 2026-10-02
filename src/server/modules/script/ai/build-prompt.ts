@@ -54,12 +54,19 @@ export type ChapterExpansionPromptInput = {
 const PERSISTENT_FACTS_INSTRUCTION = 'persistentFacts is NOT a chapter summary. Keep only facts or narrative state that a later chapter could accidentally contradict, reintroduce as new, or forget while it remains relevant. Drop facts that are no longer useful. Return the COMPLETE next persistentFacts state, not a delta. Maximum 5 items.';
 const SCRIPT_STRUCTURE_CONTRACT = [
   `Allowed role values are exactly: ${NARRATIVE_ROLES.join(', ')}.`,
-  'Each chapter object must contain exactly no, title, role, beat, targetWords, and endsOnTension; no extra keys. targetWords must be an integer and positive, not a string.',
-  'Example chapter: {"no":1,"title":"The opening","role":"hook","beat":"Raise the central question","targetWords":300,"endsOnTension":true}.',
-  'Each openLoop object must contain exactly question, plantedInChapter, and resolvedInChapter; no extra keys. plantedInChapter and resolvedInChapter are positive integers, not strings.',
-  'Example openLoop: {"question":"What caused the disaster?","plantedInChapter":1,"resolvedInChapter":3}.',
+  'Each chapter object must contain exactly no, title, role, beat, targetWords, and endsOnTension; no extra keys. targetWords must be an integer and positive, not a string. title: a short, evocative title in the project language, without a "Chapter N" prefix. beat: one sentence stating what this chapter makes the viewer understand or feel that the previous one did not.',
+  'Example chapter: {"no":1,"title":"<short title in the project language>","role":"hook","beat":"<one sentence: what this chapter achieves>","targetWords":300,"endsOnTension":true}.',
+  'Each openLoop object must contain exactly question, plantedInChapter, and resolvedInChapter; no extra keys. plantedInChapter and resolvedInChapter are positive integers, not strings. question: phrase it as the question the viewer wants answered. Plant only a few genuine open loops (typically two to four, fewer for a short video) and answer each one in a later chapter.',
+  'Example openLoop: {"question":"<question the viewer wants answered>","plantedInChapter":1,"resolvedInChapter":3}.',
 ].join(' ');
 const EXPANSION_LENGTH_CONTRACT = 'styleNote max 500 chars, chapterSummary max 250 chars, avoidRepeating max 5 items each max 80 chars, persistentFactsNext max 5 items each max 120 chars.';
+const OUTLINE_QUALITY_CONTRACT = `Order the chapters so each one changes what the viewer understands and raises the next question. Set endsOnTension to true where a chapter should pull the viewer into the next one and to false for the final chapter. Spread targetWords in proportion to each chapter's weight in the story.`;
+const CHAPTER_WRITING_CONTRACT = `paragraphs: write only this chapter's narration. Each paragraph becomes one scene, so keep each paragraph to one visual moment and one thought. Land within about 10% of Target words; falling short makes the video shorter than planned. Continue from the previous chapter without recapping it, do not reuse anything listed under Avoid repeating, stay consistent with Persistent facts, and plant or resolve the listed open loops where this chapter's beat calls for it, without announcing them. If Ends on tension is yes, close on a line that pulls the viewer into the next chapter; if no, close cleanly. chapterSummary: one or two sentences on what this chapter established or revealed, so later chapters do not repeat it. avoidRepeating: images, phrases, or reveals already used that later chapters must not reuse. styleNote: a compact note on the visual and tonal motifs that should recur.`;
+const MANUAL_WRITING_CONTRACT = `Each chapter's paragraphs are the finished narration: each paragraph becomes one scene (one visual moment, one thought), and the paragraphs of a chapter together should land within about 10% of that chapter's targetWords. Continue each chapter from the previous one without recapping it, plant each open loop in its plantedInChapter and answer it in its resolvedInChapter without announcing it, and when endsOnTension is true close the chapter on a line that pulls the viewer into the next one. Return one JSON object only, with no commentary before or after it.`;
+const REGENERATION_CONTRACT = `Apply the Instruction to the current paragraphs according to the Regeneration level. light: keep the structure, order, and most sentences, and change only what the instruction needs. medium: rewrite the weak paragraphs and smooth the flow, keeping the facts, the paragraph order, and the chapter's beat. rewrite: write the chapter again from its role and beat, keeping the established facts, the open loops, and Target words. At every level keep each paragraph to one visual moment, stay consistent with Persistent facts, do not repeat anything listed under Avoid repeating, do not invent facts that the current text or the given context does not support, and keep the closing line consistent with Ends on tension. If the instruction conflicts with established facts, keep the facts and make the closest safe change.`;
+const VISUAL_PROMPT_CONTRACT = `visualPrompt: write it in English even when the narration is in another language, because image and video generators follow English best. Describe one still image the viewer sees while the narration plays: the subject and what it is doing, the setting with era-specific details (clothing, architecture, vehicles, tools), the shot type and camera angle, the light, and the mood. Make every prompt reflect the required visual style and stand on its own, because each prompt is sent to the generator separately: repeat the identifying details of recurring characters, places, and objects (age, clothing, build, colors) and keep them identical wherever they reappear. Do not use the names of real people; describe their role, age, clothing, and build instead, and favor compositions that do not depend on a recognizable face. Show violence with restraint (aftermath, silhouettes, distance), never in graphic detail. Never request readable text, captions, logos, labels, or watermarks inside the image. Vary the shot type across consecutive scenes (wide, medium, close detail) so the sequence has rhythm, and keep the main subject away from the lower-right corner, where watermarks or a channel logo may sit. motionPrompt describes only what moves, not how the image looks. styleNote: a compact continuity note (palette, the look of recurring characters, recurring locations) that later chapters will reuse.`;
+const SCENE_SPLIT_CONTRACT = 'Cut only at natural pauses: prefer sentence ends, then clause boundaries, and never inside a name, a number with its unit, a date, or a quoted phrase. Start a new chunk only when the picture on screen should change (a new subject, place, time, or action); a narration that describes one continuous moment stays a single chunk. Avoid fragments of only a few words.';
+const QA_RUBRIC_CONTRACT = `Report only real, specific problems: if the script is clean, return {"issues":[]}, and prefer the most important issues over an exhaustive list. reason: one or two sentences naming what is wrong and where, quoting a short phrase from the chapter when it helps. severity: high = a factual contradiction, a broken setup or payoff, or a problem that would make viewers stop watching; medium = clearly weakens the video; low = polish. Issue types: REPETITION = the same information, image, or phrasing returns without adding anything; CONTRADICTION = two statements cannot both be true; DEAD_CHAPTER = the chapter does not move the story or the answer to the core question; POSSIBLE_FILLER = removing the chapter would not measurably hurt the video; WEAK_HOOK = the opening does not deliver the openingHook or the stakes; FLAT_PACING = a long stretch with no change in stakes, tempo, or information; PREMATURE_REVEAL = a payoff arrives before its setup has landed; UNRESOLVED_LOOP = an open loop is never answered or is answered in the wrong place; WEAK_PAYOFF = the answer is less satisfying than the question promised; AWKWARD_TRANSITION = the join between chapters is abrupt or confusing; TONE_DRIFT = the voice moves away from the preset's tone; CREDIBILITY_RISK = a claim is unsupported, overprecise, or likely wrong. Choose suggestedAction to match: REMOVE_DUPLICATION for repetition, SHORTEN for filler and flat pacing, MOVE_REVEAL for premature reveals, REVIEW_FACT for contradiction and credibility risk, REGENERATE when the chapter needs rewriting.`;
 
 type RegenerationPromptContext = {
   coreQuestion: string;
@@ -71,7 +78,7 @@ type RegenerationPromptContext = {
 };
 
 function version(preset: ScriptPreset): string {
-  return `script-prompt-v2/${preset.id}@${preset.version}`;
+  return `script-prompt-v3/${preset.id}@${preset.version}`;
 }
 
 function language(project: ProjectDetail): string {
@@ -80,7 +87,7 @@ function language(project: ProjectDetail): string {
 
 function systemMessage(preset: ScriptPreset, contract: string): string {
   return [
-    'You are a professional video script writer. Return only valid JSON. Do not use markdown fences, headings, or prose outside the JSON.',
+    'You are an experienced editor and writer on a professional video-production pipeline. Follow the task contract exactly and return only valid JSON. Do not use markdown fences, headings, or prose outside the JSON. Write every viewer-facing text field (titles, narration, beats, summaries, hooks, review reasons) in the project language named in the user message, keep JSON keys exactly as specified, and use only facts supported by the brief and references: never invent figures, dates, quotes, or motives.',
     contract,
     preset.system,
     preset.instructions,
@@ -117,7 +124,7 @@ export function buildOutlinePrompt(project: ProjectDetail): BuiltPrompt {
       ? `Use five-act weighting as a guideline: ${weightingConfig.actWeighting!.join('% / ')}%; deviate if pacing calls for it.`
       : `Follow five-act weighting closely as a requirement: ${weightingConfig.actWeighting!.join('% / ')}%.`;
   return {
-    system: systemMessage(preset, `Return one JSON outline object with non-empty coreQuestion, openingHook, chapters, openLoops, and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. ${shape} ${weighting}`),
+    system: systemMessage(preset, `Return one JSON outline object with non-empty coreQuestion, openingHook, chapters, openLoops, and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. ${shape} ${weighting} ${OUTLINE_QUALITY_CONTRACT}`),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -134,7 +141,7 @@ export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput):
   const { project, chapter, coreQuestion, openingHook, previousChapterSummary, previousAvoidRepeating, previousPersistentFacts, openLoops, styleNote } = input;
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, `Return one JSON object with paragraphs (string array), styleNote (string), chapterSummary (string), avoidRepeating (array), and persistentFactsNext (array). ${EXPANSION_LENGTH_CONTRACT} ${PERSISTENT_FACTS_INSTRUCTION}`),
+    system: systemMessage(preset, `Return one JSON object with paragraphs (string array), styleNote (string), chapterSummary (string), avoidRepeating (array), and persistentFactsNext (array). ${EXPANSION_LENGTH_CONTRACT} ${PERSISTENT_FACTS_INSTRUCTION} ${CHAPTER_WRITING_CONTRACT}`),
     user: [
       `Language: ${language(project)}`,
       `Core question: ${coreQuestion}`,
@@ -157,7 +164,7 @@ export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput):
 export function buildManualScriptPrompt(project: ProjectDetail): BuiltPrompt {
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, `Return one complete script document with non-empty coreQuestion and openingHook at the document root, plus chapters containing no, title, role, beat, positive targetWords, endsOnTension, and paragraphs; also include openLoops and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one.`),
+    system: systemMessage(preset, `Return one complete script document with non-empty coreQuestion and openingHook at the document root, plus chapters containing no, title, role, beat, positive targetWords, endsOnTension, and paragraphs; also include openLoops and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. ${MANUAL_WRITING_CONTRACT}`),
     user: [
       `Write the complete script document for project: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -179,7 +186,7 @@ export function buildRegenerationPrompt(
 ): BuiltPrompt {
   const preset = loadScriptPreset(project.scriptPresetId);
   return {
-    system: systemMessage(preset, `Rewrite one chapter and return one JSON object with paragraphs (string array), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). ${PERSISTENT_FACTS_INSTRUCTION}`),
+    system: systemMessage(preset, `Rewrite one chapter and return one JSON object with paragraphs (string array), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). ${PERSISTENT_FACTS_INSTRUCTION} ${REGENERATION_CONTRACT}`),
     user: [
       `Language: ${language(project)}`,
       `Core question: ${context.coreQuestion}`,
@@ -206,7 +213,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
   const scriptPreset = loadScriptPreset(project.scriptPresetId);
   const visualPreset = loadVisualStylePreset(visualStylePresetId);
   return {
-    system: systemMessage(scriptPreset, "Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt, motionPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words, like a Freesound search query — e.g. 'pen writing on paper', 'quiet sigh', 'coffee dripping'), regardless of the narration language, or an empty string when no sound is appropriate. motionPrompt should be a short English animation instruction of roughly one or two sentences describing a camera move and what the subject does, intended for image-to-video generation. Only write a non-empty motionPrompt when that scene's asset type is video; return an empty string for image scenes. Existing visual prompts, SFX prompts, and motion prompts are references; preserve their intent."),
+    system: systemMessage(scriptPreset, "Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt, motionPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words, like a Freesound search query — e.g. 'pen writing on paper', 'quiet sigh', 'coffee dripping'), regardless of the narration language, or an empty string when no sound is appropriate. motionPrompt should be a short English animation instruction of roughly one or two sentences describing a camera move and what the subject does, intended for image-to-video generation. Only write a non-empty motionPrompt when that scene's asset type is video; return an empty string for image scenes. Existing visual prompts, SFX prompts, and motion prompts are references; preserve their intent. " + VISUAL_PROMPT_CONTRACT),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -223,14 +230,14 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
       'Scenes:',
       ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nAsset type: ${scene.assetType}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}\nExisting SFX prompt: ${scene.sfxPrompt || '(none)'}\nExisting motion prompt: ${scene.motionPrompt || '(none)'}`),
     ].join('\n\n'),
-    promptVersion: `visual-prompt-v1/${visualPreset.id}@${visualPreset.version}`,
+    promptVersion: `visual-prompt-v2/${visualPreset.id}@${visualPreset.version}`,
   };
 }
 
 export function buildSceneSplitPrompt(input: SceneSplitPromptInput): BuiltPrompt {
   const { project, chapter, scenes } = input;
   return {
-    system: 'You select visual cut points in existing narration. Return only valid JSON with a scenes array. For every supplied sceneIndex, return one object containing that exact sceneIndex and chunks, an array of non-empty strings. Each chunk must be an exact contiguous substring of its source narration. Do not reword, add, remove, or otherwise modify any narration text. Preserve the source text in order. Echo each supplied sceneIndex exactly once; do not invent, omit, duplicate, or renumber indexes.',
+    system: 'You select visual cut points in existing narration. Return only valid JSON with a scenes array. For every supplied sceneIndex, return one object containing that exact sceneIndex and chunks, an array of non-empty strings. Each chunk must be an exact contiguous substring of its source narration. Do not reword, add, remove, or otherwise modify any narration text. Preserve the source text in order. Echo each supplied sceneIndex exactly once; do not invent, omit, duplicate, or renumber indexes. ' + SCENE_SPLIT_CONTRACT,
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -241,7 +248,7 @@ export function buildSceneSplitPrompt(input: SceneSplitPromptInput): BuiltPrompt
       'Scenes:',
       ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}`),
     ].join('\n\n'),
-    promptVersion: 'scene-split-v1',
+    promptVersion: 'scene-split-v2',
   };
 }
 
@@ -250,7 +257,7 @@ export function buildQaPrompt(project: ProjectDetail): BuiltPrompt {
   const issueTypes = QA_ISSUE_TYPES.join(', ');
   const actions = QA_SUGGESTED_ACTIONS.join(', ');
   return {
-    system: systemMessage(preset, `Return one strict JSON object: {"issues":[...]}. Each issue must contain only chapter (positive integer), type (${issueTypes}), severity (low, medium, or high), reason, and suggestedAction (${actions}). Do not return a score, suggestedFix, or any other field. Detect and flag issues only; do not rewrite any text.`),
+    system: systemMessage(preset, `Return one strict JSON object: {"issues":[...]}. Each issue must contain only chapter (positive integer), type (${issueTypes}), severity (low, medium, or high), reason, and suggestedAction (${actions}). Do not return a score, suggestedFix, or any other field. Detect and flag issues only; do not rewrite any text. ${QA_RUBRIC_CONTRACT}`),
     user: [
       `Project title: ${project.title}`,
       `Language: ${language(project)}`,

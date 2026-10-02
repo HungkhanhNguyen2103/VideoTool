@@ -1,6 +1,6 @@
 ---
 id: photorealistic
-version: 1
+version: 2
 ---
 ## Style
-Render every scene with photographic realism, physically plausible lighting, and accurate material detail as if captured on a real camera. Avoid illustration or stylization, preserve natural skin and surface textures, and use believable lenses, depth, and perspective.
+Render every scene as a documentary-style photograph: true-to-life color, physically plausible available light, accurate materials and natural skin and surface texture, as if captured on a real camera with a believable lens, depth and perspective. Avoid illustration, stylization, heavy color grading and glamour lighting.

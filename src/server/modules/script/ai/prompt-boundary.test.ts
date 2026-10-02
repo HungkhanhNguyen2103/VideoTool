@@ -22,7 +22,7 @@ describe('script AI prompt boundary', () => {
     const input = { ...project, scriptPresetId: id as never };
     const preset = loadScriptPreset(id as never);
     const result = buildScriptPrompt(input);
-    expect(result.promptVersion).toBe(`script-prompt-v2/${id}@${preset.version}`);
+    expect(result.promptVersion).toBe(`script-prompt-v3/${id}@${preset.version}`);
     expect(result.user).toContain(`Script preset: ${id}`);
     expect(result.system.indexOf('professional video script writer')).toBeLessThan(result.system.indexOf(preset.system));
     expect(result.system.indexOf(preset.system)).toBeLessThan(result.system.indexOf(preset.instructions));
@@ -47,7 +47,7 @@ describe('script AI prompt boundary', () => {
       coreQuestion: 'Why did the river change?', openingHook: 'At dawn, it reversed.', openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v2/documentary@2');
+    expect(result.promptVersion).toBe('script-prompt-v3/documentary@3');
     expect(result.system).toContain(loadScriptPreset('documentary').instructions);
     expect(result.user).toContain('Origins');
     expect(result.user).toContain('First beat');
@@ -61,7 +61,7 @@ describe('script AI prompt boundary', () => {
       coreQuestion: 'Why did the river change?', openingHook: null, openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v2/explainer@1');
+    expect(result.promptVersion).toBe('script-prompt-v3/explainer@2');
     expect(result.system).toContain(loadScriptPreset('explainer').instructions);
   });
 
@@ -78,7 +78,7 @@ describe('script AI prompt boundary', () => {
       previousAvoidRepeating: ['Do not repeat the flood reveal'],
       previousPersistentFacts: ['The bridge is damaged'],
     });
-    expect(result.promptVersion).toBe('visual-prompt-v1/anime@1');
+    expect(result.promptVersion).toBe('visual-prompt-v2/anime@2');
     expect(result.system).toContain(loadScriptPreset('documentary').system);
     expect(result.system).toContain('sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words');
     expect(result.system).toContain('motionPrompt');
@@ -115,7 +115,7 @@ describe('script AI prompt boundary', () => {
       previousAvoidRepeating: [],
       previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe(`visual-prompt-v1/strategic-map@${loadVisualStylePreset('strategic-map' as never).version}`);
+    expect(result.promptVersion).toBe(`visual-prompt-v2/strategic-map@${loadVisualStylePreset('strategic-map' as never).version}`);
     expect(result.user).toContain(loadVisualStylePreset('strategic-map' as never).style);
   });
 
@@ -277,7 +277,7 @@ describe('script AI parsers', () => {
     expect(outline.system).toContain('plantedInChapter and resolvedInChapter are positive integers, not strings');
     expect(outline.system).toContain('Example chapter:');
     expect(outline.system).toContain('Example openLoop:');
-    expect(outline.promptVersion).toBe('script-prompt-v2/documentary@2');
+    expect(outline.promptVersion).toBe('script-prompt-v3/documentary@3');
 
     const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [], openLoops: ['What happens next?'], styleNote: 'Muted palette' });
     expect(expansion.user).toContain('Target words: 300');
@@ -296,7 +296,7 @@ describe('script AI parsers', () => {
     for (const role of ['hook', 'context', 'rising', 'climax', 'resolution']) expect(manual.system).toContain(role);
     expect(manual.system).toContain('Example chapter:');
     expect(manual.system).toContain('Example openLoop:');
-    expect(manual.promptVersion).toBe('script-prompt-v2/documentary@2');
+    expect(manual.promptVersion).toBe('script-prompt-v3/documentary@3');
   });
 
   it('keeps hubris-trap outline guidance distinct from flatter explainer weighting', () => {
@@ -327,7 +327,7 @@ describe('script AI parsers', () => {
     const strategist = buildOutlinePrompt({ ...project, scriptPresetId: 'strategist' as never });
     expect(strategist.system).toContain('5% / 10% / 25% / 40% / 20%');
     expect(strategist.system).toContain('guideline');
-    expect(strategist.promptVersion).toMatch(/^script-prompt-v2\/strategist@/);
+    expect(strategist.promptVersion).toMatch(/^script-prompt-v3\/strategist@/);
   });
 
   it.each(['coreQuestion', 'openingHook'] as const)('rejects an outline missing %s with SCRIPT_PARSE_ERROR', (field) => {

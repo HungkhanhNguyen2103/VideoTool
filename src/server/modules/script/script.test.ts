@@ -268,7 +268,7 @@ describe('script contracts', () => {
     const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-prompt`);
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v2/documentary@2' });
+    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v3/documentary@3' });
     expect(body.prompt).toContain('SYSTEM');
     expect(body.prompt).toContain('USER');
     expect(await getCollection('jobs').countDocuments({})).toBe(0);

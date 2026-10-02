@@ -1,6 +1,6 @@
 ---
 id: anime
-version: 1
+version: 2
 ---
 ## Style
-Render every scene as a clean modern anime illustration with confident linework, expressive faces, and cel-shaded color blocks. Use purposeful composition, readable silhouettes, and controlled highlights while keeping backgrounds and props detailed enough to support the story.
+Render every scene as a clean modern anime illustration: confident linework, expressive but readable faces, cel-shaded color blocks and a cohesive palette. Compose with clear silhouettes and a purposeful focal point, and keep backgrounds and props detailed enough to carry the period and setting.
