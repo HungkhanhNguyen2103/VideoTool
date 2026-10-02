@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AI_PROVIDERS } from '../../../contracts/project';
 import type { ProjectDetail } from '../../../contracts/project';
 import { ProjectDetailSchema } from '../../../contracts/project';
 import { ChapterDocSchema, type ChapterDoc, type ChapterSnapshot } from '../../../contracts/script';
@@ -39,7 +40,10 @@ const QAIssueSchema = z.object({
   reason: z.string().min(1),
   suggestedAction: z.enum(QA_SUGGESTED_ACTIONS),
 }).strict();
-export const QAResultSchema = z.object({ issues: z.array(QAIssueSchema) }).strict();
+export const QAResultSchema = z.object({
+  issues: z.array(QAIssueSchema),
+  reviewedBy: z.object({ provider: z.enum(AI_PROVIDERS), model: z.string().min(1) }).strict().optional(),
+}).strict();
 export type QAIssue = z.infer<typeof QAIssueSchema>;
 export type QAResult = z.infer<typeof QAResultSchema>;
 

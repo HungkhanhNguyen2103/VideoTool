@@ -8,7 +8,7 @@ import { buildSceneSplitPrompt } from './ai/build-prompt';
 import { parseSceneSplitBatch } from './ai/parse-output';
 import { splitProjectScenes } from './scene-split';
 
-const aiMock = vi.hoisted(() => ({ chat: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 
 const project = ProjectDetailSchema.parse({

@@ -11,7 +11,7 @@ import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, c
 import { finalizeScript, generateScript, patchChapter, regenerateChapter, saveGeneratedScript } from './service';
 import { runFinalQa } from './qa';
 
-const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 type JobRecord = { _id: string; type: string; payload: unknown };
 
@@ -807,7 +807,7 @@ describe('script contracts', () => {
 
     aiMock.chat.mockResolvedValueOnce(JSON.stringify({ issues: [] }));
     const qa = await runFinalQa(project.id, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() });
-    expect(qa).toEqual({ issues: [] });
+    expect(qa).toEqual({ issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } });
   });
 
   it('rejects finalization until every chapter is approved', async () => {

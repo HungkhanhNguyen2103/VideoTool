@@ -4,7 +4,7 @@ import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { getCollection } from '../../db/client';
 import { generateScript } from './service';
 
-const aiMock = vi.hoisted(() => ({ chat: vi.fn(), stream: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 
 const projectInput = {

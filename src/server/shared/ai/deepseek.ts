@@ -12,6 +12,8 @@ export function createDeepSeekClient(): AiClient {
   const client = new OpenAI({ apiKey: apiKey || 'missing-deepseek-key', baseURL: 'https://api.deepseek.com', timeout: timeoutMs, maxRetries: 1 });
 
   return {
+    model: MODEL,
+
     async chat(messages: ChatMessage[], opts = {}) {
       try {
         const response = await withAiRequestTimeout(() => client.chat.completions.create({

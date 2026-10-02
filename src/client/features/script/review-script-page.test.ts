@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { getReviewStepperState, shouldOfferOpeningHook } from './ReviewScriptPage';
+import { getReviewStepperState, qaReviewerDisplay, shouldOfferOpeningHook } from './ReviewScriptPage';
 
 describe('ReviewScriptPage stepper', () => {
   it('marks script generation as not started when there are no chapters or job', () => {
@@ -69,6 +69,23 @@ describe('ReviewScriptPage opening hook action', () => {
   });
 });
 
+describe('ReviewScriptPage QA reviewer display', () => {
+  it('shows the provider before QA, the returned model after QA, and the legacy fallback', () => {
+    expect(qaReviewerDisplay('deepseek', null)).toEqual({
+      line: 'Sẽ kiểm tra bằng: DeepSeek',
+      hint: null,
+    });
+    expect(qaReviewerDisplay('deepseek', { issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } })).toEqual({
+      line: 'Đã kiểm tra bằng: DeepSeek · deepseek-chat',
+      hint: 'Cùng nhà cung cấp với bước viết kịch bản; kết quả có thể bỏ sót các lỗi tương tự. Hãy đối chiếu số liệu với tài liệu tham khảo.',
+    });
+    expect(qaReviewerDisplay('claude', { issues: [] })).toEqual({
+      line: 'Đã kiểm tra bằng: Claude · Model: không có thông tin',
+      hint: null,
+    });
+  });
+});
+
 describe('ReviewScriptPage theme tokens', () => {
   it('uses the shared dark-theme tokens instead of undefined light fallbacks', async () => {
     const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
@@ -86,5 +103,14 @@ describe('ReviewScriptPage theme tokens', () => {
 
     expect(source).toContain('role="alert"');
     expect(source).toContain('finalizeError');
+  });
+
+  it('renders the QA reviewer metadata below the QA button', async () => {
+    const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+
+    expect(source).toContain('qaReviewerDisplay');
+    expect(source).toContain('Sẽ kiểm tra bằng:');
+    expect(source).toContain('Đã kiểm tra bằng:');
+    expect(source).toContain('Model: không có thông tin');
   });
 });

@@ -5,7 +5,7 @@ import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { applyEmptySceneVisualPromptsWithResult, createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript } from '../project';
 import { generateVisualPrompts } from './visual-prompts';
 
-const aiMock = vi.hoisted(() => ({ chat: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 
 const projectInput = {

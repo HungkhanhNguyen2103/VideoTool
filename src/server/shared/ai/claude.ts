@@ -23,6 +23,8 @@ export function createClaudeClient(): AiClient {
   const client = new Anthropic({ apiKey: apiKey || 'missing-anthropic-key', timeout: timeoutMs, maxRetries: 1 });
 
   return {
+    model: MODEL,
+
     async chat(messages: ChatMessage[], opts = {}) {
       try {
         const response = await withAiRequestTimeout(() => client.messages.create(toRequest(messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS)), timeoutMs);

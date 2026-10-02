@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getManualScriptPrompt, importManualScript, parseSseFrames, runFinalQa, setAiProvider } from './api';
+import { getManualScriptPrompt, importManualScript, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -37,6 +37,14 @@ describe('script generation API', () => {
 });
 
 describe('final QA API', () => {
+  it('accepts legacy QA results and reviewer metadata while rejecting unknown fields', () => {
+    expect(QAResultSchema.parse({ issues: [] })).toEqual({ issues: [] });
+    expect(QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'claude', model: 'claude-opus-4-5' } })).toMatchObject({
+      reviewedBy: { provider: 'claude', model: 'claude-opus-4-5' },
+    });
+    expect(() => QAResultSchema.parse({ issues: [], extra: true })).toThrow();
+  });
+
   it('posts to the project QA route and returns the queued job id', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-qa-1' }), { status: 201 }));
 

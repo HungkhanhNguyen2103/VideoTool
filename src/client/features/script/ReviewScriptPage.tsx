@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import type { AiProvider } from '../../../contracts/project';
 import type { ChapterDoc } from '../../../contracts/script';
 import type { QAIssue, QAResult } from './api';
 import { Badge } from '../../shared/ui/Badge';
@@ -38,6 +39,19 @@ const qaSeverityLabel = { high: 'cao', medium: 'trung bình', low: 'thấp' } as
 const qaActionLabel: Record<QAResult['issues'][number]['suggestedAction'], string> = {
   REMOVE_DUPLICATION: 'Loại bỏ trùng lặp', REGENERATE: 'Tái tạo', SHORTEN: 'Rút gọn', MOVE_REVEAL: 'Dời tiết lộ', REVIEW_FACT: 'Kiểm tra dữ kiện',
 };
+const aiProviderLabel: Record<AiProvider, string> = { deepseek: 'DeepSeek', claude: 'Claude' };
+const qaSameProviderHint = 'Cùng nhà cung cấp với bước viết kịch bản; kết quả có thể bỏ sót các lỗi tương tự. Hãy đối chiếu số liệu với tài liệu tham khảo.';
+
+export function qaReviewerDisplay(projectProvider: AiProvider, result: QAResult | null): { line: string; hint: string | null } {
+  if (!result) return { line: `Sẽ kiểm tra bằng: ${aiProviderLabel[projectProvider]}`, hint: null };
+  const reviewer = result.reviewedBy;
+  const provider = reviewer?.provider ?? projectProvider;
+  const model = reviewer?.model ?? 'Model: không có thông tin';
+  return {
+    line: `Đã kiểm tra bằng: ${aiProviderLabel[provider]} · ${model}`,
+    hint: reviewer?.provider === projectProvider ? qaSameProviderHint : null,
+  };
+}
 
 type ReviewStepState = 'done' | 'active' | 'todo';
 
@@ -103,6 +117,7 @@ export function ReviewScriptPage() {
   const effectiveGenerationMode = generationModeForChapters(chapters.length, generationMode);
   const controlsBusy = Boolean(jobId) || hasGenerating || manualBusy || providerBusy;
   const qaBusy = Boolean(qaJobId);
+  const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -414,6 +429,8 @@ export function ReviewScriptPage() {
             <section className={styles.panel} aria-labelledby="qa-title">
               <h2 className={styles.panelTitle} id="qa-title"><Icon name="check" />Kiểm tra cuối (QA)</h2>
               <Button variant="indigoline" disabled={chapters.length === 0 || qaBusy} onClick={() => void runQa()}>Chạy kiểm tra QA</Button>
+              <p className={styles.muted}>{qaReviewer.line}</p>
+              {qaReviewer.hint && <p className={styles.muted}>{qaReviewer.hint}</p>}
               {qaProgress && (qaProgress.status === 'queued' || qaProgress.status === 'running') && <div className={styles.generationStatus} role="status"><strong>Đang kiểm tra QA… {Math.round(qaProgress.progress)}%</strong></div>}
               {qaResult && (qaResult.issues.length === 0 ? <p className={styles.muted}>Không phát hiện vấn đề.</p> : <div className={styles.qaIssues}>
                 {[...groupQaIssuesByChapter(qaResult.issues)].map(([chapter, issues]) => <div key={chapter}>

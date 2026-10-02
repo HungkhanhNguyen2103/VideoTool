@@ -10,7 +10,7 @@ import { createApp } from '../../app';
 
 type JobRecord = { _id: string; type: string; projectId: string; payload: unknown };
 
-const aiMock = vi.hoisted(() => ({ chat: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 
 const projectInput = {
@@ -50,6 +50,13 @@ describe('final QA contract', () => {
     expect(result.issues).toHaveLength(12);
   });
 
+  it('parses results with or without optional reviewer metadata', () => {
+    expect(QAResultSchema.parse({ issues: [] })).toEqual({ issues: [] });
+    expect(QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } })).toMatchObject({
+      reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' },
+    });
+  });
+
   it.each([
     ['type', { type: 'UNKNOWN' }], ['severity', { severity: 'urgent' }], ['suggestedAction', { suggestedAction: 'FIX_IT' }],
   ])('rejects an invalid %s enum value', (_field, override) => {
@@ -67,17 +74,27 @@ describe('runFinalQa', () => {
     const project = await createProject(projectInput);
     const before = await getProject(project.id);
     aiMock.chat.mockResolvedValue(qaJson);
+    const jobContext = context();
 
-    const result = await runFinalQa(project.id, context());
+    const result = await runFinalQa(project.id, jobContext);
 
-    expect(result).toEqual(JSON.parse(qaJson));
+    expect(result).toEqual({ ...JSON.parse(qaJson), reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } });
     expect(await getProject(project.id)).toEqual(before);
     expect(aiMock.chat).toHaveBeenCalledOnce();
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Final QA finished by deepseek/deepseek-chat: 1 issue found.');
     const system = aiMock.chat.mock.calls[0]![0][0].content as string;
     const user = aiMock.chat.mock.calls[0]![0][1].content as string;
     expect(system).toContain('REPETITION, CONTRADICTION, DEAD_CHAPTER, POSSIBLE_FILLER, WEAK_HOOK, FLAT_PACING, PREMATURE_REVEAL, UNRESOLVED_LOOP, WEAK_PAYOFF, AWKWARD_TRANSITION, TONE_DRIFT, CREDIBILITY_RISK');
     expect(system).toContain('REMOVE_DUPLICATION, REGENERATE, SHORTEN, MOVE_REVEAL, REVIEW_FACT');
     expect(user).toContain('Chapter Deletion Test');
+  });
+
+  it('keeps cancelled QA results unchanged and does not call the AI client', async () => {
+    const project = await createProject(projectInput);
+    const cancelled = { ...context(), isCancelled: vi.fn().mockResolvedValue(true) };
+
+    await expect(runFinalQa(project.id, cancelled)).resolves.toEqual({ issues: [] });
+    expect(aiMock.chat).not.toHaveBeenCalled();
   });
 });
 

@@ -41,6 +41,8 @@ describe('AI client abstraction', () => {
     expect(getAiClient('deepseek')).toBe(getAiClient('deepseek'));
     expect(getAiClient('claude')).toBe(getAiClient('claude'));
     expect(getAiClient('deepseek')).not.toBe(getAiClient('claude'));
+    expect(getAiClient('deepseek').model).toBe('deepseek-chat');
+    expect(getAiClient('claude').model).toBe('claude-opus-4-5');
   });
 
   it('maps DeepSeek chat and stream deltas to the common interface', async () => {
