@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-02 · Task 67 adds per-project logo upload and Remotion watermarking_
+_Last updated: 2026-10-02 · Phase 8 Task 1 adds the SEO packaging prototype_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (241 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -33,6 +33,7 @@ _Last updated: 2026-10-02 · Task 67 adds per-project logo upload and Remotion w
 - Phase 7 Task 7 adds client provider selection, automatic/manual generation controls, typed manual prompt/import APIs, preserved pasted text on import errors, and narrative metadata display. Client-focused tests pass 29/29; typecheck, lint, build, and full regression pass.
 - Phase 7 acceptance adds the final regression matrix for preset distinction, motif/count validation, sequential outline expansion, provider/manual routes, cancellation/failure isolation, client controls, and word-based duration parity. The full suite passes 282 tests across 22 files with the pre-existing project todo skipped; typecheck, lint, build, packaging, secret-scan, and module-boundary checks all pass.
 - Task 6/6 integration audit completes the Tasks 1-5 feature set: generation, continuity-aware regeneration, manual import/edit, word-based finalization, and manual read-only Final QA were traced end to end. The audit adds the missing N+1 `upstream-changed` marker for manual paragraph edits; full regression, typecheck, lint, and production build checks pass, with the pre-existing skipped project todo unchanged.
+- Phase 8 Task 1 adds the standalone SEO & Đóng Gói Kênh prototype with automatic/manual modes, title/description/tags/comment/thumbnail panels, fact warnings, publish checklist, export actions, and simulated empty/generating/result/manual/error states. It was checked with Node syntax validation, Chrome headless screenshots at 1440px and 900px, and browser interactions; production SEO implementation remains gated on review.
 
 ### Modules
 | Module | State | Notes |
@@ -78,7 +79,7 @@ Unknown `/api/*` returns JSON 404.
 | Route | State |
 |---|---|
 | `/production/init` | implemented and browser-verified: NewProjectForm (react-hook-form + zodResolver, error summary, focus-first-invalid, duration chips, aspect->resolution) + RecentProjects (server-side search/status filter, debounced 300ms, open/duplicate/delete) + ConfirmDeleteDialog (native `<dialog>`) |
-| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO remains ComingSoonPage placeholder |
+| `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO production page remains ComingSoonPage while the reviewed prototype is in `docs/prototypes/seo-dong-goi-kenh/` |
 
 ### Run and verify
 `npm run typecheck`, `npm run lint`, `npm test` (184 passed; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
@@ -100,8 +101,10 @@ Unknown `/api/*` returns JSON 404.
 - Live VieNeu and Freesound calls are not made in automated tests; provider adapters are covered with mocks, and an empty `FREESOUND_API_KEY` intentionally disables optional audio generation.
 - Orphaned files after partial failures, re-imports, or project deletion are not garbage-collected; deferred by design.
 - Task 67 adds a nullable per-project logo file, Studio upload/replace/remove controls, and a faint composition-level Remotion watermark; FFmpeg ignores the logo. Focused logo tests and the real Remotion verification script cover staging, z-order, aspect ratios, and cleanup.
+- Phase 8 Task 1 is a prototype-only gate: the SEO layout and interaction states live under `docs/prototypes/seo-dong-goi-kenh/`; no production contracts, routes, jobs, or client page were changed before UI review.
 
 ### Decisions log (newest first, keep the last 15)
+- 2026-10-02: Phase 8 Task 1 keeps SEO packaging as a standalone vanilla prototype until the UI gate is approved; the sample uses Điện Biên Phủ 1954 and treats fact warnings and chapter-readiness notes as warn-only.
 - 2026-10-02: Task 67 stores one project-owned logo with purpose `logo`, replaces it by storing and pointing to the new file before best-effort old-file cleanup, removes it by clearing the project pointer before cleanup, and renders it once at Remotion composition level outside FilmLook; FFmpeg intentionally ignores the logo.
 - 2026-09-23: Task 4 review fixes seed visual style from all existing non-empty prompts at job start; failed and skipped chapters preserve that context. `project.applyEmptySceneVisualPromptsWithResult` uses a single `findOneAndUpdate` pre-image to report exactly which empty prompts the atomic write filled; the original `ProjectDetail` wrapper delegates to it.
 - 2026-09-23: Script Task 4 maps each chapter to a stable slice of the finalized project scene array, validates complete global-index echoes before any write, and retries only parse/schema/index failures once. It carries a maximum 500-character continuity note, counts only empty scenes filled by the project mutation, and stops on cooperative cancellation without writing an in-flight response.
@@ -183,7 +186,7 @@ Unknown `/api/*` returns JSON 404.
 - 2026-09-22: Phase 3 acceptance uses `mongodb-memory-server`; 81 tests pass and 3 stub files remain skipped. Vite reports a non-blocking client chunk-size warning above 500 kB.
 
 ### Next step
-Script-presets/visual-prompts Phase 6 is in progress. Tasks 1–4 are committed on `main`; route/UI/acceptance tasks remain before the phase acceptance document is finalized.
+Phase 8 Task 1 prototype is committed and awaiting Hung/Claude UI review. Do not start Task 2–8 until Hung says `go`.
 
 ## 2. Stack
 
