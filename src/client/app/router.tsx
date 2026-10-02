@@ -1,9 +1,9 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { ProjectInitPage } from '../features/project/ProjectInitPage';
 import { Layout } from './Layout';
-import { ComingSoonPage } from './pages/ComingSoonPage';
 import { ReviewScriptPage } from '../features/script/ReviewScriptPage';
 import { StudioPage } from '../features/asset/StudioPage';
+import { SeoPage } from '../features/seo/SeoPage';
 
 export const router = createBrowserRouter([
   {
@@ -22,7 +22,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'production/:projectId/seo',
-        element: <ComingSoonPage title="4. SEO & Đóng Gói Kênh" phase={6} />,
+        element: <SeoPage />,
       },
     ],
   },
