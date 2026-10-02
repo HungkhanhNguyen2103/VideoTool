@@ -17,6 +17,8 @@
 .chapters { flex: 1; min-width: 0; padding: 1.375rem; }
 .side { width: 340px; flex: none; display: grid; gap: 1.25rem; }
 .panelHead { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.panelHead > :first-child { min-width: 0; }
+.panelHead .actions { margin-left: auto; justify-content: flex-end; }
 .panelTitle { display: flex; align-items: center; gap: .5rem; margin: 0; color: var(--text); font-size: .875rem; font-weight: 700; }
 .panelTitle :global(.ic) { color: var(--amber); }
 .panelTitleIndigo :global(.ic) { color: var(--indigo-text); }
@@ -28,6 +30,14 @@
 .modeControls { display: flex; gap: .75rem; margin: 0; padding: 0; border: 0; color: var(--text-2); font-size: .8125rem; }
 .modeControls legend { width: 100%; margin-bottom: .35rem; color: var(--text-3); font-size: .6875rem; font-weight: 600; text-transform: uppercase; }
 .manualBox { display: grid; gap: .75rem; }
+.regenToolbar { display: flex; align-items: center; gap: .75rem; min-width: 0; padding: .5rem .75rem; flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
+.regenToolbar .compactField { flex: 0 0 auto; min-width: 0; }
+.regenToolbar .input { min-height: 36px; }
+.toolbarDivider { width: 1px; height: 22px; flex: none; background: var(--border-2); }
+.regenStatus { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; min-height: 36px; margin-left: auto; padding: 0 .625rem; overflow: hidden; border: 1px solid var(--border); border-radius: 999px; background: var(--input); color: var(--text-3); font-size: .75rem; white-space: nowrap; }
+.statusDot { width: .375rem; height: .375rem; flex: none; border-radius: 50%; background: var(--amber); }
+.regenStatusText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.regenManualHelp { margin: -.4rem 0 0; color: var(--text-3); font-size: .75rem; }
 .narrativeMeta { display: flex; flex-wrap: wrap; gap: .45rem; color: var(--text-3); font-family: var(--mono); font-size: .75rem; }
 .narrativeMeta span { padding: .2rem .45rem; border: 1px solid var(--border); border-radius: .35rem; }
 
@@ -66,6 +76,9 @@
 .segmented span { display: flex; align-items: center; justify-content: center; height: 36px; border: 1px solid var(--border-2); border-radius: .5rem; background: var(--input); color: var(--text-2); font-size: .8125rem; font-weight: 500; }
 .segmented input:checked + span { border-color: var(--amber); background: var(--amber); color: var(--amber-ink); font-weight: 700; }
 .segmented input:focus-visible + span { outline: 2px solid var(--amber); outline-offset: 2px; }
+.regenMode { flex: 0 0 auto; flex-wrap: nowrap; width: max-content; }
+.regenMode label { flex: 0 0 auto; min-width: 0; }
+.regenMode span { padding: 0 .75rem; white-space: nowrap; }
 .blockButton { width: 100%; margin-top: .2rem; }
 
 .historyList { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
@@ -91,6 +104,17 @@
 @media (max-width: 900px) {
   .chapterTop { align-items: flex-start; }
   .hookCallout { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 600px) {
+  .panelHead { align-items: flex-start; }
+  .panelHead .actions { width: 100%; margin-left: 0; justify-content: flex-start; }
+  .regenToolbar { gap: 0; padding-inline: .25rem; }
+  .regenToolbar .compactField { gap: .25rem; }
+  .regenToolbar .compactField .input { width: 64px; padding-inline: .25rem; font-size: .6875rem; }
+  .regenMode { gap: .125rem; }
+  .regenMode span { padding-inline: .125rem; font-size: .6875rem; }
+  .regenStatus { flex: 0 0 100%; margin-left: 0; justify-content: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

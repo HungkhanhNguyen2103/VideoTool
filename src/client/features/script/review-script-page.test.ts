@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { getReviewStepperState, qaReviewerDisplay, shouldOfferOpeningHook } from './ReviewScriptPage';
+import { getReviewStepperState, qaReviewerDisplay, regenerationStatusLabel, shouldOfferOpeningHook } from './ReviewScriptPage';
 
 describe('ReviewScriptPage stepper', () => {
   it('marks script generation as not started when there are no chapters or job', () => {
@@ -69,6 +69,14 @@ describe('ReviewScriptPage opening hook action', () => {
   });
 });
 
+describe('ReviewScriptPage regeneration toolbar', () => {
+  it('labels automatic and manual status chips', () => {
+    expect(regenerationStatusLabel('automatic', 'deepseek')).toBe('Tự động bằng DeepSeek');
+    expect(regenerationStatusLabel('automatic', 'claude')).toBe('Tự động bằng Claude');
+    expect(regenerationStatusLabel('manual', 'deepseek')).toBe('Thủ công: tự dán JSON');
+  });
+});
+
 describe('ReviewScriptPage QA reviewer display', () => {
   it('shows the provider before QA and does not attribute a legacy result', () => {
     expect(qaReviewerDisplay('deepseek', null)).toEqual({
@@ -130,8 +138,13 @@ describe('ReviewScriptPage theme tokens', () => {
     const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
 
     expect(source).toContain('regenMode');
-    expect(source).toContain('Tái tạo tự động bằng');
-    expect(source).toContain('Tái tạo thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào');
+    expect(source).toContain('aria-label="Chế độ tái tạo"');
+    expect(source).toContain('regenerationStatusLabel');
+    expect(source).toContain('Thủ công: tự dán JSON');
+    expect(source).toContain('title={regenMode === \'manual\' ? manualRegenHelp : undefined}');
+    expect(source).toContain('{regenMode === \'manual\' && <p className={styles.regenManualHelp}>{manualRegenHelp}</p>}');
+    expect(source).not.toContain('Tái tạo tự động bằng');
+    expect(source).not.toContain('Tái tạo thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào');
     expect(source).toContain('Lấy prompt tái tạo');
     expect(source).toContain('Chế độ thủ công chỉ tái tạo từng chương');
     expect(source).toContain('{"paragraphs":[…],"chapterSummary":"…","avoidRepeating":[…],"persistentFactsNext":[…]}');

@@ -40,6 +40,12 @@ const qaActionLabel: Record<QAResult['issues'][number]['suggestedAction'], strin
   REMOVE_DUPLICATION: 'Loại bỏ trùng lặp', REGENERATE: 'Tái tạo', SHORTEN: 'Rút gọn', MOVE_REVEAL: 'Dời tiết lộ', REVIEW_FACT: 'Kiểm tra dữ kiện',
 };
 const aiProviderLabel: Record<AiProvider, string> = { deepseek: 'DeepSeek', claude: 'Claude' };
+const manualRegenHelp = 'lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào';
+
+export function regenerationStatusLabel(mode: 'automatic' | 'manual', provider: AiProvider): string {
+  return mode === 'automatic' ? `Tự động bằng ${aiProviderLabel[provider]}` : 'Thủ công: tự dán JSON';
+}
+
 const qaSameProviderHint = 'Model kiểm tra có thể bỏ sót các lỗi giống model đã viết kịch bản nếu hai bên cùng nhà cung cấp. Hãy đối chiếu số liệu với tài liệu tham khảo.';
 
 export function qaReviewerDisplay(projectProvider: AiProvider, result: QAResult | null): { lines: string[]; hint: string | null } {
@@ -399,23 +405,27 @@ export function ReviewScriptPage() {
                 <div className={styles.summary}>{chaptersSummaryText(chapters)}</div>
               </div>
               <div className={styles.actions}>
-                <div>
-                  <label className={styles.compactField} htmlFor="review-provider-existing">AI
-                    <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
-                      <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
-                    </select>
-                  </label>
-                  <fieldset className={styles.modeControls} disabled={controlsBusy}>
-                    <legend>Chế độ tái tạo</legend>
-                    <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} />Tự động</label>
-                    <label><input type="radio" name="regeneration-mode" value="manual" checked={regenMode === 'manual'} onChange={() => setRegenMode('manual')} />Thủ công (JSON)</label>
-                  </fieldset>
-                  <p className={styles.muted}>{regenMode === 'automatic' ? `Tái tạo tự động bằng ${aiProviderLabel[projectQuery.data?.aiProvider ?? 'deepseek']}` : 'Tái tạo thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào'}</p>
-                </div>
                 <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
                 <Button variant="red" title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>
             </div>
+            <div className={styles.regenToolbar}>
+              <label className={styles.compactField} htmlFor="review-provider-existing">AI
+                <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+                  <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
+                </select>
+              </label>
+              <span className={styles.toolbarDivider} aria-hidden="true" />
+              <fieldset className={`${styles.segmented} ${styles.regenMode}`} aria-label="Chế độ tái tạo" disabled={controlsBusy}>
+                <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} /><span>Tự động</span></label>
+                <label><input type="radio" name="regeneration-mode" value="manual" checked={regenMode === 'manual'} onChange={() => setRegenMode('manual')} /><span>Thủ công (JSON)</span></label>
+              </fieldset>
+              <div className={styles.regenStatus} title={regenMode === 'manual' ? manualRegenHelp : undefined}>
+                {regenMode === 'automatic' && <span className={styles.statusDot} aria-hidden="true" />}
+                <span className={styles.regenStatusText}>{regenerationStatusLabel(regenMode, projectQuery.data?.aiProvider ?? 'deepseek')}</span>
+              </div>
+            </div>
+            {regenMode === 'manual' && <p className={styles.regenManualHelp}>{manualRegenHelp}</p>}
             {finalizeError && <div className={styles.errorAlert} role="alert">{finalizeError}</div>}
             <label className={styles.selectAll}><input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={(event) => setSelected(event.target.checked ? new Set(chapters.map((chapter) => chapter.id)) : new Set())} />Chọn tất cả chương</label>
             <div className={styles.chapterList}>
