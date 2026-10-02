@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Studio controls — layout mock</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page" aria-labelledby="page-title">
+      <header class="page-header">
+        <div>
+          <h1 id="page-title">Studio Phân Cảnh</h1>
+          <p class="muted">Bạch Đằng — bản dựng thử</p>
+        </div>
+        <span class="badge">Đang làm asset</span>
+        <label class="header-field">AI provider
+          <select aria-label="AI provider"><option>DeepSeek</option></select>
+        </label>
+        <label class="header-field">Visual style
+          <select aria-label="Visual style"><option>Cinematic</option></select>
+        </label>
+        <div class="button-row header-actions">
+          <button class="button">Copy JSON</button>
+          <button class="button">Export JSON</button>
+          <button class="button button-amber">Import ZIP</button>
+        </div>
+      </header>
+
+      <section class="control-grid" aria-label="Âm thanh và render">
+        <article class="control-card scene-card">
+          <div class="card-title-row">
+            <div>
+              <h2>Scene &amp; hình ảnh</h2>
+              <p class="muted">Chuẩn bị hình ảnh và clip cho từng scene</p>
+            </div>
+            <strong class="counter">6 / 8 scenes have assets</strong>
+          </div>
+          <div class="control-section">
+            <span class="field-label">Loại asset</span>
+            <div class="button-row">
+              <button class="button">All images</button>
+              <button class="button">All videos</button>
+            </div>
+          </div>
+          <div class="distribution-row">
+            <label class="field">% scene video
+              <input type="number" value="20" min="0" max="100" />
+            </label>
+            <button class="button">Xem trước</button>
+          </div>
+          <p class="hint">Sau khi áp dụng, bấm 'Tạo visual prompt' để AI điền motion prompt cho scene video mới.</p>
+          <div class="preview-callout">
+            <strong>2 scene video / 6 ảnh · 4 scene đã có asset (giữ nguyên)</strong>
+            <span class="muted">Scene 3, 7 · Không có thay đổi.</span>
+          </div>
+          <div class="control-section ai-section">
+            <span class="field-label">AI</span>
+            <div class="button-row">
+              <button class="button button-indigo">Tách nhỏ scene</button>
+              <button class="button button-indigo">Tạo visual prompt</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="control-card audio-card">
+          <div class="card-title-row">
+            <div>
+              <h2>Âm thanh</h2>
+              <p class="muted">Voiceover, SFX và nhạc nền</p>
+            </div>
+          </div>
+          <div class="audio-line">
+            <span class="field-label">Voiceover</span>
+            <div class="button-row">
+              <button class="button button-indigo">Tạo voiceover</button>
+              <button class="button button-indigo">Căn thời gian từ</button>
+            </div>
+          </div>
+          <div class="audio-line">
+            <span class="field-label">SFX</span>
+            <button class="button button-indigo">Tạo tất cả SFX</button>
+          </div>
+          <div class="audio-line bgm-line">
+            <span class="field-label">BGM</span>
+            <div class="button-row grow">
+              <input class="grow" type="text" value="calm cinematic" aria-label="BGM mood" />
+              <button class="button">Tạo BGM</button>
+            </div>
+          </div>
+          <audio controls aria-label="BGM preview"></audio>
+          <p class="upload-hint">Đang upload 42%</p>
+        </article>
+
+        <article class="control-card video-card">
+          <div class="card-title-row">
+            <div>
+              <h2>Giao diện video</h2>
+              <p class="muted">Engine và các hiệu ứng đầu ra</p>
+            </div>
+          </div>
+          <div class="engine-row">
+            <span class="field-label">Render engine</span>
+            <div class="segmented" role="group" aria-label="Render engine">
+              <button class="segment">FFmpeg</button>
+              <button class="segment is-selected">Remotion</button>
+            </div>
+          </div>
+          <fieldset class="effects">
+            <legend>Hiệu ứng Remotion</legend>
+            <div class="effects-grid">
+              <label class="toggle"><input type="checkbox" checked /> Chữ pop-up</label>
+              <label class="field">Chuyển cảnh<select aria-label="Chuyển cảnh"><option>Crossfade</option></select></label>
+              <label class="field">Hiệu ứng phim cũ<select><option>Tự động</option></select></label>
+              <label class="field">Hiệu ứng chiều sâu<select><option>Tự động</option></select></label>
+              <button class="button button-indigo">Tạo depth map</button>
+            </div>
+            <p class="hint">Chỉ có ở engine Remotion</p>
+          </fieldset>
+          <div class="logo-row">
+            <div class="checkerboard logo-preview"><span>Logo</span></div>
+            <div class="logo-copy"><strong>Logo video</strong><span class="muted">Watermark mờ ở góc phải dưới</span></div>
+            <div class="button-row logo-actions"><button class="button">Tải logo lên</button><button class="button">Xoá logo</button></div>
+          </div>
+        </article>
+
+        <article class="control-card render-card">
+          <div class="card-title-row">
+            <div>
+              <h2>Render &amp; xuất</h2>
+              <p class="muted">Kiểm tra readiness trước khi xuất video</p>
+            </div>
+          </div>
+          <section class="readiness" aria-label="Render readiness">
+            <div><strong>8 scenes: 6 ready, 1 warnings, 1 errors</strong><p class="muted">Cảnh cảnh báo chỉ cần xác nhận; cảnh lỗi bị chặn theo khả năng render hiện tại.</p></div>
+            <details><summary>Chi tiết readiness</summary><p class="muted">Scene 7: thiếu clip — cảnh báo</p></details>
+          </section>
+          <p class="warning">Chưa sẵn sàng render: scene 8 thiếu asset.</p>
+          <div class="render-actions button-row">
+            <button class="button button-amber">Render video</button>
+            <button class="button button-indigo" title="Chi co o engine Remotion">Render nháp (nhanh)</button>
+          </div>
+          <div class="job-progress"><strong>Job running</strong><progress max="100" value="42"></progress><span>42%</span></div>
+          <div class="render-players">
+            <div><strong>Video cuối</strong><div class="player-placeholder">Final render preview</div></div>
+            <div><strong>Bản nháp</strong><div class="player-placeholder">Draft preview</div><a href="#">Tải bản nháp</a></div>
+          </div>
+        </article>
+      </section>
+
+      <details class="pipeline"><summary><strong>Tiến độ pipeline</strong><span><span class="bar"><i style="width: 68%"></i></span> 68%</span></summary></details>
+      <section class="scene-strip"><strong>Scenes</strong><span>01</span><span>02</span><span>03</span><span>04</span><span>05</span></section>
+    </main>
+  </body>
+</html>

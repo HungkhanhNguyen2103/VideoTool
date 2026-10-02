@@ -60,7 +60,8 @@ export function ProjectLogoControl({ project, logoFile, busy, setBusy, refresh }
 
   return (
     <div className={styles.block}>
-      <div className={styles.heading}><div><strong>Logo video</strong><p className={styles.muted}>Watermark mờ ở góc phải dưới</p></div><div className={styles.preview}>{preview}</div></div>
+      <div className={styles.preview}>{preview}</div>
+      <div className={styles.copy}><strong>Logo video</strong><span className={styles.muted}>Watermark mờ ở góc phải dưới</span></div>
       <div className={styles.actions}>
         <input ref={inputRef} className={styles.hiddenInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
         <Button size="sm" disabled={busy !== null} onClick={() => inputRef.current?.click()}>{project.logoFileId ? 'Đổi logo' : 'Tải logo lên'}</Button>

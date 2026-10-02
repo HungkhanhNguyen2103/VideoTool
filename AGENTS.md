@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-02 · Phase 8 Task 8 completes build checks and documents browser acceptance limits_
+_Last updated: 2026-10-02 · Task 69 regroups Studio controls and records responsive browser verification_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (665 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -42,6 +42,7 @@ _Last updated: 2026-10-02 · Phase 8 Task 8 completes build checks and documents
 - Phase 8 Task 6 replaces the SEO placeholder route with a production client page: automatic/manual controls, centralized Vietnamese title-angle labels, debounced section edits with blur/unmount flush, preserved manual JSON on errors, fact warnings, and thumbnail controls. Focused client helper tests pass 3/3; the full suite passes 662 tests with 1 skipped; typecheck and lint pass.
 - Phase 8 Task 7 adds pure publish-readiness/checklist and Markdown export helpers, a Vietnamese-safe filename slug, copy/download actions, and render/thumbnail download links. Focused SEO helper tests pass 6/6; the full suite passes 665 tests with 1 skipped; typecheck and lint pass.
 - Phase 8 Task 8 passes typecheck, lint, full tests (665 passed, 1 skipped), and production build. The SEO preset is present in `dist/presets/`, and the client bundle scan found no API-key/server-environment identifiers. Browser acceptance was exercised at the available 1280×720 in-app viewport for rendered-project manual prompt, valid import, Vietnamese invalid-JSON error with pasted text preserved, and Markdown download; exact 1440px/900px layout, thumbnail upload replacement/deletion, automatic provider execution, and a no-chapter project remain unverified in this environment.
+- Task 69 regroups the Studio control area into Scene & hình ảnh, Âm thanh, Giao diện video, and Render & xuất cards without changing handlers, state, APIs, disabled rules, readiness logic, or query keys. Upload progress is shown beside the asset counter; Remotion-only effects remain rendered and are disabled with the FFmpeg note; the logo control is compact and horizontal. Typecheck, lint, full tests (665 passed, 1 skipped), and build pass. Browser verification covers Vasa with scenes at 1440px/1280px/900px, FFmpeg and Remotion states, with and without a temporary logo restored afterward, 0-scene project, ZIP upload progress, and job progress; screenshots are under `data/files/.verification/task-69/`.
 
 ### Modules
 | Module | State | Notes |
