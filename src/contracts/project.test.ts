@@ -21,3 +21,9 @@ describe('visual style project field', () => {
   });
 
 });
+
+describe('script preset project field', () => {
+  it('accepts strategist as a script preset', () => {
+    expect(CreateProjectRequestSchema.parse({ ...validCreateInput, scriptPresetId: 'strategist' as never }).scriptPresetId).toBe('strategist');
+  });
+});

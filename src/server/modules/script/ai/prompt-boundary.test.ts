@@ -18,9 +18,9 @@ const chapter = ChapterDocSchema.parse({ id: 'chapter-1', no: 1, title: 'Origins
 const generated = [{ no: 1, title: 'Origins', paragraphs: ['First beat'], scenesCount: null, durationSec: null }];
 
 describe('script AI prompt boundary', () => {
-  it.each(['documentary', 'explainer'] as const)('composes the %s preset into initial prompt with metadata and version', (id) => {
-    const input = { ...project, scriptPresetId: id };
-    const preset = loadScriptPreset(id);
+  it.each(['documentary', 'explainer', 'strategist'] as const)('composes the %s preset into initial prompt with metadata and version', (id) => {
+    const input = { ...project, scriptPresetId: id as never };
+    const preset = loadScriptPreset(id as never);
     const result = buildScriptPrompt(input);
     expect(result.promptVersion).toBe(`script-prompt-v2/${id}@${preset.version}`);
     expect(result.user).toContain(`Script preset: ${id}`);
@@ -138,6 +138,11 @@ describe('script AI parsers', () => {
       openingHook: 'Hook',
     }), 'documentary');
     expect(result.chapters[0]!.targetWords).toBe(300);
+  });
+
+  it('uses the documentary outline schema for strategist', () => {
+    const outline = { chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false }], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook' };
+    expect(parseScriptOutline(JSON.stringify(outline), 'strategist' as never)).toEqual(outline);
   });
 
   it('reports the precise path for an invalid outline role', () => {
@@ -299,6 +304,13 @@ describe('script AI parsers', () => {
     expect(hubris.system).toContain('requirement');
     expect(explainer.system).toContain('flatter explanatory progression');
     expect(explainer.system).not.toContain(ratio);
+  });
+
+  it('uses strategist weighting as a soft five-act guideline', () => {
+    const strategist = buildOutlinePrompt({ ...project, scriptPresetId: 'strategist' as never });
+    expect(strategist.system).toContain('5% / 10% / 25% / 40% / 20%');
+    expect(strategist.system).toContain('guideline');
+    expect(strategist.promptVersion).toMatch(/^script-prompt-v2\/strategist@/);
   });
 
   it.each(['coreQuestion', 'openingHook'] as const)('rejects an outline missing %s with SCRIPT_PARSE_ERROR', (field) => {

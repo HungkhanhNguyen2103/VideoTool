@@ -20,8 +20,8 @@ afterAll(async () => {
 });
 
 describe('loadScriptPreset', () => {
-  it.each(['documentary', 'explainer', 'hubris-trap'] as const)('loads the %s preset with its authored sections', (id) => {
-    const preset = loadScriptPreset(id);
+  it.each(['documentary', 'explainer', 'hubris-trap', 'strategist'] as const)('loads the %s preset with its authored sections', (id) => {
+    const preset = loadScriptPreset(id as never);
 
     expect(preset.id).toBe(id);
     expect(Number.isInteger(preset.version)).toBe(true);
@@ -70,7 +70,7 @@ describe('script preset packaging', () => {
 
     const destination = path.join(root, 'dist/presets');
     const copied = await readdir(destination);
-    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md', 'visual-styles']);
+    expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md', 'strategist.md', 'visual-styles']);
     expect(await readFile(path.join(destination, 'documentary.md'), 'utf8')).toContain('id: documentary');
     const visualStyles = await readdir(path.join(destination, 'visual-styles'));
     expect(visualStyles.sort()).toEqual(['anime.md', 'cinematic.md', 'flat-cartoon.md', 'photorealistic.md', 'watercolor.md']);

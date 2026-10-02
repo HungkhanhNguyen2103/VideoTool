@@ -19,7 +19,7 @@ export type ParallaxStyle = (typeof PARALLAX_STYLES)[number];
 export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
-export const SCRIPT_PRESET_IDS = ['documentary', 'explainer', 'hubris-trap'] as const;
+export const SCRIPT_PRESET_IDS = ['documentary', 'explainer', 'hubris-trap', 'strategist'] as const;
 export type ScriptPresetId = (typeof SCRIPT_PRESET_IDS)[number];
 
 export const VISUAL_STYLE_IDS = ['cinematic', 'anime', 'watercolor', 'photorealistic', 'flat-cartoon'] as const;

@@ -263,6 +263,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
                 <option value="documentary">Phim tài liệu (documentary)</option>
                 <option value="explainer">Giải thích (explainer)</option>
                 <option value="hubris-trap">Kẻ đi săn kiêu ngạo (Hubris Trap)</option>
+                <option value="strategist">Chiến lược: hành động và phản ứng (Strategist)</option>
               </select>
             </div>
             <div className={styles.field}>
