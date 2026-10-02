@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getManualScriptPrompt, importManualScript, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
+import { getManualScriptPrompt, getRegenerationManualPrompt, importManualScript, importRegeneratedChapter, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -50,6 +50,20 @@ describe('final QA API', () => {
 
     await expect(runFinalQa('project/1')).resolves.toEqual({ jobId: 'job-qa-1' });
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/qa', expect.objectContaining({ method: 'POST' }));
+    fetchMock.mockRestore();
+  });
+});
+
+describe('chapter regeneration manual API', () => {
+  it('gets a chapter prompt and imports a parsed chapter through the dedicated routes', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v2/documentary@2' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Updated'], status: 'pending', scenesCount: null, durationSec: null }), { status: 200 }));
+
+    await expect(getRegenerationManualPrompt('project/1', 'chapter/1', { instruction: 'Shorter', level: 'light' })).resolves.toEqual({ prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v2/documentary@2' });
+    await expect(importRegeneratedChapter('project/1', 'chapter/1', '{"paragraphs":["Updated"]}')).resolves.toMatchObject({ id: 'chapter-1', paragraphs: ['Updated'] });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/chapters/chapter%2F1/regenerate/manual-prompt', expect.objectContaining({ method: 'POST', body: JSON.stringify({ instruction: 'Shorter', level: 'light' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/chapters/chapter%2F1/regenerate/manual-import', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raw: '{"paragraphs":["Updated"]}' }) }));
     fetchMock.mockRestore();
   });
 });

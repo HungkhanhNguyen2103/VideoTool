@@ -5,7 +5,7 @@ import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '.
 import { AppError } from '../../shared/errors';
 import { buildManualScriptPrompt } from './ai/build-prompt';
 import { parseManualScriptDocument, validateScriptOutlineChapterCount } from './ai/parse-output';
-import { finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
+import { applyRegeneratedChapter, buildRegenerationPromptForChapter, finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 type GetActiveScriptJob = (projectId: string, type: string) => Promise<{ id: string } | null>;
@@ -20,6 +20,7 @@ const RegenerateChapterSchema = z.object({
   instruction: z.string(),
   level: z.enum(['light', 'medium', 'rewrite']),
 });
+const ManualRegeneratePromptSchema = RegenerateChapterSchema.strict();
 
 const RestoreSchema = z.object({ index: z.number().int().nonnegative() });
 const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']) }).strict();
@@ -143,6 +144,23 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
         res.end();
       }
     }
+  });
+
+  router.post('/:id/chapters/:chapterId/regenerate/manual-prompt', async (req, res) => {
+    const body = ManualRegeneratePromptSchema.parse(req.body);
+    const project = await getProject(req.params.id);
+    const { prompt } = buildRegenerationPromptForChapter(project, req.params.chapterId, body);
+    res.json({
+      prompt: `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`,
+      promptVersion: prompt.promptVersion,
+    });
+  });
+
+  router.post('/:id/chapters/:chapterId/regenerate/manual-import', async (req, res) => {
+    const body = ManualImportSchema.parse(req.body);
+    const project = await getProject(req.params.id);
+    const { chapter, nextChapter } = buildRegenerationPromptForChapter(project, req.params.chapterId, { instruction: '', level: 'medium' });
+    res.json(await applyRegeneratedChapter(project.id, chapter, nextChapter, body.raw));
   });
 
   router.get('/:id/chapters/history', async (req, res) => {

@@ -92,6 +92,9 @@ export function ReviewScriptPage() {
   const [regen, setRegen] = useState<{ id: string; instruction: string; level: 'light' | 'medium' | 'rewrite'; preview: string; controller: AbortController } | null>(null);
   const [regenInstruction, setRegenInstruction] = useState('');
   const [regenLevel, setRegenLevel] = useState<'light' | 'medium' | 'rewrite'>('medium');
+  const [regenMode, setRegenMode] = useState<'automatic' | 'manual'>('automatic');
+  const [manualRegen, setManualRegen] = useState<{ chapterId: string; prompt: string; promptVersion: string; raw: string; error: string | null } | null>(null);
+  const [manualRegenBusy, setManualRegenBusy] = useState(false);
   const [generationMode, setGenerationMode] = useState<'automatic' | 'manual'>('automatic');
   const [manualRaw, setManualRaw] = useState('');
   const [manualPrompt, setManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
@@ -120,7 +123,7 @@ export function ReviewScriptPage() {
   const hasApprovableChapters = chapters.some((chapter) => chapter.status !== 'generating' && chapter.status !== 'approved');
   const history = historyQuery.data ?? [];
   const effectiveGenerationMode = generationModeForChapters(chapters.length, generationMode);
-  const controlsBusy = Boolean(jobId) || hasGenerating || manualBusy || providerBusy;
+  const controlsBusy = Boolean(jobId) || hasGenerating || manualBusy || manualRegenBusy || providerBusy;
   const qaBusy = Boolean(qaJobId);
   const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
 
@@ -131,6 +134,7 @@ export function ReviewScriptPage() {
     setEditing(null);
     setRegenInstruction('');
     setRegenLevel('medium');
+    setManualRegen(null);
     setFinalizeError(null);
     initialExpansionProjectIdRef.current = null;
     return () => {
@@ -220,6 +224,35 @@ export function ReviewScriptPage() {
       toast(error instanceof Error ? error.message : 'Không thể nhập bản thảo thủ công.');
       setManualRaw(manualTextAfterImport(manualRaw, false));
     } finally { setManualBusy(false); }
+  }
+
+  async function loadManualRegenPrompt(chapter: ChapterDoc) {
+    setManualRegenBusy(true);
+    try {
+      const prompt = await api.getRegenerationManualPrompt(projectId, chapter.id, { instruction: regenInstruction, level: regenLevel });
+      setManualRegen({ chapterId: chapter.id, prompt: prompt.prompt, promptVersion: prompt.promptVersion, raw: '', error: null });
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể tải prompt tái tạo.');
+    } finally { setManualRegenBusy(false); }
+  }
+
+  async function copyManualRegenPrompt() {
+    if (!manualRegen) return;
+    try { await navigator.clipboard.writeText(manualRegen.prompt); toast('Đã sao chép prompt tái tạo.'); } catch { toast('Không thể sao chép prompt.'); }
+  }
+
+  async function importManualRegen(chapter: ChapterDoc) {
+    if (!manualRegen || manualRegen.chapterId !== chapter.id) return;
+    setManualRegenBusy(true);
+    try {
+      await api.importRegeneratedChapter(projectId, chapter.id, manualRegen.raw);
+      await refresh();
+      setManualRegen(null);
+      toast(`Đã nhập chương ${chapter.no}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể nhập chương tái tạo.';
+      setManualRegen((current) => current ? { ...current, error: message } : current);
+    } finally { setManualRegenBusy(false); }
   }
 
   async function refresh() { await Promise.all([projectQuery.refetch(), historyQuery.refetch()]); }
@@ -366,13 +399,21 @@ export function ReviewScriptPage() {
                 <div className={styles.summary}>{chaptersSummaryText(chapters)}</div>
               </div>
               <div className={styles.actions}>
-                <label className={styles.compactField} htmlFor="review-provider-existing">AI
-                  <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
-                    <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
-                  </select>
-                </label>
+                <div>
+                  <label className={styles.compactField} htmlFor="review-provider-existing">AI
+                    <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+                      <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
+                    </select>
+                  </label>
+                  <fieldset className={styles.modeControls} disabled={controlsBusy}>
+                    <legend>Chế độ tái tạo</legend>
+                    <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} />Tự động</label>
+                    <label><input type="radio" name="regeneration-mode" value="manual" checked={regenMode === 'manual'} onChange={() => setRegenMode('manual')} />Thủ công (JSON)</label>
+                  </fieldset>
+                  <p className={styles.muted}>{regenMode === 'automatic' ? `Tái tạo tự động bằng ${aiProviderLabel[projectQuery.data?.aiProvider ?? 'deepseek']}` : 'Tái tạo thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào'}</p>
+                </div>
                 <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
-                <Button variant="red" disabled={Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
+                <Button variant="red" title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>
             </div>
             {finalizeError && <div className={styles.errorAlert} role="alert">{finalizeError}</div>}
@@ -395,14 +436,21 @@ export function ReviewScriptPage() {
                       {isCurrentRegen ? <Button size="sm" variant="red" onClick={() => regen.controller.abort()}>Hủy</Button> : <>
                         <Button size="icon" active={chapter.status === 'needs-fix'} aria-label={`Đánh dấu cần sửa chương ${chapter.no}`} aria-pressed={chapter.status === 'needs-fix'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleFlagStatus(chapter.status) })}><Icon name="flag" /></Button>
                         <Button disabled={busy} onClick={() => startEdit(chapter)}><Icon name="edit" />Sửa</Button>
-                        <Button variant="indigoline" disabled={busy} onClick={() => void regenerate(chapter)}><Icon name="refresh" />Tái tạo</Button>
+                        {regenMode === 'manual' ? <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void loadManualRegenPrompt(chapter)}><Icon name="refresh" />Lấy prompt tái tạo</Button> : <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void regenerate(chapter)}><Icon name="refresh" />Tái tạo</Button>}
                         <Button variant={chapter.status === 'approved' ? 'green' : 'ghost'} aria-pressed={chapter.status === 'approved'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleApproveStatus(chapter.status) })}><Icon name="check" />{chapter.status === 'approved' ? 'Đã duyệt' : 'Duyệt'}</Button>
                       </>}
                     </div>
                      </div>
                    {shouldOfferOpeningHook(chapter, projectQuery.data?.openingHook ?? '') && <div className={styles.hookCallout}><div><strong>Hook mở đầu đề xuất</strong><p>{projectQuery.data?.openingHook}</p></div><Button variant="amber" disabled={busy} onClick={() => void insertOpeningHook(chapter)}>Chèn hook làm đoạn đầu tiên</Button></div>}
                    <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
-                  {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}
+                   {manualRegen?.chapterId === chapter.id && <div className={styles.manualBox}>
+                     <p className={styles.muted}>Prompt {manualRegen.promptVersion}</p>
+                     <div className={styles.actions}><Button variant="indigoline" disabled={manualRegenBusy} onClick={() => void copyManualRegenPrompt()}>Sao chép</Button></div>
+                     <textarea className={styles.textarea} value={manualRegen.raw} onChange={(event) => setManualRegen((current) => current ? { ...current, raw: event.target.value, error: null } : current)} placeholder='{"paragraphs":[…],"chapterSummary":"…","avoidRepeating":[…],"persistentFactsNext":[…]}' aria-label={`JSON tái tạo chương ${chapter.no}`} />
+                     {manualRegen.error && <p className={styles.error}>{manualRegen.error}</p>}
+                     <Button variant="amber" disabled={manualRegenBusy || !manualRegen.raw.trim()} onClick={() => void importManualRegen(chapter)}>Nhập chương</Button>
+                   </div>}
+                   {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}
                 </article>;
               })}
             </div>
@@ -418,7 +466,7 @@ export function ReviewScriptPage() {
                 <legend>Mức thay đổi</legend>
                 {([['light', 'Nhẹ'], ['medium', 'Vừa'], ['rewrite', 'Viết lại']] as const).map(([value, label]) => <label key={value}><input type="radio" name="regen-level" value={value} checked={regenLevel === value} onChange={() => setRegenLevel(value)} /><span>{label}</span></label>)}
               </fieldset>
-              <Button variant="indigo" size="lg" className={styles.blockButton} disabled={Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />Tái tạo chương đã chọn</Button>
+               <Button variant="indigo" size="lg" className={styles.blockButton} title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />Tái tạo chương đã chọn</Button>
             </section>
 
             <section className={styles.panel} aria-labelledby="history-title">

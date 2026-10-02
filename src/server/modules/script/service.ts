@@ -14,7 +14,7 @@ import {
   restoreProjectChapters,
 } from '../project';
 import type { SceneDoc } from '../project';
-import { buildChapterExpansionPrompt, buildOutlinePrompt, buildRegenerationPrompt } from './ai/build-prompt';
+import { buildChapterExpansionPrompt, buildOutlinePrompt, buildRegenerationPrompt, type BuiltPrompt } from './ai/build-prompt';
 import { parseChapterExpansion, parseRegeneratedParagraphs, parseScriptOutline, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { countNarrationWords } from '../../../contracts/script';
 
@@ -276,31 +276,70 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
   await context.appendLog(`Script saved — ${saved.chapters.length} chapters.`);
 }
 
-export async function regenerateChapter(
-  projectId: string,
+export type RegenerationOptions = { instruction: string; level: 'light' | 'medium' | 'rewrite' };
+
+export function buildRegenerationPromptForChapter(
+  project: ProjectDetail,
   chapterId: string,
-  opts: { instruction: string; level: 'light' | 'medium' | 'rewrite' },
-  onChunk: (text: string) => void,
-  signal: AbortSignal,
-): Promise<ChapterDoc> {
-  const project = await getProject(projectId);
+  opts: RegenerationOptions,
+): { prompt: BuiltPrompt; chapter: ChapterDoc; nextChapter: ChapterDoc | undefined } {
   const chapter = project.chapters.find((item) => item.id === chapterId);
   if (!chapter) throw new NotFound('Không tìm thấy chương.');
   const chapterIndex = project.chapters.findIndex((item) => item.id === chapterId);
   const previousChapter = chapter.no === 1 ? undefined : project.chapters[chapterIndex - 1];
   const nextChapter = project.chapters.find((item) => item.no === chapter.no + 1);
+  const prompt = buildRegenerationPrompt(project, chapter, opts.instruction, opts.level, {
+    coreQuestion: project.coreQuestion,
+    openingHook: chapter.no === 1 ? project.openingHook : null,
+    openLoops: project.openLoops.filter((loop) => loop.plantedInChapter === chapter.no || loop.resolvedInChapter === chapter.no),
+    previousChapterSummary: previousChapter?.chapterSummary ?? null,
+    previousAvoidRepeating: previousChapter?.avoidRepeating ?? [],
+    previousPersistentFacts: previousChapter?.persistentFacts ?? [],
+  });
+  return { prompt, chapter, nextChapter };
+}
+
+export async function applyRegeneratedChapter(
+  projectId: string,
+  chapter: ChapterDoc,
+  nextChapter: ChapterDoc | undefined,
+  raw: string,
+): Promise<ChapterDoc> {
+  const regenerated = parseRegeneratedParagraphs(raw);
+  const updated: ChapterDoc = {
+    ...chapter,
+    paragraphs: regenerated.paragraphs,
+    status: 'pending',
+    chapterSummary: regenerated.chapterSummary,
+    avoidRepeating: regenerated.avoidRepeating,
+    persistentFacts: regenerated.persistentFactsNext,
+    reviewStatus: 'clean',
+  };
+  const result = await patchProjectChapter(projectId, chapter.id, {
+    paragraphs: updated.paragraphs,
+    status: updated.status,
+    chapterSummary: updated.chapterSummary,
+    avoidRepeating: updated.avoidRepeating,
+    persistentFacts: updated.persistentFacts,
+    reviewStatus: updated.reviewStatus,
+  });
+  if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' });
+  return result.chapters.find((item) => item.id === chapter.id) ?? updated;
+}
+
+export async function regenerateChapter(
+  projectId: string,
+  chapterId: string,
+  opts: RegenerationOptions,
+  onChunk: (text: string) => void,
+  signal: AbortSignal,
+): Promise<ChapterDoc> {
+  const project = await getProject(projectId);
+  const { prompt, chapter, nextChapter } = buildRegenerationPromptForChapter(project, chapterId, opts);
   const snapshot = snapshotOf(project.chapters);
   await patchProjectChapter(projectId, chapterId, { status: 'generating' }, snapshot);
 
   try {
-    const prompt = buildRegenerationPrompt(project, chapter, opts.instruction, opts.level, {
-      coreQuestion: project.coreQuestion,
-      openingHook: chapter.no === 1 ? project.openingHook : null,
-      openLoops: project.openLoops.filter((loop) => loop.plantedInChapter === chapter.no || loop.resolvedInChapter === chapter.no),
-      previousChapterSummary: previousChapter?.chapterSummary ?? null,
-      previousAvoidRepeating: previousChapter?.avoidRepeating ?? [],
-      previousPersistentFacts: previousChapter?.persistentFacts ?? [],
-    });
     let raw = '';
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     for await (const chunk of getAiClient(project.aiProvider).stream([
@@ -312,26 +351,7 @@ export async function regenerateChapter(
       onChunk(chunk);
     }
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    const regenerated = parseRegeneratedParagraphs(raw);
-    const updated: ChapterDoc = {
-      ...chapter,
-      paragraphs: regenerated.paragraphs,
-      status: 'pending',
-      chapterSummary: regenerated.chapterSummary,
-      avoidRepeating: regenerated.avoidRepeating,
-      persistentFacts: regenerated.persistentFactsNext,
-      reviewStatus: 'clean',
-    };
-    const result = await patchProjectChapter(projectId, chapterId, {
-      paragraphs: updated.paragraphs,
-      status: updated.status,
-      chapterSummary: updated.chapterSummary,
-      avoidRepeating: updated.avoidRepeating,
-      persistentFacts: updated.persistentFacts,
-      reviewStatus: updated.reviewStatus,
-    });
-    if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' });
-    return result.chapters.find((item) => item.id === chapterId) ?? updated;
+    return applyRegeneratedChapter(projectId, chapter, nextChapter, raw);
   } catch (error) {
     const aborted = signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
     await patchProjectChapter(projectId, chapterId, { status: 'needs-fix' });

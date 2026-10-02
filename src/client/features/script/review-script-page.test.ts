@@ -125,4 +125,16 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain('Lần kiểm tra trước:');
     expect(source).toContain('Lần chạy tiếp theo:');
   });
+
+  it('exposes the visible regeneration modes and manual chapter import controls', async () => {
+    const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+
+    expect(source).toContain('regenMode');
+    expect(source).toContain('Tái tạo tự động bằng');
+    expect(source).toContain('Tái tạo thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào');
+    expect(source).toContain('Lấy prompt tái tạo');
+    expect(source).toContain('Chế độ thủ công chỉ tái tạo từng chương');
+    expect(source).toContain('{"paragraphs":[…],"chapterSummary":"…","avoidRepeating":[…],"persistentFactsNext":[…]}');
+    expect(source).toContain('Đã nhập chương ${chapter.no}.');
+  });
 });

@@ -71,6 +71,18 @@ export function importManualScript(projectId: string, raw: string): Promise<Proj
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script/manual-import`, ProjectDetailSchema, { method: 'POST', body: { raw } });
 }
 
+export function getRegenerationManualPrompt(
+  projectId: string,
+  chapterId: string,
+  body: { instruction: string; level: 'light' | 'medium' | 'rewrite' },
+): Promise<{ prompt: string; promptVersion: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/regenerate/manual-prompt`, ManualPromptResponseSchema, { method: 'POST', body });
+}
+
+export function importRegeneratedChapter(projectId: string, chapterId: string, raw: string): Promise<ChapterDoc> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/regenerate/manual-import`, ChapterDocSchema, { method: 'POST', body: { raw } });
+}
+
 export async function patchChapter(
   projectId: string,
   chapterId: string,
