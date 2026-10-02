@@ -4,8 +4,18 @@
 **Owns collection(s):** none; the project module owns the embedded `seo` package.
 **May import (via their index.ts only):** project.
 
+**Public API:** prompt/parser helpers, generation service, SEO router configuration, and thumbnail replacement/removal services exported from `index.ts`.
+
 ## Invariants
 
 - AI output is validated before any project write; one validation retry is allowed.
 - A generation request writes only the requested SEO sections and always records `generatedBy`.
 - The preset source is `ai/presets/seo-documentary.md`; its production wording is intentionally a placeholder pending content review.
+- `POST /api/project/:id/seo/generate` enqueues `generate-seo` and returns an existing active job for the same project; the worker checks cancellation before invoking `generateSeoPackage`.
+- Manual prompt/import and partial PATCH are synchronous; manual parse failures use `SEO_PARSE_ERROR` without replacing the pasted client text.
+- Thumbnail replacement stores a MIME-derived `.png`/`.jpg` file, points the project at it, then best-effort deletes the old file. Removal clears the project pointer before deleting the binary; project deletion also includes the thumbnail file in its app-level cleanup hook.
+
+## Known gaps
+
+- The reviewed SEO preset wording is not finalized yet, so automatic generation plumbing is implemented but content quality is not accepted as production-ready.
+- Thumbnail metadata stores MIME/size but not pixel dimensions; the client displays the 1280×720 target and 2 MB limit, while a future pass can persist/validate dimensions for a stronger checklist.
