@@ -50,6 +50,7 @@ export const VISUAL_STYLE_OPTIONS = [
   { value: 'watercolor', label: 'Watercolor (màu nước)' },
   { value: 'photorealistic', label: 'Photorealistic (ảnh thực)' },
   { value: 'flat-cartoon', label: 'Flat Cartoon' },
+  { value: 'strategic-map', label: 'Strategic Map (2D)' },
 ] as const;
 
 export function selectedRenderEngine(engine: RenderEngine): RenderEngine {

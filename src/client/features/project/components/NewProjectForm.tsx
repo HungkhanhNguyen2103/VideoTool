@@ -276,7 +276,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
               <label htmlFor="visual-style">Phong cách hình ảnh</label>
               <div className={styles.stylePicker}>
                 <select className={styles.input} id="visual-style" {...register('visualStylePresetId')}>
-                  {VISUAL_STYLE_IDS.map((style) => <option key={style} value={style}>{style === 'cinematic' ? 'Cinematic (điện ảnh)' : style === 'anime' ? 'Anime' : style === 'watercolor' ? 'Watercolor (màu nước)' : style === 'photorealistic' ? 'Photorealistic (ảnh thực)' : 'Flat Cartoon'}</option>)}
+                  {VISUAL_STYLE_IDS.map((style) => <option key={style} value={style}>{style === 'cinematic' ? 'Cinematic (điện ảnh)' : style === 'anime' ? 'Anime' : style === 'watercolor' ? 'Watercolor (màu nước)' : style === 'photorealistic' ? 'Photorealistic (ảnh thực)' : style === 'flat-cartoon' ? 'Flat Cartoon' : 'Strategic Map (2D)'}</option>)}
                 </select>
                 <div className={styles.styleSampleControls}>
                   <div className={styles.stylePreview} aria-live="polite">

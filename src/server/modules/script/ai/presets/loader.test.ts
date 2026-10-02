@@ -73,7 +73,7 @@ describe('script preset packaging', () => {
     expect(copied.sort()).toEqual(['documentary.md', 'explainer.md', 'hubris-trap.md', 'strategist.md', 'visual-styles']);
     expect(await readFile(path.join(destination, 'documentary.md'), 'utf8')).toContain('id: documentary');
     const visualStyles = await readdir(path.join(destination, 'visual-styles'));
-    expect(visualStyles.sort()).toEqual(['anime.md', 'cinematic.md', 'flat-cartoon.md', 'photorealistic.md', 'watercolor.md']);
+    expect(visualStyles.sort()).toEqual(['anime.md', 'cinematic.md', 'flat-cartoon.md', 'photorealistic.md', 'strategic-map.md', 'watercolor.md']);
     expect(await readFile(path.join(destination, 'visual-styles/cinematic.md'), 'utf8')).toContain('id: cinematic');
 
     const secondRun = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });

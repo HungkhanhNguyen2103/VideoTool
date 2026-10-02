@@ -18,8 +18,8 @@ afterAll(async () => {
 });
 
 describe('loadVisualStylePreset', () => {
-  it.each(['cinematic', 'anime', 'watercolor', 'photorealistic', 'flat-cartoon'] as const)('loads the %s preset with its style directive', (id) => {
-    const preset = loadVisualStylePreset(id);
+  it.each(['cinematic', 'anime', 'watercolor', 'photorealistic', 'flat-cartoon', 'strategic-map'] as const)('loads the %s preset with its style directive', (id) => {
+    const preset = loadVisualStylePreset(id as never);
 
     expect(preset.id).toBe(id);
     expect(Number.isInteger(preset.version)).toBe(true);

@@ -22,7 +22,7 @@ export type AiProvider = (typeof AI_PROVIDERS)[number];
 export const SCRIPT_PRESET_IDS = ['documentary', 'explainer', 'hubris-trap', 'strategist'] as const;
 export type ScriptPresetId = (typeof SCRIPT_PRESET_IDS)[number];
 
-export const VISUAL_STYLE_IDS = ['cinematic', 'anime', 'watercolor', 'photorealistic', 'flat-cartoon'] as const;
+export const VISUAL_STYLE_IDS = ['cinematic', 'anime', 'watercolor', 'photorealistic', 'flat-cartoon', 'strategic-map'] as const;
 export type VisualStyleId = (typeof VISUAL_STYLE_IDS)[number];
 
 export const ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const;

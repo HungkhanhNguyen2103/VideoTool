@@ -233,6 +233,7 @@ describe('asset API helpers', () => {
       { value: 'watercolor', label: 'Watercolor (màu nước)' },
       { value: 'photorealistic', label: 'Photorealistic (ảnh thực)' },
       { value: 'flat-cartoon', label: 'Flat Cartoon' },
+      { value: 'strategic-map', label: 'Strategic Map (2D)' },
     ]);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
 

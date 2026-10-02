@@ -102,6 +102,23 @@ describe('script AI prompt boundary', () => {
     expect(result.user).not.toContain('internal-id');
   });
 
+  it('injects the strategic-map visual style text into visual prompts', () => {
+    const result = buildVisualPromptPrompt({
+      project: { ...project, visualStylePresetId: 'strategic-map' as never },
+      chapter,
+      styleNote: '',
+      scenes: [{ sceneId: 'scene-1', sceneIndex: 1, narration: 'A fleet enters the river.', assetType: 'image', visualPrompt: '', sfxPrompt: '', motionPrompt: '' }],
+      visualStylePresetId: 'strategic-map' as never,
+      coreQuestion: 'How did the trap work?',
+      openingHook: 'The larger fleet entered first.',
+      previousChapterSummary: null,
+      previousAvoidRepeating: [],
+      previousPersistentFacts: [],
+    });
+    expect(result.promptVersion).toBe(`visual-prompt-v1/strategic-map@${loadVisualStylePreset('strategic-map' as never).version}`);
+    expect(result.user).toContain(loadVisualStylePreset('strategic-map' as never).style);
+  });
+
   it('bounds a supplied continuity note before placing it in a visual batch prompt', () => {
     const result = buildVisualPromptPrompt({
       project,

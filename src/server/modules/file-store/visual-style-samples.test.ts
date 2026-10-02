@@ -48,6 +48,12 @@ describe('visual style samples', () => {
     expect((await list())['flat-cartoon']).toMatchObject({ source: 'shared', url: shared.url });
   });
 
+  it('accepts strategic-map as a shared sample style', async () => {
+    const response = await uploadShared('strategic-map');
+    expect(response.status).toBe(200);
+    expect(await list()).toHaveProperty('strategic-map');
+  });
+
   it('rejects invalid style ids and non-image uploads', async () => {
     expect((await uploadShared('invalid-style')).status).toBe(400);
     expect((await uploadShared('flat-cartoon', 'application/pdf')).status).toBe(400);
