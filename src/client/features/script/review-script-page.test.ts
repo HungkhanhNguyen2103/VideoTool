@@ -201,4 +201,20 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain("'(prefers-reduced-motion: reduce)'");
     expect(source).toContain('manualRegenTextareaRef.current?.focus()');
   });
+
+  it('keeps QA controls in the side column and renders collapsible results above chapters', async () => {
+    const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const resultPanelIndex = source.indexOf('qaResultsPanel');
+    const chapterListIndex = source.indexOf('className={styles.chapterList}');
+    expect(resultPanelIndex).toBeGreaterThan(-1);
+    expect(resultPanelIndex).toBeLessThan(chapterListIndex);
+    expect(source).toContain('QaIssueCard');
+    expect(source).toContain('Kết quả QA có thể đã cũ vì kịch bản đã thay đổi. Chạy lại kiểm tra để cập nhật.');
+    expect(source).toContain('Đã bỏ qua');
+    expect(source).toContain('dismissedQaCount');
+    expect(source).toContain('Kết quả QA không được lưu; chạy lại sau khi chỉnh kịch bản để cập nhật.');
+    expect(source).toContain('qaResultsOpen');
+    expect(source).toContain('qaLevelForAction');
+    expect(source).toContain('scrollIntoView({ block: \'nearest\', behavior: prefersReducedMotion ? \'auto\' : \'smooth\' })');
+  });
 });

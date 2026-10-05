@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { AiProvider } from '../../../contracts/project';
 import type { ChapterDoc } from '../../../contracts/script';
 import type { QAIssue, QAResult } from './api';
+import { QaIssueCard } from './components/QaIssueCard';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { Icon } from '../../shared/ui/Icon';
@@ -15,16 +16,20 @@ import {
   chapterWordBudgetNote,
   chapterMetaText,
   chaptersSummaryText,
-  buildQaRegenInstruction,
+  applyReplacementToParagraphs,
   findChapterIdByNumber,
+  findQuoteTarget,
   generationModeForChapters,
-  groupQaIssuesByChapter,
   historyVersionLabel,
   instructionForChapter,
   manualTextAfterImport,
   runRegenerationQueue,
   selectedRegenTargets,
-  qaSeverityTone,
+  qaIssueInstruction,
+  qaIssueKey,
+  qaLevelForAction,
+  sortQaIssues,
+  summarizeQaIssues,
   toggleApproveStatus,
   toggleFlagStatus,
 } from './chapter-actions';
@@ -100,6 +105,12 @@ export function ReviewScriptPage() {
   const [qaManualRaw, setQaManualRaw] = useState('');
   const [qaManualError, setQaManualError] = useState<string | null>(null);
   const [qaManualBusy, setQaManualBusy] = useState(false);
+  const [qaIssueStates, setQaIssueStates] = useState<Record<string, 'accepted' | 'dismissed'>>({});
+  const [qaPatchConfirming, setQaPatchConfirming] = useState<string | null>(null);
+  const [qaPatchBusy, setQaPatchBusy] = useState(false);
+  const [qaStale, setQaStale] = useState(false);
+  const [qaResultsOpen, setQaResultsOpen] = useState(true);
+  const [qaFocusChapterId, setQaFocusChapterId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
@@ -119,6 +130,8 @@ export function ReviewScriptPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
   const regenInstructionRef = useRef<HTMLTextAreaElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const editFocusRequestRef = useRef<{ chapterId: string; quote?: string } | null>(null);
   const manualRegenBoxRef = useRef<HTMLDivElement>(null);
   const manualRegenTextareaRef = useRef<HTMLTextAreaElement>(null);
   const lifecycleRef = useRef(0);
@@ -144,6 +157,9 @@ export function ReviewScriptPage() {
   const qaBusy = Boolean(qaJobId);
   const qaControlsBusy = qaBusy || qaManualBusy;
   const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
+  const activeQaIssues = useMemo(() => qaResult ? sortQaIssues(qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] !== 'dismissed')) : [], [qaResult, qaIssueStates]);
+  const qaSummary = useMemo(() => summarizeQaIssues(activeQaIssues), [activeQaIssues]);
+  const dismissedQaCount = qaResult ? qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] === 'dismissed').length : 0;
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -161,6 +177,13 @@ export function ReviewScriptPage() {
     setQaManualPrompt(null);
     setQaManualRaw('');
     setQaManualError(null);
+    setQaIssueStates({});
+    setQaPatchConfirming(null);
+    setQaPatchBusy(false);
+    setQaStale(false);
+    setQaResultsOpen(true);
+    setQaFocusChapterId(null);
+    editFocusRequestRef.current = null;
     initialExpansionProjectIdRef.current = null;
     return () => {
       if (lifecycleRef.current === lifecycle) lifecycleRef.current += 1;
@@ -194,6 +217,10 @@ export function ReviewScriptPage() {
       const result = api.QAResultSchema.safeParse(qaProgress.result);
       if (result.success) {
         setQaResult(result.data);
+        setQaIssueStates({});
+        setQaPatchConfirming(null);
+        setQaStale(false);
+        setQaResultsOpen(true);
         toast('Đã hoàn tất kiểm tra QA.');
       } else {
         toast('Kết quả QA không hợp lệ.');
@@ -214,12 +241,48 @@ export function ReviewScriptPage() {
     manualRegenTextareaRef.current?.focus();
   }, [manualRegen?.chapterId, manualRegen?.prompt]);
 
+  useEffect(() => {
+    if (!qaFocusChapterId) return;
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    regenInstructionRef.current?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    regenInstructionRef.current?.focus();
+    setQaFocusChapterId(null);
+  }, [qaFocusChapterId]);
+
+  useEffect(() => {
+    const request = editFocusRequestRef.current;
+    if (!request || editing !== request.chapterId || !editTextareaRef.current) return;
+    const textarea = editTextareaRef.current;
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    textarea.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    textarea.focus();
+    if (request.quote) {
+      const start = textarea.value.indexOf(request.quote);
+      if (start >= 0 && textarea.value.indexOf(request.quote, start + request.quote.length) < 0) {
+        textarea.setSelectionRange(start, start + request.quote.length);
+      }
+    }
+    editFocusRequestRef.current = null;
+  }, [editing, editParagraphs]);
+
   async function generate() {
     try { setJobId((await api.generateScript(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo kịch bản.'); }
   }
 
   async function runQa() {
-    try { setQaResult(null); setQaManualError(null); setQaJobId((await api.runFinalQa(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chạy kiểm tra QA.'); }
+    try {
+      setQaResult(null);
+      setQaIssueStates({});
+      setQaPatchConfirming(null);
+      setQaStale(false);
+      setQaResultsOpen(true);
+      setQaManualError(null);
+      setQaJobId((await api.runFinalQa(projectId)).jobId);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chạy kiểm tra QA.'); }
   }
 
   async function loadQaManualPrompt() {
@@ -242,20 +305,77 @@ export function ReviewScriptPage() {
     setQaManualError(null);
     try {
       setQaResult(await api.importFinalQa(projectId, qaManualRaw));
+      setQaIssueStates({});
+      setQaPatchConfirming(null);
+      setQaStale(false);
+      setQaResultsOpen(true);
       toast('Đã nhập kết quả QA.');
     } catch (error) {
       setQaManualError(error instanceof Error ? error.message : 'Không thể nhập kết quả QA.');
     } finally { setQaManualBusy(false); }
   }
 
-  function applyQaIssue(issue: QAIssue) {
+  function qaChapterAndTarget(issue: QAIssue): { chapter: ChapterDoc; target: ReturnType<typeof findQuoteTarget> } | null {
     const chapterId = findChapterIdByNumber(chapters, issue.chapter);
-    if (!chapterId) { toast('Không tìm thấy chương tương ứng.'); return; }
+    const chapter = chapterId ? chapters.find((item) => item.id === chapterId) : undefined;
+    return chapter ? { chapter, target: findQuoteTarget(chapter, issue) } : null;
+  }
+
+  function applyQaIssue(issue: QAIssue) {
+    const match = qaChapterAndTarget(issue);
+    if (!match) { toast('Không tìm thấy chương tương ứng.'); return; }
+    if (match.target && issue.replacement !== undefined) {
+      setQaPatchConfirming(qaIssueKey(issue));
+      return;
+    }
+    const chapterId = match.chapter.id;
     setSelected(new Set([chapterId]));
     setExpanded((current) => new Set(current).add(chapterId));
-    setRegenInstruction(buildQaRegenInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]));
+    setRegenInstruction(qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]));
+    setRegenLevel(qaLevelForAction(issue.suggestedAction));
     setInstructionOrigin({ kind: 'qa', chapterId });
-    regenInstructionRef.current?.focus();
+    setQaFocusChapterId(chapterId);
+  }
+
+  async function acceptQaIssue(issue: QAIssue) {
+    if (qaPatchBusy) return;
+    const match = qaChapterAndTarget(issue);
+    if (!match?.target || issue.replacement === undefined) return;
+    setQaPatchBusy(true);
+    try {
+      const paragraphs = applyReplacementToParagraphs(match.chapter.paragraphs, match.target, issue.replacement);
+      await api.patchChapter(projectId, match.chapter.id, { paragraphs });
+      await refresh();
+      setQaIssueStates((current) => ({ ...current, [qaIssueKey(issue)]: 'accepted' }));
+      setQaPatchConfirming(null);
+      setQaStale(true);
+      toast(`Đã áp dụng gợi ý cho chương ${issue.chapter}.`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể áp dụng gợi ý.');
+    } finally {
+      setQaPatchBusy(false);
+    }
+  }
+
+  function cancelQaPatch(issue: QAIssue) {
+    setQaPatchConfirming((current) => current === qaIssueKey(issue) ? null : current);
+  }
+
+  function dismissQaIssue(issue: QAIssue) {
+    setQaPatchConfirming(null);
+    setQaIssueStates((current) => ({ ...current, [qaIssueKey(issue)]: 'dismissed' }));
+  }
+
+  function restoreDismissedQaIssues() {
+    setQaIssueStates((current) => Object.fromEntries(Object.entries(current).filter(([, state]) => state !== 'dismissed')));
+  }
+
+  function editQaIssue(issue: QAIssue) {
+    const match = qaChapterAndTarget(issue);
+    if (!match) { toast('Không tìm thấy chương tương ứng.'); return; }
+    setQaPatchConfirming(null);
+    editFocusRequestRef.current = { chapterId: match.chapter.id, quote: issue.quote };
+    startEdit(match.chapter);
   }
 
   async function changeProvider(provider: 'deepseek' | 'claude') {
@@ -280,6 +400,7 @@ export function ReviewScriptPage() {
       setManualRaw(manualTextAfterImport(manualRaw, true));
       setManualPrompt(null);
       await refresh();
+      setQaStale(true);
       toast('Đã nhập bản thảo thủ công.');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Không thể nhập bản thảo thủ công.');
@@ -310,6 +431,7 @@ export function ReviewScriptPage() {
       await api.importRegeneratedChapter(projectId, chapter.id, manualRegen.raw);
       await refresh();
       setManualRegen(null);
+      setQaStale(true);
       toast(`Đã nhập chương ${chapter.no}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Không thể nhập chương tái tạo.';
@@ -319,8 +441,8 @@ export function ReviewScriptPage() {
 
   async function refresh() { await Promise.all([projectQuery.refetch(), historyQuery.refetch()]); }
 
-  async function patch(chapterId: string, body: Parameters<typeof api.patchChapter>[2]) {
-    try { await api.patchChapter(projectId, chapterId, body); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật chương.'); }
+  async function patch(chapterId: string, body: Parameters<typeof api.patchChapter>[2]): Promise<boolean> {
+    try { await api.patchChapter(projectId, chapterId, body); await refresh(); return true; } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật chương.'); return false; }
   }
 
   function startEdit(chapter: ChapterDoc) {
@@ -338,7 +460,7 @@ export function ReviewScriptPage() {
     });
   }
 
-  async function saveEdit(chapterId: string) { await patch(chapterId, { paragraphs: editParagraphs }); setEditing(null); }
+  async function saveEdit(chapterId: string) { if (await patch(chapterId, { paragraphs: editParagraphs })) setQaStale(true); setEditing(null); }
 
   async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel): Promise<boolean> {
     if (regenControllerRef.current) return false;
@@ -349,6 +471,7 @@ export function ReviewScriptPage() {
     try {
       await api.regenerateChapter(projectId, chapter.id, { instruction, level }, (chunk) => setRegen((current) => current ? { ...current, preview: current.preview + chunk } : current), controller.signal);
       await refresh();
+      setQaStale(true);
     } catch (error) {
       aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
       if (!aborted) toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
@@ -394,7 +517,7 @@ export function ReviewScriptPage() {
 
   async function restore(index: number) {
     if (!window.confirm('Khôi phục phiên bản này?')) return;
-    try { await api.restoreChapters(projectId, index); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể khôi phục.'); }
+    try { await api.restoreChapters(projectId, index); await refresh(); setQaStale(true); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể khôi phục.'); }
   }
 
   async function finalize() {
@@ -414,8 +537,35 @@ export function ReviewScriptPage() {
   async function insertOpeningHook(chapter: ChapterDoc) {
     const hook = projectQuery.data?.openingHook.trim() ?? '';
     if (!shouldOfferOpeningHook(chapter, hook)) return;
-    await patch(chapter.id, { paragraphs: [hook, ...chapter.paragraphs] });
+    if (await patch(chapter.id, { paragraphs: [hook, ...chapter.paragraphs] })) setQaStale(true);
   }
+
+  const renderQaIssue = (issue: QAIssue) => {
+    const match = qaChapterAndTarget(issue);
+    const replacement = issue.replacement;
+    const removesParagraph = Boolean(match?.target && replacement !== undefined
+      && applyReplacementToParagraphs(match.chapter.paragraphs, match.target, replacement).length < match.chapter.paragraphs.length);
+    const key = qaIssueKey(issue);
+    return <QaIssueCard
+      key={key}
+      issue={issue}
+      typeLabel={qaTypeLabel[issue.type]}
+      severityLabel={qaSeverityLabel[issue.severity]}
+      actionLabel={qaActionLabel[issue.suggestedAction]}
+      patchTarget={match?.target ?? null}
+      replacement={replacement}
+      removesParagraph={removesParagraph}
+      regenerationInstruction={qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction])}
+      regenerationLevel={qaLevelForAction(issue.suggestedAction)}
+      confirming={qaPatchConfirming === key}
+      accepted={qaIssueStates[key] === 'accepted'}
+      onApply={() => applyQaIssue(issue)}
+      onAccept={() => void acceptQaIssue(issue)}
+      onCancel={() => cancelQaPatch(issue)}
+      onEdit={() => editQaIssue(issue)}
+      onDismiss={() => dismissQaIssue(issue)}
+    />;
+  };
 
   if (projectQuery.isLoading) return <section className={styles.panel}><p>Đang tải kịch bản…</p></section>;
   if (projectQuery.error) return <section className={styles.panel}><p className={styles.error}>Không thể tải dự án.</p></section>;
@@ -489,6 +639,27 @@ export function ReviewScriptPage() {
             </div>
             {regenMode === 'manual' && <p className={styles.regenManualHelp}>{manualRegenHelp}</p>}
             {finalizeError && <div className={styles.errorAlert} role="alert">{finalizeError}</div>}
+            {qaResult && <details className={styles.qaResultsPanel} open={qaResultsOpen} onToggle={(event) => setQaResultsOpen(event.currentTarget.open)}>
+              <summary>
+                <span className={styles.qaResultsTitle}><Icon name="check" />Kiểm tra cuối (QA)</span>
+                <span className={styles.summary}>{activeQaIssues.length} thẻ</span>
+              </summary>
+              {qaStale && <div className={styles.qaResultsStale}><Icon name="alert" />Kết quả QA có thể đã cũ vì kịch bản đã thay đổi. Chạy lại kiểm tra để cập nhật.</div>}
+              <div className={styles.qaResultsSummary} aria-label="Tóm tắt mức độ QA">
+                <strong>{activeQaIssues.length} thẻ</strong>
+                <span className={styles.qaSummaryHigh}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.high} cao</span>
+                <span className={styles.qaSummaryMedium}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.medium} trung bình</span>
+                <span className={styles.qaSummaryLow}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.low} thấp</span>
+              </div>
+              {activeQaIssues.length === 0 && <p className={styles.qaResultsMuted}>Không còn thẻ QA đang hiển thị.</p>}
+              <div className={styles.qaIssueList}>{activeQaIssues.filter((issue) => issue.severity !== 'low').map(renderQaIssue)}</div>
+              {activeQaIssues.some((issue) => issue.severity === 'low') && <details className={styles.qaLowGroup}>
+                <summary>{qaSummary.low} thẻ mức độ thấp</summary>
+                <div className={styles.qaIssueList}>{activeQaIssues.filter((issue) => issue.severity === 'low').map(renderQaIssue)}</div>
+              </details>}
+              {dismissedQaCount > 0 && <div className={styles.qaDismissed}><span>Đã bỏ qua {dismissedQaCount} thẻ · Hiện lại</span><Button size="sm" onClick={restoreDismissedQaIssues}>Hiện lại</Button></div>}
+              <p className={styles.qaResultsMuted}>Kết quả QA không được lưu; chạy lại sau khi chỉnh kịch bản để cập nhật.</p>
+            </details>}
             <label className={styles.selectAll}><input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={(event) => setSelected(event.target.checked ? new Set(chapters.map((chapter) => chapter.id)) : new Set())} />Chọn tất cả chương</label>
             <div className={styles.chapterList}>
               {chapters.map((chapter) => {
@@ -526,7 +697,7 @@ export function ReviewScriptPage() {
                      <Button variant="amber" disabled={manualRegenBusy || !manualRegen.raw.trim()} onClick={() => void importManualRegen(chapter)}>Nhập chương</Button>
                    </div>}
                    {shouldOfferOpeningHook(chapter, projectQuery.data?.openingHook ?? '') && <div className={styles.hookCallout}><div><strong>Hook mở đầu đề xuất</strong><p>{projectQuery.data?.openingHook}</p></div><Button variant="amber" disabled={busy} onClick={() => void insertOpeningHook(chapter)}>Chèn hook làm đoạn đầu tiên</Button></div>}
-                   <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
+                   <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea ref={editTextareaRef} className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
                    {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}
                 </article>;
               })}
@@ -572,7 +743,7 @@ export function ReviewScriptPage() {
                 </div>
                 {qaManualPrompt && <>
                   <p className={styles.muted}>Prompt {qaManualPrompt.promptVersion}</p>
-                  <textarea className={styles.textarea} value={qaManualRaw} onChange={(event) => { setQaManualRaw(event.target.value); setQaManualError(null); }} placeholder='{"issues":[{"chapter":1,"type":"REPETITION","severity":"low","reason":"…","suggestedAction":"REMOVE_DUPLICATION"}]}' aria-label="JSON kết quả QA" />
+                  <textarea className={styles.textarea} value={qaManualRaw} onChange={(event) => { setQaManualRaw(event.target.value); setQaManualError(null); }} placeholder='{"issues":[{"chapter":1,"paragraph":2,"quote":"…","fixInstruction":"…","replacement":"…","type":"REPETITION","severity":"low","reason":"…","suggestedAction":"REMOVE_DUPLICATION"}]}' aria-label="JSON kết quả QA" />
                   <p className={styles.muted}>Loại: {api.QA_ISSUE_TYPES.join(', ')} · Mức độ: {api.QA_SEVERITIES.join(', ')} · Đề xuất: {api.QA_SUGGESTED_ACTIONS.join(', ')}</p>
                   {qaManualError && <p className={styles.error}>{qaManualError}</p>}
                   <Button variant="amber" disabled={qaControlsBusy || !qaManualRaw.trim()} onClick={() => void importQaManual()}>Nhập kết quả QA</Button>
@@ -580,17 +751,6 @@ export function ReviewScriptPage() {
                 {!qaManualPrompt && qaManualError && <p className={styles.error}>{qaManualError}</p>}
               </div>}
               {qaProgress && (qaProgress.status === 'queued' || qaProgress.status === 'running') && <div className={styles.generationStatus} role="status"><strong>Đang kiểm tra QA… {Math.round(qaProgress.progress)}%</strong></div>}
-              {qaResult && (qaResult.issues.length === 0 ? <p className={styles.muted}>Không phát hiện vấn đề.</p> : <div className={styles.qaIssues}>
-                {[...groupQaIssuesByChapter(qaResult.issues)].map(([chapter, issues]) => <div key={chapter}>
-                  <h3 className={styles.qaGroupTitle}>Chương {chapter}</h3>
-                  <div className={styles.qaIssueList}>{issues.map((issue, index) => <article className={styles.qaIssue} key={`${issue.type}-${index}`}>
-                    <div className={styles.qaIssueTop}><strong>{qaTypeLabel[issue.type]}</strong><Badge tone={qaSeverityTone(issue.severity)}>Mức độ: {qaSeverityLabel[issue.severity]}</Badge></div>
-                    <div className={styles.qaIssueText}>{issue.reason}</div>
-                    <div className={styles.qaIssueAction}>Đề xuất: {qaActionLabel[issue.suggestedAction]}</div>
-                    <Button size="sm" variant="indigoline" onClick={() => applyQaIssue(issue)}>Áp dụng</Button>
-                  </article>)}</div>
-                </div>)}
-              </div>)}
             </section>
           </aside>
         </div>

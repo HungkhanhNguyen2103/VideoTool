@@ -25,6 +25,83 @@ export function buildQaRegenInstruction(issue: QAIssue, typeLabel: string, actio
   return `${typeLabel}: ${issue.reason} (Đề xuất: ${actionLabel})`;
 }
 
+export type QaQuoteTarget = { paragraphIndex: number; start: number; end: number };
+
+function quoteMatches(text: string, quote: string): number[] {
+  if (!quote) return [];
+  const matches: number[] = [];
+  let from = 0;
+  while (from <= text.length - quote.length) {
+    const index = text.indexOf(quote, from);
+    if (index < 0) break;
+    matches.push(index);
+    from = index + quote.length;
+  }
+  return matches;
+}
+
+export function findQuoteTarget(chapter: Pick<ChapterDoc, 'paragraphs'>, issue: Pick<QAIssue, 'paragraph' | 'quote'>): QaQuoteTarget | null {
+  if (!issue.quote) return null;
+  const allMatches = chapter.paragraphs.flatMap((paragraph, paragraphIndex) => quoteMatches(paragraph, issue.quote!).map((start) => ({ paragraphIndex, start })));
+  if (allMatches.length !== 1) return null;
+  if (issue.paragraph != null && issue.paragraph >= 1 && issue.paragraph <= chapter.paragraphs.length) {
+    const paragraphIndex = issue.paragraph - 1;
+    const matches = quoteMatches(chapter.paragraphs[paragraphIndex]!, issue.quote);
+    if (matches.length === 1) return { paragraphIndex, start: matches[0]!, end: matches[0]! + issue.quote.length };
+  }
+  const match = allMatches[0]!;
+  return { paragraphIndex: match.paragraphIndex, start: match.start, end: match.start + issue.quote.length };
+}
+
+export function applyReplacementToParagraphs(paragraphs: readonly string[], target: QaQuoteTarget, replacement: string): string[] {
+  return paragraphs.reduce<string[]>((result, paragraph, paragraphIndex) => {
+    if (paragraphIndex !== target.paragraphIndex) {
+      result.push(paragraph);
+      return result;
+    }
+    const before = paragraph.slice(0, target.start);
+    const after = paragraph.slice(target.end);
+    const raw = `${before}${replacement}${after}`;
+    const boundaryStart = Math.max(0, before.length - 2);
+    const boundaryEnd = Math.min(raw.length, before.length + replacement.length + 2);
+    const boundary = raw.slice(boundaryStart, boundaryEnd).replace(/[ \t]{2,}/g, ' ');
+    const normalized = raw.slice(0, boundaryStart) + boundary + raw.slice(boundaryEnd);
+    if (normalized.trim()) result.push(normalized);
+    return result;
+  }, []);
+}
+
+export function qaLevelForAction(action: QAIssue['suggestedAction']): 'light' | 'medium' {
+  return action === 'REGENERATE' || action === 'MOVE_REVEAL' ? 'medium' : 'light';
+}
+
+export function qaIssueInstruction(issue: QAIssue, typeLabel: string, actionLabel: string): string {
+  return issue.fixInstruction?.trim() || buildQaRegenInstruction(issue, typeLabel, actionLabel);
+}
+
+const qaSeverityOrder = { high: 0, medium: 1, low: 2 } as const;
+
+export function sortQaIssues(issues: readonly QAIssue[]): QAIssue[] {
+  return [...issues].sort((left, right) => (
+    qaSeverityOrder[left.severity] - qaSeverityOrder[right.severity]
+    || left.chapter - right.chapter
+    || (left.paragraph ?? Number.POSITIVE_INFINITY) - (right.paragraph ?? Number.POSITIVE_INFINITY)
+    || left.type.localeCompare(right.type)
+    || left.reason.localeCompare(right.reason)
+  ));
+}
+
+export function summarizeQaIssues(issues: readonly QAIssue[]): { high: number; medium: number; low: number } {
+  return issues.reduce((summary, issue) => {
+    summary[issue.severity] += 1;
+    return summary;
+  }, { high: 0, medium: 0, low: 0 });
+}
+
+export function qaIssueKey(issue: QAIssue): string {
+  return `${issue.chapter}:${issue.type}:${issue.quote ?? issue.reason}`;
+}
+
 export function findChapterIdByNumber(chapters: readonly ChapterDoc[], chapterNo: number): string | null {
   return chapters.find((chapter) => chapter.no === chapterNo)?.id ?? null;
 }

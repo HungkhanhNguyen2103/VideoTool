@@ -10,7 +10,7 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-02 · Task 70 fixes regeneration targeting, word budgets, and upstream review warnings_
+_Last updated: 2026-10-05 · Task 71 adds actionable QA issue cards and local fix flows_
 
 ### Works today (verified)
 - Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (674 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
@@ -44,6 +44,7 @@ _Last updated: 2026-10-02 · Task 70 fixes regeneration targeting, word budgets,
 - Phase 8 Task 8 passes typecheck, lint, full tests (665 passed, 1 skipped), and production build. The SEO preset is present in `dist/presets/`, and the client bundle scan found no API-key/server-environment identifiers. Browser acceptance was exercised at the available 1280×720 in-app viewport for rendered-project manual prompt, valid import, Vietnamese invalid-JSON error with pasted text preserved, and Markdown download; exact 1440px/900px layout, thumbnail upload replacement/deletion, automatic provider execution, and a no-chapter project remain unverified in this environment.
 - Task 69 regroups the Studio control area into Scene & hình ảnh, Âm thanh, Giao diện video, and Render & xuất cards without changing handlers, state, APIs, disabled rules, readiness logic, or query keys. Upload progress is shown beside the asset counter; Remotion-only effects remain rendered and are disabled with the FFmpeg note; the logo control is compact and horizontal. Typecheck, lint, full tests (665 passed, 1 skipped), and build pass. Browser verification covers Vasa with scenes at 1440px/1280px/900px, FFmpeg and Remotion states, with and without a temporary logo restored afterward, 0-scene project, ZIP upload progress, and job progress; screenshots are under `data/files/.verification/task-69/`.
 - Task 70 fixes regeneration targeting so QA instructions apply only to their source chapter while user instructions remain bulk-scoped, disables regeneration with an empty selection, retries short automatic regenerations once when no length instruction was supplied, shows word-budget and upstream-review badges, warns before finalization when upstream changes remain, skips already-approved bulk-approval PATCHes, and clears upstream markers when approving or editing. Focused client tests pass 30/30 and 17/17; the full suite passes 674 tests with 1 skipped; typecheck, lint, and build pass. Browser verification and screenshots remain pending.
+- Task 71 adds optional QA fix context with parser sanitation, versioned prompt guidance, session-only sorted/dismissible QA results, local patch previews with stale-result warnings, and regeneration fallback with change-level chips. Focused QA/client tests pass 73/73; the full suite passes 680 tests with 1 skipped; typecheck, lint, and build pass. Browser acceptance used an imported QA result on Bạch Đằng and captured the results panel, accepted patch, regeneration card, and collapsed low-severity group under `data/files/.verification/task-71/`.
 
 ### Modules
 | Module | State | Notes |

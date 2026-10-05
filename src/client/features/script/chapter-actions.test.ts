@@ -19,6 +19,12 @@ import {
   findChapterIdByNumber,
   groupQaIssuesByChapter,
   instructionForChapter,
+  findQuoteTarget,
+  applyReplacementToParagraphs,
+  qaLevelForAction,
+  qaIssueInstruction,
+  sortQaIssues,
+  summarizeQaIssues,
   qaSeverityTone,
 } from './chapter-actions';
 
@@ -209,5 +215,41 @@ describe('final QA helpers', () => {
     const chapters = [chapter('chapter-8', 'pending', { no: 8 }), chapter('chapter-2', 'approved', { no: 2 }), chapter('chapter-4', 'pending', { no: 4 })];
     expect(findChapterIdByNumber(chapters, 2)).toBe('chapter-2');
     expect(findChapterIdByNumber(chapters, 5)).toBeNull();
+  });
+
+  it('finds a quote once in the requested paragraph, then rejects ambiguous matches', () => {
+    const source = chapter('c1', 'pending', { paragraphs: ['Mở đầu có câu cần sửa.', 'Đoạn khác không có trích dẫn.'] });
+    expect(findQuoteTarget(source, { paragraph: 1, quote: 'câu cần sửa' })).toEqual({ paragraphIndex: 0, start: 10, end: 21 });
+    expect(findQuoteTarget(chapter('c1', 'pending', { paragraphs: ['Đoạn khác.', 'Ở đây có câu cần sửa lần nữa.'] }), { paragraph: 2, quote: 'câu cần sửa' })).toEqual({ paragraphIndex: 1, start: 9, end: 20 });
+    expect(findQuoteTarget(chapter('c1', 'pending', { paragraphs: ['Mở đầu có câu cần sửa.', 'Ở đây có câu cần sửa lần nữa.'] }), { quote: 'câu cần sửa' })).toBeNull();
+    expect(findQuoteTarget(source, { paragraph: 1, quote: 'không xuất hiện' })).toBeNull();
+  });
+
+  it('applies a local replacement, normalizes only edit-boundary spaces, and removes an empty paragraph', () => {
+    const target = { paragraphIndex: 0, start: 3, end: 6 };
+    expect(applyReplacementToParagraphs(['A  old  B', 'Keep'], target, 'new')).toEqual(['A new B', 'Keep']);
+    expect(applyReplacementToParagraphs(['old', 'Keep'], { paragraphIndex: 0, start: 0, end: 3 }, '')).toEqual(['Keep']);
+  });
+
+  it('maps QA actions to review levels and prefers a concrete instruction', () => {
+    expect(qaLevelForAction('REMOVE_DUPLICATION')).toBe('light');
+    expect(qaLevelForAction('SHORTEN')).toBe('light');
+    expect(qaLevelForAction('REVIEW_FACT')).toBe('light');
+    expect(qaLevelForAction('REGENERATE')).toBe('medium');
+    expect(qaLevelForAction('MOVE_REVEAL')).toBe('medium');
+    const issue: QAIssue = { chapter: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'Hook yếu.', suggestedAction: 'REGENERATE', fixInstruction: 'Viết lại câu mở đầu.' };
+    expect(qaIssueInstruction(issue, 'Hook yếu', 'Tái tạo')).toBe('Viết lại câu mở đầu.');
+    expect(qaIssueInstruction({ ...issue, fixInstruction: undefined }, 'Hook yếu', 'Tái tạo')).toBe('Hook yếu: Hook yếu. (Đề xuất: Tái tạo)');
+  });
+
+  it('sorts QA issues by severity, chapter, and paragraph and summarizes active counts', () => {
+    const issues: QAIssue[] = [
+      { chapter: 2, paragraph: 2, type: 'FLAT_PACING', severity: 'low', reason: 'L', suggestedAction: 'SHORTEN' },
+      { chapter: 1, paragraph: 3, type: 'REPETITION', severity: 'medium', reason: 'M2', suggestedAction: 'REMOVE_DUPLICATION' },
+      { chapter: 1, paragraph: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'H', suggestedAction: 'REGENERATE' },
+      { chapter: 1, type: 'CREDIBILITY_RISK', severity: 'medium', reason: 'M1', suggestedAction: 'REVIEW_FACT' },
+    ];
+    expect(sortQaIssues(issues).map((issue) => issue.reason)).toEqual(['H', 'M2', 'M1', 'L']);
+    expect(summarizeQaIssues(issues)).toEqual({ high: 1, medium: 2, low: 1 });
   });
 });

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Tool — Kiểm tra cuối (QA)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17h.01"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13 7l4 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  </svg>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand__logo"><svg class="ic"><use href="#i-film"/></svg></span><span>Video Tool</span></div>
+      <nav class="menu" aria-label="Menu tổng">
+        <span class="label">Menu</span>
+        <a class="menu__item is-active" href="#" aria-current="page"><svg class="ic"><use href="#i-film"/></svg>Sản Xuất &amp; Kịch Bản</a>
+        <button class="menu__item" type="button" disabled>🔒 <span>Menu 2</span><small>Sắp có</small></button>
+        <button class="menu__item" type="button" disabled>🔒 <span>Menu 3</span><small>Sắp có</small></button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="project-head">
+        <div><div class="label">Dự án đang mở</div><h1>Bạch Đằng 938 — Hành động và phản ứng</h1><p class="muted">3 chương · 17 cảnh · 402s · 1.002 từ</p></div>
+        <span class="project-chip">DeepSeek · Kịch bản tiếng Việt</span>
+      </header>
+
+      <nav class="tabs" aria-label="Các bước sản xuất">
+        <a class="tab" href="#">1. Khởi Tạo Dự Án</a>
+        <a class="tab is-active" href="#" aria-current="page">2. Duyệt &amp; Tái Tạo</a>
+        <a class="tab" href="#">3. Studio Phân Cảnh &amp; Xuất Video</a>
+        <a class="tab" href="#">4. SEO &amp; Đóng Gói Kênh</a>
+      </nav>
+
+      <div class="stale-banner panel" role="status">
+        <svg class="ic"><use href="#i-warning"/></svg>
+        <div><strong>Kết quả QA có thể đã cũ vì kịch bản đã thay đổi.</strong><span>Chạy lại kiểm tra để cập nhật.</span></div>
+        <button class="btn btn--sm" type="button">Chạy lại QA</button>
+      </div>
+
+      <div class="page-grid">
+        <section class="content-column" aria-labelledby="qa-title">
+          <div class="panel qa-head">
+            <div><div class="eyebrow"><svg class="ic"><use href="#i-check"/></svg>Kiểm tra cuối (QA)</div><h2 id="qa-title">Các điểm cần xem lại</h2><p class="muted">Mỗi gợi ý đều cho bạn chọn sửa tại chỗ hoặc đưa chương vào hàng tái tạo.</p></div>
+            <button class="btn btn--amber" type="button"><svg class="ic"><use href="#i-refresh"/></svg>Chạy kiểm tra QA</button>
+          </div>
+
+          <div class="summary-row" aria-label="Tóm tắt mức độ"><span class="summary-dot summary-dot--high"></span><strong>2 cao</strong><span class="summary-dot summary-dot--medium"></span><strong>3 trung bình</strong><span class="summary-dot summary-dot--low"></span><strong>4 thấp</strong><span class="muted">· 9 thẻ</span></div>
+
+          <article class="issue-card panel issue-card--patchable">
+            <header class="issue-head">
+              <div><div class="issue-location">Chương 2 · đoạn 3</div><h3>Rủi ro độ tin cậy</h3></div>
+              <span class="badge badge--medium">Mức độ: trung bình</span>
+            </header>
+            <div class="issue-body">
+              <p><span class="field-label">Trích:</span> <q>các nguồn sử đều ghi con số này khá thống nhất</q></p>
+              <p><span class="field-label">Vì sao:</span> câu khẳng định bao quát, trong khi chương 3 thừa nhận số liệu còn tranh cãi.</p>
+              <p><span class="field-label">Gợi ý sửa:</span> nói hẹp lại → <q>hầu hết sử liệu ghi khoảng 300 thuyền chiến</q>.</p>
+              <div class="diff-preview" aria-label="Xem trước thay đổi">
+                <div class="diff-line diff-line--before"><span class="diff-mark">−</span><del>các nguồn sử đều ghi con số này khá thống nhất</del></div>
+                <div class="diff-line diff-line--after"><span class="diff-mark">＋</span><ins>hầu hết sử liệu ghi khoảng 300 thuyền chiến</ins></div>
+                <span class="word-delta">−2 từ</span>
+              </div>
+            </div>
+            <footer class="issue-actions"><button class="btn btn--amber" type="button">Áp dụng gợi ý</button><button class="btn" type="button"><svg class="ic"><use href="#i-edit"/></svg>Sửa tay đoạn này</button><button class="btn btn--quiet" type="button">Bỏ qua</button></footer>
+          </article>
+
+          <article class="issue-card panel">
+            <header class="issue-head"><div><div class="issue-location">Chương 3 · đoạn 1</div><h3>Hook yếu</h3></div><span class="badge badge--high">Mức độ: cao</span></header>
+            <div class="issue-body">
+              <p><span class="field-label">Vì sao:</span> đoạn mở đầu bắt đầu bằng bối cảnh chung, chưa tạo được câu hỏi hoặc lực kéo cho người xem.</p>
+              <p><span class="field-label">Gợi ý sửa:</span> mở bằng khoảnh khắc hạm đội không còn đường lui, rồi mới lùi lại giải thích bối cảnh.</p>
+              <div class="instruction-box"><span class="field-label">Lệnh tái tạo:</span> Viết lại đoạn mở đầu bằng một hình ảnh cụ thể về hạm đội mắc cạn; giữ nguyên các dữ kiện đã có.</div>
+            </div>
+            <footer class="issue-actions"><button class="btn btn--amber" type="button">Áp dụng gợi ý</button><button class="btn" type="button"><svg class="ic"><use href="#i-edit"/></svg>Sửa tay đoạn này</button><button class="btn btn--quiet" type="button">Bỏ qua</button></footer>
+          </article>
+
+          <article class="issue-card panel issue-card--accepted">
+            <header class="issue-head"><div><div class="issue-location">Chương 1 · đoạn 2</div><h3>Mâu thuẫn</h3></div><span class="badge badge--muted">Đã áp dụng</span></header>
+            <div class="issue-body"><p><span class="field-label">Trích:</span> <q>cửa sông hoàn toàn không có dấu hiệu phòng thủ</q></p><p><span class="field-label">Đã sửa:</span> câu đã được thay bằng mô tả hẹp hơn, giữ nguyên nội dung còn lại của đoạn.</p></div>
+          </article>
+
+          <details class="low-group panel">
+            <summary><span><span class="summary-dot summary-dot--low"></span> 4 thẻ mức độ thấp</span><span class="muted">Mở để xem</span></summary>
+            <div class="low-list"><div><strong>Chương 1 · đoạn 4</strong><span>Chuyển đoạn hơi phẳng</span></div><div><strong>Chương 2 · đoạn 2</strong><span>Có thể lược bỏ một câu lặp</span></div><div><strong>Chương 3 · đoạn 5</strong><span>Payoff chưa đủ rõ</span></div><div><strong>Chương 3 · đoạn 7</strong><span>Cân nhắc rút gọn</span></div></div>
+          </details>
+
+          <div class="dismissed panel"><span><svg class="ic"><use href="#i-x"/></svg><strong>Đã bỏ qua 2 thẻ</strong></span><button class="btn btn--sm" type="button">Hiện lại</button></div>
+        </section>
+
+        <aside class="side-column">
+          <section class="panel chapter-context"><div class="eyebrow">Trạng thái duyệt</div><h2>3 chương</h2><div class="progress-track"><span style="width: 66%"></span></div><p class="muted small">2/3 chương đã duyệt · chương 2 cần xem lại vì chương trước đã đổi.</p><button class="btn btn--block" type="button">Mở danh sách chương</button></section>
+          <section class="panel qa-legend"><h3>Nguyên tắc xử lý</h3><ul><li><span class="legend-icon legend-icon--patch">✓</span> Gợi ý sửa tại chỗ chỉ xuất hiện khi trích dẫn khớp đúng một lần.</li><li><span class="legend-icon legend-icon--regen">↻</span> Vấn đề cấu trúc sẽ đưa instruction vào tái tạo, không tự gọi AI.</li><li><span class="legend-icon legend-icon--muted">↗</span> Bỏ qua chỉ áp dụng cho phiên xem hiện tại.</li></ul></section>
+          <section class="panel qa-footer-note"><span class="muted small">Kết quả QA không được lưu riêng; chạy lại sau khi chỉnh kịch bản để có đánh giá mới.</span></section>
+        </aside>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

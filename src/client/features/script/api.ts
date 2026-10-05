@@ -40,6 +40,10 @@ const QAIssueSchema = z.object({
   severity: z.enum(QA_SEVERITIES),
   reason: z.string().min(1),
   suggestedAction: z.enum(QA_SUGGESTED_ACTIONS),
+  paragraph: z.number().int().positive().optional(),
+  quote: z.string().max(240).optional(),
+  fixInstruction: z.string().max(300).optional(),
+  replacement: z.string().max(600).optional(),
 }).strict();
 export const QAResultSchema = z.object({
   issues: z.array(QAIssueSchema),

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AppError } from '../../../shared/errors';
 import { ChapterExpansionSchema, GeneratedChapterSchema, manualSchemaForScriptPreset, RegeneratedParagraphsSchema, schemaForScriptPreset, SceneSplitBatchSchema, VisualPromptBatchSchema, type ChapterExpansion, type ManualScriptDocument, type ScriptOutline } from './output-schema';
-import { QAResultSchema, type QAResult } from './qa-schema';
+import { QAIssueOptionalFieldSchemas, QAResultSchema, type QAResult } from './qa-schema';
 import type { ScriptPresetId } from '../../../../contracts/project';
 
 function parseJson(raw: string): unknown {
@@ -92,6 +92,24 @@ function normalizeMemoryFields(value: unknown, onTruncate?: TruncationNotice): u
   return normalized;
 }
 
+function sanitizeQaOptionalFields(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.issues)) return value;
+  return {
+    ...value,
+    issues: value.issues.map((issue) => {
+      if (!isRecord(issue)) return issue;
+      const normalized = { ...issue };
+      for (const field of Object.keys(QAIssueOptionalFieldSchemas) as Array<keyof typeof QAIssueOptionalFieldSchemas>) {
+        if (!(field in normalized)) continue;
+        const parsed = QAIssueOptionalFieldSchemas[field].safeParse(normalized[field]);
+        if (parsed.success) normalized[field] = parsed.data;
+        else delete normalized[field];
+      }
+      return normalized;
+    }),
+  };
+}
+
 function dropStrayOutlineKeys(value: unknown, presetId: ScriptPresetId): unknown {
   if (presetId === 'hubris-trap' || !isRecord(value)) return value;
   const normalized = { ...value };
@@ -156,5 +174,5 @@ export function parseSceneSplitBatch(raw: string): z.infer<typeof SceneSplitBatc
 }
 
 export function parseQaResult(raw: string): QAResult {
-  return validate(raw, QAResultSchema);
+  return validateValue(sanitizeQaOptionalFields(parseJson(raw)), QAResultSchema);
 }

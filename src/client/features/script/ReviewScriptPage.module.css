@@ -92,9 +92,42 @@
 .qaIssues, .qaIssueList { display: grid; gap: .65rem; }
 .qaGroupTitle { margin: 0; color: var(--text-2); font-size: .8125rem; }
 .qaIssue { display: grid; gap: .4rem; padding: .7rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
+.qaIssueAccepted { opacity: .62; }
 .qaIssueTop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: var(--text); font-size: .8125rem; }
+.qaIssueLocation { margin-bottom: .2rem; color: var(--amber-text); font-family: var(--mono); font-size: .6875rem; }
 .qaIssueText, .qaIssueAction { color: var(--text-2); font-size: .75rem; line-height: 1.45; }
 .qaIssueAction { color: var(--text-3); }
+.qaIssueActions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .25rem; }
+.qaDiff { display: grid; gap: .35rem; padding: .7rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .625rem; }
+.qaDiffBefore, .qaDiffAfter { display: flex; gap: .5rem; padding: .45rem .55rem; border-radius: .4rem; font-size: .8rem; line-height: 1.45; }
+.qaDiffBefore { background: var(--red-bg); color: var(--red); }
+.qaDiffAfter { background: var(--green-bg); color: var(--green); }
+.qaDiffBefore span, .qaDiffAfter span { flex: none; font-family: var(--mono); font-weight: 700; }
+.qaDiffDelta { color: var(--text-3); font-family: var(--mono); font-size: .6875rem; text-align: right; }
+.qaDiffWarning { margin: .1rem 0 0; color: var(--amber-text); font-size: .75rem; }
+.qaRegenInstruction { display: grid; gap: .35rem; padding: .65rem .75rem; background: var(--input); border: 1px solid var(--border); border-radius: .625rem; }
+.qaRegenInstructionHead { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: var(--text-2); font-size: .75rem; }
+.qaRegenInstruction p { margin: 0; color: var(--text-2); font-size: .75rem; line-height: 1.45; }
+.qaResultsPanel { display: grid; gap: .75rem; margin-bottom: 1rem; padding: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
+.qaResultsSummary { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; color: var(--text-2); font-family: var(--mono); font-size: .75rem; }
+.qaResultsSummary strong { color: var(--text); font-family: inherit; }
+.qaResultsSummary span { display: inline-flex; align-items: center; gap: .3rem; }
+.qaSummaryDot { width: .42rem; height: .42rem; border-radius: 50%; background: var(--text-3); }
+.qaSummaryHigh .qaSummaryDot { background: var(--red); }
+.qaSummaryMedium .qaSummaryDot { background: var(--amber); }
+.qaSummaryLow .qaSummaryDot { background: var(--text-3); }
+.qaResultsStale { display: flex; align-items: center; gap: .5rem; padding: .65rem .75rem; background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: .625rem; color: var(--amber-text); font-size: .8rem; line-height: 1.45; }
+.qaResultsStale :global(.ic) { flex: none; }
+.qaResultsMuted { margin: 0; color: var(--text-3); font-size: .75rem; }
+.qaResultsPanel > summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; cursor: pointer; list-style: none; }
+.qaResultsPanel > summary::-webkit-details-marker { display: none; }
+.qaResultsPanel > summary::after { content: '⌄'; color: var(--text-3); font-size: 1rem; }
+.qaResultsPanel:not([open]) > summary::after { content: '›'; }
+.qaResultsTitle { display: flex; align-items: center; gap: .5rem; color: var(--text); font-size: .9rem; font-weight: 700; }
+.qaResultsTitle :global(.ic) { color: var(--amber); }
+.qaLowGroup { display: grid; gap: .65rem; }
+.qaLowGroup > summary { color: var(--text-3); cursor: pointer; font-size: .75rem; }
+.qaDismissed { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--text-3); font-size: .75rem; }
 .footer { justify-content: flex-end; position: sticky; bottom: .75rem; padding: .75rem; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--border); border-radius: .7rem; }
 .errorAlert { padding: .75rem 1rem; background: var(--red-bg); border: 1px solid var(--red); border-radius: .625rem; color: var(--red); line-height: 1.5; }
 .error { color: var(--red); }

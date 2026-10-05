@@ -58,10 +58,10 @@ describe('final QA API', () => {
 
   it('gets the manual prompt and imports the manual result', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt: 'SYSTEM\n...', promptVersion: 'qa-prompt-v1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt: 'SYSTEM\n...', promptVersion: 'qa-prompt-v2/documentary@3' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } }), { status: 200 }));
 
-    await expect(getFinalQaManualPrompt('project/1')).resolves.toEqual({ prompt: 'SYSTEM\n...', promptVersion: 'qa-prompt-v1' });
+    await expect(getFinalQaManualPrompt('project/1')).resolves.toEqual({ prompt: 'SYSTEM\n...', promptVersion: 'qa-prompt-v2/documentary@3' });
     await expect(importFinalQa('project/1', '{"issues":[]}')).resolves.toEqual({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } });
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/qa/manual-prompt', expect.objectContaining({ method: 'GET' }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/qa/manual-import', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raw: '{"issues":[]}' }) }));

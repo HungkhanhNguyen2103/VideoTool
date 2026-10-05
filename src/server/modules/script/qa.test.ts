@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { QAResultSchema } from './ai/qa-schema';
 import { buildQaPrompt } from './ai/build-prompt';
+import { parseQaResult } from './ai/parse-output';
 import { runFinalQa } from './qa';
 import { createProject, getProject, replaceProjectChapters } from '../project';
 import { getCollection } from '../../db/client';
@@ -48,6 +49,9 @@ describe('final QA contract', () => {
     expect(english.user).toContain('Write each issue reason in English.');
     expect(vietnamese.system).toContain(enumTokens);
     expect(vietnamese.system).toContain('REMOVE_DUPLICATION, REGENERATE, SHORTEN, MOVE_REVEAL, REVIEW_FACT');
+    expect(vietnamese.system).toContain('optional paragraph (positive integer), quote (string, max 240 characters), fixInstruction');
+    expect(vietnamese.system).toContain('For every issue, also include when you can: paragraph (the 1-based paragraph number inside that chapter)');
+    expect(vietnamese.promptVersion).toMatch(/^qa-prompt-v2\/documentary@/);
   });
 
   it('parses a well-formed result with all supported issue types and actions', () => {
@@ -71,6 +75,27 @@ describe('final QA contract', () => {
     expect(QAResultSchema.parse({ issues: [], reviewedBy: { provider: 'manual', model: 'Dán thủ công' } })).toMatchObject({
       reviewedBy: { provider: 'manual', model: 'Dán thủ công' },
     });
+  });
+
+  it('accepts concrete issue context fields and parser-drops only invalid optional fields', () => {
+    const valid = parseQaResult(JSON.stringify({
+      issues: [{
+        chapter: 1, paragraph: 2, quote: 'Một câu trích nguyên văn.', fixInstruction: 'Thu hẹp câu này.', replacement: '',
+        type: 'CREDIBILITY_RISK', severity: 'medium', reason: 'Cần kiểm tra.', suggestedAction: 'REVIEW_FACT',
+      }],
+    }));
+    expect(valid.issues[0]).toMatchObject({ paragraph: 2, quote: 'Một câu trích nguyên văn.', fixInstruction: 'Thu hẹp câu này.', replacement: '' });
+
+    const sanitized = parseQaResult(JSON.stringify({
+      issues: [{
+        chapter: 1, type: 'CREDIBILITY_RISK', severity: 'medium', reason: 'Cần kiểm tra.', suggestedAction: 'REVIEW_FACT',
+        paragraph: 0, quote: 'x'.repeat(241), fixInstruction: 'x'.repeat(301), replacement: 'x'.repeat(601),
+      }],
+    }));
+    expect(sanitized.issues[0]).not.toHaveProperty('paragraph');
+    expect(sanitized.issues[0]).not.toHaveProperty('quote');
+    expect(sanitized.issues[0]).not.toHaveProperty('fixInstruction');
+    expect(sanitized.issues[0]).not.toHaveProperty('replacement');
   });
 
   it.each([

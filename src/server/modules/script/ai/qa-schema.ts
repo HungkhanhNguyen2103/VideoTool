@@ -10,12 +10,23 @@ export const QA_ISSUE_TYPES = [
 export const QA_SEVERITIES = ['low', 'medium', 'high'] as const;
 export const QA_SUGGESTED_ACTIONS = ['REMOVE_DUPLICATION', 'REGENERATE', 'SHORTEN', 'MOVE_REVEAL', 'REVIEW_FACT'] as const;
 
+export const QAIssueOptionalFieldSchemas = {
+  paragraph: z.number().int().positive(),
+  quote: z.string().max(240),
+  fixInstruction: z.string().max(300),
+  replacement: z.string().max(600),
+} as const;
+
 export const QAIssueSchema = z.object({
   chapter: z.number().int().positive(),
   type: z.enum(QA_ISSUE_TYPES),
   severity: z.enum(QA_SEVERITIES),
   reason: z.string().min(1),
   suggestedAction: z.enum(QA_SUGGESTED_ACTIONS),
+  paragraph: QAIssueOptionalFieldSchemas.paragraph.optional(),
+  quote: QAIssueOptionalFieldSchemas.quote.optional(),
+  fixInstruction: QAIssueOptionalFieldSchemas.fixInstruction.optional(),
+  replacement: QAIssueOptionalFieldSchemas.replacement.optional(),
 }).strict();
 
 export const QAResultSchema = z.object({
