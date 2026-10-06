@@ -26,31 +26,61 @@ export function buildQaRegenInstruction(issue: QAIssue, typeLabel: string, actio
 }
 
 export type QaQuoteTarget = { paragraphIndex: number; start: number; end: number };
+export type QuoteMatchOutcome = 'unique' | 'none' | 'multiple' | 'no-quote';
+
+const quoteFoldMap: Record<string, string> = {
+  '\u2018': "'",
+  '\u2019': "'",
+  '\u201c': '"',
+  '\u201d': '"',
+  '\u00a0': ' ',
+  '\u202f': ' ',
+};
+
+function normalizeNfc(value: string): string {
+  return value.normalize('NFC');
+}
+
+function normalizeForQuoteMatch(value: string): string {
+  return normalizeNfc(value).replace(/[\u2018\u2019\u201c\u201d\u00a0\u202f]/g, (character) => quoteFoldMap[character]!);
+}
 
 function quoteMatches(text: string, quote: string): number[] {
-  if (!quote) return [];
+  const normalizedText = normalizeForQuoteMatch(text);
+  const normalizedQuote = normalizeForQuoteMatch(quote);
+  if (!normalizedQuote) return [];
   const matches: number[] = [];
   let from = 0;
-  while (from <= text.length - quote.length) {
-    const index = text.indexOf(quote, from);
+  while (from <= normalizedText.length - normalizedQuote.length) {
+    const index = normalizedText.indexOf(normalizedQuote, from);
     if (index < 0) break;
     matches.push(index);
-    from = index + quote.length;
+    from = index + normalizedQuote.length;
   }
   return matches;
 }
 
+function quoteMatchLocations(chapter: Pick<ChapterDoc, 'paragraphs'>, quote: string): Array<{ paragraphIndex: number; start: number }> {
+  return chapter.paragraphs.flatMap((paragraph, paragraphIndex) => quoteMatches(paragraph, quote).map((start) => ({ paragraphIndex, start })));
+}
+
+export function explainQuoteMatch(chapter: Pick<ChapterDoc, 'paragraphs'>, issue: Pick<QAIssue, 'quote'>): QuoteMatchOutcome {
+  if (!issue.quote) return 'no-quote';
+  const count = quoteMatchLocations(chapter, issue.quote).length;
+  return count === 0 ? 'none' : count === 1 ? 'unique' : 'multiple';
+}
+
 export function findQuoteTarget(chapter: Pick<ChapterDoc, 'paragraphs'>, issue: Pick<QAIssue, 'paragraph' | 'quote'>): QaQuoteTarget | null {
   if (!issue.quote) return null;
-  const allMatches = chapter.paragraphs.flatMap((paragraph, paragraphIndex) => quoteMatches(paragraph, issue.quote!).map((start) => ({ paragraphIndex, start })));
+  const allMatches = quoteMatchLocations(chapter, issue.quote);
   if (allMatches.length !== 1) return null;
   if (issue.paragraph != null && issue.paragraph >= 1 && issue.paragraph <= chapter.paragraphs.length) {
     const paragraphIndex = issue.paragraph - 1;
     const matches = quoteMatches(chapter.paragraphs[paragraphIndex]!, issue.quote);
-    if (matches.length === 1) return { paragraphIndex, start: matches[0]!, end: matches[0]! + issue.quote.length };
+    if (matches.length === 1) return { paragraphIndex, start: matches[0]!, end: matches[0]! + normalizeForQuoteMatch(issue.quote).length };
   }
   const match = allMatches[0]!;
-  return { paragraphIndex: match.paragraphIndex, start: match.start, end: match.start + issue.quote.length };
+  return { paragraphIndex: match.paragraphIndex, start: match.start, end: match.start + normalizeForQuoteMatch(issue.quote).length };
 }
 
 export function applyReplacementToParagraphs(paragraphs: readonly string[], target: QaQuoteTarget, replacement: string): string[] {
@@ -59,11 +89,13 @@ export function applyReplacementToParagraphs(paragraphs: readonly string[], targ
       result.push(paragraph);
       return result;
     }
-    const before = paragraph.slice(0, target.start);
-    const after = paragraph.slice(target.end);
-    const raw = `${before}${replacement}${after}`;
+    const normalizedParagraph = normalizeNfc(paragraph);
+    const normalizedReplacement = normalizeNfc(replacement);
+    const before = normalizedParagraph.slice(0, target.start);
+    const after = normalizedParagraph.slice(target.end);
+    const raw = `${before}${normalizedReplacement}${after}`;
     const boundaryStart = Math.max(0, before.length - 2);
-    const boundaryEnd = Math.min(raw.length, before.length + replacement.length + 2);
+    const boundaryEnd = Math.min(raw.length, before.length + normalizedReplacement.length + 2);
     const boundary = raw.slice(boundaryStart, boundaryEnd).replace(/[ \t]{2,}/g, ' ');
     const normalized = raw.slice(0, boundaryStart) + boundary + raw.slice(boundaryEnd);
     if (normalized.trim()) result.push(normalized);

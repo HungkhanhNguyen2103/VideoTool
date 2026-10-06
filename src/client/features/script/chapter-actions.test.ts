@@ -20,6 +20,7 @@ import {
   groupQaIssuesByChapter,
   instructionForChapter,
   findQuoteTarget,
+  explainQuoteMatch,
   applyReplacementToParagraphs,
   qaLevelForAction,
   qaIssueInstruction,
@@ -223,6 +224,46 @@ describe('final QA helpers', () => {
     expect(findQuoteTarget(chapter('c1', 'pending', { paragraphs: ['Đoạn khác.', 'Ở đây có câu cần sửa lần nữa.'] }), { paragraph: 2, quote: 'câu cần sửa' })).toEqual({ paragraphIndex: 1, start: 9, end: 20 });
     expect(findQuoteTarget(chapter('c1', 'pending', { paragraphs: ['Mở đầu có câu cần sửa.', 'Ở đây có câu cần sửa lần nữa.'] }), { quote: 'câu cần sửa' })).toBeNull();
     expect(findQuoteTarget(source, { paragraph: 1, quote: 'không xuất hiện' })).toBeNull();
+  });
+
+  it('matches NFC and NFD Vietnamese text without changing the unique-match rule', () => {
+    const paragraph = 'Câu thủy triều cần sửa.'.normalize('NFD');
+    const quote = 'thủy triều'.normalize('NFC');
+    const source = chapter('c1', 'pending', { paragraphs: [paragraph] });
+
+    expect(explainQuoteMatch(source, { quote })).toBe('unique');
+    expect(findQuoteTarget(source, { quote })).not.toBeNull();
+    const nfcSource = chapter('c1', 'pending', { paragraphs: ['Câu thủy triều cần sửa.'] });
+    const nfdTarget = findQuoteTarget(nfcSource, { quote: quote.normalize('NFD') });
+    expect(applyReplacementToParagraphs(nfcSource.paragraphs, nfdTarget!, 'mặt nước')).toEqual(['Câu mặt nước cần sửa.']);
+    expect(explainQuoteMatch(chapter('c1', 'pending', { paragraphs: ['Câu thủy triều.', 'Lặp thủy triều.'] }), { quote })).toBe('multiple');
+    expect(explainQuoteMatch(source, { quote: 'thuy'.normalize('NFD') })).toBe('none');
+    expect(explainQuoteMatch(source, {})).toBe('no-quote');
+  });
+
+  it('folds curly quotes and non-breaking spaces only one-to-one', () => {
+    const straight = chapter('c1', 'pending', { paragraphs: ['Ông nói "đi thôi" rồi.'] });
+    const curly = chapter('c1', 'pending', { paragraphs: ['Ông nói “đi thôi” rồi.'] });
+    const nbsp = chapter('c1', 'pending', { paragraphs: ['Ông nói\u00a0đi thôi rồi.'] });
+    const narrowNbsp = chapter('c1', 'pending', { paragraphs: ['Ông nói\u202fđi thôi rồi.'] });
+
+    expect(explainQuoteMatch(straight, { quote: 'nói “đi thôi"' })).toBe('unique');
+    expect(explainQuoteMatch(curly, { quote: 'nói "đi thôi"' })).toBe('unique');
+    expect(explainQuoteMatch(nbsp, { quote: 'nói đi thôi' })).toBe('unique');
+    expect(explainQuoteMatch(narrowNbsp, { quote: 'nói đi thôi' })).toBe('unique');
+  });
+
+  it('normalizes only the edited paragraph and replacement to NFC', () => {
+    const original = 'Câu cần sửa: thủy triều.'.normalize('NFD');
+    const source = chapter('c1', 'pending', { paragraphs: [original, 'Giữ nguyên NFD: hòa bình.'.normalize('NFD')] });
+    const target = findQuoteTarget(source, { quote: 'thủy triều' });
+    expect(target).not.toBeNull();
+
+    const updated = applyReplacementToParagraphs(source.paragraphs, target!, 'mặt nước'.normalize('NFD'));
+    expect(updated[0]).toBe('Câu cần sửa: mặt nước.'.normalize('NFC'));
+    expect(updated[0]).toBe(updated[0]!.normalize('NFC'));
+    expect(updated[1]).toBe(source.paragraphs[1]);
+    expect(applyReplacementToParagraphs(['thủy triều', 'Giữ nguyên'], { paragraphIndex: 0, start: 0, end: 'thủy triều'.length }, '')).toEqual(['Giữ nguyên']);
   });
 
   it('applies a local replacement, normalizes only edit-boundary spaces, and removes an empty paragraph', () => {

@@ -217,4 +217,18 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain('qaLevelForAction');
     expect(source).toContain('scrollIntoView({ block: \'nearest\', behavior: prefersReducedMotion ? \'auto\' : \'smooth\' })');
   });
+
+  it('explains quote fallback reasons and reserves room above the sticky footer', async () => {
+    const source = await readFile('src/client/features/script/components/QaIssueCard.tsx', 'utf8');
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
+
+    expect(source).toContain('Không tìm thấy câu trích trong chương hiện tại, nên chuyển sang tái tạo.');
+    expect(source).toContain('Câu trích xuất hiện nhiều lần trong chương, nên chuyển sang tái tạo.');
+    expect(source).toContain('quoteMatch');
+    expect(page).toContain('explainQuoteMatch');
+    expect(css).toContain('--review-footer-control-height');
+    expect(css).toContain('padding-bottom:');
+    expect(css).toContain('background: var(--panel)');
+  });
 });

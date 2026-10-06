@@ -1,4 +1,13 @@
-.page { display: grid; gap: 1rem; }
+.page {
+  /* Button's default 36px height + footer padding/borders + a scroll gap. */
+  --review-footer-control-height: 36px;
+  --review-footer-padding: .75rem;
+  --review-footer-gap: .75rem;
+  --review-footer-sticky-offset: .75rem;
+  display: grid;
+  gap: 1rem;
+  padding-bottom: calc(var(--review-footer-control-height) + (2 * var(--review-footer-padding)) + 2px + var(--review-footer-gap) + var(--review-footer-sticky-offset));
+}
 .stepper, .footer, .chapterTop, .actions { display: flex; align-items: center; gap: .75rem; }
 .stepper { flex-wrap: wrap; gap: 1rem; padding: .75rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
 .step { display: flex; align-items: center; gap: .75rem; flex: none; }
@@ -97,6 +106,7 @@
 .qaIssueLocation { margin-bottom: .2rem; color: var(--amber-text); font-family: var(--mono); font-size: .6875rem; }
 .qaIssueText, .qaIssueAction { color: var(--text-2); font-size: .75rem; line-height: 1.45; }
 .qaIssueAction { color: var(--text-3); }
+.qaFallbackReason { margin: 0; color: var(--text-3); font-size: .75rem; line-height: 1.45; }
 .qaIssueActions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .25rem; }
 .qaDiff { display: grid; gap: .35rem; padding: .7rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .625rem; }
 .qaDiffBefore, .qaDiffAfter { display: flex; gap: .5rem; padding: .45rem .55rem; border-radius: .4rem; font-size: .8rem; line-height: 1.45; }
@@ -128,7 +138,7 @@
 .qaLowGroup { display: grid; gap: .65rem; }
 .qaLowGroup > summary { color: var(--text-3); cursor: pointer; font-size: .75rem; }
 .qaDismissed { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--text-3); font-size: .75rem; }
-.footer { justify-content: flex-end; position: sticky; bottom: .75rem; padding: .75rem; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--border); border-radius: .7rem; }
+.footer { justify-content: flex-end; position: sticky; bottom: var(--review-footer-sticky-offset); padding: var(--review-footer-padding); background: var(--panel); border: 1px solid var(--border); border-radius: .7rem; }
 .errorAlert { padding: .75rem 1rem; background: var(--red-bg); border: 1px solid var(--red); border-radius: .625rem; color: var(--red); line-height: 1.5; }
 .error { color: var(--red); }
 

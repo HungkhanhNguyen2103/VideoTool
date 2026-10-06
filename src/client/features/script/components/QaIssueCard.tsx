@@ -1,5 +1,5 @@
 import type { QAIssue } from '../api';
-import type { QaQuoteTarget } from '../chapter-actions';
+import type { QaQuoteTarget, QuoteMatchOutcome } from '../chapter-actions';
 import { qaSeverityTone } from '../chapter-actions';
 import { Badge } from '../../../shared/ui/Badge';
 import { Button } from '../../../shared/ui/Button';
@@ -11,6 +11,7 @@ type QaIssueCardProps = {
   severityLabel: string;
   actionLabel: string;
   patchTarget: QaQuoteTarget | null;
+  quoteMatch: QuoteMatchOutcome | null;
   replacement: string | undefined;
   removesParagraph: boolean;
   regenerationInstruction: string;
@@ -34,6 +35,7 @@ export function QaIssueCard({
   severityLabel,
   actionLabel,
   patchTarget,
+  quoteMatch,
   replacement,
   removesParagraph,
   regenerationInstruction,
@@ -47,7 +49,14 @@ export function QaIssueCard({
   onDismiss,
 }: QaIssueCardProps) {
   const isPatchable = patchTarget !== null && replacement !== undefined;
-  const wordDelta = replacement === undefined || issue.quote === undefined ? null : wordCount(replacement) - wordCount(issue.quote);
+  const wordDelta = replacement === undefined || issue.quote === undefined ? null : wordCount(replacement.normalize('NFC')) - wordCount(issue.quote.normalize('NFC'));
+  const quoteFallback = !isPatchable && issue.quote && replacement !== undefined
+    ? quoteMatch === 'none'
+      ? 'Không tìm thấy câu trích trong chương hiện tại, nên chuyển sang tái tạo.'
+      : quoteMatch === 'multiple'
+        ? 'Câu trích xuất hiện nhiều lần trong chương, nên chuyển sang tái tạo.'
+        : null
+    : null;
 
   return <article className={`${styles.qaIssue} ${accepted ? styles.qaIssueAccepted : ''}`}>
     <div className={styles.qaIssueTop}>
@@ -71,6 +80,7 @@ export function QaIssueCard({
         <div className={styles.qaRegenInstructionHead}><strong>Lệnh tái tạo</strong><Badge tone="indigo">Mức: {regenerationLevel === 'light' ? 'Nhẹ' : 'Vừa'}</Badge></div>
         <p>{regenerationInstruction}</p>
       </div>}
+      {quoteFallback && <p className={styles.qaFallbackReason}>{quoteFallback}</p>}
       <div className={styles.qaIssueActions}>
         {confirming ? <><Button size="sm" variant="amber" onClick={onAccept}>Chấp nhận</Button><Button size="sm" onClick={onCancel}>Huỷ</Button></> : <Button size="sm" variant="indigoline" onClick={onApply}>Áp dụng gợi ý</Button>}
         <Button size="sm" onClick={onEdit}>Sửa tay đoạn này</Button>

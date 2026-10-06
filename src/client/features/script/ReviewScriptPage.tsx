@@ -17,6 +17,7 @@ import {
   chapterMetaText,
   chaptersSummaryText,
   applyReplacementToParagraphs,
+  explainQuoteMatch,
   findChapterIdByNumber,
   findQuoteTarget,
   generationModeForChapters,
@@ -32,6 +33,7 @@ import {
   summarizeQaIssues,
   toggleApproveStatus,
   toggleFlagStatus,
+  type QuoteMatchOutcome,
 } from './chapter-actions';
 import styles from './ReviewScriptPage.module.css';
 
@@ -543,6 +545,7 @@ export function ReviewScriptPage() {
   const renderQaIssue = (issue: QAIssue) => {
     const match = qaChapterAndTarget(issue);
     const replacement = issue.replacement;
+    const quoteMatch: QuoteMatchOutcome | null = match ? explainQuoteMatch(match.chapter, issue) : null;
     const removesParagraph = Boolean(match?.target && replacement !== undefined
       && applyReplacementToParagraphs(match.chapter.paragraphs, match.target, replacement).length < match.chapter.paragraphs.length);
     const key = qaIssueKey(issue);
@@ -553,6 +556,7 @@ export function ReviewScriptPage() {
       severityLabel={qaSeverityLabel[issue.severity]}
       actionLabel={qaActionLabel[issue.suggestedAction]}
       patchTarget={match?.target ?? null}
+      quoteMatch={quoteMatch}
       replacement={replacement}
       removesParagraph={removesParagraph}
       regenerationInstruction={qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction])}
