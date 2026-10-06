@@ -109,10 +109,9 @@
 .qaIssueHeaderActions { display: flex; align-items: center; flex: none; gap: .35rem; }
 .qaIssueToggle { flex: none; }
 .qaIssueToggle :global(.ic) { transition: transform .15s ease; }
-.qaIssueToggleOpen :global(.ic) { transform: rotate(90deg); }
+.qaIssueToggleOpen :global(.ic) { transform: rotate(180deg); }
 .qaIssueBody { display: grid; gap: .4rem; }
 .qaIssueBody[hidden] { display: none; }
-.qaIssueLocation { margin-bottom: .2rem; color: var(--amber-text); font-family: var(--mono); font-size: .6875rem; }
 .qaIssueText, .qaIssueAction { color: var(--text-2); font-size: .75rem; line-height: 1.45; }
 .qaIssueAction { color: var(--text-3); }
 .qaFallbackReason { margin: 0; color: var(--text-3); font-size: .75rem; line-height: 1.45; }

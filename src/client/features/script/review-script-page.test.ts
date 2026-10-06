@@ -234,13 +234,13 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(page).toContain('chapterQaIssues.filter((issue) => issue.severity !== \'low\')');
     expect(page).toContain('defaultExpandedQaKeys');
     expect(page).toContain('collapsible={collapsible}');
-    expect(page).toContain('chapterQaIssues.filter((issue) => issue.severity === \'low\').map((issue) => renderQaIssue(issue, false, true))');
-    expect(card).toContain('showChapter?: boolean');
-    expect(card).toContain('showChapter = true');
+    expect(page).toContain('chapterQaIssues.filter((issue) => issue.severity === \'low\').map((issue) => renderQaIssue(issue, true))');
     expect(card).toContain('collapsible?: boolean');
     expect(card).toContain('aria-expanded={bodyVisible}');
     expect(card).toContain('aria-controls={bodyId}');
     expect(card).toContain("bodyVisible ? 'Thu gọn' : 'Mở'");
+    expect(card).toContain('const paragraphLabel = issue.paragraph ? `Đoạn ${issue.paragraph}` : \'Toàn chương\'');
+    expect(card).not.toContain('qaIssueLocation');
     expect(card).toContain('thẻ QA ${issue.paragraph');
   });
 
@@ -256,6 +256,8 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(css).toContain('--review-footer-control-height');
     expect(css).toContain('padding-bottom:');
     expect(css).toContain('background: var(--panel)');
+    expect(css).toContain('.qaIssueToggleOpen :global(.ic) { transform: rotate(180deg); }');
+    expect(css).not.toContain('rotate(90deg)');
   });
 
   it('wires the self-contained QA fix dialog without changing patch mode', async () => {

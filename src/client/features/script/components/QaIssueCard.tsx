@@ -17,7 +17,6 @@ type QaIssueCardProps = {
   removesParagraph: boolean;
   regenerationInstruction: string;
   regenerationLevel: 'light' | 'medium';
-  showChapter?: boolean;
   collapsible?: boolean;
   expanded?: boolean;
   confirming: boolean;
@@ -46,7 +45,6 @@ export function QaIssueCard({
   removesParagraph,
   regenerationInstruction,
   regenerationLevel,
-  showChapter = true,
   collapsible = false,
   expanded = true,
   confirming,
@@ -75,7 +73,6 @@ export function QaIssueCard({
   return <article className={`${styles.qaIssue} ${accepted ? styles.qaIssueAccepted : ''}`}>
     <div className={styles.qaIssueTop}>
       <div className={styles.qaIssueHeading}>
-        {(showChapter || issue.paragraph) && <div className={styles.qaIssueLocation}>{showChapter && `Chương ${issue.chapter}`}{showChapter && issue.paragraph ? ' · ' : ''}{issue.paragraph ? `đoạn ${issue.paragraph}` : ''}</div>}
         <div className={styles.qaIssueMeta}><span className={styles.qaIssueParagraph}>{paragraphLabel}</span><strong>{typeLabel}</strong></div>
       </div>
       <div className={styles.qaIssueHeaderActions}>

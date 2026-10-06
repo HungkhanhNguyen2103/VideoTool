@@ -731,7 +731,7 @@ export function ReviewScriptPage() {
     if (await patch(chapter.id, { paragraphs: [hook, ...chapter.paragraphs] })) setQaStale(true);
   }
 
-  const renderQaIssue = (issue: QAIssue, showChapter = true, collapsible = false) => {
+  const renderQaIssue = (issue: QAIssue, collapsible = false) => {
     const match = qaChapterAndTarget(issue);
     const replacement = issue.replacement;
     const quoteMatch: QuoteMatchOutcome | null = match ? explainQuoteMatch(match.chapter, issue) : null;
@@ -750,7 +750,6 @@ export function ReviewScriptPage() {
       removesParagraph={removesParagraph}
       regenerationInstruction={qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction])}
       regenerationLevel={qaLevelForAction(issue.suggestedAction)}
-      showChapter={showChapter}
       collapsible={collapsible}
       expanded={expandedQaKeys.has(key) || qaPatchConfirming === key || qaIssueStates[key] === 'accepted'}
       confirming={qaPatchConfirming === key}
@@ -909,10 +908,10 @@ export function ReviewScriptPage() {
                    </div>}
                    {isExpanded && chapterQaIssues.length > 0 && <section ref={(element) => { qaBlockRefs.current[chapter.id] = element; }} className={styles.chapterQaBlock} aria-labelledby={`chapter-qa-title-${chapter.id}`}>
                      <div className={styles.chapterQaHead}><div><h3 id={`chapter-qa-title-${chapter.id}`}>Kiểm tra cuối · {chapterQaIssues.length} thẻ</h3></div>{qaStale && <span className={styles.qaResultsMuted}>Kết quả QA có thể đã cũ.</span>}</div>
-                     <div className={styles.qaIssueList}>{chapterQaIssues.filter((issue) => issue.severity !== 'low').map((issue) => renderQaIssue(issue, false, true))}</div>
+                     <div className={styles.qaIssueList}>{chapterQaIssues.filter((issue) => issue.severity !== 'low').map((issue) => renderQaIssue(issue, true))}</div>
                      {chapterQaIssues.some((issue) => issue.severity === 'low') && <details className={styles.qaLowGroup}>
                        <summary>Xem {chapterQaIssues.filter((issue) => issue.severity === 'low').length} thẻ mức thấp</summary>
-                       <div className={styles.qaIssueList}>{chapterQaIssues.filter((issue) => issue.severity === 'low').map((issue) => renderQaIssue(issue, false, true))}</div>
+                       <div className={styles.qaIssueList}>{chapterQaIssues.filter((issue) => issue.severity === 'low').map((issue) => renderQaIssue(issue, true))}</div>
                      </details>}
                    </section>}
                    {shouldOfferOpeningHook(chapter, projectQuery.data?.openingHook ?? '') && <div className={styles.hookCallout}><div><strong>Hook mở đầu đề xuất</strong><p>{projectQuery.data?.openingHook}</p></div><Button variant="amber" disabled={busy} onClick={() => void insertOpeningHook(chapter)}>Chèn hook làm đoạn đầu tiên</Button></div>}
