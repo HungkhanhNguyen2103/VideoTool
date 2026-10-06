@@ -17,6 +17,7 @@ import {
   chapterWordBudgetNote,
   chapterMetaText,
   chaptersSummaryText,
+  chaptersWithHighQaIssues,
   applyReplacementToParagraphs,
   explainQuoteMatch,
   findChapterIdByNumber,
@@ -31,8 +32,11 @@ import {
   qaIssueInstruction,
   qaIssueKey,
   qaLevelForAction,
+  qaSeverityTone,
   sortQaIssues,
+  splitQaIssuesByChapter,
   summarizeQaIssues,
+  summarizeQaIssuesByChapter,
   toggleApproveStatus,
   toggleFlagStatus,
   type QuoteMatchOutcome,
@@ -150,6 +154,7 @@ export function ReviewScriptPage() {
   const editFocusRequestRef = useRef<{ chapterId: string; quote?: string } | null>(null);
   const manualRegenBoxRef = useRef<HTMLDivElement>(null);
   const manualRegenTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const qaBlockRefs = useRef<Record<string, HTMLElement | null>>({});
   const lifecycleRef = useRef(0);
   const initialExpansionProjectIdRef = useRef<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -175,6 +180,9 @@ export function ReviewScriptPage() {
   const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
   const activeQaIssues = useMemo(() => qaResult ? sortQaIssues(qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] !== 'dismissed')) : [], [qaResult, qaIssueStates]);
   const qaSummary = useMemo(() => summarizeQaIssues(activeQaIssues), [activeQaIssues]);
+  const qaPlacement = useMemo(() => splitQaIssuesByChapter(activeQaIssues, chapters), [activeQaIssues, chapters]);
+  const qaChapterSummaries = useMemo(() => summarizeQaIssuesByChapter(activeQaIssues), [activeQaIssues]);
+  const highQaChapterNos = useMemo(() => chaptersWithHighQaIssues(activeQaIssues), [activeQaIssues]);
   const dismissedQaCount = qaResult ? qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] === 'dismissed').length : 0;
   const qaDialogChapter = qaDialog ? chapters.find((chapter) => chapter.id === qaDialog.chapterId) ?? null : null;
   const qaDialogUndoIndex = qaDialog?.result && qaDialog.firstStartedAt && qaDialogChapter
@@ -216,6 +224,17 @@ export function ReviewScriptPage() {
     initialExpansionProjectIdRef.current = projectId;
     setExpanded(new Set([chapters[0]!.id]));
   }, [chapters]);
+
+  useEffect(() => {
+    if (!qaResult || highQaChapterNos.size === 0) return;
+    const highChapterIds = chapters.filter((chapter) => highQaChapterNos.has(chapter.no)).map((chapter) => chapter.id);
+    if (highChapterIds.length === 0) return;
+    setExpanded((current) => {
+      const next = new Set(current);
+      highChapterIds.forEach((chapterId) => next.add(chapterId));
+      return next.size === current.size ? current : next;
+    });
+  }, [chapters, highQaChapterNos, qaResult]);
 
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = selectedChapters.length > 0 && !allSelected;
@@ -486,6 +505,15 @@ export function ReviewScriptPage() {
     });
   }
 
+  function focusQaChapter(chapterId: string) {
+    setExpanded((current) => new Set(current).add(chapterId));
+    window.requestAnimationFrame(() => {
+      const prefersReducedMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      qaBlockRefs.current[chapterId]?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    });
+  }
+
   async function saveEdit(chapterId: string) { if (await patch(chapterId, { paragraphs: editParagraphs })) setQaStale(true); setEditing(null); }
 
   async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel): Promise<'success' | 'aborted' | 'failed'> {
@@ -624,7 +652,7 @@ export function ReviewScriptPage() {
     if (await patch(chapter.id, { paragraphs: [hook, ...chapter.paragraphs] })) setQaStale(true);
   }
 
-  const renderQaIssue = (issue: QAIssue) => {
+  const renderQaIssue = (issue: QAIssue, showChapter = true) => {
     const match = qaChapterAndTarget(issue);
     const replacement = issue.replacement;
     const quoteMatch: QuoteMatchOutcome | null = match ? explainQuoteMatch(match.chapter, issue) : null;
@@ -643,6 +671,7 @@ export function ReviewScriptPage() {
       removesParagraph={removesParagraph}
       regenerationInstruction={qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction])}
       regenerationLevel={qaLevelForAction(issue.suggestedAction)}
+      showChapter={showChapter}
       confirming={qaPatchConfirming === key}
       accepted={qaIssueStates[key] === 'accepted'}
       onApply={() => applyQaIssue(issue)}
@@ -738,12 +767,18 @@ export function ReviewScriptPage() {
                 <span className={styles.qaSummaryMedium}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.medium} trung bình</span>
                 <span className={styles.qaSummaryLow}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.low} thấp</span>
               </div>
+              {qaChapterSummaries.size > 0 && <div className={styles.qaChapterIndex} aria-label="QA theo chương">
+                {chapters.filter((chapter) => qaChapterSummaries.has(chapter.no)).map((chapter) => {
+                  const summary = qaChapterSummaries.get(chapter.no)!;
+                  const counts = [summary.high ? `${summary.high} cao` : '', summary.medium ? `${summary.medium} trung bình` : '', summary.low ? `${summary.low} thấp` : ''].filter(Boolean).join(' · ');
+                  return <Button key={chapter.id} size="sm" variant={summary.highest === 'high' ? 'red' : summary.highest === 'medium' ? 'indigoline' : 'ghost'} onClick={() => focusQaChapter(chapter.id)} aria-label={`Mở QA chương ${chapter.no}`}>Chương {chapter.no} · {counts}</Button>;
+                })}
+              </div>}
               {activeQaIssues.length === 0 && <p className={styles.qaResultsMuted}>Không còn thẻ QA đang hiển thị.</p>}
-              <div className={styles.qaIssueList}>{activeQaIssues.filter((issue) => issue.severity !== 'low').map(renderQaIssue)}</div>
-              {activeQaIssues.some((issue) => issue.severity === 'low') && <details className={styles.qaLowGroup}>
-                <summary>{qaSummary.low} thẻ mức độ thấp</summary>
-                <div className={styles.qaIssueList}>{activeQaIssues.filter((issue) => issue.severity === 'low').map(renderQaIssue)}</div>
-              </details>}
+              {qaPlacement.unplaced.length > 0 && <section className={styles.qaUnplaced} aria-labelledby="qa-unplaced-title">
+                <h3 id="qa-unplaced-title">Thẻ không gắn được chương</h3>
+                <div className={styles.qaIssueList}>{qaPlacement.unplaced.map((issue) => renderQaIssue(issue))}</div>
+              </section>}
               {dismissedQaCount > 0 && <div className={styles.qaDismissed}><span>Đã bỏ qua {dismissedQaCount} thẻ · Hiện lại</span><Button size="sm" onClick={restoreDismissedQaIssues}>Hiện lại</Button></div>}
               <p className={styles.qaResultsMuted}>Kết quả QA không được lưu; chạy lại sau khi chỉnh kịch bản để cập nhật.</p>
             </details>}
@@ -756,6 +791,10 @@ export function ReviewScriptPage() {
                 const isExpanded = expanded.has(chapter.id);
                 const meta = chapterMetaText(chapter);
                 const budgetNote = chapterWordBudgetNote(chapter);
+                const chapterQaIssues = qaPlacement.byChapterNo.get(chapter.no) ?? [];
+                const chapterQaSummary = qaChapterSummaries.get(chapter.no);
+                const qaChipTone = chapterQaSummary ? qaSeverityTone(chapterQaSummary.highest) : null;
+                const qaChipVariant = qaChipTone === 'amber' ? 'amber' : qaChipTone === 'indigo' ? 'indigoline' : 'ghost';
                 return <article className={styles.chapter} data-selected={selected.has(chapter.id)} key={chapter.id}>
                   <div className={styles.chapterTop}>
                     <input type="checkbox" checked={selected.has(chapter.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(chapter.id); else next.delete(chapter.id); return next; })} aria-label={`Chọn chương ${chapter.no}`} />
@@ -765,6 +804,7 @@ export function ReviewScriptPage() {
                     <Badge tone={statusTone[chapter.status]}>{statusLabel[chapter.status]}</Badge>
                     {chapter.reviewStatus === 'upstream-changed' && <span title="Chương trước đã thay đổi; hãy xem lại chương này trước khi chốt."><Badge tone="amber">Cần xem lại: chương trước đã đổi</Badge></span>}
                     {budgetNote && <Badge tone={budgetNote.tone}>{budgetNote.text}</Badge>}
+                    {chapterQaSummary && <Button size="sm" variant={qaChipVariant} onClick={() => focusQaChapter(chapter.id)} aria-label={`Mở QA chương ${chapter.no}`}>QA {chapterQaSummary.total}</Button>}
                     <span className={styles.spacer} />
                     <div className={styles.actions}>
                       {isCurrentRegen ? <Button size="sm" variant="red" onClick={() => regen.controller.abort()}>Hủy</Button> : <>
@@ -783,6 +823,14 @@ export function ReviewScriptPage() {
                      {manualRegen.error && <p className={styles.error}>{manualRegen.error}</p>}
                      <Button variant="amber" disabled={manualRegenBusy || !manualRegen.raw.trim()} onClick={() => void importManualRegen(chapter)}>Nhập chương</Button>
                    </div>}
+                   {isExpanded && chapterQaIssues.length > 0 && <section ref={(element) => { qaBlockRefs.current[chapter.id] = element; }} className={styles.chapterQaBlock} aria-labelledby={`chapter-qa-title-${chapter.id}`}>
+                     <div className={styles.chapterQaHead}><div><h3 id={`chapter-qa-title-${chapter.id}`}>Kiểm tra cuối · {chapterQaIssues.length} thẻ</h3></div>{qaStale && <span className={styles.qaResultsMuted}>Kết quả QA có thể đã cũ.</span>}</div>
+                     <div className={styles.qaIssueList}>{chapterQaIssues.filter((issue) => issue.severity !== 'low').map((issue) => renderQaIssue(issue, false))}</div>
+                     {chapterQaIssues.some((issue) => issue.severity === 'low') && <details className={styles.qaLowGroup}>
+                       <summary>Xem {chapterQaIssues.filter((issue) => issue.severity === 'low').length} thẻ mức thấp</summary>
+                       <div className={styles.qaIssueList}>{chapterQaIssues.filter((issue) => issue.severity === 'low').map((issue) => renderQaIssue(issue, false))}</div>
+                     </details>}
+                   </section>}
                    {shouldOfferOpeningHook(chapter, projectQuery.data?.openingHook ?? '') && <div className={styles.hookCallout}><div><strong>Hook mở đầu đề xuất</strong><p>{projectQuery.data?.openingHook}</p></div><Button variant="amber" disabled={busy} onClick={() => void insertOpeningHook(chapter)}>Chèn hook làm đoạn đầu tiên</Button></div>}
                    <div className={styles.chapterBody} id={`chapter-body-${chapter.id}`} hidden={!isExpanded && !isEditing}>{isEditing ? <><textarea ref={editTextareaRef} className={styles.textarea} value={editParagraphs.join('\n\n')} onChange={(event) => setEditParagraphs(event.target.value.split(/\n\s*\n/))} aria-label={`Sửa nội dung chương ${chapter.no}`} /><div className={styles.editorActions}><Button size="sm" onClick={() => setEditing(null)}>Hủy</Button><Button size="sm" variant="amber" onClick={() => void saveEdit(chapter.id)}><Icon name="save" />Lưu</Button></div></> : <><div className={styles.narrativeMeta}>{chapter.role && <span>Vai trò: {chapter.role}</span>}{chapter.targetWords != null && <span>Mục tiêu: {chapter.targetWords} từ</span>}{chapter.beat && <span>Nhịp: {chapter.beat}</span>}{chapter.endsOnTension && <span>Kết tension</span>}</div>{chapter.paragraphs.map((paragraph, index) => <p key={`${chapter.id}-${index}`}>{paragraph}</p>)}</>}</div>
                    {isCurrentRegen && <div className={styles.regen}><span>Đang xem trước bản tái tạo…</span><div className={styles.preview}>{regen.preview || 'Đang nhận token…'}</div></div>}

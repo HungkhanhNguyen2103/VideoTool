@@ -129,6 +129,9 @@
 .qaResultsStale { display: flex; align-items: center; gap: .5rem; padding: .65rem .75rem; background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: .625rem; color: var(--amber-text); font-size: .8rem; line-height: 1.45; }
 .qaResultsStale :global(.ic) { flex: none; }
 .qaResultsMuted { margin: 0; color: var(--text-3); font-size: .75rem; }
+.qaChapterIndex { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .65rem .75rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
+.qaUnplaced { display: grid; gap: .65rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+.qaUnplaced h3 { margin: 0; color: var(--amber-text); font-size: .8rem; }
 .qaResultsPanel > summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; cursor: pointer; list-style: none; }
 .qaResultsPanel > summary::-webkit-details-marker { display: none; }
 .qaResultsPanel > summary::after { content: '⌄'; color: var(--text-3); font-size: 1rem; }
@@ -138,6 +141,9 @@
 .qaLowGroup { display: grid; gap: .65rem; }
 .qaLowGroup > summary { color: var(--text-3); cursor: pointer; font-size: .75rem; }
 .qaDismissed { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--text-3); font-size: .75rem; }
+.chapterQaBlock { display: grid; gap: .65rem; padding: .9rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .625rem; }
+.chapterQaHead { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.chapterQaHead h3 { margin: 0; color: var(--text); font-size: .8125rem; }
 .footer { justify-content: flex-end; position: sticky; bottom: var(--review-footer-sticky-offset); padding: var(--review-footer-padding); background: var(--panel); border: 1px solid var(--border); border-radius: .7rem; }
 .errorAlert { padding: .75rem 1rem; background: var(--red-bg); border: 1px solid var(--red); border-radius: .625rem; color: var(--red); line-height: 1.5; }
 .error { color: var(--red); }

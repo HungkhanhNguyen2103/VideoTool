@@ -28,6 +28,9 @@ import {
   summarizeQaIssues,
   qaSeverityTone,
   findUndoSnapshotIndex,
+  splitQaIssuesByChapter,
+  summarizeQaIssuesByChapter,
+  chaptersWithHighQaIssues,
 } from './chapter-actions';
 
 function chapter(id: string, status: ChapterStatus, extra: Partial<ChapterDoc> = {}): ChapterDoc {
@@ -276,6 +279,42 @@ describe('final QA helpers', () => {
 
   it('returns no QA groups for an empty issue list', () => {
     expect(groupQaIssuesByChapter([])).toEqual(new Map());
+  });
+
+  it('splits issues for existing chapters and keeps out-of-range issues unplaced', () => {
+    const issues: QAIssue[] = [
+      { chapter: 2, type: 'WEAK_HOOK', severity: 'high', reason: 'two', suggestedAction: 'REGENERATE' },
+      { chapter: 7, type: 'FLAT_PACING', severity: 'low', reason: 'missing', suggestedAction: 'SHORTEN' },
+      { chapter: 1, type: 'REPETITION', severity: 'medium', reason: 'one', suggestedAction: 'REMOVE_DUPLICATION' },
+    ];
+
+    const placement = splitQaIssuesByChapter(issues, [{ no: 1 }, { no: 2 }, { no: 3 }]);
+    expect([...placement.byChapterNo.entries()]).toEqual([[2, [issues[0]]], [1, [issues[2]]]]);
+    expect(placement.unplaced).toEqual([issues[1]]);
+  });
+
+  it('summarizes each chapter and chooses its highest severity', () => {
+    const issues: QAIssue[] = [
+      { chapter: 2, type: 'WEAK_HOOK', severity: 'low', reason: 'low', suggestedAction: 'SHORTEN' },
+      { chapter: 2, type: 'FLAT_PACING', severity: 'medium', reason: 'medium', suggestedAction: 'REGENERATE' },
+      { chapter: 2, type: 'REPETITION', severity: 'high', reason: 'high', suggestedAction: 'REMOVE_DUPLICATION' },
+      { chapter: 1, type: 'WEAK_PAYOFF', severity: 'medium', reason: 'one', suggestedAction: 'REVIEW_FACT' },
+    ];
+
+    expect([...summarizeQaIssuesByChapter(issues).entries()]).toEqual([
+      [2, { total: 3, high: 1, medium: 1, low: 1, highest: 'high' }],
+      [1, { total: 1, high: 0, medium: 1, low: 0, highest: 'medium' }],
+    ]);
+  });
+
+  it('returns only chapters with visible high issues for auto-open', () => {
+    const issues: QAIssue[] = [
+      { chapter: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'high', suggestedAction: 'REGENERATE' },
+      { chapter: 2, type: 'FLAT_PACING', severity: 'medium', reason: 'medium', suggestedAction: 'SHORTEN' },
+      { chapter: 3, type: 'REPETITION', severity: 'high', reason: 'high too', suggestedAction: 'REMOVE_DUPLICATION' },
+    ];
+
+    expect(chaptersWithHighQaIssues(issues)).toEqual(new Set([1, 3]));
   });
 
   it('builds a one-line regeneration instruction from a QA issue and display labels', () => {

@@ -21,6 +21,45 @@ export function groupQaIssuesByChapter(issues: readonly QAIssue[]): Map<number, 
   return grouped;
 }
 
+export type QaIssuePlacement = { byChapterNo: Map<number, QAIssue[]>; unplaced: QAIssue[] };
+
+export function splitQaIssuesByChapter(
+  issues: readonly QAIssue[],
+  chapters: readonly Pick<ChapterDoc, 'no'>[],
+): QaIssuePlacement {
+  const chapterNumbers = new Set(chapters.map((chapter) => chapter.no));
+  const byChapterNo = new Map<number, QAIssue[]>();
+  const unplaced: QAIssue[] = [];
+  for (const issue of issues) {
+    if (!chapterNumbers.has(issue.chapter)) {
+      unplaced.push(issue);
+      continue;
+    }
+    const chapterIssues = byChapterNo.get(issue.chapter);
+    if (chapterIssues) chapterIssues.push(issue);
+    else byChapterNo.set(issue.chapter, [issue]);
+  }
+  return { byChapterNo, unplaced };
+}
+
+export type QaChapterIssueSummary = { total: number; high: number; medium: number; low: number; highest: QAIssue['severity'] };
+
+export function summarizeQaIssuesByChapter(issues: readonly QAIssue[]): Map<number, QaChapterIssueSummary> {
+  const summaries = new Map<number, QaChapterIssueSummary>();
+  for (const issue of issues) {
+    const current = summaries.get(issue.chapter) ?? { total: 0, high: 0, medium: 0, low: 0, highest: 'low' as const };
+    current.total += 1;
+    current[issue.severity] += 1;
+    if (qaSeverityOrder[issue.severity] < qaSeverityOrder[current.highest]) current.highest = issue.severity;
+    summaries.set(issue.chapter, current);
+  }
+  return summaries;
+}
+
+export function chaptersWithHighQaIssues(issues: readonly QAIssue[]): Set<number> {
+  return new Set(issues.filter((issue) => issue.severity === 'high').map((issue) => issue.chapter));
+}
+
 export function buildQaRegenInstruction(issue: QAIssue, typeLabel: string, actionLabel: string): string {
   return `${typeLabel}: ${issue.reason} (Đề xuất: ${actionLabel})`;
 }

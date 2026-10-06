@@ -16,6 +16,7 @@ type QaIssueCardProps = {
   removesParagraph: boolean;
   regenerationInstruction: string;
   regenerationLevel: 'light' | 'medium';
+  showChapter?: boolean;
   confirming: boolean;
   accepted: boolean;
   onApply: () => void;
@@ -41,6 +42,7 @@ export function QaIssueCard({
   removesParagraph,
   regenerationInstruction,
   regenerationLevel,
+  showChapter = true,
   confirming,
   accepted,
   onApply,
@@ -63,7 +65,7 @@ export function QaIssueCard({
   return <article className={`${styles.qaIssue} ${accepted ? styles.qaIssueAccepted : ''}`}>
     <div className={styles.qaIssueTop}>
       <div>
-        <div className={styles.qaIssueLocation}>Chương {issue.chapter}{issue.paragraph ? ` · đoạn ${issue.paragraph}` : ''}</div>
+        {(showChapter || issue.paragraph) && <div className={styles.qaIssueLocation}>{showChapter && `Chương ${issue.chapter}`}{showChapter && issue.paragraph ? ' · ' : ''}{issue.paragraph ? `đoạn ${issue.paragraph}` : ''}</div>}
         <strong>{typeLabel}</strong>
       </div>
       <Badge tone={qaSeverityTone(issue.severity)}>Mức độ: {severityLabel}</Badge>

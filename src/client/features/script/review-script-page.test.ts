@@ -219,6 +219,23 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain('scrollIntoView({ block: \'nearest\', behavior: prefersReducedMotion ? \'auto\' : \'smooth\' })');
   });
 
+  it('renders visible QA issues inside their chapters with an unplaced fallback', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const card = await readFile('src/client/features/script/components/QaIssueCard.tsx', 'utf8');
+
+    expect(page).toContain('splitQaIssuesByChapter');
+    expect(page).toContain('summarizeQaIssuesByChapter');
+    expect(page).toContain('chaptersWithHighQaIssues');
+    expect(page).toContain('qaPlacement.unplaced');
+    expect(page).toContain('Thẻ không gắn được chương');
+    expect(page).toContain('Kiểm tra cuối · {chapterQaIssues.length} thẻ');
+    expect(page).toContain('QA {chapterQaSummary.total}');
+    expect(page).toContain('focusQaChapter(chapter.id)');
+    expect(page).toContain('chapterQaIssues.filter((issue) => issue.severity !== \'low\')');
+    expect(card).toContain('showChapter?: boolean');
+    expect(card).toContain('showChapter = true');
+  });
+
   it('explains quote fallback reasons and reserves room above the sticky footer', async () => {
     const source = await readFile('src/client/features/script/components/QaIssueCard.tsx', 'utf8');
     const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
