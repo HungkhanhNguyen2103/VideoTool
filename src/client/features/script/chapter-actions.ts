@@ -1,5 +1,5 @@
 import { countNarrationWords, estimateNarrationDurationSec } from '../../../contracts/script';
-import type { ChapterDoc, ChapterStatus } from '../../../contracts/script';
+import type { ChapterDoc, ChapterSnapshot, ChapterStatus } from '../../../contracts/script';
 import type { QAIssue } from './api';
 
 type ReviewDecisionStatus = Exclude<ChapterStatus, 'generating'>;
@@ -214,6 +214,47 @@ export function chaptersSummaryText(chapters: readonly ChapterDoc[]): string {
  * most recent snapshot with the highest number, matching the prototype's ever-increasing versionSeq. */
 export function historyVersionLabel(index: number, total: number): string {
   return `Bản ${total - index}`;
+}
+
+function undoComparableChapter(chapter: Pick<ChapterDoc, 'id' | 'paragraphs' | 'title' | 'status' | 'reviewStatus'>): string {
+  return JSON.stringify({
+    id: chapter.id,
+    paragraphs: chapter.paragraphs,
+    title: chapter.title,
+    status: chapter.status,
+    reviewStatus: chapter.reviewStatus ?? 'clean',
+  });
+}
+
+function otherChaptersMatchSnapshot(snapshot: ChapterSnapshot, chaptersNow: readonly ChapterDoc[], targetChapterId: string): boolean {
+  const snapshotChapters = new Map(snapshot.chapters.filter((chapter) => chapter.id !== targetChapterId).map((chapter) => [chapter.id, chapter]));
+  const currentChapters = new Map(chaptersNow.filter((chapter) => chapter.id !== targetChapterId).map((chapter) => [chapter.id, chapter]));
+  if (snapshotChapters.size !== currentChapters.size) return false;
+  for (const [chapterId, chapter] of currentChapters) {
+    const snapshotChapter = snapshotChapters.get(chapterId);
+    if (!snapshotChapter || undoComparableChapter(snapshotChapter) !== undoComparableChapter(chapter)) return false;
+  }
+  return true;
+}
+
+/** History is newest-first; undo uses the oldest snapshot taken after the first run began. */
+export function findUndoSnapshotIndex(
+  history: readonly ChapterSnapshot[],
+  chaptersNow: readonly ChapterDoc[],
+  targetChapterId: string,
+  firstStartedAt: Date,
+): number | null {
+  let oldestQualifyingIndex: number | null = null;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index]!.takenAt.getTime() >= firstStartedAt.getTime()) {
+      oldestQualifyingIndex = index;
+      break;
+    }
+  }
+  if (oldestQualifyingIndex == null) return null;
+  return otherChaptersMatchSnapshot(history[oldestQualifyingIndex]!, chaptersNow, targetChapterId)
+    ? oldestQualifyingIndex
+    : null;
 }
 
 /** Runs one regeneration at a time and stops the batch as soon as one is aborted. */

@@ -27,6 +27,7 @@ import {
   sortQaIssues,
   summarizeQaIssues,
   qaSeverityTone,
+  findUndoSnapshotIndex,
 } from './chapter-actions';
 
 function chapter(id: string, status: ChapterStatus, extra: Partial<ChapterDoc> = {}): ChapterDoc {
@@ -157,6 +158,56 @@ describe('historyVersionLabel', () => {
     expect(historyVersionLabel(0, 3)).toBe('Bản 3');
     expect(historyVersionLabel(1, 3)).toBe('Bản 2');
     expect(historyVersionLabel(2, 3)).toBe('Bản 1');
+  });
+});
+
+describe('QA regeneration undo guard', () => {
+  const firstStartedAt = new Date('2026-10-06T10:00:00.000Z');
+  const before = [
+    chapter('c1', 'pending', { no: 1, title: 'Một', paragraphs: ['Bản cũ'], reviewStatus: 'clean' }),
+    chapter('c2', 'approved', { no: 2, title: 'Hai', paragraphs: ['Không đổi'], reviewStatus: 'clean' }),
+  ];
+
+  it('returns the newest-first history index for the pre-run snapshot when other chapters are unchanged', () => {
+    const history = [{ takenAt: new Date('2026-10-06T10:00:01.000Z'), chapters: before }];
+    const now = [
+      { ...before[0]!, paragraphs: ['Bản mới'] },
+      before[1]!,
+    ];
+
+    expect(findUndoSnapshotIndex(history, now, 'c1', firstStartedAt)).toBe(0);
+  });
+
+  it('rejects undo when another chapter changed after the snapshot', () => {
+    const history = [{ takenAt: new Date('2026-10-06T10:00:01.000Z'), chapters: before }];
+    const now = [
+      { ...before[0]!, paragraphs: ['Bản mới'] },
+      { ...before[1]!, paragraphs: ['Đã sửa giữa chừng'] },
+    ];
+
+    expect(findUndoSnapshotIndex(history, now, 'c1', firstStartedAt)).toBeNull();
+  });
+
+  it('rejects undo when no snapshot was taken after the first run started', () => {
+    const history = [{ takenAt: new Date('2026-10-06T09:59:59.000Z'), chapters: before }];
+    expect(findUndoSnapshotIndex(history, before, 'c1', firstStartedAt)).toBeNull();
+  });
+
+  it('uses the oldest qualifying snapshot across two runs in one dialog session', () => {
+    const beforeSecondRun = [
+      { ...before[0]!, paragraphs: ['Bản mới lần một'] },
+      { ...before[1]!, paragraphs: ['Tạm sửa trong lần hai'] },
+    ];
+    const history = [
+      { takenAt: new Date('2026-10-06T10:02:00.000Z'), chapters: beforeSecondRun },
+      { takenAt: new Date('2026-10-06T10:00:01.000Z'), chapters: before },
+    ];
+    const now = [
+      { ...before[0]!, paragraphs: ['Bản mới lần hai'] },
+      before[1]!,
+    ];
+
+    expect(findUndoSnapshotIndex(history, now, 'c1', firstStartedAt)).toBe(1);
   });
 });
 

@@ -172,7 +172,8 @@ describe('ReviewScriptPage theme tokens', () => {
     const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
 
     expect(source).toContain('instructionForChapter(instructionOrigin, regenInstruction, chapterId)');
-    expect(source).toContain("setInstructionOrigin({ kind: 'qa', chapterId })");
+    expect(source).toContain('openQaFixDialog(issue, match.chapter, false)');
+    expect(source).not.toContain("setInstructionOrigin({ kind: 'qa', chapterId })");
     expect(source).toContain('Tái tạo ${regenerateAllIds.length} chương');
     expect(source).toContain('Bản cũ vẫn nằm trong lịch sử.');
     expect(source).toContain('Chọn ít nhất một chương để tái tạo.');
@@ -230,5 +231,27 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(css).toContain('--review-footer-control-height');
     expect(css).toContain('padding-bottom:');
     expect(css).toContain('background: var(--panel)');
+  });
+
+  it('wires the self-contained QA fix dialog without changing patch mode', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const card = await readFile('src/client/features/script/components/QaIssueCard.tsx', 'utf8');
+    const dialog = await readFile('src/client/features/script/components/QaFixDialog.tsx', 'utf8');
+    const css = await readFile('src/client/features/script/components/QaFixDialog.module.css', 'utf8');
+
+    expect(page).toContain('QaFixDialog');
+    expect(page).toContain('findUndoSnapshotIndex');
+    expect(page).toContain('setManualRegen(null);');
+    expect(card).toContain('Chi tiết chương');
+    expect(card).toContain('onDetails');
+    expect(dialog).toContain('role="dialog"');
+    expect(dialog).toContain('aria-modal="true"');
+    expect(dialog).toContain('Bỏ qua thẻ này');
+    expect(dialog).toContain('Tái tạo lại');
+    expect(dialog).toContain('Dừng');
+    expect(dialog).toContain('Nhập chương');
+    expect(css).toContain('max-height: 90vh');
+    expect(css).toContain('overflow: auto');
+    expect(css).toContain('position: sticky');
   });
 });

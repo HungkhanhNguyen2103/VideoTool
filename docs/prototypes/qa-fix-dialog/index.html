@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Tool — QA fix dialog prototype</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/></symbol>
+  </svg>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-logo"><svg class="ic"><use href="#i-film"/></svg></span><span>Video Tool</span></div>
+      <nav class="menu" aria-label="Menu tổng">
+        <span class="eyebrow">Menu</span>
+        <a class="menu-item active" href="#"><svg class="ic"><use href="#i-film"/></svg>Sản Xuất &amp; Kịch Bản</a>
+        <button class="menu-item" type="button" disabled>🔒 <span>Menu 2</span><small>Sắp có</small></button>
+        <button class="menu-item" type="button" disabled>🔒 <span>Menu 3</span><small>Sắp có</small></button>
+      </nav>
+      <div class="sidebar-note"><span class="eyebrow">Prototype</span><p>QA fix dialog</p><span class="muted small">Step 1 · mock only</span></div>
+    </aside>
+
+    <main class="main">
+      <header class="project-head">
+        <div><div class="eyebrow">Dự án đang mở</div><h1>Bạch Đằng 938 — Hành động và phản ứng</h1><p class="muted">3 chương · 17 cảnh · 402s · 1.002 từ</p></div>
+        <span class="project-chip">DeepSeek · Kịch bản tiếng Việt</span>
+      </header>
+
+      <nav class="tabs" aria-label="Các bước sản xuất">
+        <a class="tab" href="#">1. Khởi Tạo Dự Án</a>
+        <a class="tab active" href="#">2. Duyệt &amp; Tái Tạo</a>
+        <a class="tab" href="#">3. Studio Phân Cảnh &amp; Xuất Video</a>
+        <a class="tab" href="#">4. SEO &amp; Đóng Gói Kênh</a>
+      </nav>
+
+      <section class="prototype-bar" aria-label="Các trạng thái prototype">
+        <div><span class="mock-label">MOCK ONLY</span><strong>QA fix dialog</strong><span class="muted"> · chọn trạng thái để xem luồng</span></div>
+        <div class="state-buttons">
+          <button class="state-button" data-state="before" type="button">Tự động · trước khi chạy</button>
+          <button class="state-button" data-state="streaming" type="button">Đang viết…</button>
+          <button class="state-button" data-state="after" type="button">Sau khi chạy</button>
+          <button class="state-button" data-state="manual" type="button">Thủ công</button>
+          <button class="state-button" data-state="detail" type="button">Chi tiết chương</button>
+        </div>
+      </section>
+
+      <div class="stale-banner panel" role="status"><svg class="ic"><use href="#i-info"/></svg><div><strong>Kết quả QA có thể đã cũ vì kịch bản đã thay đổi.</strong></div><button class="btn small-btn" type="button">Chạy lại QA</button></div>
+
+      <section class="qa-heading panel">
+        <div><div class="eyebrow"><svg class="ic"><use href="#i-check"/></svg>Kiểm tra cuối (QA)</div><h2>Các điểm cần xem lại</h2><p class="muted">Một dialog liên kết issue, instruction, ngữ cảnh chương và kết quả.</p></div>
+        <div class="summary"><span class="dot high"></span><b>2 cao</b><span class="dot medium"></span><b>3 trung bình</b><span class="dot low"></span><b>4 thấp</b><span class="muted">· 9 thẻ</span></div>
+      </section>
+
+      <section class="dialog panel" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+        <header class="dialog-head">
+          <div><div class="dialog-kicker">Áp dụng gợi ý · liên kết một nơi</div><h2 id="dialog-title"><span class="chapter-label">Chương 2 · đoạn 7</span> — Nút chưa gỡ</h2></div>
+          <div class="dialog-head-actions"><span class="badge badge-high">Mức độ: cao</span><button class="icon-button" type="button" aria-label="Đóng"><svg class="ic"><use href="#i-close"/></svg></button></div>
+        </header>
+
+        <div class="dialog-grid">
+          <section class="input-column" aria-label="Đầu vào">
+            <div class="section-title"><span class="step-number">1</span><div><strong>Đầu vào</strong></div></div>
+            <div class="issue-block">
+              <p><span class="field-label">Trích</span><q>nút thắt đã được gỡ bỏ hoàn toàn</q></p>
+              <p><span class="field-label">Vì sao</span>Câu kết luận tuyệt đối nhưng chương chưa đưa ra bằng chứng đủ rõ.</p>
+              <p><span class="field-label">Gợi ý sửa</span>Giữ sự chắc chắn vừa đủ, rồi nối sang bước đánh giá tiếp theo.</p>
+            </div>
+
+            <label class="field-label" for="instruction">Lệnh tái tạo</label>
+            <textarea id="instruction" class="textarea">Viết lại đoạn 7 để giảm khẳng định tuyệt đối; giữ nguyên dữ kiện và nối rõ sang phản ứng của đối phương.</textarea>
+
+            <fieldset class="segmented"><legend class="field-label">Mức thay đổi</legend><div class="segments"><label><input type="radio" name="level" checked><span>Nhẹ</span></label><label><input type="radio" name="level"><span>Vừa</span></label><label><input type="radio" name="level"><span>Viết lại</span></label></div></fieldset>
+
+            <fieldset class="segmented"><legend class="field-label">Chế độ tái tạo</legend><div class="segments"><label><input type="radio" name="mode" value="automatic" checked><span>Tự động</span></label><label><input type="radio" name="mode" value="manual"><span>Thủ công (JSON)</span></label></div></fieldset>
+            <p class="provider-line"><span class="status-dot"></span>Tự động bằng DeepSeek <span class="muted">· cùng chế độ với thanh bên</span></p>
+
+            <div class="action-stack">
+              <button class="btn amber primary-action" type="button"><svg class="ic"><use href="#i-refresh"/></svg>Tái tạo chương 2</button>
+              <button class="btn quiet-action" type="button">Bỏ qua thẻ này</button>
+            </div>
+            <div class="manual-panel hidden-state">
+              <div class="prompt-head"><strong>Prompt tái tạo chương 2</strong><button class="btn small-btn" type="button"><svg class="ic"><use href="#i-copy"/></svg>Sao chép</button></div>
+              <pre class="prompt-box">Hãy tái tạo chương 2 theo instruction dưới đây…
+
+Giữ nguyên dữ kiện đã có. Trả về JSON đúng schema chương.</pre>
+              <label class="field-label" for="manual-json">JSON kết quả</label>
+              <textarea id="manual-json" class="textarea json-area" placeholder="Dán JSON do AI trả về…"></textarea>
+              <button class="btn amber" type="button">Nhập chương</button>
+            </div>
+            <p class="muted small helper-line"><svg class="ic"><use href="#i-info"/></svg> Khi đang chạy, dialog không thể đóng; có thể Dừng để quay lại.</p>
+          </section>
+
+          <section class="output-column" aria-label="Đầu ra và ngữ cảnh">
+            <div class="section-title"><span class="step-number">2</span><div><strong>Đầu ra &amp; ngữ cảnh</strong></div></div>
+            <div class="context-tabs"><button class="context-tab active" type="button">Chương 2</button><button class="context-tab" type="button">Chương 1 (cuối)</button><button class="context-tab" type="button">Chương 3 (đầu)</button></div>
+            <div class="context-pane">
+              <div class="context-title"><strong id="context-heading">Chương 2 · toàn văn hiện tại</strong><span class="word-badge">330 từ · ngân sách 280–360</span></div>
+              <div class="chapter-text before-text">
+                <p>Trận địa ven sông chỉ thực sự thay đổi khi con nước bắt đầu rút. Những mũi thuyền nhỏ thăm dò luồng đi trước đội hình chính.</p>
+                <p>Ở phía đối diện, người chỉ huy vẫn tin rằng <mark>nút thắt đã được gỡ bỏ hoàn toàn</mark>. Nhưng tín hiệu từ bãi cọc cho thấy một chuyển động khác đang hình thành.</p>
+                <p>Quyết định tiếp theo không thể chỉ dựa vào sự tự tin. Họ cần nhìn lại dòng nước, khoảng cách và phản ứng của đối phương.</p>
+              </div>
+              <div class="streaming-box hidden-state"><div class="streaming-head"><span class="pulse"></span><strong>Bản mới (đang viết…)</strong><span class="muted mono">342 từ · 68%</span></div><p>Trận địa ven sông chỉ thực sự thay đổi khi con nước bắt đầu rút. Những mũi thuyền nhỏ thăm dò luồng đi trước đội hình chính.</p><p>Ở phía đối diện, người chỉ huy tạm gác kết luận ban đầu. Bãi cọc và nhịp nước đang buộc họ phải…</p></div>
+              <div class="compare-view hidden-state"><div class="compare-summary"><strong>trước 330 từ → sau 342 từ</strong><span class="word-badge">Trong ngân sách</span></div><div class="compare-pair"><div class="old-text"><span>Đoạn cũ</span><del>Ở phía đối diện, người chỉ huy vẫn tin rằng nút thắt đã được gỡ bỏ hoàn toàn. Nhưng tín hiệu từ bãi cọc cho thấy một chuyển động khác đang hình thành.</del></div><div class="new-text"><span>Đoạn mới</span><p>Ở phía đối diện, người chỉ huy tạm gác kết luận ban đầu. Tín hiệu từ bãi cọc cho thấy một chuyển động khác đang hình thành.</p></div></div><div class="same-text"><span>Không đổi</span><p>Quyết định tiếp theo không thể chỉ dựa vào sự tự tin. Họ cần nhìn lại dòng nước, khoảng cách và phản ứng của đối phương.</p></div></div>
+            </div>
+            <div class="neighbor-grid"><article><span class="field-label">Chương 1 (cuối)</span><p>Nhưng thắng lợi ban đầu chỉ mở ra một câu hỏi khó hơn: bên nào sẽ đọc được con nước trước?</p><p>Đội hình tiến vào vùng hẹp khi mặt sông bắt đầu đổi màu.</p></article><article><span class="field-label">Chương 3 (đầu)</span><p>Ngay sau đó, dấu hiệu đầu tiên của phản ứng xuất hiện ở bờ phía đông.</p><p>Không ai còn có thể xem đây là một cuộc rút lui đơn giản.</p></article></div>
+          </section>
+        </div>
+
+        <div class="result-bar hidden-state"><div><strong>Đã tái tạo chương 2.</strong><span>Bản cũ nằm trong Lịch sử phiên bản.</span></div><button class="btn" type="button">Hoàn tác</button><button class="btn amber" type="button">Giữ bản mới</button></div>
+        <div class="upstream-notice hidden-state"><div><strong>Chương 3 được đánh dấu “Cần xem lại: chương trước đã đổi”.</strong><span class="muted small">Nên xử lý tiếp trước khi chốt kịch bản.</span></div><button class="btn" type="button">Xử lý tiếp chương 3 <svg class="ic"><use href="#i-arrow"/></svg></button></div>
+      </section>
+
+      <section class="detail-dialog panel hidden-state" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+        <header class="dialog-head"><div><div class="dialog-kicker">Chi tiết chương · chỉ xem</div><h2 id="detail-title">Chương 2 · đoạn 7 — Nút chưa gỡ</h2></div><button class="icon-button" type="button" aria-label="Đóng"><svg class="ic"><use href="#i-close"/></svg></button></header>
+        <div class="detail-layout"><div class="issue-block"><p><span class="field-label">Trích</span><q>nút thắt đã được gỡ bỏ hoàn toàn</q></p><p><span class="field-label">Vì sao</span>Câu kết luận tuyệt đối nhưng chương chưa đưa ra bằng chứng đủ rõ.</p><p><span class="field-label">Gợi ý sửa</span>Giảm khẳng định tuyệt đối, giữ dữ kiện và nối sang phản ứng của đối phương.</p><div class="detail-actions"><button class="btn amber" type="button">Xử lý gợi ý</button><button class="btn" type="button">Đóng</button></div></div><div class="detail-text"><div class="context-title"><strong>Chương 2 · toàn văn</strong><span class="word-badge">330 từ</span></div><div class="chapter-text"><p>Trận địa ven sông chỉ thực sự thay đổi khi con nước bắt đầu rút. Những mũi thuyền nhỏ thăm dò luồng đi trước đội hình chính.</p><p>Ở phía đối diện, người chỉ huy vẫn tin rằng <mark>nút thắt đã được gỡ bỏ hoàn toàn</mark>. Nhưng tín hiệu từ bãi cọc cho thấy một chuyển động khác đang hình thành.</p><p>Quyết định tiếp theo không thể chỉ dựa vào sự tự tin. Họ cần nhìn lại dòng nước, khoảng cách và phản ứng của đối phương.</p></div></div></div>
+      </section>
+
+      <footer class="page-footer panel"><span class="muted">Kết quả QA không được lưu; chạy lại sau khi chỉnh kịch bản để cập nhật.</span><button class="btn" type="button">Lịch sử phiên bản</button><button class="btn amber" type="button">Chốt &amp; chia cảnh <svg class="ic"><use href="#i-arrow"/></svg></button></footer>
+    </main>
+  </div>
+
+  <script>
+    const states = ['before', 'streaming', 'after', 'manual', 'detail'];
+    const params = new URLSearchParams(location.search);
+    let activeState = states.includes(params.get('state')) ? params.get('state') : 'before';
+    const buttons = [...document.querySelectorAll('[data-state]')];
+    const dialog = document.querySelector('.dialog');
+    const detail = document.querySelector('.detail-dialog');
+    const hidden = [...document.querySelectorAll('.hidden-state')];
+    function render() {
+      document.body.dataset.state = activeState;
+      buttons.forEach((button) => button.classList.toggle('active', button.dataset.state === activeState));
+      dialog.classList.toggle('hidden-state', activeState === 'detail');
+      detail.classList.toggle('hidden-state', activeState !== 'detail');
+      document.querySelector('.streaming-box').classList.toggle('hidden-state', activeState !== 'streaming');
+      document.querySelector('.compare-view').classList.toggle('hidden-state', activeState !== 'after');
+      document.querySelector('.before-text').classList.toggle('hidden-state', activeState === 'after' || activeState === 'streaming');
+      document.querySelector('.result-bar').classList.toggle('hidden-state', activeState !== 'after');
+      document.querySelector('.upstream-notice').classList.toggle('hidden-state', activeState !== 'after');
+      document.querySelector('.manual-panel')?.classList.toggle('hidden-state', activeState !== 'manual');
+      if (activeState === 'manual') {
+        document.querySelector('.primary-action').innerHTML = '<svg class="ic"><use href="#i-copy"/></svg>Lấy prompt';
+        document.querySelector('.provider-line').innerHTML = '<span class="status-dot"></span>Thủ công · dùng prompt và JSON của bạn';
+      } else {
+        document.querySelector('.primary-action').innerHTML = activeState === 'streaming' ? 'Dừng' : '<svg class="ic"><use href="#i-refresh"/></svg>Tái tạo chương 2';
+        document.querySelector('.provider-line').innerHTML = '<span class="status-dot"></span>Tự động bằng DeepSeek <span class="muted">· cùng chế độ với thanh bên</span>';
+      }
+      document.querySelector('input[name="mode"][value="automatic"]').checked = activeState !== 'manual';
+      document.querySelector('input[name="mode"][value="manual"]').checked = activeState === 'manual';
+      const manual = document.querySelector('.manual-panel');
+      if (manual) manual.classList.toggle('hidden-state', activeState !== 'manual');
+      history.replaceState(null, '', '?state=' + activeState);
+    }
+    buttons.forEach((button) => button.addEventListener('click', () => { activeState = button.dataset.state; render(); }));
+    render();
+  </script>
+</body>
+</html>

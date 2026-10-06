@@ -23,6 +23,7 @@ type QaIssueCardProps = {
   onCancel: () => void;
   onEdit: () => void;
   onDismiss: () => void;
+  onDetails: () => void;
 };
 
 function wordCount(value: string): number {
@@ -47,6 +48,7 @@ export function QaIssueCard({
   onCancel,
   onEdit,
   onDismiss,
+  onDetails,
 }: QaIssueCardProps) {
   const isPatchable = patchTarget !== null && replacement !== undefined;
   const wordDelta = replacement === undefined || issue.quote === undefined ? null : wordCount(replacement.normalize('NFC')) - wordCount(issue.quote.normalize('NFC'));
@@ -66,7 +68,7 @@ export function QaIssueCard({
       </div>
       <Badge tone={qaSeverityTone(issue.severity)}>Mức độ: {severityLabel}</Badge>
     </div>
-    {accepted ? <Badge tone="muted">Đã áp dụng</Badge> : <>
+    {accepted ? <><Badge tone="muted">Đã áp dụng</Badge><div className={styles.qaIssueActions}><Button size="sm" onClick={onDetails}>Chi tiết chương</Button></div></> : <>
       {issue.quote && <div className={styles.qaIssueText}><strong>Trích:</strong> “{issue.quote}”</div>}
       <div className={styles.qaIssueText}><strong>Vì sao:</strong> {issue.reason}</div>
       {issue.fixInstruction && <div className={styles.qaIssueText}><strong>Gợi ý sửa:</strong> {issue.fixInstruction}</div>}
@@ -85,6 +87,7 @@ export function QaIssueCard({
         {confirming ? <><Button size="sm" variant="amber" onClick={onAccept}>Chấp nhận</Button><Button size="sm" onClick={onCancel}>Huỷ</Button></> : <Button size="sm" variant="indigoline" onClick={onApply}>Áp dụng gợi ý</Button>}
         <Button size="sm" onClick={onEdit}>Sửa tay đoạn này</Button>
         {!confirming && <Button size="sm" variant="ghost" onClick={onDismiss}>Bỏ qua</Button>}
+        <Button size="sm" onClick={onDetails}>Chi tiết chương</Button>
       </div>
     </>}
   </article>;

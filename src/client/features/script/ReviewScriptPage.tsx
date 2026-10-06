@@ -5,6 +5,7 @@ import type { AiProvider } from '../../../contracts/project';
 import type { ChapterDoc } from '../../../contracts/script';
 import type { QAIssue, QAResult } from './api';
 import { QaIssueCard } from './components/QaIssueCard';
+import { QaFixDialog } from './components/QaFixDialog';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { Icon } from '../../shared/ui/Icon';
@@ -20,6 +21,7 @@ import {
   explainQuoteMatch,
   findChapterIdByNumber,
   findQuoteTarget,
+  findUndoSnapshotIndex,
   generationModeForChapters,
   historyVersionLabel,
   instructionForChapter,
@@ -78,6 +80,19 @@ type ReviewStepState = 'done' | 'active' | 'todo';
 
 type ReviewStep = { label: string; sub: string; state: ReviewStepState };
 
+type QaDialogState = {
+  chapterId: string;
+  issue: QAIssue | null;
+  baseline: ChapterDoc;
+  mode: 'automatic' | 'manual';
+  initialInstruction: string;
+  initialLevel: 'light' | 'medium' | 'rewrite';
+  viewOnly: boolean;
+  firstStartedAt: Date | null;
+  result: boolean;
+  restored: boolean;
+};
+
 export function getReviewStepperState(chapterCount: number, approvedCount: number, jobId: string | null) {
   const hasChapters = chapterCount > 0;
   const allApproved = hasChapters && approvedCount === chapterCount;
@@ -112,7 +127,7 @@ export function ReviewScriptPage() {
   const [qaPatchBusy, setQaPatchBusy] = useState(false);
   const [qaStale, setQaStale] = useState(false);
   const [qaResultsOpen, setQaResultsOpen] = useState(true);
-  const [qaFocusChapterId, setQaFocusChapterId] = useState<string | null>(null);
+  const [qaDialog, setQaDialog] = useState<QaDialogState | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
@@ -131,7 +146,6 @@ export function ReviewScriptPage() {
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
-  const regenInstructionRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const editFocusRequestRef = useRef<{ chapterId: string; quote?: string } | null>(null);
   const manualRegenBoxRef = useRef<HTMLDivElement>(null);
@@ -162,6 +176,10 @@ export function ReviewScriptPage() {
   const activeQaIssues = useMemo(() => qaResult ? sortQaIssues(qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] !== 'dismissed')) : [], [qaResult, qaIssueStates]);
   const qaSummary = useMemo(() => summarizeQaIssues(activeQaIssues), [activeQaIssues]);
   const dismissedQaCount = qaResult ? qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] === 'dismissed').length : 0;
+  const qaDialogChapter = qaDialog ? chapters.find((chapter) => chapter.id === qaDialog.chapterId) ?? null : null;
+  const qaDialogUndoIndex = qaDialog?.result && qaDialog.firstStartedAt && qaDialogChapter
+    ? findUndoSnapshotIndex(history, chapters, qaDialog.chapterId, qaDialog.firstStartedAt)
+    : null;
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -184,7 +202,7 @@ export function ReviewScriptPage() {
     setQaPatchBusy(false);
     setQaStale(false);
     setQaResultsOpen(true);
-    setQaFocusChapterId(null);
+    setQaDialog(null);
     editFocusRequestRef.current = null;
     initialExpansionProjectIdRef.current = null;
     return () => {
@@ -242,16 +260,6 @@ export function ReviewScriptPage() {
     manualRegenBoxRef.current?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
     manualRegenTextareaRef.current?.focus();
   }, [manualRegen?.chapterId, manualRegen?.prompt]);
-
-  useEffect(() => {
-    if (!qaFocusChapterId) return;
-    const prefersReducedMotion = typeof window !== 'undefined'
-      && typeof window.matchMedia === 'function'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    regenInstructionRef.current?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
-    regenInstructionRef.current?.focus();
-    setQaFocusChapterId(null);
-  }, [qaFocusChapterId]);
 
   useEffect(() => {
     const request = editFocusRequestRef.current;
@@ -323,6 +331,28 @@ export function ReviewScriptPage() {
     return chapter ? { chapter, target: findQuoteTarget(chapter, issue) } : null;
   }
 
+  function openQaFixDialog(issue: QAIssue | null, chapter: ChapterDoc, viewOnly: boolean) {
+    setManualRegen(null);
+    setQaDialog({
+      chapterId: chapter.id,
+      issue,
+      baseline: { ...chapter, paragraphs: [...chapter.paragraphs] },
+      mode: regenMode,
+      initialInstruction: issue ? qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]) : '',
+      initialLevel: issue ? qaLevelForAction(issue.suggestedAction) : 'medium',
+      viewOnly,
+      firstStartedAt: null,
+      result: false,
+      restored: false,
+    });
+  }
+
+  function openQaIssueDetails(issue: QAIssue) {
+    const match = qaChapterAndTarget(issue);
+    if (!match) { toast('Không tìm thấy chương tương ứng.'); return; }
+    openQaFixDialog(issue, match.chapter, true);
+  }
+
   function applyQaIssue(issue: QAIssue) {
     const match = qaChapterAndTarget(issue);
     if (!match) { toast('Không tìm thấy chương tương ứng.'); return; }
@@ -330,13 +360,7 @@ export function ReviewScriptPage() {
       setQaPatchConfirming(qaIssueKey(issue));
       return;
     }
-    const chapterId = match.chapter.id;
-    setSelected(new Set([chapterId]));
-    setExpanded((current) => new Set(current).add(chapterId));
-    setRegenInstruction(qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]));
-    setRegenLevel(qaLevelForAction(issue.suggestedAction));
-    setInstructionOrigin({ kind: 'qa', chapterId });
-    setQaFocusChapterId(chapterId);
+    openQaFixDialog(issue, match.chapter, false);
   }
 
   async function acceptQaIssue(issue: QAIssue) {
@@ -464,10 +488,11 @@ export function ReviewScriptPage() {
 
   async function saveEdit(chapterId: string) { if (await patch(chapterId, { paragraphs: editParagraphs })) setQaStale(true); setEditing(null); }
 
-  async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel): Promise<boolean> {
-    if (regenControllerRef.current) return false;
+  async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel): Promise<'success' | 'aborted' | 'failed'> {
+    if (regenControllerRef.current) return 'failed';
     const controller = new AbortController();
     let aborted = false;
+    let failed = false;
     regenControllerRef.current = controller;
     setRegen({ id: chapter.id, instruction, level, preview: '', controller });
     try {
@@ -476,13 +501,16 @@ export function ReviewScriptPage() {
       setQaStale(true);
     } catch (error) {
       aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
-      if (!aborted) toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
+      if (!aborted) {
+        failed = true;
+        toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
+      }
       await refresh();
     } finally {
       if (regenControllerRef.current === controller) regenControllerRef.current = null;
       setRegen((current) => current?.controller === controller ? null : current);
     }
-    return aborted || controller.signal.aborted;
+    return aborted || controller.signal.aborted ? 'aborted' : failed ? 'failed' : 'success';
   }
 
   async function regenerateChapterIds(chapterIds: readonly string[]) {
@@ -492,7 +520,7 @@ export function ReviewScriptPage() {
     await runRegenerationQueue(chapterIds, async (chapterId) => {
       if (lifecycleRef.current !== lifecycle) return true;
       const chapter = chapterById.get(chapterId);
-      return chapter ? regenerate(chapter, instructionForChapter(instructionOrigin, regenInstruction, chapterId)) : false;
+      return chapter ? (await regenerate(chapter, instructionForChapter(instructionOrigin, regenInstruction, chapterId))) === 'aborted' : false;
     });
   }
 
@@ -517,9 +545,63 @@ export function ReviewScriptPage() {
     }
   }
 
-  async function restore(index: number) {
-    if (!window.confirm('Khôi phục phiên bản này?')) return;
-    try { await api.restoreChapters(projectId, index); await refresh(); setQaStale(true); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể khôi phục.'); }
+  async function restore(index: number, confirmMessage = 'Khôi phục phiên bản này?'): Promise<boolean> {
+    if (!window.confirm(confirmMessage)) return false;
+    try { await api.restoreChapters(projectId, index); await refresh(); setQaStale(true); return true; } catch (error) { toast(error instanceof Error ? error.message : 'Không thể khôi phục.'); return false; }
+  }
+
+  async function runQaDialogRegeneration(instruction: string, level: 'light' | 'medium' | 'rewrite') {
+    if (!qaDialog || qaDialog.viewOnly || regenControllerRef.current) return;
+    const chapter = chapters.find((item) => item.id === qaDialog.chapterId);
+    if (!chapter) return;
+    const firstStartedAt = qaDialog.firstStartedAt ?? new Date();
+    if (!qaDialog.firstStartedAt) setQaDialog((current) => current ? { ...current, firstStartedAt } : current);
+    const outcome = await regenerate(chapter, instruction, level);
+    if (outcome === 'success') {
+      setQaDialog((current) => current ? { ...current, result: true, restored: false, firstStartedAt } : current);
+    } else if (!qaDialog.result) {
+      setQaDialog((current) => current ? { ...current, firstStartedAt: null } : current);
+    }
+  }
+
+  async function importQaDialogChapter(raw: string): Promise<string | null> {
+    if (!qaDialog) return 'Không có chương đang mở để nhập.';
+    const chapter = chapters.find((item) => item.id === qaDialog.chapterId);
+    if (!chapter) return 'Không tìm thấy chương tương ứng.';
+    const firstStartedAt = qaDialog.firstStartedAt ?? new Date();
+    if (!qaDialog.firstStartedAt) setQaDialog((current) => current ? { ...current, firstStartedAt } : current);
+    try {
+      await api.importRegeneratedChapter(projectId, chapter.id, raw);
+      await refresh();
+      setQaStale(true);
+      setQaDialog((current) => current ? { ...current, result: true, restored: false, firstStartedAt } : current);
+      toast(`Đã nhập chương ${chapter.no}.`);
+      return null;
+    } catch (error) {
+      if (!qaDialog.result) setQaDialog((current) => current ? { ...current, firstStartedAt: null } : current);
+      return error instanceof Error ? error.message : 'Không thể nhập chương tái tạo.';
+    }
+  }
+
+  async function undoQaDialog() {
+    if (!qaDialog || qaDialogUndoIndex == null) return;
+    if (await restore(qaDialogUndoIndex, 'Hoàn tác về bản trước khi tái tạo?')) {
+      setQaDialog((current) => current ? { ...current, restored: true } : current);
+    }
+  }
+
+  function keepQaDialog() {
+    if (qaDialog?.issue) setQaIssueStates((current) => ({ ...current, [qaIssueKey(qaDialog.issue!)]: 'accepted' }));
+    setQaDialog(null);
+  }
+
+  function dismissQaDialog() {
+    if (qaDialog?.issue) dismissQaIssue(qaDialog.issue);
+    setQaDialog(null);
+  }
+
+  function continueQaDialog(nextChapter: ChapterDoc) {
+    openQaFixDialog(null, nextChapter, false);
   }
 
   async function finalize() {
@@ -568,6 +650,7 @@ export function ReviewScriptPage() {
       onCancel={() => cancelQaPatch(issue)}
       onEdit={() => editQaIssue(issue)}
       onDismiss={() => dismissQaIssue(issue)}
+      onDetails={() => openQaIssueDetails(issue)}
     />;
   };
 
@@ -713,13 +796,14 @@ export function ReviewScriptPage() {
               <h2 className={`${styles.panelTitle} ${styles.panelTitleIndigo}`} id="regen-title"><Icon name="sparkles" />Yêu cầu tái tạo</h2>
               <div className={styles.selectedCount}>{selectedChapters.length ? `Áp dụng cho ${selectedChapters.length} chương đã chọn` : 'Chưa chọn chương nào'}</div>
               <label className="sr-only" htmlFor="regen-instruction">Yêu cầu cho lần tái tạo</label>
-              <textarea ref={regenInstructionRef} id="regen-instruction" className={styles.textarea} rows={5} value={regenInstruction} onChange={(event) => { setRegenInstruction(event.target.value); setInstructionOrigin({ kind: 'user' }); }} placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…" />
+              <textarea id="regen-instruction" className={styles.textarea} rows={5} value={regenInstruction} onChange={(event) => { setRegenInstruction(event.target.value); setInstructionOrigin({ kind: 'user' }); }} placeholder="VD: Giọng kể trầm hơn, nhấn mạnh việc thuyền lương bị bỏ lại…" />
               <fieldset className={styles.segmented}>
                 <legend>Mức thay đổi</legend>
                 {([['light', 'Nhẹ'], ['medium', 'Vừa'], ['rewrite', 'Viết lại']] as const).map(([value, label]) => <label key={value}><input type="radio" name="regen-level" value={value} checked={regenLevel === value} onChange={() => setRegenLevel(value)} /><span>{label}</span></label>)}
               </fieldset>
                <Button variant="indigo" size="lg" className={styles.blockButton} title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />Tái tạo chương đã chọn</Button>
                {selectedRegenIds.length === 0 && <p className={styles.muted}>Chọn ít nhất một chương để tái tạo.</p>}
+               {regenMode === 'manual' && <p className={styles.muted}>Chế độ thủ công: dùng “Lấy prompt tái tạo” trên từng chương.</p>}
             </section>
 
             <section className={styles.panel} aria-labelledby="history-title">
@@ -761,6 +845,34 @@ export function ReviewScriptPage() {
       )}
 
       <footer className={styles.footer}><Button variant="amber" disabled={!allApproved || hasGenerating || Boolean(jobId)} onClick={() => void finalize()}>Chốt & chia cảnh</Button></footer>
+      {qaDialog && qaDialogChapter && <QaFixDialog
+        projectId={projectId}
+        issue={qaDialog.issue}
+        typeLabel={qaDialog.issue ? qaTypeLabel[qaDialog.issue.type] : undefined}
+        chapter={qaDialogChapter}
+        chapters={chapters}
+        baseline={qaDialog.baseline}
+        mode={qaDialog.mode}
+        provider={projectQuery.data?.aiProvider ?? 'deepseek'}
+        initialInstruction={qaDialog.initialInstruction}
+        initialLevel={qaDialog.initialLevel}
+        viewOnly={qaDialog.viewOnly}
+        isRunning={regen?.id === qaDialog.chapterId}
+        otherRegenRunning={Boolean(regen && regen.id !== qaDialog.chapterId)}
+        preview={regen?.id === qaDialog.chapterId ? regen.preview : ''}
+        result={qaDialog.result}
+        restored={qaDialog.restored}
+        undoIndex={qaDialogUndoIndex}
+        onClose={() => setQaDialog(null)}
+        onChangeMode={(mode) => setQaDialog((current) => current ? { ...current, mode } : current)}
+        onRegenerate={(instruction, level) => void runQaDialogRegeneration(instruction, level)}
+        onAbort={() => regen?.id === qaDialog.chapterId && regen.controller.abort()}
+        onImport={importQaDialogChapter}
+        onUndo={() => void undoQaDialog()}
+        onKeep={keepQaDialog}
+        onDismiss={dismissQaDialog}
+        onContinueNext={continueQaDialog}
+      />}
     </div>
   );
 }
