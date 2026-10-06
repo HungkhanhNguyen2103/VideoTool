@@ -216,13 +216,12 @@ export function historyVersionLabel(index: number, total: number): string {
   return `Bản ${total - index}`;
 }
 
-function undoComparableChapter(chapter: Pick<ChapterDoc, 'id' | 'paragraphs' | 'title' | 'status' | 'reviewStatus'>): string {
+function undoComparableChapter(chapter: Pick<ChapterDoc, 'id' | 'paragraphs' | 'title' | 'status'>): string {
   return JSON.stringify({
     id: chapter.id,
     paragraphs: chapter.paragraphs,
     title: chapter.title,
     status: chapter.status,
-    reviewStatus: chapter.reviewStatus ?? 'clean',
   });
 }
 

@@ -178,6 +178,26 @@ describe('QA regeneration undo guard', () => {
     expect(findUndoSnapshotIndex(history, now, 'c1', firstStartedAt)).toBe(0);
   });
 
+  it('ignores the expected upstream-changed review flag on the next chapter', () => {
+    const history = [{ takenAt: new Date('2026-10-06T10:00:01.000Z'), chapters: before }];
+    const now = [
+      { ...before[0]!, paragraphs: ['Bản mới'] },
+      { ...before[1]!, reviewStatus: 'upstream-changed' as const },
+    ];
+
+    expect(findUndoSnapshotIndex(history, now, 'c1', firstStartedAt)).toBe(0);
+  });
+
+  it('rejects undo when the next chapter was also approved or edited', () => {
+    const history = [{ takenAt: new Date('2026-10-06T10:00:01.000Z'), chapters: before }];
+    const now = [
+      { ...before[0]!, paragraphs: ['Bản mới'] },
+      { ...before[1]!, status: 'pending' as const, paragraphs: ['Đã sửa sau lần tái tạo'], reviewStatus: 'upstream-changed' as const },
+    ];
+
+    expect(findUndoSnapshotIndex(history, now, 'c1', firstStartedAt)).toBeNull();
+  });
+
   it('rejects undo when another chapter changed after the snapshot', () => {
     const history = [{ takenAt: new Date('2026-10-06T10:00:01.000Z'), chapters: before }];
     const now = [
