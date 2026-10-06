@@ -103,6 +103,15 @@
 .qaIssue { display: grid; gap: .4rem; padding: .7rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
 .qaIssueAccepted { opacity: .62; }
 .qaIssueTop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: var(--text); font-size: .8125rem; }
+.qaIssueHeading { min-width: 0; }
+.qaIssueMeta { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem; }
+.qaIssueParagraph { color: var(--text-3); font-family: var(--mono); font-size: .6875rem; font-weight: 600; white-space: nowrap; }
+.qaIssueHeaderActions { display: flex; align-items: center; flex: none; gap: .35rem; }
+.qaIssueToggle { flex: none; }
+.qaIssueToggle :global(.ic) { transition: transform .15s ease; }
+.qaIssueToggleOpen :global(.ic) { transform: rotate(90deg); }
+.qaIssueBody { display: grid; gap: .4rem; }
+.qaIssueBody[hidden] { display: none; }
 .qaIssueLocation { margin-bottom: .2rem; color: var(--amber-text); font-family: var(--mono); font-size: .6875rem; }
 .qaIssueText, .qaIssueAction { color: var(--text-2); font-size: .75rem; line-height: 1.45; }
 .qaIssueAction { color: var(--text-3); }

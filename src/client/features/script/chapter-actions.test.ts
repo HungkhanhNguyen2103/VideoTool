@@ -24,6 +24,7 @@ import {
   applyReplacementToParagraphs,
   qaLevelForAction,
   qaIssueInstruction,
+  defaultExpandedQaKeys,
   sortQaIssues,
   summarizeQaIssues,
   qaSeverityTone,
@@ -402,5 +403,29 @@ describe('final QA helpers', () => {
     ];
     expect(sortQaIssues(issues).map((issue) => issue.reason)).toEqual(['H', 'M2', 'M1', 'L']);
     expect(summarizeQaIssues(issues)).toEqual({ high: 1, medium: 2, low: 1 });
+  });
+
+  it('expands only the first issue after QA sorting', () => {
+    const issues: QAIssue[] = [
+      { chapter: 1, paragraph: 2, type: 'FLAT_PACING', severity: 'medium', reason: 'M', suggestedAction: 'SHORTEN' },
+      { chapter: 1, paragraph: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'H', suggestedAction: 'REGENERATE' },
+      { chapter: 1, paragraph: 3, type: 'POSSIBLE_FILLER', severity: 'low', reason: 'L', suggestedAction: 'SHORTEN' },
+    ];
+
+    expect(defaultExpandedQaKeys(issues)).toEqual(new Set(['1:WEAK_HOOK:H']));
+  });
+
+  it('returns no expanded QA keys for an empty list', () => {
+    expect(defaultExpandedQaKeys([])).toEqual(new Set());
+  });
+
+  it('uses sortQaIssues ordering when choosing the default card', () => {
+    const issues: QAIssue[] = [
+      { chapter: 2, paragraph: 1, type: 'WEAK_HOOK', severity: 'medium', reason: 'later', suggestedAction: 'REGENERATE' },
+      { chapter: 1, paragraph: 4, type: 'FLAT_PACING', severity: 'medium', reason: 'paragraph', suggestedAction: 'SHORTEN' },
+      { chapter: 1, paragraph: 2, type: 'REPETITION', severity: 'high', reason: 'highest', suggestedAction: 'REMOVE_DUPLICATION' },
+    ];
+
+    expect(defaultExpandedQaKeys(issues)).toEqual(new Set(['1:REPETITION:highest']));
   });
 });

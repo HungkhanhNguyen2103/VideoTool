@@ -1,8 +1,9 @@
 import type { QAIssue } from '../api';
 import type { QaQuoteTarget, QuoteMatchOutcome } from '../chapter-actions';
-import { qaSeverityTone } from '../chapter-actions';
+import { qaIssueKey, qaSeverityTone } from '../chapter-actions';
 import { Badge } from '../../../shared/ui/Badge';
 import { Button } from '../../../shared/ui/Button';
+import { Icon } from '../../../shared/ui/Icon';
 import styles from '../ReviewScriptPage.module.css';
 
 type QaIssueCardProps = {
@@ -17,9 +18,12 @@ type QaIssueCardProps = {
   regenerationInstruction: string;
   regenerationLevel: 'light' | 'medium';
   showChapter?: boolean;
+  collapsible?: boolean;
+  expanded?: boolean;
   confirming: boolean;
   accepted: boolean;
   onApply: () => void;
+  onToggleExpanded?: () => void;
   onAccept: () => void;
   onCancel: () => void;
   onEdit: () => void;
@@ -43,9 +47,12 @@ export function QaIssueCard({
   regenerationInstruction,
   regenerationLevel,
   showChapter = true,
+  collapsible = false,
+  expanded = true,
   confirming,
   accepted,
   onApply,
+  onToggleExpanded,
   onAccept,
   onCancel,
   onEdit,
@@ -61,15 +68,31 @@ export function QaIssueCard({
         ? 'Câu trích xuất hiện nhiều lần trong chương, nên chuyển sang tái tạo.'
         : null
     : null;
+  const bodyVisible = !collapsible || expanded || confirming || accepted;
+  const paragraphLabel = issue.paragraph ? `Đoạn ${issue.paragraph}` : 'Toàn chương';
+  const bodyId = `qa-issue-body-${qaIssueKey(issue).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
   return <article className={`${styles.qaIssue} ${accepted ? styles.qaIssueAccepted : ''}`}>
     <div className={styles.qaIssueTop}>
-      <div>
+      <div className={styles.qaIssueHeading}>
         {(showChapter || issue.paragraph) && <div className={styles.qaIssueLocation}>{showChapter && `Chương ${issue.chapter}`}{showChapter && issue.paragraph ? ' · ' : ''}{issue.paragraph ? `đoạn ${issue.paragraph}` : ''}</div>}
-        <strong>{typeLabel}</strong>
+        <div className={styles.qaIssueMeta}><span className={styles.qaIssueParagraph}>{paragraphLabel}</span><strong>{typeLabel}</strong></div>
       </div>
-      <Badge tone={qaSeverityTone(issue.severity)}>Mức độ: {severityLabel}</Badge>
+      <div className={styles.qaIssueHeaderActions}>
+        <Badge tone={qaSeverityTone(issue.severity)}>Mức độ: {severityLabel}</Badge>
+        {collapsible && <Button
+          size="icon"
+          variant="ghost"
+          className={`${styles.qaIssueToggle} ${bodyVisible ? styles.qaIssueToggleOpen : ''}`}
+          aria-expanded={bodyVisible}
+          aria-controls={bodyId}
+          aria-label={`${bodyVisible ? 'Thu gọn' : 'Mở'} thẻ QA ${issue.paragraph ? `đoạn ${issue.paragraph}` : 'toàn chương'}`}
+          disabled={confirming}
+          onClick={onToggleExpanded}
+        ><Icon name="chevron" /></Button>}
+      </div>
     </div>
+    <div id={bodyId} className={styles.qaIssueBody} hidden={!bodyVisible}>
     {accepted ? <><Badge tone="muted">Đã áp dụng</Badge><div className={styles.qaIssueActions}><Button size="sm" onClick={onDetails}>Chi tiết chương</Button></div></> : <>
       {issue.quote && <div className={styles.qaIssueText}><strong>Trích:</strong> “{issue.quote}”</div>}
       <div className={styles.qaIssueText}><strong>Vì sao:</strong> {issue.reason}</div>
@@ -92,5 +115,6 @@ export function QaIssueCard({
         <Button size="sm" onClick={onDetails}>Chi tiết chương</Button>
       </div>
     </>}
+    </div>
   </article>;
 }

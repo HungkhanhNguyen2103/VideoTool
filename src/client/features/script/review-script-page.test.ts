@@ -232,8 +232,16 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(page).toContain('QA {chapterQaSummary.total}');
     expect(page).toContain('focusQaChapter(chapter.id)');
     expect(page).toContain('chapterQaIssues.filter((issue) => issue.severity !== \'low\')');
+    expect(page).toContain('defaultExpandedQaKeys');
+    expect(page).toContain('collapsible={collapsible}');
+    expect(page).toContain('chapterQaIssues.filter((issue) => issue.severity === \'low\').map((issue) => renderQaIssue(issue, false, true))');
     expect(card).toContain('showChapter?: boolean');
     expect(card).toContain('showChapter = true');
+    expect(card).toContain('collapsible?: boolean');
+    expect(card).toContain('aria-expanded={bodyVisible}');
+    expect(card).toContain('aria-controls={bodyId}');
+    expect(card).toContain("bodyVisible ? 'Thu gọn' : 'Mở'");
+    expect(card).toContain('thẻ QA ${issue.paragraph');
   });
 
   it('explains quote fallback reasons and reserves room above the sticky footer', async () => {

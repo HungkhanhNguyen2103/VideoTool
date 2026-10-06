@@ -173,6 +173,11 @@ export function qaIssueKey(issue: QAIssue): string {
   return `${issue.chapter}:${issue.type}:${issue.quote ?? issue.reason}`;
 }
 
+export function defaultExpandedQaKeys(issues: readonly QAIssue[]): Set<string> {
+  const firstIssue = sortQaIssues(issues)[0];
+  return firstIssue ? new Set([qaIssueKey(firstIssue)]) : new Set();
+}
+
 export function findChapterIdByNumber(chapters: readonly ChapterDoc[], chapterNo: number): string | null {
   return chapters.find((chapter) => chapter.no === chapterNo)?.id ?? null;
 }
