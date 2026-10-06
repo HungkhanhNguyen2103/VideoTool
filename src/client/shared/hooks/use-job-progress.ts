@@ -13,7 +13,7 @@ export function applyJobEvent(previous: JobProgressState | null, event: JobProgr
   return { ...event, logs: previous?.logs ?? [] };
 }
 
-export function useJobProgress(jobId: string | null): JobProgressState | null {
+export function useJobProgress(jobId: string | null, reconnectKey = 0): JobProgressState | null {
   const [state, setState] = useState<JobProgressState | null>(null);
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export function useJobProgress(jobId: string | null): JobProgressState | null {
       source.removeEventListener('log', onLog);
       source.close();
     };
-  }, [jobId]);
+  }, [jobId, reconnectKey]);
 
   return state;
 }

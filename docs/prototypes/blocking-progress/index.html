@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Tool — Blocking progress</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6l-5 4H4zM17 9a5 5 0 0 1 0 6M19 6a9 9 0 0 1 0 12"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m5 17 4-4 3 3 2-2 5 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17h.01"/></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 9a11 11 0 0 1 14 0M8 12a6.5 6.5 0 0 1 8 0M11 15a2.5 2.5 0 0 1 2 0M12 19h.01"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></symbol>
+  </svg>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand__logo"><svg class="icon"><use href="#i-film"/></svg></span><span>Video Tool</span></div>
+      <nav class="menu" aria-label="Menu tổng">
+        <span class="label">Menu</span>
+        <a class="menu__item" href="#"><svg class="icon"><use href="#i-film"/></svg>Khởi tạo dự án</a>
+        <a class="menu__item is-active" href="#" aria-current="page"><svg class="icon"><use href="#i-image"/></svg>Studio Phân Cảnh</a>
+        <a class="menu__item" href="#"><svg class="icon"><use href="#i-volume"/></svg>Âm thanh &amp; Voiceover</a>
+        <a class="menu__item" href="#"><svg class="icon"><use href="#i-upload"/></svg>SEO &amp; Đóng Gói</a>
+      </nav>
+      <div class="sidebar-project"><span class="label">Đang xem</span><strong>Bạch Đằng 938</strong><span class="muted">3 chương · Remotion</span></div>
+    </aside>
+
+    <main class="main">
+      <header class="project-head">
+        <div><div class="label">Studio Phân Cảnh &amp; Xuất Video</div><h1>Bạch Đằng 938 — Hành động và phản ứng</h1><p class="muted">3 chương · 17 cảnh · 402s · 1.002 từ</p></div>
+        <span class="project-chip">Remotion · 1920×1080 · 24 fps</span>
+      </header>
+      <nav class="tabs" aria-label="Các bước sản xuất"><a class="tab" href="#">1. Khởi Tạo Dự Án</a><a class="tab" href="#">2. Duyệt &amp; Tái Tạo</a><a class="tab is-active" href="#" aria-current="page">3. Studio Phân Cảnh &amp; Xuất Video</a><a class="tab" href="#">4. SEO &amp; Đóng Gói Kênh</a></nav>
+
+      <section class="studio-toolbar panel"><div><div class="eyebrow">Tài sản &amp; xuất video</div><h2>Danh sách cảnh</h2></div><div class="toolbar-actions"><button class="btn" type="button">Nhập ZIP</button><button class="btn" type="button">Tạo voiceover</button><button class="btn btn--amber" type="button">Render video</button></div></section>
+
+      <div class="cards-grid">
+        <section class="panel scene-panel"><div class="card-head"><div><div class="eyebrow"><svg class="icon"><use href="#i-image"/></svg>Scene &amp; hình ảnh</div><h2>17 / 17 scenes have assets</h2></div><button class="btn btn--sm" type="button">Tạo visual prompt</button></div><div class="scene-row"><span class="scene-thumb"><svg class="icon"><use href="#i-image"/></svg></span><div><strong>Scene 01 · Hạm đội vào cửa sông</strong><p class="muted">image · 1920×1080 · đã sẵn sàng</p></div><span class="status status--ok">Đủ</span></div><div class="scene-row"><span class="scene-thumb scene-thumb--video"><svg class="icon"><use href="#i-film"/></svg></span><div><strong>Scene 02 · Nước rút</strong><p class="muted">video · clip 10.0s · depth map</p></div><span class="status status--ok">Đủ</span></div><div class="scene-row"><span class="scene-thumb"><svg class="icon"><use href="#i-image"/></svg></span><div><strong>Scene 03 · Bãi cọc dưới nước</strong><p class="muted">image · 1920×1080 · đã sẵn sàng</p></div><span class="status status--ok">Đủ</span></div></section>
+        <section class="panel audio-panel"><div class="card-head"><div><div class="eyebrow"><svg class="icon"><use href="#i-volume"/></svg>Âm thanh</div><h2>Voiceover, SFX &amp; BGM</h2></div><span class="badge badge--ok">Sẵn sàng</span></div><div class="audio-line"><span class="audio-icon"><svg class="icon"><use href="#i-volume"/></svg></span><div><strong>Voiceover tiếng Việt</strong><p class="muted">17 / 17 cảnh · 402s</p></div><button class="btn btn--sm" type="button">Tạo lại</button></div><div class="audio-line"><span class="audio-icon"><svg class="icon"><use href="#i-film"/></svg></span><div><strong>Nhạc nền</strong><p class="muted">BGM · documentary tension</p></div><button class="btn btn--sm" type="button">Đổi</button></div></section>
+        <section class="panel render-panel"><div class="card-head"><div><div class="eyebrow"><svg class="icon"><use href="#i-film"/></svg>Render &amp; xuất</div><h2>Bản cuối</h2></div><span class="badge badge--muted">Chưa render</span></div><div class="render-setting"><span>Engine</span><strong>Remotion</strong></div><div class="render-setting"><span>Độ phân giải</span><strong>1920×1080 · 24 fps</strong></div><div class="render-actions"><button class="btn" type="button">Render nháp (nhanh)</button><button class="btn btn--amber" type="button">Render video</button></div></section>
+      </div>
+
+      <section class="panel jobs-panel"><div class="card-head"><div><div class="eyebrow">Lịch sử tác vụ</div><h2>Log gần đây</h2></div><span class="muted small">append-only</span></div><div class="job-line"><span class="job-dot job-dot--ok"></span><span><strong>Voiceover hoàn tất</strong><small>17 cảnh · 2 phút trước</small></span><span class="muted">Đã xong</span></div><div class="job-line"><span class="job-dot job-dot--muted"></span><span><strong>Render video</strong><small>Chưa chạy</small></span><span class="muted">—</span></div></section>
+    </main>
+  </div>
+
+  <nav class="prototype-switcher" aria-label="Mock progress state"><span>MOCK STATE</span><a href="#queued">Queued</a><a href="#running">Running</a><a href="#indeterminate">Voiceover</a><a href="#zip">ZIP</a><a href="#failed">Failed</a><a href="#stale">Mất kết nối</a></nav>
+
+  <div class="modal-layer" aria-live="polite">
+    <div class="modal-backdrop"></div>
+
+    <section class="progress-state progress-state--default progress-state--running" id="running" role="dialog" aria-modal="true" aria-labelledby="running-title" aria-describedby="running-status">
+      <div class="progress-card"><div class="progress-card__eyebrow"><span class="pulse-dot"></span> TÁC VỤ ĐANG CHẠY <span class="task-id">#job-4e81</span></div><h2 id="running-title">Đang render video</h2><div class="progress-status" id="running-status"><svg class="icon"><use href="#i-clock"/></svg><span>Đang chạy</span><strong>01:12</strong></div><div class="progress-track" role="progressbar" aria-valuenow="46" aria-valuemin="0" aria-valuemax="100"><span style="width:46%"></span></div><div class="progress-meta"><strong>46%</strong><span>Khung 1.982 / 4.320</span></div><div class="log-block"><div>15:42:16 · renderMedia started</div><div>15:42:51 · 1.982 frames completed</div><div>15:43:28 · encoding h264 output</div></div><div class="progress-actions"><button class="btn btn--danger-outline" type="button"><svg class="icon"><use href="#i-x"/></svg>Huỷ tác vụ</button></div><p class="modal-hint">Bạn có thể theo dõi tiến độ; phần còn lại của Studio đang tạm khóa.</p></div>
+    </section>
+
+    <section class="progress-state" id="queued" role="dialog" aria-modal="true" aria-labelledby="queued-title" aria-describedby="queued-status"><div class="progress-card"><div class="progress-card__eyebrow"><span class="pulse-dot pulse-dot--queued"></span> TÁC VỤ ĐANG CHỜ <span class="task-id">#job-4e81</span></div><h2 id="queued-title">Đang render video</h2><div class="progress-status" id="queued-status"><svg class="icon"><use href="#i-clock"/></svg><span>Đang xếp hàng</span><strong>00:08</strong></div><div class="progress-track progress-track--indeterminate" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span></div><div class="progress-meta"><span>Đang chờ worker nhận tác vụ</span></div><div class="log-block"><div>15:41:02 · render-full-video queued</div><div>15:41:02 · waiting for worker</div><div>—</div></div><div class="progress-actions"><button class="btn btn--danger-outline" type="button"><svg class="icon"><use href="#i-x"/></svg>Huỷ tác vụ</button></div></div></section>
+
+    <section class="progress-state" id="indeterminate" role="dialog" aria-modal="true" aria-labelledby="indeterminate-title" aria-describedby="indeterminate-status"><div class="progress-card"><div class="progress-card__eyebrow"><span class="pulse-dot"></span> TÁC VỤ ĐANG CHẠY <span class="task-id">scene-02</span></div><h2 id="indeterminate-title">Đang tạo voiceover</h2><div class="progress-status" id="indeterminate-status"><svg class="icon"><use href="#i-clock"/></svg><span>Đang chạy</span><strong>00:19</strong></div><div class="progress-track progress-track--indeterminate" role="progressbar" aria-label="Đang tạo voiceover"><span></span></div><div class="progress-meta"><span>Đang xử lý Scene 02 · chưa có phần trăm</span></div><div class="log-block"><div>15:43:01 · Tạo voiceover cho Scene 02</div><div>15:43:08 · Đang gọi engine âm thanh</div><div>15:43:20 · Đang chờ dữ liệu trả về</div></div><p class="modal-hint">Tác vụ này không có đường hủy riêng.</p></div></section>
+
+    <section class="progress-state" id="zip" role="dialog" aria-modal="true" aria-labelledby="zip-title" aria-describedby="zip-status"><div class="progress-card"><div class="progress-card__eyebrow"><span class="pulse-dot"></span> TÁC VỤ ĐANG CHẠY <span class="task-id">upload-92af</span></div><h2 id="zip-title">Đang nhập ZIP</h2><div class="progress-status" id="zip-status"><svg class="icon"><use href="#i-upload"/></svg><span>Đang chạy</span><strong>00:27</strong></div><div class="progress-track" role="progressbar" aria-valuenow="72" aria-valuemin="0" aria-valuemax="100"><span style="width:72%"></span></div><div class="progress-meta"><strong>72%</strong><span>144 MB / 200 MB</span></div><div class="log-block"><div>15:44:00 · Đang tải file archive.zip</div><div>15:44:16 · Đã nhận 144 MB</div><div>15:44:27 · Đang kiểm tra các entry</div></div><p class="modal-hint">Không đóng tab trong khi file đang được nhập.</p></div></section>
+
+    <section class="progress-state" id="failed" role="dialog" aria-modal="true" aria-labelledby="failed-title" aria-describedby="failed-status"><div class="progress-card progress-card--failed"><div class="progress-card__eyebrow progress-card__eyebrow--failed"><svg class="icon"><use href="#i-alert"/></svg> TÁC VỤ THẤT BẠI <span class="task-id">#job-4e81</span></div><h2 id="failed-title">Render video không thành công</h2><div class="progress-status" id="failed-status"><svg class="icon"><use href="#i-clock"/></svg><span>Đã dừng sau 00:42</span></div><div class="error-box">Không thể đọc output MP4: renderer exited with code 1.</div><div class="log-block"><div>15:42:16 · renderMedia started</div><div>15:42:51 · encoding h264 output</div><div>15:42:58 · renderer exited with code 1</div></div><div class="progress-actions"><button class="btn btn--amber" type="button">Đóng</button></div></div></section>
+
+    <section class="progress-state" id="stale" role="dialog" aria-modal="true" aria-labelledby="stale-title" aria-describedby="stale-status"><div class="progress-card progress-card--stale"><div class="progress-card__eyebrow progress-card__eyebrow--stale"><svg class="icon"><use href="#i-wifi"/></svg> CẦN KIỂM TRA KẾT NỐI</div><h2 id="stale-title">Đang tạo visual prompt</h2><div class="progress-status" id="stale-status"><svg class="icon"><use href="#i-clock"/></svg><span>Mất kết nối với tiến trình</span><strong>00:45</strong></div><div class="stale-message">Không nhận được trạng thái hoặc log mới trong 45 giây. Tác vụ trên server chưa bị hủy.</div><div class="log-block"><div>15:44:03 · generate-visual-prompts started</div><div>15:44:12 · Scene 06 / 17</div><div>15:44:12 · Đang chờ sự kiện tiếp theo</div></div><div class="progress-actions progress-actions--stack"><button class="btn btn--amber" type="button"><svg class="icon"><use href="#i-refresh"/></svg>Tải lại trạng thái</button><button class="btn" type="button">Mở khoá giao diện</button></div></div></section>
+  </div>
+</body>
+</html>

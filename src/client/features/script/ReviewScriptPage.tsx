@@ -11,6 +11,9 @@ import { Button } from '../../shared/ui/Button';
 import { Icon } from '../../shared/ui/Icon';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
+import { BlockingProgressDialog } from '../../shared/ui/BlockingProgressDialog';
+import { isStudioLocked, type BlockingTask } from '../../shared/ui/blocking-progress';
+import { cancelJob } from '../../shared/job-api';
 import * as api from './api';
 import {
   approveAllTargets,
@@ -120,6 +123,11 @@ export function ReviewScriptPage() {
   const navigate = useNavigate();
   const [jobId, setJobId] = useState<string | null>(null);
   const [qaJobId, setQaJobId] = useState<string | null>(null);
+  const [reviewJobTask, setReviewJobTask] = useState<BlockingTask | null>(null);
+  const [reviewJobStartedAt, setReviewJobStartedAt] = useState<number | null>(null);
+  const [reviewJobLastEventAt, setReviewJobLastEventAt] = useState<number | null>(null);
+  const [reviewJobReconnectKey, setReviewJobReconnectKey] = useState(0);
+  const [reviewJobLocallyUnlocked, setReviewJobLocallyUnlocked] = useState(false);
   const [qaResult, setQaResult] = useState<QAResult | null>(null);
   const [qaMode, setQaMode] = useState<'automatic' | 'manual'>('automatic');
   const [qaManualPrompt, setQaManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
@@ -158,8 +166,8 @@ export function ReviewScriptPage() {
   const lifecycleRef = useRef(0);
   const initialExpansionProjectIdRef = useRef<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
-  const progress = useJobProgress(jobId);
-  const qaProgress = useJobProgress(qaJobId);
+  const progress = useJobProgress(jobId, reviewJobReconnectKey);
+  const qaProgress = useJobProgress(qaJobId, reviewJobReconnectKey);
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const historyQuery = useQuery({ queryKey: ['projects', 'chapters', 'history', projectId], queryFn: () => api.getChapterHistory(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
@@ -174,8 +182,11 @@ export function ReviewScriptPage() {
   const hasApprovableChapters = chapters.some((chapter) => chapter.status !== 'generating' && chapter.status !== 'approved');
   const history = historyQuery.data ?? [];
   const effectiveGenerationMode = generationModeForChapters(chapters.length, generationMode);
-  const controlsBusy = Boolean(jobId) || hasGenerating || manualBusy || manualRegenBusy || providerBusy;
-  const qaBusy = Boolean(qaJobId);
+  const activeReviewJobId = jobId ?? qaJobId;
+  const activeReviewProgress = jobId ? progress : qaProgress;
+  const reviewJobLocked = !reviewJobLocallyUnlocked && isStudioLocked(null, activeReviewJobId, activeReviewProgress);
+  const controlsBusy = reviewJobLocked || hasGenerating || manualBusy || manualRegenBusy || providerBusy;
+  const qaBusy = !reviewJobLocallyUnlocked && isStudioLocked(null, qaJobId, qaProgress);
   const qaControlsBusy = qaBusy || qaManualBusy;
   const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
   const activeQaIssues = useMemo(() => qaResult ? sortQaIssues(qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] !== 'dismissed')) : [], [qaResult, qaIssueStates]);
@@ -188,6 +199,7 @@ export function ReviewScriptPage() {
   const qaDialogUndoIndex = qaDialog?.result && qaDialog.firstStartedAt && qaDialogChapter
     ? findUndoSnapshotIndex(history, chapters, qaDialog.chapterId, qaDialog.firstStartedAt)
     : null;
+  const activeReviewStartedAt = reviewJobStartedAt;
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -199,7 +211,12 @@ export function ReviewScriptPage() {
     setRegenLevel('medium');
     setManualRegen(null);
     setFinalizeError(null);
+    setJobId(null);
     setQaJobId(null);
+    setReviewJobTask(null);
+    setReviewJobStartedAt(null);
+    setReviewJobLastEventAt(null);
+    setReviewJobLocallyUnlocked(false);
     setQaResult(null);
     setQaMode('automatic');
     setQaManualPrompt(null);
@@ -244,10 +261,10 @@ export function ReviewScriptPage() {
     if (progress?.status === 'done') {
       void refresh();
       setJobId(null);
+      setReviewJobTask(null);
       toast('Đã tạo xong bản nháp kịch bản.');
     } else if (progress?.status === 'failed' || progress?.status === 'cancelled') {
       toast(progress.error ?? 'Không thể tạo kịch bản.');
-      setJobId(null);
     }
   }, [progress?.status]);
 
@@ -265,11 +282,15 @@ export function ReviewScriptPage() {
         toast('Kết quả QA không hợp lệ.');
       }
       setQaJobId(null);
+      setReviewJobTask(null);
     } else if (qaProgress?.status === 'failed' || qaProgress?.status === 'cancelled') {
       toast(qaProgress.error ?? 'Không thể kiểm tra QA.');
-      setQaJobId(null);
     }
   }, [qaProgress?.status, qaProgress?.result]);
+  useEffect(() => {
+    if (progress) setReviewJobLastEventAt(Date.now());
+    if (qaProgress) setReviewJobLastEventAt(Date.now());
+  }, [progress, qaProgress]);
 
   useEffect(() => {
     if (!manualRegen) return;
@@ -299,7 +320,14 @@ export function ReviewScriptPage() {
   }, [editing, editParagraphs]);
 
   async function generate() {
-    try { setJobId((await api.generateScript(projectId)).jobId); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo kịch bản.'); }
+    try {
+      const result = await api.generateScript(projectId);
+      setReviewJobTask({ kind: 'script-generation' });
+      setReviewJobStartedAt(Date.now());
+      setReviewJobLastEventAt(Date.now());
+      setReviewJobLocallyUnlocked(false);
+      setJobId(result.jobId);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo kịch bản.'); }
   }
 
   async function runQa() {
@@ -310,8 +338,38 @@ export function ReviewScriptPage() {
       setQaStale(false);
       setQaResultsOpen(true);
       setQaManualError(null);
-      setQaJobId((await api.runFinalQa(projectId)).jobId);
+      const result = await api.runFinalQa(projectId);
+      setReviewJobTask({ kind: 'final-qa' });
+      setReviewJobStartedAt(Date.now());
+      setReviewJobLastEventAt(Date.now());
+      setReviewJobLocallyUnlocked(false);
+      setQaJobId(result.jobId);
     } catch (error) { toast(error instanceof Error ? error.message : 'Không thể chạy kiểm tra QA.'); }
+  }
+
+  async function cancelReviewJob(): Promise<void> {
+    if (!activeReviewJobId) return;
+    try {
+      await cancelJob(activeReviewJobId);
+      toast('Đã yêu cầu huỷ tác vụ.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể huỷ tác vụ.');
+    }
+  }
+
+  async function reloadReviewJob(): Promise<void> {
+    setReviewJobLastEventAt(Date.now());
+    setReviewJobReconnectKey((current) => current + 1);
+    await refresh();
+  }
+
+  function closeReviewJob(): void {
+    setJobId(null);
+    setQaJobId(null);
+    setReviewJobTask(null);
+    setReviewJobStartedAt(null);
+    setReviewJobLastEventAt(null);
+    setReviewJobLocallyUnlocked(false);
   }
 
   async function loadQaManualPrompt() {
@@ -724,9 +782,6 @@ export function ReviewScriptPage() {
       ) : (
         <div className={styles.reviewGrid}>
           <section className={`${styles.panel} ${styles.chapters}`} aria-labelledby="chapters-title">
-            {jobId && progress && progress.status !== 'done' && (
-              <div className={styles.generationStatus} role="status"><strong>Đang tạo kịch bản… {Math.round(progress.progress)}%</strong><div className={styles.logs}>{progress.logs.map((line, index) => <div key={`${index}-${line}`}>{line}</div>)}</div></div>
-            )}
             <div className={styles.panelHead}>
               <div>
                 <h2 className={styles.panelTitle} id="chapters-title"><Icon name="list" />Kịch bản theo chương</h2>
@@ -886,13 +941,12 @@ export function ReviewScriptPage() {
                 </>}
                 {!qaManualPrompt && qaManualError && <p className={styles.error}>{qaManualError}</p>}
               </div>}
-              {qaProgress && (qaProgress.status === 'queued' || qaProgress.status === 'running') && <div className={styles.generationStatus} role="status"><strong>Đang kiểm tra QA… {Math.round(qaProgress.progress)}%</strong></div>}
             </section>
           </aside>
         </div>
       )}
 
-      <footer className={styles.footer}><Button variant="amber" disabled={!allApproved || hasGenerating || Boolean(jobId)} onClick={() => void finalize()}>Chốt & chia cảnh</Button></footer>
+      <footer className={styles.footer}><Button variant="amber" disabled={!allApproved || hasGenerating || reviewJobLocked} onClick={() => void finalize()}>Chốt & chia cảnh</Button></footer>
       {qaDialog && qaDialogChapter && <QaFixDialog
         projectId={projectId}
         issue={qaDialog.issue}
@@ -920,6 +974,19 @@ export function ReviewScriptPage() {
         onKeep={keepQaDialog}
         onDismiss={dismissQaDialog}
         onContinueNext={continueQaDialog}
+      />}
+      {reviewJobTask && activeReviewStartedAt !== null && !reviewJobLocallyUnlocked && <BlockingProgressDialog
+        visible
+        task={reviewJobTask}
+        jobId={activeReviewJobId}
+        progress={activeReviewProgress}
+        uploadProgress={null}
+        startedAt={activeReviewStartedAt}
+        lastEventAt={reviewJobLastEventAt}
+        onCancel={() => void cancelReviewJob()}
+        onClose={closeReviewJob}
+        onReload={() => void reloadReviewJob()}
+        onUnlock={() => setReviewJobLocallyUnlocked(true)}
       />}
     </div>
   );

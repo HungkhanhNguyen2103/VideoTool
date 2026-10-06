@@ -20,6 +20,6 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('renderReadiness.confirmations.length > 0');
     expect(source).toContain('Tiếp tục render');
     expect(source).toContain('Cảnh cảnh báo chỉ cần xác nhận');
-    expect(source).toContain('disabled={busy !== null || missingScenes.length > 0}');
+    expect(source).toContain('disabled={studioLocked || missingScenes.length > 0}');
   });
 });
