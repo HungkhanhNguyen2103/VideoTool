@@ -1,8 +1,16 @@
 import type { KeywordKind, RemotionKeyword } from '../../../contracts/video';
-import type { FilmLookStyle } from '../../../contracts/project';
+import type { FilmLookStyle, Scene } from '../../../contracts/project';
+import { areNameCandidatesFresh } from '../../../contracts/name-keywords';
+import { validateNameCandidate, type ValidatedNameCandidate } from './name-keywords';
 
 export type TimedWord = { text: string; startSec: number; endSec: number };
 export type Keyword = RemotionKeyword & { kind: KeywordKind };
+export type KeywordSelectionOptions = {
+  /** Validated, importance-ranked AI candidates for this scene. */
+  nameCandidates?: readonly ValidatedNameCandidate[];
+  /** Bare-name keys selected by earlier scenes in project mention order. */
+  usedNameKeys?: ReadonlySet<string>;
+};
 
 export const NUMBER_UNIT_TOKENS = new Set(['tỷ', 'triệu', 'nghìn', 'ngàn', 'trăm', '%', 'đô', 'la', 'usd', 'năm']);
 export const MAX_KEYWORDS_PER_SCENE = 2;
@@ -32,7 +40,11 @@ type Candidate = {
   kind: KeywordKind;
   nameRole?: 'person' | 'place';
   subtitle?: string;
+  nameSource?: 'ai' | 'rules';
 };
+
+export type SceneNamePopupPreview = { text: string; type: 'person' | 'place' | 'other'; source: 'ai' | 'rules' } | null;
+export type ProjectSceneKeywordSelection = { sceneId: string; keywords: Keyword[]; popup: SceneNamePopupPreview };
 
 export const ROLE_PHRASES = [
   'kỹ sư', 'ông', 'bà', 'giám đốc', 'tổng giám đốc', 'chủ tịch', 'tổng thống', 'thủ tướng',
@@ -144,8 +156,12 @@ function dateCandidate(words: ReadonlyArray<TimedWord>, index: number): { candid
 }
 
 /** Select a few narration-derived phrases; endSec includes the full fade. */
-export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
-  if (words.length === 0) return [];
+export function selectKeywords(words: ReadonlyArray<TimedWord>, options: KeywordSelectionOptions = {}): Keyword[] {
+  return selectKeywordsWithSource(words, options).keywords;
+}
+
+function selectKeywordsWithSource(words: ReadonlyArray<TimedWord>, options: KeywordSelectionOptions = {}): { keywords: Keyword[]; nameSource: 'ai' | 'rules' | null } {
+  if (words.length === 0) return { keywords: [], nameSource: null };
   // The final aligned word ends no later than the WAV. It is a conservative audio-end bound.
   const audioEndSec = words[words.length - 1]!.endSec;
   const centerCandidates: Candidate[] = [];
@@ -220,13 +236,29 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
     if (selectedCenter.length === MAX_KEYWORDS_PER_SCENE) break;
   }
 
-  const selectedName = nameCandidates
-    .sort((a, b) => a.startSec - b.startSec)
+  const aiNameCandidates: Candidate[] = (options.nameCandidates ?? []).map((candidate) => ({
+    text: capitalizeFirst(candidate.phrase),
+    startSec: candidate.startSec,
+    phraseEndSec: candidate.endSec,
+    priority: 1,
+    kind: 'name',
+    nameSource: 'ai',
+    ...(candidate.kind === 'person' ? {
+      nameRole: 'person' as const,
+      ...(candidate.role?.trim() ? { subtitle: sentenceCase(candidate.role.trim()) } : {}),
+    } : candidate.kind === 'place' ? { nameRole: 'place' as const } : {}),
+  }));
+  const orderedNameCandidates = [
+    ...aiNameCandidates,
+    ...nameCandidates.sort((a, b) => a.startSec - b.startSec),
+  ];
+  const selectedName = orderedNameCandidates
     .map((candidate) => {
       const endSec = Math.min(audioEndSec, Math.round((candidate.startSec + Math.max(candidate.phraseEndSec - candidate.startSec, LOWER_THIRD_HOLD_SEC) + KEYWORD_FADE_SEC) * 1000) / 1000);
-      return { candidate, endSec };
+      return { candidate, endSec, dedupeKey: nameKeywordDedupeKey(candidate.text) };
     })
-    .find(({ candidate, endSec }) => endSec - candidate.startSec >= LOWER_THIRD_MIN_REMAIN_SEC);
+    .find(({ candidate, endSec, dedupeKey }) => endSec - candidate.startSec >= LOWER_THIRD_MIN_REMAIN_SEC
+      && !options.usedNameKeys?.has(dedupeKey));
   const selected: Keyword[] = [...selectedCenter];
   if (selectedName) {
     const { candidate, endSec } = selectedName;
@@ -239,7 +271,36 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
       ...(candidate.subtitle ? { subtitle: candidate.subtitle } : {}),
     });
   }
-  return selected.sort((a, b) => a.startSec - b.startSec);
+  return {
+    keywords: selected.sort((a, b) => a.startSec - b.startSec),
+    nameSource: selectedName ? selectedName.candidate.nameSource ?? 'rules' : null,
+  };
+}
+
+/** Select exactly the same timed keyword sets as Remotion and expose the chosen name source for read-only UI previews. */
+export function selectProjectSceneKeywords(scenes: readonly Scene[]): ProjectSceneKeywordSelection[] {
+  const usedNameKeys = new Set<string>();
+  return scenes.map((scene) => {
+    const words = scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId
+      ? scene.wordTimings.words
+      : [];
+    if (words.length === 0) return { sceneId: scene.id, keywords: [], popup: null };
+    const nameCandidates = areNameCandidatesFresh(scene.nameCandidates, scene.narration, scene.audioFileId)
+      ? scene.nameCandidates.candidates.flatMap((candidate) => {
+        const result = validateNameCandidate(scene.narration, words, candidate);
+        return result.accepted ? [result] : [];
+      })
+      : [];
+    const selected = selectKeywordsWithSource(words, { nameCandidates, usedNameKeys });
+    const keyword = selected.keywords.find((candidate) => candidate.kind === 'name');
+    if (keyword) usedNameKeys.add(nameKeywordDedupeKey(keyword.text));
+    const popup: SceneNamePopupPreview = keyword ? {
+      text: keyword.text,
+      type: keyword.nameRole ?? 'other',
+      source: selected.nameSource ?? 'rules',
+    } : null;
+    return { sceneId: scene.id, keywords: selected.keywords, popup };
+  });
 }
 
 /**
@@ -326,7 +387,7 @@ function normalizeNameMention(value: string): string {
     .trim();
 }
 
-function normalizeNameDedupeKey(value: string): string {
+export function nameKeywordDedupeKey(value: string): string {
   const normalized = normalizeNameMention(value);
   for (const prefix of NAME_PREFIX_PHRASES) {
     const normalizedPrefix = normalizeNameMention(prefix);
@@ -340,7 +401,7 @@ export function annotateNameKeywords(scenes: ReadonlyArray<ReadonlyArray<Keyword
   const seen = new Set<string>();
   return scenes.map((keywords) => keywords.filter((keyword) => {
     if (keyword.kind !== 'name') return true;
-    const key = normalizeNameDedupeKey(keyword.text);
+    const key = nameKeywordDedupeKey(keyword.text);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

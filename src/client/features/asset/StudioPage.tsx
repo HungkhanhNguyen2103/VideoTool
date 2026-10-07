@@ -19,6 +19,7 @@ import { readinessBadgeForStatus } from './scene-readiness-ui';
 import { ProjectLogoControl } from './ProjectLogoControl';
 import { ScenePreviewSection, type ScenePreviewState } from './ScenePreviewSection';
 import { createScenePreviewFingerprint } from './scene-preview';
+import { nameKeywordPopupLine, nameKeywordStatusText } from './name-keyword-ui';
 import styles from './StudioPage.module.css';
 
 const statusTone = { draft: 'muted', script: 'indigo', assets: 'green', rendered: 'green' } as const;
@@ -60,6 +61,11 @@ export function StudioPage() {
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const filesQuery = useQuery({ queryKey: ['project-files', projectId], queryFn: () => api.listProjectFiles(projectId), enabled: Boolean(projectId) });
   const project = projectQuery.data;
+  const namePopupPreviewsQuery = useQuery({
+    queryKey: ['project-name-keyword-previews', projectId],
+    queryFn: () => api.getNameKeywordPreviews(projectId),
+    enabled: Boolean(project),
+  });
   const scenes = project?.scenes ?? [];
   const files = filesQuery.data ?? [];
   const filesById = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);
@@ -80,6 +86,7 @@ export function StudioPage() {
   const expandedAssetFile = expandedScene?.assetFileId ? filesById.get(expandedScene.assetFileId) : undefined;
   const expandedAssetSrc = expandedAssetFile ? api.fileUrlForSummary(expandedAssetFile) : null;
   const expandedAssetType = expandedAssetFile ? api.mediaTypeForMime(expandedAssetFile.mimeType) : null;
+  const expandedNamePopup = namePopupPreviewsQuery.data?.find((preview) => preview.sceneId === expandedScene?.id)?.popup ?? null;
   const progress = useJobProgress(jobId, jobReconnectKey);
   const busyTask = useMemo(() => taskFromBusyKey(busy, (sceneId) => {
     const index = scenes.findIndex((scene) => scene.id === sceneId);
@@ -168,6 +175,17 @@ export function StudioPage() {
 
   async function refresh() {
     await Promise.all([projectQuery.refetch(), filesQuery.refetch()]);
+    await namePopupPreviewsQuery.refetch();
+  }
+
+  async function analyzeNameKeywords() {
+    try {
+      setBusy('name-keywords');
+      const summary = await api.analyzeProjectNameKeywords(projectId);
+      await refresh();
+      toast(`Đã phân tích tên popup: ${summary.scenesWithName}/${summary.scenesAnalyzed} scene có tên.`);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể phân tích tên popup.'); }
+    finally { setBusy(null); }
   }
 
   async function copyJson() {
@@ -506,6 +524,10 @@ export function StudioPage() {
           <section className={`${styles.controlCard} ${styles.renderControlsCard}`} aria-labelledby="render-controls-title">
             <div className={styles.controlCardHead}><div><h3 id="render-controls-title" className={styles.controlTitle}>Render &amp; xuất</h3><p className={styles.muted}>Kiểm tra readiness trước khi xuất video</p></div></div>
             <section className={styles.readinessSummary} aria-label="Render readiness"><div><strong>{renderReadiness.total} scenes: {renderReadiness.ready} ready, {renderReadiness.warnings} warnings, {renderReadiness.errors} errors</strong><p className={styles.muted}>Cảnh cảnh báo chỉ cần xác nhận; cảnh lỗi bị chặn theo khả năng render hiện tại.</p></div><details><summary>Chi tiết readiness</summary>{renderReadiness.issues.length > 0 ? <ul>{renderReadiness.issues.map((issue) => <li key={issue.sceneId}><strong>Scene {issue.sceneNumber}</strong>: {issue.messages.join(' · ')}{issue.blocking ? ' — blocker' : ''}</li>)}</ul> : <p className={styles.muted}>Tất cả scene đã sẵn sàng.</p>}</details></section>
+            <div className={styles.nameKeywordRow}>
+              <p className={styles.nameKeywordStatus}>{nameKeywordStatusText(scenes)}</p>
+              <Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void analyzeNameKeywords()}>{scenes.some((scene) => scene.nameCandidates !== null) ? 'Phân tích lại' : 'Phân tích tên popup'}</Button>
+            </div>
             {missingScenes.length > 0 && <p className={styles.warning}>Chưa sẵn sàng render: scene {missingScenes.join(', ')} thiếu asset.</p>}
             <div className={styles.renderActions}><Button size="sm" variant="amber" disabled={studioLocked || missingScenes.length > 0} onClick={() => requestRender()}>Render video</Button><Button size="sm" variant="indigoline" title="Chi co o engine Remotion" disabled={studioLocked || missingScenes.length > 0 || project.renderEngine === 'ffmpeg'} onClick={() => requestRender(true)}>Render nháp (nhanh)</Button></div>
             {progress && !jobTask && <div className={styles.progress}><strong>Job {progress.status}</strong><progress max="100" value={progress.progress}>{progress.progress}%</progress><span>{progress.progress}%</span>{progress.logs.length > 0 && <ul>{progress.logs.map((line, index) => <li key={`${line}-${index}`}>{line}</li>)}</ul>}</div>}
@@ -587,6 +609,7 @@ export function StudioPage() {
               <div className={styles.actions}><Button size="sm" variant="amber" title="Tạo lại voiceover có thể hoàn tác thay đổi này" disabled={studioLocked || expandedScene.videoDurationSec === null || Math.ceil(expandedScene.videoDurationSec) <= expandedScene.durationSec} onClick={() => void fitSceneToClip(expandedScene)}>Kéo dài scene = clip</Button></div>
             </section>}
             <div className={styles.prompt}><span className={styles.label}>Lời dẫn</span>{expandedNarrationEditing ? <><textarea className={styles.textarea} value={draftNarration} onChange={(event) => setDraftNarration(event.target.value)} aria-label={`Sửa lời dẫn scene ${scenes.findIndex((scene) => scene.id === expandedScene.id) + 1}`} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingNarrationScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy || studioLocked} onClick={() => void saveNarration(expandedScene)}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.narration || 'Khong co loi dan'}</span><Button size="sm" disabled={studioLocked} onClick={() => startNarrationEdit(expandedScene)}>Edit</Button></div>}</div>
+            {namePopupPreviewsQuery.data && <p className={styles.nameKeywordDetail}>{nameKeywordPopupLine(expandedNamePopup)}</p>}
             <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{expandedEditing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy || studioLocked} onClick={() => { void patchScene(expandedScene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={studioLocked} onClick={() => startEdit(expandedScene)}>Edit</Button></div>}</div>
             {expandedScene.assetType === 'video' && <div className={styles.prompt}><span className={styles.label}>Motion prompt</span>{expandedMotionEditing ? <><textarea className={styles.textarea} value={draftMotionPrompt} onChange={(event) => setDraftMotionPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingMotionScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy || studioLocked} onClick={() => { void patchScene(expandedScene.id, { motionPrompt: draftMotionPrompt }); setEditingMotionScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.motionPrompt || 'Chưa có motion prompt.'}</span><Button size="sm" disabled={studioLocked} onClick={() => startMotionEdit(expandedScene)}>Edit</Button></div>}</div>}
             <div className={styles.audioControls}>

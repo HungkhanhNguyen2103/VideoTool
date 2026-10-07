@@ -131,7 +131,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
-    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, nameCandidates: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
     renderFileId: null,
     draftRenderFileId: null,
     bgmFileId: null,
@@ -158,7 +158,12 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
   const safeScenes = scenes.map((scene) => {
     const old = oldById.get(scene.id);
     const sameVoice = old && old.narration === scene.narration && old.audioFileId === scene.audioFileId;
-    const parsed = SceneDocSchema.parse({ ...scene, wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null });
+    const parsed = SceneDocSchema.parse({
+      ...scene,
+      wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null,
+      // Preserve analyzed names as stale history while audio still exists; a bulk reset to no audio clears them.
+      nameCandidates: scene.audioFileId !== null ? old?.nameCandidates ?? null : null,
+    });
     return {
       ...parsed,
       videoKeyframeFileId: parsed.assetType === 'video' ? parsed.videoKeyframeFileId : null,
@@ -188,7 +193,9 @@ export async function patchProjectScene(
   }
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(scenePatch)) set[`scenes.$[scene].${field}`] = value;
-  if (scenePatch.audioFileId !== undefined || narrationChanged) set['scenes.$[scene].wordTimings'] = null;
+  if (scenePatch.audioFileId !== undefined || narrationChanged) {
+    set['scenes.$[scene].wordTimings'] = null;
+  }
   if (scenePatch.assetFileId !== undefined || scenePatch.assetType === 'video') set['scenes.$[scene].depthMap'] = null;
   if (scenePatch.assetFileId !== undefined && scenePatch.videoTailFileId === undefined) set['scenes.$[scene].videoTailFileId'] = null;
   if (scenePatch.assetType === 'image') {
@@ -225,6 +232,48 @@ export async function patchProjectScene(
     throw new NotFound('Không tìm thấy cảnh.');
   }
   return getProject(id);
+}
+
+export type ProjectNameCandidatesUpdate = {
+  sceneId: string;
+  expectedNarration: string;
+  expectedAudioFileId: string;
+  nameCandidates: NonNullable<SceneDoc['nameCandidates']>;
+};
+
+/** Store analyzed names only while the scene still matches the narration/audio snapshot sent to AI. */
+export async function setProjectSceneNameCandidates(id: string, updates: readonly ProjectNameCandidatesUpdate[]): Promise<number> {
+  const uniqueUpdates = [...new Map(updates.map((update) => [update.sceneId, update])).values()];
+  if (uniqueUpdates.length === 0) return 0;
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  const arrayFilters: Record<string, unknown>[] = [];
+  const eligibleSceneFilters: Record<string, unknown>[] = [];
+  uniqueUpdates.forEach((update, index) => {
+    const alias = `nameScene${index}`;
+    set[`scenes.$[${alias}].nameCandidates`] = update.nameCandidates;
+    arrayFilters.push({
+      [`${alias}.id`]: update.sceneId,
+      [`${alias}.narration`]: update.expectedNarration,
+      [`${alias}.audioFileId`]: update.expectedAudioFileId,
+    });
+    eligibleSceneFilters.push({ scenes: { $elemMatch: { id: update.sceneId, narration: update.expectedNarration, audioFileId: update.expectedAudioFileId } } });
+  });
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id, $or: eligibleSceneFilters } as never,
+    { $set: set, $inc: { version: 1 } },
+    { arrayFilters },
+  );
+  if (result.matchedCount === 0) {
+    await getProject(id);
+    return 0;
+  }
+  const updated = await getProject(id);
+  return uniqueUpdates.filter((update) => {
+    const scene = updated.scenes.find((candidate) => candidate.id === update.sceneId);
+    return scene?.narration === update.expectedNarration
+      && scene.audioFileId === update.expectedAudioFileId
+      && scene.nameCandidates?.generatedAt === update.nameCandidates.generatedAt;
+  }).length;
 }
 
 export async function setProjectScenesAssetType(id: string, assetType: 'image' | 'video'): Promise<ProjectDetail> {

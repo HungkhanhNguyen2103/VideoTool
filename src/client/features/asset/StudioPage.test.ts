@@ -2,6 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('Studio scene readiness presentation', () => {
+  it('shows project name-popup status/action and a read-only selected popup in scene details', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('nameKeywordStatusText(scenes)');
+    expect(source).toContain('Phân tích tên popup');
+    expect(source).toContain("setBusy('name-keywords')");
+    expect(source).toContain('namePopupPreviewsQuery');
+    expect(source).toContain('nameKeywordPopupLine');
+  });
+
   it('shows measured clip facts, readiness tooltips, and video thumbnails in cards and detail', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
     expect(source).toContain('analyzeScene(scene)');

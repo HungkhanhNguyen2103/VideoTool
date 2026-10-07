@@ -3,7 +3,7 @@ import { handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handl
 import { getProject } from '../server/modules/project';
 import { generateSeoPackage } from '../server/modules/seo';
 import { SEO_SECTIONS, type SeoSection } from '../contracts/seo';
-import { alignProjectWordTimings, generateProjectDepthMaps, generateSceneDepthMap, generateProjectSfx, generateProjectVoiceovers, renderFullProject } from '../server/modules/video';
+import { alignProjectWordTimings, autoAnalyzeProjectNameKeywordsIfStale, generateProjectDepthMaps, generateSceneDepthMap, generateProjectSfx, generateProjectVoiceovers, renderFullProject } from '../server/modules/video';
 import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
 
@@ -20,7 +20,10 @@ const handleGenerateVoiceover: JobHandler = async (job, context) => {
 
 const handleAlignWordTimings: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  await alignProjectWordTimings(projectIdFrom(job), context.appendLog, context.reportProgress, context.isCancelled);
+  const projectId = projectIdFrom(job);
+  await alignProjectWordTimings(projectId, context.appendLog, context.reportProgress, context.isCancelled);
+  if (await context.isCancelled()) return;
+  await autoAnalyzeProjectNameKeywordsIfStale(projectId, context.appendLog);
 };
 
 const handleGenerateAllSfx: JobHandler = async (job, context) => {

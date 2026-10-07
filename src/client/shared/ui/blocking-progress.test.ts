@@ -22,6 +22,14 @@ describe('blocking progress helpers', () => {
     expect(taskFromBusyKey('unknown', () => undefined)).toBeNull();
   });
 
+  it('shows the indeterminate name-popup analysis task through the shared blocking overlay', () => {
+    const task = taskFromBusyKey('name-keywords', () => undefined);
+    expect(task).toEqual({ kind: 'name-keywords' });
+    expect(blockingTaskTitle(task!)).toBe('Đang phân tích tên popup');
+    expect(isStudioLocked('name-keywords', null, null)).toBe(true);
+    expect(blockingProgressViewModel({ task: task!, jobId: null, progress: null, uploadProgress: null, startedAt: 0, lastEventAt: null, now: 1 }).indeterminate).toBe(true);
+  });
+
   it('locks while an operation is busy or an active job has not reached a terminal state', () => {
     expect(isStudioLocked('import', null, null)).toBe(true);
     expect(isStudioLocked(null, 'job-1', null)).toBe(true);

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, NameCandidatesSchema, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 import { SeoPackageSchema } from '../../../contracts/seo';
 
@@ -12,6 +12,7 @@ export const SceneDocSchema = z.object({
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
+  nameCandidates: NameCandidatesSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
   motionPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),

@@ -18,6 +18,7 @@ import { ensureBrowser } from '@remotion/renderer';
 import type { RenderMediaOptions } from '@remotion/renderer';
 import type { BundleOptions } from '@remotion/bundler';
 import type { Scene } from '../../../contracts/project';
+import { hashNarration } from '../../../contracts/name-keywords';
 
 const renderResourceLock = path.join(tmpdir(), 'video-tool-render-resource.lock');
 
@@ -130,6 +131,57 @@ describe('Remotion build isolation', () => {
 });
 
 describe('Remotion props and public-dir staging', () => {
+  it('uses only fresh AI name candidates and revalidates them against the current narration and timed words', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const project = { id: 'project-1', renderSettings: { fps: 24, width: 1280, height: 720 }, bgmFileId: null, keywordPopupsEnabled: true } as never;
+    const makeScene = (id: string, narration: string, words: Array<[string, number, number]>, phrase: string, narrationHash = hashNarration(narration)) => ({
+      id, narration, assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 7,
+      wordTimings: { audioFileId: 'voice-1', words: words.map(([text, startSec, endSec]) => ({ text, startSec, endSec })) },
+      nameCandidates: { narrationHash, audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', generatedAt: '2026-10-07T00:00:00.000Z', candidates: [{ phrase, kind: 'place' }] },
+    }) as unknown as Scene;
+    const words: Array<[string, number, number]> = [
+      ['quân', 0, .2], ['Xiêm', .3, .5], ['rồi', 1, 1.2], ['tiến', 3, 3.2], ['lên.', 5, 5.2],
+    ];
+    const narration = 'quân Xiêm rồi tiến lên.';
+    const fresh = await buildRemotionInputProps(project, [makeScene('fresh', narration, words, 'Quân Xiêm')], 'fresh-name', resolver);
+    expect(fresh.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Quân Xiêm', kind: 'name' }));
+
+    const stale = await buildRemotionInputProps(project, [makeScene('stale', narration, words, 'Quân Xiêm', 'old-narration-hash')], 'stale-name', resolver);
+    expect(stale.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Xiêm', kind: 'name' }));
+
+    const invalidFresh = await buildRemotionInputProps(project, [makeScene('invalid', narration, words, 'Quân Nhật')], 'invalid-name', resolver);
+    expect(invalidFresh.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Xiêm', kind: 'name' }));
+  });
+
+  it('skips a duplicate rule-selected name before choosing the next ranked AI candidate in the next scene', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const project = { id: 'project-1', renderSettings: { fps: 24, width: 1280, height: 720 }, bgmFileId: null, keywordPopupsEnabled: true } as never;
+    const makeScene = (id: string, narration: string, words: Array<[string, number, number]>, candidates?: Array<{ phrase: string; kind: 'person' | 'place' }>) => ({
+      id, narration, assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 7,
+      wordTimings: { audioFileId: 'voice-1', words: words.map(([text, startSec, endSec]) => ({ text, startSec, endSec })) },
+      nameCandidates: candidates ? { narrationHash: hashNarration(narration), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', generatedAt: '2026-10-07T00:00:00.000Z', candidates } : null,
+    }) as unknown as Scene;
+    const first = makeScene('first', 'Ở sông Tiền rồi tiến lên.', [
+      ['Ở', 0, .2], ['sông', .3, .5], ['Tiền', .5, .7], ['rồi', 1, 1.2], ['tiến', 3, 3.2], ['lên.', 5, 5.2],
+    ]);
+    const second = makeScene('second', 'Sông Tiền, gặp Nguyễn Huệ rồi tiến quân.', [
+      ['Sông', 0, .2], ['Tiền,', .2, .4], ['gặp', 1, 1.2], ['Nguyễn', 1.3, 1.5], ['Huệ', 1.5, 1.7], ['rồi', 3, 3.2], ['tiến', 4, 4.2], ['quân.', 6, 6.2],
+    ], [{ phrase: 'Sông Tiền', kind: 'place' }, { phrase: 'Nguyễn Huệ', kind: 'person' }]);
+
+    const props = await buildRemotionInputProps(project, [first, second], 'name-dedup', resolver);
+
+    expect(props.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Sông Tiền', kind: 'name' }));
+    expect(props.scenes[1]?.keywords).toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', kind: 'name' }));
+  });
+
   it('stages a valid project logo and rejects invalid logo references', async () => {
     const resolver = async (_projectId: string, fileId: string) => {
       if (fileId === 'missing') throw new Error('missing file');

@@ -81,6 +81,23 @@ describe('AI client abstraction', () => {
     }));
   });
 
+  it('passes temperature only when a caller explicitly requests it', async () => {
+    const deepseek = createDeepSeekClient();
+    await deepseek.chat([{ role: 'user', content: 'No temperature option.' }]);
+    expect(mocks.deepseekCreate).toHaveBeenLastCalledWith(expect.not.objectContaining({ temperature: expect.anything() }));
+    await deepseek.chat([{ role: 'user', content: 'Deterministic JSON.' }], { json: true, temperature: 0 });
+    expect(mocks.deepseekCreate).toHaveBeenLastCalledWith(expect.objectContaining({ temperature: 0 }));
+
+    const claude = createClaudeClient();
+    await claude.chat([{ role: 'user', content: 'No temperature option.' }]);
+    expect(mocks.anthropicCreate).toHaveBeenLastCalledWith(expect.not.objectContaining({ temperature: expect.anything() }));
+    await claude.chat([{ role: 'user', content: 'Deterministic JSON.' }], { json: true, temperature: 0 });
+    expect(mocks.anthropicCreate).toHaveBeenLastCalledWith(expect.objectContaining({
+      temperature: 0,
+      output_config: { format: { type: 'json_schema', schema: { type: 'object' } } },
+    }));
+  });
+
   it('maps Claude text blocks and stream deltas to the common interface', async () => {
     const client = getAiClient('claude');
     await expect(client.chat([{ role: 'user', content: 'hello' }])).resolves.toBe('claude reply');

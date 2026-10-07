@@ -8,6 +8,20 @@ import { ApiErrorBodySchema } from '../../../contracts/common';
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
 const FileListSchema = z.array(FileSummarySchema);
 const JobResponseSchema = z.object({ jobId: z.string() });
+const NameKeywordAnalysisSummarySchema = z.object({
+  scenesAnalyzed: z.number().int().nonnegative(),
+  scenesSkippedNoTimings: z.number().int().nonnegative(),
+  scenesWithName: z.number().int().nonnegative(),
+  rejectedCandidates: z.number().int().nonnegative(),
+  provider: z.enum(AI_PROVIDERS),
+  model: z.string().min(1),
+});
+const NameKeywordPopupSchema = z.object({
+  text: z.string(),
+  type: z.enum(['person', 'place', 'other']),
+  source: z.enum(['ai', 'rules']),
+});
+const NameKeywordPreviewsSchema = z.array(z.object({ sceneId: z.string(), popup: NameKeywordPopupSchema.nullable() }));
 const VoiceoverBatchResultSchema = z.object({
   generated: z.number().int().nonnegative(),
   skippedSceneNumbers: z.array(z.number().int().positive()),
@@ -15,6 +29,9 @@ const VoiceoverBatchResultSchema = z.object({
 });
 
 export type VoiceoverBatchResult = z.infer<typeof VoiceoverBatchResultSchema>;
+export type NameKeywordAnalysisSummary = z.infer<typeof NameKeywordAnalysisSummarySchema>;
+export type NameKeywordPopupPreview = z.infer<typeof NameKeywordPopupSchema>;
+export type NameKeywordScenePreview = z.infer<typeof NameKeywordPreviewsSchema>[number];
 
 export type { FlowSceneExport };
 export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
@@ -205,6 +222,14 @@ export function setKeywordPopups(projectId: string, enabled: boolean): Promise<P
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/keyword-popups`, ProjectDetailSchema, {
     method: 'PATCH', body: { enabled },
   });
+}
+
+export function analyzeProjectNameKeywords(projectId: string): Promise<NameKeywordAnalysisSummary> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/name-keywords/analyze`, NameKeywordAnalysisSummarySchema, { method: 'POST' });
+}
+
+export function getNameKeywordPreviews(projectId: string): Promise<NameKeywordScenePreview[]> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/name-keywords/previews`, NameKeywordPreviewsSchema);
 }
 
 export function setTransitionStyle(projectId: string, style: TransitionStyle): Promise<ProjectDetail> {

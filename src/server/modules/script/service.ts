@@ -415,6 +415,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       videoTailFileId: null,
       videoDurationSec: null,
       depthMap: null,
+      nameCandidates: null,
     })));
     return { ...chapter, scenesCount: paragraphs.length, durationSec: chapterDurations.reduce((sum, value) => sum + value, 0) };
   });

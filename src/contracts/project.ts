@@ -153,6 +153,23 @@ export const WordTimingsSchema = z.object({
 });
 export type WordTimings = z.infer<typeof WordTimingsSchema>;
 
+export const NAME_CANDIDATE_KINDS = ['person', 'place', 'event', 'group'] as const;
+export const NameCandidateSchema = z.object({
+  phrase: z.string().trim().min(1),
+  kind: z.enum(NAME_CANDIDATE_KINDS),
+  role: z.string().optional(),
+});
+export const NameCandidatesSchema = z.object({
+  narrationHash: z.string().min(1),
+  audioFileId: z.string().min(1),
+  provider: z.enum(AI_PROVIDERS),
+  model: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  candidates: z.array(NameCandidateSchema).max(2),
+});
+export type NameCandidate = z.infer<typeof NameCandidateSchema>;
+export type NameCandidates = z.infer<typeof NameCandidatesSchema>;
+
 export const SceneSchema = z.object({
   id: z.string(),
   narration: z.string(),
@@ -162,6 +179,7 @@ export const SceneSchema = z.object({
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
+  nameCandidates: NameCandidatesSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
   motionPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),

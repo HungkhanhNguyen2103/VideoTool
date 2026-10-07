@@ -8,6 +8,8 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
+import { AppError } from '../../shared/errors';
+import { areNameCandidatesFresh, hashNarration } from '../../../contracts/name-keywords';
 import {
   createProject,
   getProject,
@@ -20,6 +22,7 @@ import {
   setProjectDraftRenderFile,
   setProjectRenderFile,
   setProjectLogo,
+  setProjectSceneNameCandidates,
   setSceneWordTimings,
   setSceneDepthMap,
 } from '../project';
@@ -27,8 +30,9 @@ import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
-import { alignProjectWordTimings, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
+import { alignProjectWordTimings, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
 import { createVideoRouter } from './routes';
+import type { NameKeywordAnalysisSummary } from './name-keyword-service';
 import { enqueueJob as insertJob } from '../job';
 import { jobHandlers } from '../../../worker/registry';
 
@@ -133,6 +137,15 @@ async function seedVoiceProject() {
 }
 
 describe('video project mutations', () => {
+  const candidateRecord = (audioFileId = 'voice-1') => ({
+    narrationHash: hashNarration('Narration'),
+    audioFileId,
+    provider: 'deepseek' as const,
+    model: 'deepseek-chat',
+    generatedAt: '2026-10-07T00:00:00.000Z',
+    candidates: [{ phrase: 'Nguyễn Ánh', kind: 'person' as const }],
+  });
+
   it('defaults legacy timings to null and conditionally invalidates them when audio or narration changes', async () => {
     const project = await seedProject();
     expect(project.scenes[0]!.wordTimings).toBeNull();
@@ -149,6 +162,7 @@ describe('video project mutations', () => {
   it('clears all cross-project media references when duplicating a project', async () => {
     const project = await seedProject();
     await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', sfxFileId: 'sfx-1' });
+    await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', nameCandidates: candidateRecord() }]);
     await setProjectBgm(project.id, 'calm', 'bgm-1');
     await setProjectRenderFile(project.id, 'render-1');
     await setProjectDraftRenderFile(project.id, 'draft-1');
@@ -160,7 +174,41 @@ describe('video project mutations', () => {
     expect(duplicate.draftRenderFileId).toBeNull();
     expect(duplicate.bgmFileId).toBeNull();
     expect(duplicate.logoFileId).toBeNull();
-    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, sfxFileId: null });
+    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, sfxFileId: null, nameCandidates: null });
+  });
+
+  it('retains stale name candidates through narration edits and voiceover regeneration, then clears them on bulk reset', async () => {
+    const project = await seedProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    const storedCandidates = candidateRecord();
+    await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', nameCandidates: storedCandidates }]);
+
+    await patchProjectScene(project.id, 'scene-1', { narration: 'Rewritten narration' });
+    const afterNarrationEdit = (await getProject(project.id)).scenes[0]!;
+    expect(afterNarrationEdit.nameCandidates).toEqual(storedCandidates);
+    expect(areNameCandidatesFresh(afterNarrationEdit.nameCandidates, afterNarrationEdit.narration, afterNarrationEdit.audioFileId)).toBe(false);
+
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-2' });
+    const afterVoiceoverRegeneration = (await getProject(project.id)).scenes[0]!;
+    expect(afterVoiceoverRegeneration.nameCandidates).toEqual(storedCandidates);
+    expect(areNameCandidatesFresh(afterVoiceoverRegeneration.nameCandidates, afterVoiceoverRegeneration.narration, afterVoiceoverRegeneration.audioFileId)).toBe(false);
+
+    await replaceProjectScenes(project.id, [{ ...afterVoiceoverRegeneration, audioFileId: null }]);
+    expect((await getProject(project.id)).scenes[0]!.nameCandidates).toBeNull();
+  });
+
+  it('does not apply a name-candidate batch update after narration or audio changed', async () => {
+    const project = await seedProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', nameCandidates: candidateRecord() }]);
+
+    const applied = await setProjectSceneNameCandidates(project.id, [{
+      sceneId: 'scene-1', expectedNarration: 'Old narration', expectedAudioFileId: 'voice-1',
+      nameCandidates: { ...candidateRecord(), generatedAt: '2026-10-07T00:01:00.000Z', candidates: [{ phrase: 'stale', kind: 'place' }] },
+    }]);
+
+    expect(applied).toBe(0);
+    expect((await getProject(project.id)).scenes[0]!.nameCandidates).toEqual(candidateRecord());
   });
 
   it('patches scene audio, duration, and SFX fields with one version increment', async () => {
@@ -285,6 +333,38 @@ describe('video renderer builders', () => {
 });
 
 describe('video orchestration services', () => {
+  it('auto-analyzes only eligible scenes with stale candidates and swallows analyzer failures', async () => {
+    const project = await seedVoiceProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    const firstNarration = 'First narration';
+    const timings = { audioFileId: 'voice-1', words: [
+      { text: 'First', startSec: 0, endSec: .3 }, { text: 'narration', startSec: 2, endSec: 2.3 },
+    ] };
+    await setSceneWordTimings(project.id, 'scene-1', 'voice-1', firstNarration, timings);
+    await setProjectSceneNameCandidates(project.id, [{
+      sceneId: 'scene-1', expectedNarration: firstNarration, expectedAudioFileId: 'voice-1',
+      nameCandidates: { narrationHash: hashNarration(firstNarration), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', generatedAt: '2026-10-07T00:00:00.000Z', candidates: [] },
+    }]);
+    const analyze = vi.fn().mockResolvedValue({ scenesAnalyzed: 1, scenesSkippedNoTimings: 1, scenesWithName: 0, rejectedCandidates: 0, provider: 'deepseek', model: 'deepseek-chat' });
+
+    expect(await autoAnalyzeProjectNameKeywordsIfStale(project.id, vi.fn(), analyze)).toBe(false);
+    expect(analyze).not.toHaveBeenCalled();
+
+    const changedNarration = 'Rewritten first narration';
+    await patchProjectScene(project.id, 'scene-1', { narration: changedNarration });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-2' });
+    const refreshedTimings = { ...timings, audioFileId: 'voice-2' };
+    expect(await setSceneWordTimings(project.id, 'scene-1', 'voice-2', changedNarration, refreshedTimings)).toBe(true);
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ narration: changedNarration, audioFileId: 'voice-2', wordTimings: refreshedTimings, nameCandidates: expect.objectContaining({ narrationHash: hashNarration(firstNarration), audioFileId: 'voice-1' }) });
+    const appendLog = vi.fn();
+    analyze.mockRejectedValueOnce(new Error('Fake provider failure'));
+
+    expect(await autoAnalyzeProjectNameKeywordsIfStale(project.id, appendLog, analyze)).toBe(false);
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(appendLog).toHaveBeenCalledWith(expect.stringContaining('Name popup auto-analysis skipped: Fake provider failure'));
+    expect((await getProject(project.id)).scenes[0]!.nameCandidates).toMatchObject({ narrationHash: hashNarration(firstNarration), audioFileId: 'voice-1' });
+  });
+
   it('backfills eligible voiceovers sequentially and skips fresh timings', async () => {
     const project = await seedVoiceProject();
     const file = await createFileStoreService(filesDir).storeFile({ projectId: project.id, originalName: 'scene.wav', mimeType: 'audio/wav', buffer: Buffer.from('wav'), purpose: 'voiceover' });
@@ -336,6 +416,25 @@ describe('video orchestration services', () => {
     const files = await createFileStoreService(filesDir).listProjectFiles(project.id);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatchObject({ purpose: 'voiceover', mimeType: 'audio/wav' });
+  });
+
+  it('retains the prior name analysis as stale when a scene voiceover is regenerated', async () => {
+    const project = await seedVoiceProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'old-voice' });
+    const oldCandidates = {
+      narrationHash: hashNarration('First narration'), audioFileId: 'old-voice', provider: 'deepseek' as const,
+      model: 'deepseek-chat', generatedAt: '2026-10-07T00:00:00.000Z', candidates: [{ phrase: 'First', kind: 'person' as const }],
+    };
+    await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'First narration', expectedAudioFileId: 'old-voice', nameCandidates: oldCandidates }]);
+    mocks.synthesize.mockResolvedValue(Buffer.from('new voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(2);
+
+    const updated = await generateSceneVoiceover(project.id, 'scene-1');
+
+    expect(updated.audioFileId).not.toBe('old-voice');
+    expect(updated.nameCandidates).toEqual(oldCandidates);
+    expect(areNameCandidatesFresh(updated.nameCandidates, updated.narration, updated.audioFileId)).toBe(false);
   });
 
   it('keeps the previous voiceover reference and duration when regeneration fails', async () => {
@@ -481,10 +580,10 @@ describe('video orchestration services', () => {
 
 type VideoEnqueue = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 
-async function startVideoRouterServer(enqueueJob: VideoEnqueue): Promise<string> {
+async function startVideoRouterServer(enqueueJob: VideoEnqueue, analyzeNameKeywords?: (projectId: string) => Promise<NameKeywordAnalysisSummary>): Promise<string> {
   const app = express();
   app.use(express.json());
-  app.use('/api/project', createVideoRouter({ enqueueJob }));
+  app.use('/api/project', createVideoRouter({ enqueueJob, analyzeNameKeywords }));
   app.use((error: { status?: number; code?: string; message?: string; name?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     void next;
     const status = error.status ?? (error.name === 'ZodError' ? 400 : 500);
@@ -495,6 +594,66 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue): Promise<string>
 }
 
 describe('video routes and worker handlers', () => {
+  it('serves project scene popup previews from the same selector used by Remotion', async () => {
+    const project = await seedProject();
+    const narration = 'Trên sông Tiền hôm nay.';
+    await patchProjectScene(project.id, 'scene-1', { narration });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    const words = [
+      { text: 'Trên', startSec: 0, endSec: .2 }, { text: 'sông', startSec: .3, endSec: .5 },
+      { text: 'Tiền', startSec: .5, endSec: .8 }, { text: 'hôm', startSec: 2, endSec: 2.2 }, { text: 'nay.', startSec: 4, endSec: 4.3 },
+    ];
+    await setSceneWordTimings(project.id, 'scene-1', 'voice-1', narration, { audioFileId: 'voice-1', words });
+    await setProjectSceneNameCandidates(project.id, [{
+      sceneId: 'scene-1', expectedNarration: narration, expectedAudioFileId: 'voice-1',
+      nameCandidates: { narrationHash: hashNarration(narration), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', generatedAt: '2026-10-07T00:00:00.000Z', candidates: [{ phrase: 'Sông Tiền', kind: 'place' }] },
+    }]);
+    expect(await getProject(project.id)).toMatchObject({ keywordPopupsEnabled: true, scenes: [{ narration, audioFileId: 'voice-1', nameCandidates: { candidates: [{ phrase: 'Sông Tiền' }] } }] });
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+
+    const response = await fetch(`${base}/api/project/${project.id}/name-keywords/previews`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([{ sceneId: 'scene-1', popup: { text: 'Sông Tiền', type: 'place', source: 'ai' } }]);
+  });
+
+  it('returns the manual name-popup analysis summary', async () => {
+    const project = await seedProject();
+    const summary = { scenesAnalyzed: 3, scenesSkippedNoTimings: 1, scenesWithName: 2, rejectedCandidates: 1, provider: 'deepseek', model: 'deepseek-chat' } satisfies NameKeywordAnalysisSummary;
+    const analyzeNameKeywords = vi.fn().mockResolvedValue(summary);
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue, analyzeNameKeywords);
+
+    const response = await fetch(`${base}/api/project/${project.id}/name-keywords/analyze`, { method: 'POST' });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(summary);
+    expect(analyzeNameKeywords).toHaveBeenCalledWith(project.id);
+  });
+
+  it('rejects name-popup analysis while a full render is active', async () => {
+    const project = await seedProject();
+    await insertJob({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } });
+    const analyzeNameKeywords = vi.fn();
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue, analyzeNameKeywords);
+
+    const response = await fetch(`${base}/api/project/${project.id}/name-keywords/analyze`, { method: 'POST' });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'RENDER_IN_PROGRESS' } });
+    expect(analyzeNameKeywords).not.toHaveBeenCalled();
+  });
+
+  it('maps analysis service failures without changing their status or code', async () => {
+    const project = await seedProject();
+    const analyzeNameKeywords = vi.fn().mockRejectedValue(new AppError('AI không trả về tên hợp lệ.', 422, 'NAME_CANDIDATES_REJECTED'));
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue, analyzeNameKeywords);
+
+    const response = await fetch(`${base}/api/project/${project.id}/name-keywords/analyze`, { method: 'POST' });
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'NAME_CANDIDATES_REJECTED', message: 'AI không trả về tên hợp lệ.' } });
+  });
+
   it('uploads, replaces, and removes the project logo through the dedicated routes', async () => {
     const project = await seedProject();
     const base = await startVideoRouterServer(vi.fn().mockResolvedValue({ id: 'job-1' }) as unknown as VideoEnqueue);

@@ -17,7 +17,8 @@ export type BlockingTaskKind =
   | 'import-zip'
   | 'quick'
   | 'script-generation'
-  | 'final-qa';
+  | 'final-qa'
+  | 'name-keywords';
 
 export type BlockingTask = {
   kind: BlockingTaskKind;
@@ -67,6 +68,7 @@ const TASK_TITLES: Record<BlockingTaskKind, string> = {
   quick: 'Đang cập nhật',
   'script-generation': 'Đang tạo kịch bản',
   'final-qa': 'Đang kiểm tra QA',
+  'name-keywords': 'Đang phân tích tên popup',
 };
 
 export function blockingTaskTitle(task: BlockingTask): string {
@@ -90,6 +92,7 @@ export function taskFromBusyKey(busy: string | null, sceneLabelForId: (sceneId: 
   if (busy === 'depth-maps') return { kind: 'depth-maps' };
   if (busy === 'visual-prompts') return { kind: 'visual-prompts' };
   if (busy === 'split-scenes') return { kind: 'split-scenes' };
+  if (busy === 'name-keywords') return { kind: 'name-keywords' };
   const sceneMatch = /^(voice|sfx):(.+)$/.exec(busy);
   if (sceneMatch) {
     const kind = sceneMatch[1] === 'voice' ? 'voiceover' : 'sfx';

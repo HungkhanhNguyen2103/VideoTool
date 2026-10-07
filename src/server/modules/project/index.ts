@@ -15,6 +15,7 @@ export {
   patchProjectScene,
   setSceneWordTimings,
   setSceneDepthMap,
+  setProjectSceneNameCandidates,
   patchProjectChapter,
   replaceProjectChapters,
   replaceProjectScript,

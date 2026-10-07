@@ -4,6 +4,7 @@ import { connectDb, closeDb, getCollection } from '../src/server/db/client';
 import { loadConfig } from '../src/server/config';
 import { getAiClient } from '../src/server/shared/ai';
 import { selectKeywords, type Keyword, type TimedWord } from '../src/server/modules/video/keywords';
+import { normalizeNameMention, validateNameCandidate } from '../src/server/modules/video/name-keywords';
 import type { ProjectDoc, SceneDoc } from '../src/server/modules/project/docs';
 
 const DEFAULT_PROJECT_TITLE = /Rạch Gầm/i;
@@ -94,19 +95,7 @@ const INSTRUCTIVE_DISAGREEMENT_NOTES: Record<number, string> = {
   38: 'Rules chọn địa danh `Việt Nam`; AI chọn cụm danh từ chung `trận đánh`, nên rules phù hợp hơn.',
 };
 
-function normalizeMention(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .replace(/[đĐ]/gu, 'd')
-    .toLocaleLowerCase('vi')
-    .replace(/\s+/gu, ' ')
-    .trim();
-}
-
-function normalizeWord(value: string): string {
-  return normalizeMention(value).replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, '');
-}
+const normalizeMention = normalizeNameMention;
 
 function estimateTokens(value: string): number {
   return Math.ceil(value.length / 4);
@@ -140,7 +129,7 @@ function parseAiPayload(raw: string): AiPayload {
     const candidates = scene.candidates.slice(0, 2).map((candidateValue) => {
       const candidate = asRecord(candidateValue);
       const phrase = candidate.phrase;
-      const kind = candidate.kind;
+      const kind = candidate.kind as AiKind;
       if (typeof phrase !== 'string' || phrase.trim() === '') throw new Error(`AI scene ${sceneNumber} has an invalid phrase.`);
       if (kind !== 'person' && kind !== 'place' && kind !== 'event' && kind !== 'group') throw new Error(`AI scene ${sceneNumber} has an invalid kind.`);
       const role = typeof candidate.role === 'string' && candidate.role.trim() ? candidate.role : undefined;
@@ -152,26 +141,15 @@ function parseAiPayload(raw: string): AiPayload {
 }
 
 function validateCandidate(scene: EvalScene, candidate: AiCandidate): Validation {
-  const phrase = candidate.phrase;
-  const phraseInNarration = normalizeMention(scene.narration).includes(normalizeMention(phrase));
-  const phraseWords = phrase.split(/\s+/u).map(normalizeWord).filter(Boolean);
-  let match: { start: number; end: number } | null = null;
-  for (let start = 0; start + phraseWords.length <= scene.words.length; start++) {
-    const matches = phraseWords.every((word, offset) => normalizeWord(scene.words[start + offset]!.text) === word);
-    if (matches) {
-      match = { start, end: start + phraseWords.length - 1 };
-      break;
-    }
-  }
-  if (!phraseInNarration) return { ...candidate, accepted: false, reason: 'not found verbatim in narration' };
-  if (!match) return { ...candidate, accepted: false, reason: 'not a contiguous timed-word run' };
+  const result = validateNameCandidate(scene.narration, scene.words, candidate);
+  if (!result.accepted) return { ...candidate, accepted: false, reason: result.reason };
   return {
     ...candidate,
     accepted: true,
-    wordStart: match.start,
-    wordEnd: match.end,
-    startSec: scene.words[match.start]!.startSec,
-    endSec: scene.words[match.end]!.endSec,
+    wordStart: result.startWordIndex,
+    wordEnd: result.endWordIndex,
+    startSec: result.startSec,
+    endSec: result.endSec,
   };
 }
 

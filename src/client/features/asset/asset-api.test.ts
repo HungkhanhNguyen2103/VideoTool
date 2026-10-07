@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -155,6 +155,19 @@ describe('asset API helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/keyword-popups', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ enabled: false }),
     }));
+  });
+
+  it('analyzes name popups and fetches typed render-selected previews', async () => {
+    const summary = { scenesAnalyzed: 1, scenesSkippedNoTimings: 0, scenesWithName: 1, rejectedCandidates: 0, provider: 'deepseek', model: 'deepseek-chat' };
+    const previews = [{ sceneId: 'scene-1', popup: { text: 'Sông Tiền', type: 'place', source: 'ai' } }];
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(summary), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(previews), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(analyzeProjectNameKeywords('project/1')).resolves.toEqual(summary);
+    await expect(getNameKeywordPreviews('project/1')).resolves.toEqual(previews);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/name-keywords/analyze', expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/name-keywords/previews', expect.objectContaining({ method: 'GET' }));
   });
 
   it('patches a scene motion prompt with the exact route and body', async () => {

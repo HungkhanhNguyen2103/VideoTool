@@ -1,9 +1,79 @@
 import { describe, expect, it } from 'vitest';
-import { annotateNameKeywords, annotateYearKeywords, FILM_LOOK_BEFORE_YEAR, LOWER_THIRD_HOLD_SEC, parseNumberPhrase, resolveFilmLookByScene, selectKeywords, type Keyword } from './keywords';
+import { annotateNameKeywords, annotateYearKeywords, FILM_LOOK_BEFORE_YEAR, LOWER_THIRD_HOLD_SEC, parseNumberPhrase, resolveFilmLookByScene, selectKeywords, selectProjectSceneKeywords, type Keyword } from './keywords';
+import type { ValidatedNameCandidate } from './name-keywords';
+import type { Scene } from '../../../contracts/project';
+import { hashNarration } from '../../../contracts/name-keywords';
 
 const words = (items: Array<[string, number, number]>) => items.map(([text, startSec, endSec]) => ({ text, startSec, endSec }));
+const aiName = (phrase: string, kind: ValidatedNameCandidate['kind'], startSec: number, endSec: number, role?: string): ValidatedNameCandidate => ({
+  phrase, kind, ...(role ? { role } : {}), startWordIndex: 0, endWordIndex: 1, startSec, endSec,
+});
 
 describe('selectKeywords', () => {
+  it('uses an eligible AI candidate ahead of an earlier rule candidate', () => {
+    const timedWords = words([
+      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['rồi', 1, 1.2], ['gặp', 2, 2.2],
+      ['Nguyễn', 2.3, 2.5], ['Huệ', 2.5, 2.7], ['sau', 5, 5.2], ['đó.', 6, 6.2],
+    ]);
+    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', 'person', 2.3, 2.7)] }))
+      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', nameRole: 'person' }));
+  });
+
+  it('skips a higher-ranked AI candidate with too little remaining audio and tries the next one', () => {
+    const timedWords = words([
+      ['gặp', 0, .2], ['Nguyễn', .3, .5], ['Ánh', .5, .7], ['rồi', 2, 2.2], ['Trần', 8.4, 8.6],
+      ['Hưng', 8.6, 8.8], ['Đạo', 8.8, 9], ['hết.', 9.4, 9.7],
+    ]);
+    expect(selectKeywords(timedWords, { nameCandidates: [
+      aiName('Trần Hưng Đạo', 'person', 8.4, 9), aiName('Nguyễn Ánh', 'person', .3, .7),
+    ] })).toContainEqual(expect.objectContaining({ text: 'Nguyễn Ánh' }));
+  });
+
+  it('falls back to an eligible rule name when every AI candidate fails the hold rule', () => {
+    const timedWords = words([
+      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['rồi', 1, 1.2], ['gặp', 8, 8.2],
+      ['Nguyễn', 8.3, 8.5], ['Ánh', 8.5, 8.7], ['hết.', 9.4, 9.7],
+    ]);
+    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Ánh', 'person', 8.3, 8.7)] }))
+      .toContainEqual(expect.objectContaining({ text: 'Sông Tiền', nameRole: 'place' }));
+  });
+
+  it('maps AI candidate kinds to the existing lower-third roles', () => {
+    const timedWords = words([
+      ['gặp', 0, .2], ['Nguyễn', .3, .5], ['Huệ,', .5, .7], ['sau', 4, 4.2], ['đó.', 6, 6.2],
+    ]);
+    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', 'person', .3, .7, 'tướng')] }))
+      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', kind: 'name', nameRole: 'person', subtitle: 'Tướng' }));
+    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', 'place', .3, .7)] }))
+      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', nameRole: 'place' }));
+    for (const kind of ['event', 'group'] as const) {
+      expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', kind, .3, .7, 'tướng')] }))
+        .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', kind: 'name' }));
+      expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', kind, .3, .7)] })[0]).not.toHaveProperty('nameRole');
+    }
+  });
+
+  it('keeps no-options rule output unchanged', () => {
+    const timedWords = words([
+      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['rồi', 1, 1.2], ['sau', 5, 5.2], ['đó.', 6, 6.2],
+    ]);
+    expect(selectKeywords(timedWords)).toEqual([
+      { text: 'Sông Tiền', startSec: .3, endSec: 3.6, kind: 'name', nameRole: 'place' },
+    ]);
+  });
+
+  it('skips previously used names before choosing the next AI candidate, then tries rules', () => {
+    const timedWords = words([
+      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['gặp', 1, 1.2], ['Nguyễn', 1.3, 1.5], ['Huệ,', 1.5, 1.7],
+      ['sau', 2, 2.2], ['Trần', 3, 3.2], ['Hưng', 3.2, 3.4], ['Đạo', 3.4, 3.6], ['rồi', 5, 5.2], ['đi.', 6, 6.2],
+    ]);
+    const options = { nameCandidates: [aiName('Sông Tiền', 'place', .3, .7), aiName('Nguyễn Huệ', 'person', 1.3, 1.7)] };
+    expect(selectKeywords(timedWords, { ...options, usedNameKeys: new Set(['tien']) }))
+      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ' }));
+    expect(selectKeywords(timedWords, { ...options, usedNameKeys: new Set(['tien', 'nguyen hue']) }))
+      .toContainEqual(expect.objectContaining({ text: 'Trần Hưng Đạo' }));
+  });
+
   it('merges number units, strips punctuation, and finishes fading by the final word', () => {
     expect(selectKeywords(words([
       ['Doanh', 0, .3], ['thu', .3, .6], ['30', 1, 1.2], ['tỷ', 1.2, 1.5], ['đô', 1.5, 1.8], ['la,', 1.8, 2],
@@ -159,6 +229,53 @@ describe('selectKeywords', () => {
     expect(selectKeywords(words([['năm', 0, .2], ['1975', .2, .5], ['rồi', 2, 2.2]]))[0]).toMatchObject({ kind: 'year', year: 1975 });
     expect(selectKeywords(words([['mất', 0, .2], ['37', .3, .5], ['năm', .5, .7], ['rồi', 2, 2.2]]))[0]).toMatchObject({ kind: 'number', value: 37, suffix: 'năm' });
     expect(selectKeywords(words([['và', 0, .2], ['Steven', .3, .5], ['Sasson', .5, .7], ['rồi', 2, 2.2]]))[0]).toMatchObject({ kind: 'name' });
+  });
+});
+
+describe('selectProjectSceneKeywords', () => {
+  const popupScene = (recordFresh: boolean): Scene => {
+    const narration = 'Trên sông Tiền hôm nay.';
+    return {
+      id: 'scene-1', narration, visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null,
+      audioFileId: 'voice-1', wordTimings: { audioFileId: 'voice-1', words: words([
+        ['Trên', 0, .2], ['sông', .3, .5], ['Tiền', .5, .8], ['hôm', 2, 2.2], ['nay.', 4, 4.3],
+      ]) },
+      nameCandidates: {
+        narrationHash: recordFresh ? hashNarration(narration) : hashNarration('Old narration'),
+        audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', generatedAt: '2026-10-07T00:00:00.000Z',
+        candidates: [{ phrase: 'Sông Tiền', kind: 'place' }],
+      },
+      sfxPrompt: '', motionPrompt: '', sfxFileId: null,
+    } as Scene;
+  };
+
+  it('reports the exact fresh AI popup used by render-time selection', () => {
+    expect(selectProjectSceneKeywords([popupScene(true)])[0]!.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'ai' });
+  });
+
+  it('ignores stale candidates and reports the rule-based fallback actually selected', () => {
+    expect(selectProjectSceneKeywords([popupScene(false)])[0]!.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'rules' });
+  });
+
+  it('returns no popup after narration edits clear audio and timings but retain the stale record', () => {
+    const edited = popupScene(false);
+    edited.narration = 'Changed narration';
+    edited.audioFileId = null;
+    edited.wordTimings = null;
+    expect(edited.nameCandidates).not.toBeNull();
+    expect(selectProjectSceneKeywords([edited])[0]!.popup).toBeNull();
+  });
+
+  it('uses rules after new aligned audio exists while the old candidate record remains stale', () => {
+    const realigned = popupScene(false);
+    realigned.narration = 'A different narration mentions Sông Tiền, rồi kết thúc.';
+    realigned.audioFileId = 'voice-2';
+    realigned.wordTimings = { audioFileId: 'voice-2', words: words([
+      ['A', 0, .1], ['different', .2, .4], ['narration', .5, .7], ['mentions', .8, 1],
+      ['Sông', 1.1, 1.3], ['Tiền,', 1.3, 1.5], ['rồi', 3, 3.2], ['kết', 4, 4.2], ['thúc.', 5, 5.2],
+    ]) };
+    expect(realigned.nameCandidates?.audioFileId).toBe('voice-1');
+    expect(selectProjectSceneKeywords([realigned])[0]!.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'rules' });
   });
 });
 describe('parseNumberPhrase', () => {

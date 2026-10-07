@@ -2,7 +2,7 @@ export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: stri
 
 export interface AiClient {
   readonly model: string;
-  chat(messages: ChatMessage[], opts?: { maxTokens?: number; json?: boolean }): Promise<string>;
+  chat(messages: ChatMessage[], opts?: { maxTokens?: number; json?: boolean; temperature?: number }): Promise<string>;
   stream(
     messages: ChatMessage[],
     opts?: { maxTokens?: number; signal?: AbortSignal },

@@ -67,4 +67,8 @@ describe('ProjectDocSchema visual style compatibility', () => {
   it('defaults legacy scene documents to an empty motion prompt', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).motionPrompt).toBe('');
   });
+
+  it('defaults legacy scene documents to no analyzed name candidates', () => {
+    expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).nameCandidates).toBeNull();
+  });
 });

@@ -6,11 +6,13 @@ import { aiRequestTimeoutMs, missingAiKeyError, normalizeAiError, withAiRequestT
 const MODEL = 'claude-opus-4-5';
 const DEFAULT_MAX_TOKENS = 4_096;
 
-function toRequest(messages: ChatMessage[], maxTokens: number) {
+function toRequest(messages: ChatMessage[], maxTokens: number, temperature?: number, json = false) {
   const system = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n');
   return {
     model: MODEL,
     max_tokens: maxTokens,
+    ...(temperature === undefined ? {} : { temperature }),
+    ...(json ? { output_config: { format: { type: 'json_schema' as const, schema: { type: 'object' } } } } : {}),
     ...(system ? { system } : {}),
     messages: messages.filter((message) => message.role !== 'system').map(({ role, content }) => ({ role, content })),
   };
@@ -28,7 +30,7 @@ export function createClaudeClient(): AiClient {
     async chat(messages: ChatMessage[], opts = {}) {
       if (!apiKey) throw missingAiKeyError('ANTHROPIC_API_KEY');
       try {
-        const response = await withAiRequestTimeout(() => client.messages.create(toRequest(messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS)), timeoutMs);
+        const response = await withAiRequestTimeout(() => client.messages.create(toRequest(messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS, opts.temperature, opts.json)), timeoutMs);
         return response.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
       } catch (error) {
         throw normalizeAiError('Claude', error);

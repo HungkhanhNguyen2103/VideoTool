@@ -13,8 +13,11 @@ import {
   renderScenePreviewBuffer,
 } from './service';
 import { LOGO_MIME_TYPES, removeProjectLogo, replaceProjectLogo } from './logo-service';
+import { analyzeProjectNameKeywords, type NameKeywordAnalysisSummary } from './name-keyword-service';
+import { selectProjectSceneKeywords } from './keywords';
 
 type EnqueueVideoJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
+type AnalyzeNameKeywords = (projectId: string) => Promise<NameKeywordAnalysisSummary>;
 
 const VoiceoverOptionsSchema = z.object({
   voice: z.string().optional(),
@@ -32,7 +35,7 @@ const FilmLookSchema = z.object({ style: z.enum(FILM_LOOK_STYLES) }).strict();
 const ParallaxSchema = z.object({ style: z.enum(PARALLAX_STYLES) }).strict();
 const RenderSchema = z.object({ draft: z.boolean().optional().default(false) }).strict();
 
-export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Router {
+export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyzeNameKeywords?: AnalyzeNameKeywords }): Router {
   const router = Router();
 
   router.post('/:id/scenes/generate-voiceover', async (req, res) => {
@@ -45,6 +48,20 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob }): Rou
     const project = await getProject(req.params.id);
     const job = await options.enqueueJob({ type: 'align-word-timings', projectId: project.id, payload: { projectId: project.id } });
     res.status(201).json({ jobId: job.id });
+  });
+
+  router.post('/:id/name-keywords/analyze', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const activeRender = await getActiveJobByType(project.id, 'render-full-video');
+    if (activeRender) throw new AppError('Không thể phân tích tên popup khi render đang chạy.', 409, 'RENDER_IN_PROGRESS');
+    const summary = await (options.analyzeNameKeywords ?? analyzeProjectNameKeywords)(project.id);
+    res.json(summary);
+  });
+
+  router.get('/:id/name-keywords/previews', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const selections = project.keywordPopupsEnabled ? selectProjectSceneKeywords(project.scenes) : project.scenes.map((scene) => ({ sceneId: scene.id, popup: null }));
+    res.json(selections.map(({ sceneId, popup }) => ({ sceneId, popup })));
   });
 
   router.post('/:id/scenes/generate-all-sfx', async (req, res) => {
