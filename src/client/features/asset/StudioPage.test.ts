@@ -52,6 +52,24 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('api.recomputeSceneDurations(projectId)');
   });
 
+  it('shows SFX asset counts and exposes missing-only retry after a failed batch result', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('SfxBatchSummarySchema.safeParse(progress.result)');
+    expect(source).toContain('scenes.filter((scene) => scene.sfxFileId !== null).length');
+    expect(source).toContain('scenes.filter((scene) => scene.sfxPrompt.trim().length > 0).length');
+    expect(source).toContain('Tạo lại SFX còn thiếu');
+    expect(source).toContain('api.generateAllSfx(projectId, true)');
+    expect(source).toContain('disabled={studioLocked || !scenes.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)}');
+  });
+
+  it('exposes the fast-save SFX relative-volume control', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('SfxVolumeSchema.safeParse(Number(sfxVolumeDraft))');
+    expect(source).toContain('Âm lượng SFX so với voiceover');
+    expect(source).toContain('onBlur={() => void saveSfxVolume()}');
+    expect(source).toContain('api.setSfxVolume(projectId, parsed.data)');
+  });
+
   it('formats fractional scene durations with at most one decimal in Studio', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
     expect(source).toContain('formatDurationSeconds(scene.durationSec)');

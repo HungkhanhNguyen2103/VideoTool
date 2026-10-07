@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, NameCandidatesSchema, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, NameCandidatesSchema, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, SfxVolumeSchema, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 import { SeoPackageSchema } from '../../../contracts/seo';
 import { DEFAULT_SCENE_TAIL_SEC, SceneDurationSecSchema, SceneTailSecSchema } from '../../../contracts/scene-duration';
@@ -48,6 +48,7 @@ export const ProjectDocSchema = z.object({
   parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
   sceneTailSec: SceneTailSecSchema.default(DEFAULT_SCENE_TAIL_SEC),
+  sfxVolume: SfxVolumeSchema.default(0.5),
   renderFileId: z.string().nullable().default(null),
   draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

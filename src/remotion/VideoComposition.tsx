@@ -11,6 +11,7 @@ export const DEFAULT_REMOTION_PROPS: RemotionInputProps = {
   fps: 30,
   width: 1920,
   height: 1080,
+  sfxVolume: 0.5,
   scenes: [],
   bgmRelPath: null,
   logoRelPath: null,
@@ -28,6 +29,7 @@ export function VideoComposition(props: RemotionInputProps) {
           key={scene.id}
           scene={scene}
           fps={props.fps}
+          sfxVolume={props.sfxVolume}
           boundaryIndex={index}
           audioTiming={audioTimings[index]!}
           visualTiming={visualTimings[index]!}

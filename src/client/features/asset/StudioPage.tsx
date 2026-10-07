@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
-import type { Scene, VisualStyleId } from '../../../contracts/project';
+import { SfxVolumeSchema, type Scene, type VisualStyleId } from '../../../contracts/project';
+import { SfxBatchSummarySchema } from '../../../contracts/video';
 import { analyzeScene } from '../../../contracts/scene-readiness';
 import { SceneTailSecSchema, formatDurationSeconds, hasUnappliedSceneTail } from '../../../contracts/scene-duration';
 import { Badge } from '../../shared/ui/Badge';
@@ -40,6 +41,7 @@ export function StudioPage() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [bgmMood, setBgmMood] = useState('');
   const [sceneTailDraft, setSceneTailDraft] = useState('0.2');
+  const [sfxVolumeDraft, setSfxVolumeDraft] = useState('0.5');
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobTask, setJobTask] = useState<BlockingTask | null>(null);
   const [jobStartedAt, setJobStartedAt] = useState<number | null>(null);
@@ -47,6 +49,8 @@ export function StudioPage() {
   const [jobReconnectKey, setJobReconnectKey] = useState(0);
   const [jobLocallyUnlocked, setJobLocallyUnlocked] = useState(false);
   const [voiceoverJobId, setVoiceoverJobId] = useState<string | null>(null);
+  const [sfxJobId, setSfxJobId] = useState<string | null>(null);
+  const [lastSfxBatchSummary, setLastSfxBatchSummary] = useState<{ failed: number; rateLimitedStop: boolean } | null>(null);
   const [voiceoverResetSceneIds, setVoiceoverResetSceneIds] = useState<Set<string>>(new Set());
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null);
   const [scenePreviews, setScenePreviews] = useState<Record<string, ScenePreviewState>>({});
@@ -101,6 +105,7 @@ export function StudioPage() {
 
   useEffect(() => { if (project) setBgmMood(project.bgmMood); }, [project?.id, project?.bgmMood]);
   useEffect(() => { if (project) setSceneTailDraft(String(project.sceneTailSec)); }, [project?.id, project?.sceneTailSec]);
+  useEffect(() => { if (project) setSfxVolumeDraft(String(project.sfxVolume)); }, [project?.id, project?.sfxVolume]);
   useEffect(() => () => { Object.values(scenePreviewsRef.current).forEach(({ url }) => URL.revokeObjectURL(url)); }, []);
   useEffect(() => {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;
@@ -111,6 +116,12 @@ export function StudioPage() {
       setVoiceoverJobId(null);
       setJobTask(null);
       setJobId(null);
+    } else if (progress.status === 'done' && sfxJobId === jobId) {
+      const summary = SfxBatchSummarySchema.safeParse(progress.result);
+      setLastSfxBatchSummary(summary.success ? { failed: summary.data.failed, rateLimitedStop: summary.data.rateLimitedStop } : null);
+      setSfxJobId(null);
+      setJobTask(null);
+      setJobId(null);
     } else if (progress.status === 'done') {
       setJobTask(null);
       setJobId(null);
@@ -118,7 +129,7 @@ export function StudioPage() {
       toast(progress.error ?? (progress.status === 'cancelled' ? 'Đã huỷ tác vụ.' : 'Tác vụ thất bại.'));
     }
     void refresh();
-  }, [jobId, progress?.status, progress?.result, voiceoverJobId]);
+  }, [jobId, progress?.status, progress?.result, voiceoverJobId, sfxJobId]);
   useEffect(() => {
     if (progress) setJobLastEventAt(Date.now());
   }, [progress]);
@@ -277,6 +288,24 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function saveSfxVolume(): Promise<void> {
+    if (!project) return;
+    const parsed = SfxVolumeSchema.safeParse(Number(sfxVolumeDraft));
+    if (!parsed.success || parsed.data < 0.1) {
+      toast('Âm lượng SFX phải từ 0,1 đến 1, tối đa 2 chữ số thập phân.');
+      setSfxVolumeDraft(String(project.sfxVolume));
+      return;
+    }
+    if (parsed.data === project.sfxVolume) return;
+    try {
+      setBusy('sfx-volume');
+      await api.setSfxVolume(projectId, parsed.data);
+      await refresh();
+      toast('Đã cập nhật âm lượng SFX.');
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật âm lượng SFX.'); }
+    finally { setBusy(null); }
+  }
+
   async function recomputeSceneDurations(): Promise<void> {
     try {
       setBusy('recompute-durations');
@@ -321,8 +350,14 @@ export function StudioPage() {
   }
 
   async function generateAllSfx() {
-    try { setBusy('sfx-all'); const result = await api.generateAllSfx(projectId); startJob({ kind: 'sfx-all' }, result.jobId); toast('Đã xếp hàng tạo tất cả SFX.'); }
-    catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo tất cả SFX.'); }
+    try { setBusy('sfx-all'); const result = await api.generateAllSfx(projectId); setSfxJobId(result.jobId); startJob({ kind: 'sfx-all' }, result.jobId); toast('Đã xếp hàng tạo tất cả SFX.'); }
+    catch (error) { setSfxJobId(null); toast(error instanceof Error ? error.message : 'Không thể tạo tất cả SFX.'); }
+    finally { setBusy(null); }
+  }
+
+  async function regenerateMissingSfx() {
+    try { setBusy('sfx-all'); const result = await api.generateAllSfx(projectId, true); setSfxJobId(result.jobId); startJob({ kind: 'sfx-all' }, result.jobId); toast('Đã xếp hàng tạo lại SFX còn thiếu.'); }
+    catch (error) { setSfxJobId(null); toast(error instanceof Error ? error.message : 'Không thể tạo lại SFX còn thiếu.'); }
     finally { setBusy(null); }
   }
 
@@ -533,6 +568,8 @@ export function StudioPage() {
           <section className={`${styles.controlCard} ${styles.audioControlsCard}`} aria-labelledby="audio-controls-title">
             <div className={styles.controlCardHead}><div><h3 id="audio-controls-title" className={styles.controlTitle}>Âm thanh</h3><p className={styles.muted}>Voiceover, SFX và BGM nền</p></div></div>
             <div className={styles.sceneTailSettings}>
+              <label className={styles.transitionField} htmlFor="sfx-volume">Âm lượng SFX so với voiceover<input id="sfx-volume" className={styles.audioInput} type="number" min="0.1" max="1" step="0.05" value={sfxVolumeDraft} disabled={studioLocked} onChange={(event) => setSfxVolumeDraft(event.currentTarget.value)} onBlur={() => void saveSfxVolume()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} /></label>
+              <p className={styles.muted}>SFX được cân bằng về cùng mức voiceover trước khi áp dụng tỷ lệ này.</p>
               <label className={styles.transitionField} htmlFor="scene-tail-sec">Khoảng nghỉ cuối scene (giây)<input id="scene-tail-sec" className={styles.audioInput} type="number" min="0" max="2" step="0.05" value={sceneTailDraft} disabled={studioLocked} onChange={(event) => setSceneTailDraft(event.currentTarget.value)} onBlur={() => void saveSceneTail()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} /></label>
               <p className={styles.muted}>Cộng thêm vào cuối mỗi voiceover. Áp dụng khi tạo voiceover mới hoặc bấm Tính lại thời lượng.</p>
               {hasUnappliedTail && <p className={styles.muted}>Chưa áp dụng cho scene đã có voiceover — bấm Tính lại thời lượng</p>}
@@ -540,6 +577,7 @@ export function StudioPage() {
             </div>
             <div className={styles.controlRow}><span className={styles.controlLabel}>Voiceover</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void alignWordTimings()}>Căn thời gian từ</Button></div></div>
             <div className={styles.controlRow}><span className={styles.controlLabel}>SFX</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button></div></div>
+            <div className={styles.sfxBatchSummary} aria-live="polite"><span>SFX: {scenes.filter((scene) => scene.sfxFileId !== null).length}/{scenes.filter((scene) => scene.sfxPrompt.trim().length > 0).length} scene có SFX{lastSfxBatchSummary ? ` · ${lastSfxBatchSummary.failed} lỗi` : ''}</span>{lastSfxBatchSummary && lastSfxBatchSummary.failed > 0 && <Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)} onClick={() => void regenerateMissingSfx()}>Tạo lại SFX còn thiếu</Button>}</div>
             <div className={styles.controlRow}><span className={styles.controlLabel}>BGM</span><div className={styles.audioActionRow}><input className={styles.audioInput} disabled={studioLocked} value={bgmMood} onChange={(event) => setBgmMood(event.target.value)} placeholder="Ví dụ: calm cinematic" /><Button size="sm" disabled={studioLocked || !bgmMood.trim()} onClick={() => void generateBgm()}>Tạo BGM</Button>{(() => { const file = project.bgmFileId ? filesById.get(project.bgmFileId) : undefined; return file && file.purpose === 'bgm' && file.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(file)} /> : null; })()}</div></div>
           </section>
 

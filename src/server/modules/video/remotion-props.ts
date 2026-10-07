@@ -30,7 +30,7 @@ export type RemotionKeywordContext = {
 };
 
 export type RemotionProjectSettings = Pick<ProjectDetail, 'id' | 'renderSettings' | 'bgmFileId' | 'keywordPopupsEnabled'>
-  & Partial<Pick<ProjectDetail, 'transitionStyle' | 'filmLook' | 'parallax' | 'logoFileId'>>;
+  & Partial<Pick<ProjectDetail, 'transitionStyle' | 'filmLook' | 'parallax' | 'logoFileId' | 'sfxVolume'>>;
 
 const EXTENSION_BY_MIME: Record<string, string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
@@ -179,6 +179,7 @@ export async function resolveRemotionAssets(
     fps: project.renderSettings.fps,
     width: project.renderSettings.width,
     height: project.renderSettings.height,
+    sfxVolume: project.sfxVolume ?? 0.5,
     scenes: sceneProps,
     bgmRelPath,
     logoRelPath,

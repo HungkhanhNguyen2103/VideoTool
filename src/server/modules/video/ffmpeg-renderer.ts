@@ -6,6 +6,7 @@ import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { framesToSeconds, totalSceneFrames } from '../../../contracts/frame-math';
 import { createFileStoreService } from '../file-store';
 import { buildBgmArguments, buildConcatArguments, buildSceneArguments } from './docs';
+import { normalizeSfxForRender } from './sfx-audio';
 
 export interface VideoRenderer {
   renderScenePreview(project: ProjectDetail, scene: Scene): Promise<Buffer>;
@@ -14,7 +15,13 @@ export interface VideoRenderer {
 
 export type RenderVideoOptions = { draft?: boolean };
 
-type RendererOptions = { filesDir?: string; ffmpegPath?: string; ffprobePath?: string; resolveFilePath?: ReturnType<typeof createFileStoreService>['resolveFilePath'] };
+type RendererOptions = {
+  filesDir?: string;
+  ffmpegPath?: string;
+  ffprobePath?: string;
+  resolveFilePath?: ReturnType<typeof createFileStoreService>['resolveFilePath'];
+  normalizeSfx?: (sourcePath: string, outputPath: string) => Promise<void>;
+};
 
 function runProcess(command: string, args: string[], appendLog?: (message: string) => Promise<void>): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -51,11 +58,18 @@ export class FfmpegRenderer implements VideoRenderer {
   private readonly ffmpegPath: string;
   private readonly ffprobePath: string;
   private readonly resolveFilePath: ReturnType<typeof createFileStoreService>['resolveFilePath'];
+  private readonly normalizeSfx: (sourcePath: string, outputPath: string) => Promise<void>;
 
   constructor(options: RendererOptions = {}) {
     this.ffmpegPath = options.ffmpegPath ?? process.env.FFMPEG_PATH ?? 'ffmpeg';
     this.ffprobePath = options.ffprobePath ?? process.env.FFPROBE_PATH ?? 'ffprobe';
     this.resolveFilePath = options.resolveFilePath ?? createFileStoreService(options.filesDir ?? './data/files').resolveFilePath;
+    this.normalizeSfx = options.normalizeSfx ?? ((sourcePath, outputPath) => normalizeSfxForRender({
+      ffmpegPath: this.ffmpegPath,
+      ffprobePath: this.ffprobePath,
+      inputPath: sourcePath,
+      outputPath,
+    }));
   }
 
   async renderScenePreview(project: ProjectDetail, scene: Scene): Promise<Buffer> {
@@ -106,6 +120,8 @@ export class FfmpegRenderer implements VideoRenderer {
     const asset = await this.resolveFilePath(project.id, scene.assetFileId);
     const audio = scene.audioFileId ? await this.resolveFilePath(project.id, scene.audioFileId) : undefined;
     const sfx = scene.sfxFileId ? await this.resolveFilePath(project.id, scene.sfxFileId) : undefined;
+    const normalizedSfxPath = sfx ? path.join(directory, `${path.parse(filename).name}-sfx-normalized.wav`) : undefined;
+    if (sfx && normalizedSfxPath) await this.normalizeSfx(sfx.absolutePath, normalizedSfxPath);
     const videoDurationSec = scene.assetType === 'video'
       ? scene.videoDurationSec ?? await probeDuration(this.ffprobePath, asset.absolutePath)
       : null;
@@ -114,7 +130,8 @@ export class FfmpegRenderer implements VideoRenderer {
       assetType: scene.assetType,
       videoPath: asset.absolutePath,
       audioPath: audio?.absolutePath,
-      sfxPath: sfx?.absolutePath,
+      sfxPath: normalizedSfxPath,
+      sfxVolume: project.sfxVolume,
       outputPath,
       durationSec: scene.durationSec,
       videoDurationSec,

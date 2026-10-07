@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react';
 import { useCallback, useState } from 'react';
 import { AbsoluteFill, Audio, Easing, Img, interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import type { RemotionSceneProps } from '../contracts/video';
-import { SFX_VOLUME_NUMBER } from '../contracts/video';
 import type { TransitionPlan } from './frame-math';
 import { kenBurnsTransform } from './frame-math';
 import { KeywordOverlay } from './KeywordOverlay';
@@ -13,6 +12,7 @@ import { planVideoKeyframeSegments } from './video-segments';
 export type SceneSequenceProps = {
   scene: RemotionSceneProps;
   fps: number;
+  sfxVolume: number;
   audioTiming: { from: number; durationInFrames: number };
   visualTiming: { from: number; durationInFrames: number; fadeInFrames: number; incomingTransition: TransitionPlan | null; outgoingTransition: TransitionPlan | null };
   boundaryIndex: number;
@@ -176,7 +176,7 @@ function SceneVisual({ scene, fps, realDurationInFrames, visualTiming, boundaryI
   );
 }
 
-export function SceneSequence({ scene, fps, audioTiming, visualTiming, boundaryIndex }: SceneSequenceProps) {
+export function SceneSequence({ scene, fps, sfxVolume, audioTiming, visualTiming, boundaryIndex }: SceneSequenceProps) {
   return (
     <>
       <Sequence from={visualTiming.from} durationInFrames={visualTiming.durationInFrames}>
@@ -184,7 +184,7 @@ export function SceneSequence({ scene, fps, audioTiming, visualTiming, boundaryI
       </Sequence>
       <Sequence from={audioTiming.from} durationInFrames={audioTiming.durationInFrames}>
         {scene.voiceRelPath ? <Audio src={staticFile(scene.voiceRelPath)} /> : null}
-        {scene.sfxRelPath ? <Audio src={staticFile(scene.sfxRelPath)} volume={SFX_VOLUME_NUMBER} /> : null}
+        {scene.sfxRelPath ? <Audio src={staticFile(scene.sfxRelPath)} volume={sfxVolume} /> : null}
         <KeywordOverlay keywords={scene.keywords} />
       </Sequence>
     </>

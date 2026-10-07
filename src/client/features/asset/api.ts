@@ -136,6 +136,12 @@ export function setSceneTail(projectId: string, sceneTailSec: number): Promise<P
   });
 }
 
+export function setSfxVolume(projectId: string, sfxVolume: number): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/sfx-volume`, ProjectDetailSchema, {
+    method: 'PATCH', body: { sfxVolume },
+  });
+}
+
 export function recomputeSceneDurations(projectId: string): Promise<RecomputeSceneDurationsResult> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/recompute-durations`, RecomputeSceneDurationsResultSchema, { method: 'POST' });
 }
@@ -163,8 +169,8 @@ export function alignWordTimings(projectId: string): Promise<{ jobId: string }> 
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/align-words`, JobResponseSchema, { method: 'POST' });
 }
 
-export function generateAllSfx(projectId: string): Promise<{ jobId: string }> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-all-sfx`, JobResponseSchema, { method: 'POST' });
+export function generateAllSfx(projectId: string, onlyMissing = false): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-all-sfx`, JobResponseSchema, { method: 'POST', body: { onlyMissing } });
 }
 
 export function generateDepthMaps(projectId: string): Promise<{ jobId: string }> {

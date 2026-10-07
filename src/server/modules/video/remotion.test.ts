@@ -71,14 +71,14 @@ describe('Remotion contracts and frame math', () => {
       bgmRelPath: null,
     };
 
-    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, logoRelPath: null, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], videoKeyframeRelPath: null, videoTailRelPath: null, videoDurationSec: null, depthMapRelPath: null, filmLook: false, keywords: [] }] });
+    expect(RemotionInputPropsSchema.parse(props)).toEqual({ ...props, sfxVolume: 0.5, logoRelPath: null, transitionStyle: 'varied', parallax: 'off', scenes: [{ ...props.scenes[0], videoKeyframeRelPath: null, videoTailRelPath: null, videoDurationSec: null, depthMapRelPath: null, filmLook: false, keywords: [] }] });
     expect(() =>
       RemotionInputPropsSchema.parse({ ...props, scenes: [{ ...props.scenes[0], assetRelPath: undefined }] }),
     ).toThrow();
   });
 
   it('keeps numeric audio volumes exactly aligned with the FFmpeg strings', () => {
-    expect(SFX_VOLUME_NUMBER).toBe(0.31622777);
+    expect(SFX_VOLUME_NUMBER).toBe(0.5);
     expect(BGM_VOLUME_NUMBER).toBe(0.1);
   });
 
@@ -456,6 +456,33 @@ describe('Remotion props and public-dir staging', () => {
       expect(staged.inputProps.scenes[0]?.assetRelPath).toBe('renders/render-1/scene-01-asset.png');
       await staged.cleanup();
       await expect(readdir(path.dirname(stagedPath))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizes staged SFX to a temporary WAV and passes the project volume to Remotion props', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-stage-sfx-source-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-stage-sfx-bundle-'));
+    try {
+      const originalSfxPath = path.join(sourceDir, 'sfx.mp3');
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      await writeFile(originalSfxPath, 'original sfx');
+      const resolver = async (_projectId: string, fileId: string) => fileId === 'asset-1'
+        ? { absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const }
+        : { absolutePath: originalSfxPath, mimeType: 'audio/mpeg', purpose: 'sfx' as const };
+      const normalizeSfx = vi.fn(async (_sourcePath: string, outputPath: string) => { await writeFile(outputPath, 'normalized wav'); });
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, sfxVolume: 0.65 } as never;
+      const scenes = [{ id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: 'sfx-1', durationSec: 1 }] as never;
+
+      const staged = await stageRemotionRender({ serveUrl: bundleDir, project, scenes, renderId: 'render-sfx', resolver, normalizeSfx });
+      expect(normalizeSfx).toHaveBeenCalledWith(originalSfxPath, expect.stringMatching(/scene-01-sfx-normalized\.wav$/));
+      expect(staged.inputProps.sfxVolume).toBe(0.65);
+      expect(staged.inputProps.scenes[0]?.sfxRelPath).toBe('renders/render-sfx/scene-01-sfx-normalized.wav');
+      expect(await readFile(path.join(staged.renderDir, 'scene-01-sfx-normalized.wav'), 'utf8')).toBe('normalized wav');
+      expect(await readFile(originalSfxPath, 'utf8')).toBe('original sfx');
+      await staged.cleanup();
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });

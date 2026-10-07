@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectDocSchema, SceneDocSchema } from './docs';
+import { SfxVolumeSchema } from '../../../contracts/project';
 
 const validLegacyDoc = {
   _id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -44,6 +45,14 @@ describe('ProjectDocSchema visual style compatibility', () => {
 
   it('defaults legacy project documents to a 0.2 second scene tail', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).sceneTailSec).toBe(0.2);
+  });
+
+  it('defaults legacy project documents to half voiceover-relative SFX volume', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).sfxVolume).toBe(0.5);
+  });
+
+  it('accepts hundredth-precision SFX volume values including the Studio 0.05 steps', () => {
+    for (const value of [0.1, 0.15, 0.2, 0.35, 0.55, 0.95, 1]) expect(SfxVolumeSchema.parse(value)).toBe(value);
   });
 
   it('defaults legacy project documents to no draft render file', () => {

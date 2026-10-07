@@ -228,13 +228,21 @@ describe('video job registration', () => {
       progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress, isCancelled, appendLog });
 
-    expect(mocks.generateProjectSfx).toHaveBeenCalledWith('project-2', appendLog, reportProgress);
+    expect(mocks.generateProjectSfx).toHaveBeenCalledWith('project-2', appendLog, reportProgress, { onlyMissing: false });
+
+    mocks.generateProjectSfx.mockClear();
+    await handler!({
+      _id: 'job-sfx-2', schemaVersion: 1, type: 'generate-all-sfx', projectId: 'project-1', payload: { projectId: 'project-1', onlyMissing: true },
+      status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
+      progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress, isCancelled, appendLog });
+    expect(mocks.generateProjectSfx).toHaveBeenCalledWith('project-1', appendLog, reportProgress, { onlyMissing: true });
   });
 
   it('does not start bulk SFX generation when the job is already cancelled', async () => {
     mocks.generateProjectSfx.mockReset();
     await jobHandlers['generate-all-sfx']!({
-      _id: 'job-sfx-2', schemaVersion: 1, type: 'generate-all-sfx', projectId: 'project-1', payload: { projectId: 'project-1' },
+      _id: 'job-sfx-3', schemaVersion: 1, type: 'generate-all-sfx', projectId: 'project-1', payload: { projectId: 'project-1' },
       status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
       progress: 0, result: null, error: null, cancelRequested: true, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(true), appendLog: vi.fn() });

@@ -18,6 +18,8 @@ export type FilmLookStyle = (typeof FILM_LOOK_STYLES)[number];
 export const PARALLAX_STYLES = ['auto', 'off'] as const;
 export type ParallaxStyle = (typeof PARALLAX_STYLES)[number];
 
+export const SfxVolumeSchema = z.number().min(0).max(1).multipleOf(0.01);
+
 export const AI_PROVIDERS = ['deepseek', 'claude'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
@@ -226,6 +228,7 @@ export const ProjectDetailSchema = z.object({
   parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
   sceneTailSec: SceneTailSecSchema.default(DEFAULT_SCENE_TAIL_SEC),
+  sfxVolume: SfxVolumeSchema.default(0.5),
   renderFileId: z.string().nullable().default(null),
   draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

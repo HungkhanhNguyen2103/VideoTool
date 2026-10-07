@@ -21,6 +21,7 @@ import {
   setProjectParallax,
   setProjectDraftRenderFile,
   setProjectSceneTailSec,
+  setProjectSfxVolume,
   setProjectSceneDurations,
   setProjectRenderFile,
   setProjectLogo,
@@ -32,7 +33,7 @@ import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
-import { alignProjectWordTimings, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, recomputeProjectSceneDurations, renderFullProject } from './index';
+import { alignProjectWordTimings, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneVoiceover, recomputeProjectSceneDurations, renderFullProject } from './index';
 import { createVideoRouter } from './routes';
 import type { NameKeywordAnalysisSummary } from './name-keyword-service';
 import { enqueueJob as insertJob } from '../job';
@@ -44,6 +45,7 @@ const mocks = vi.hoisted(() => ({
   probeAudioDuration: vi.fn(),
   requestWhisperAlignment: vi.fn(),
   searchAndDownloadSfx: vi.fn(),
+  searchSfx: vi.fn(),
   searchAndDownloadBgm: vi.fn(),
 }));
 vi.mock('../../shared/tts', () => ({
@@ -53,7 +55,7 @@ vi.mock('../../shared/tts', () => ({
 }));
 vi.mock('../../shared/tts/align', () => ({ requestWhisperAlignment: mocks.requestWhisperAlignment }));
 vi.mock('../../shared/freesound', () => ({
-  getFreesoundClient: () => ({ searchAndDownloadSfx: mocks.searchAndDownloadSfx, searchAndDownloadBgm: mocks.searchAndDownloadBgm }),
+  getFreesoundClient: () => ({ searchAndDownloadSfx: mocks.searchAndDownloadSfx, searchSfx: mocks.searchSfx, searchAndDownloadBgm: mocks.searchAndDownloadBgm }),
 }));
 
 const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
@@ -107,6 +109,7 @@ beforeEach(async () => {
   mocks.requestWhisperAlignment.mockReset();
   mocks.requestWhisperAlignment.mockResolvedValue([]);
   mocks.searchAndDownloadSfx.mockReset();
+  mocks.searchSfx.mockReset();
   mocks.searchAndDownloadBgm.mockReset();
   vi.restoreAllMocks();
 });
@@ -295,7 +298,8 @@ describe('video renderer builders', () => {
 
     expect(graph).toContain('[0:v]scale=1920:1080');
     expect(graph).toContain(`volume=${SFX_VOLUME}`);
-    expect(graph).toContain('amix=inputs=2:duration=first');
+    expect(graph).toContain('amix=inputs=2:duration=first:dropout_transition=0:normalize=0');
+    expect(buildSceneFilterGraph({ durationSec: 5, width: 1920, height: 1080, fps: 30, sfxVolume: 0.35 })).toContain('volume=0.35[sfxD]');
   });
 
   it('builds image and audio input arguments without looping SFX', () => {
@@ -567,45 +571,71 @@ describe('video orchestration services', () => {
 
   it('generates project SFX sequentially and reports progress for every scene', async () => {
     const project = await seedVoiceProject();
-    mocks.searchAndDownloadSfx.mockResolvedValue(Buffer.from('sfx'));
+    mocks.searchSfx.mockResolvedValue({ audio: Buffer.from('sfx'), reason: 'ok', sound: { id: 12, name: 'Wind', tags: ['wind'], duration: 4, avg_rating: 4, num_ratings: 6, previews: { 'preview-hq-mp3': 'https://cdn.test/wind.mp3' } }, query: 'wind' });
     const logs: string[] = [];
     const progress: number[] = [];
 
-    await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
+    const summary = await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
 
     const updated = await getProject(project.id);
     expect(updated.scenes[0]!.sfxFileId).toEqual(expect.any(String));
     expect(updated.scenes[1]!.sfxFileId).toBeNull();
-    expect(logs).toHaveLength(2);
+    expect(summary).toMatchObject({ generated: 1, skippedNoPrompt: 1, failed: 0, rateLimitedStop: false });
+    expect(logs.some((line) => line.includes('SFX Scene 01: generated') && line.includes('Freesound #12'))).toBe(true);
+    expect(logs.at(-1)).toContain('SFX: 1 ok');
     expect(progress).toEqual([50, 100]);
   });
 
-  it('continues project SFX generation after one scene fails and logs a summary', async () => {
+  it('reports structured scene failures in the batch result and log', async () => {
     const project = await seedVoiceProject();
-    mocks.searchAndDownloadSfx.mockRejectedValueOnce(new Error('first failed'));
+    mocks.searchSfx.mockResolvedValueOnce({ audio: null, reason: 'http-error', sound: null, detail: 'HTTP 503 after three attempts.' });
     const logs: string[] = [];
     const progress: number[] = [];
 
-    await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
+    const summary = await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
 
     expect((await getProject(project.id)).scenes[0]!.sfxFileId).toBeNull();
-    expect(logs.some((line) => line.includes('Scene 1 failed: first failed'))).toBe(true);
-    expect(logs.some((line) => line.includes('SFX failed for scenes: 1'))).toBe(true);
+    expect(summary).toMatchObject({ generated: 0, failed: 1, counts: { 'http-error': 1 } });
+    expect(logs.some((line) => line.includes('SFX Scene 01: failed:http-error'))).toBe(true);
+    expect(logs.at(-1)).toContain('1 lỗi HTTP');
     expect(progress).toEqual([50, 100]);
   });
 
-  it('does not write SFX when Freesound has no result, then stores a successful SFX hit', async () => {
+  it('retries only missing scenes and excludes no-prompt scenes', async () => {
     const project = await seedVoiceProject();
-    mocks.searchAndDownloadSfx.mockResolvedValueOnce(null).mockResolvedValueOnce(Buffer.from('sfx'));
+    const store = createFileStoreService(filesDir);
+    const existing = await store.storeFile({ projectId: project.id, originalName: 'existing.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('existing'), purpose: 'sfx' });
+    await patchProjectScene(project.id, 'scene-1', { sfxFileId: existing.id });
+    await patchProjectScene(project.id, 'scene-2', { sfxPrompt: 'rain falling' });
+    mocks.searchSfx.mockResolvedValue({ audio: Buffer.from('sfx'), reason: 'ok', sound: { id: 7, name: 'Rain', tags: ['rain'], duration: 4, avg_rating: 4.5, num_ratings: 10, previews: {} }, query: 'rain falling' });
+    const logs: string[] = [];
 
-    await generateSceneSfx(project.id, 'scene-1');
-    expect((await getProject(project.id)).scenes[0]!.sfxFileId).toBeNull();
+    const summary = await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async () => {}, { onlyMissing: true });
 
-    await generateSceneSfx(project.id, 'scene-1');
-    const updated = await getProject(project.id);
-    expect(updated.scenes[0]!.sfxFileId).toEqual(expect.any(String));
-    const files = await createFileStoreService(filesDir).listProjectFiles(project.id);
-    expect(files).toContainEqual(expect.objectContaining({ purpose: 'sfx', mimeType: 'audio/mpeg' }));
+    expect(mocks.searchSfx).toHaveBeenCalledTimes(1);
+    expect(mocks.searchSfx).toHaveBeenCalledWith('rain falling');
+    expect(summary).toMatchObject({ generated: 1, skippedExisting: 1, skippedNoPrompt: 0 });
+    expect((await getProject(project.id)).scenes.map((scene) => scene.sfxFileId)).toEqual([existing.id, expect.any(String)]);
+    expect(logs.some((line) => line.includes('SFX Scene 01: skipped-existing'))).toBe(true);
+  });
+
+  it('stops after three consecutive scene-level persistent 429 outcomes', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, Array.from({ length: 5 }, (_, index) => ({
+      id: `sfx-scene-${index + 1}`, narration: `Narration ${index + 1}`, visualPrompt: `Visual ${index + 1}`, durationSec: 5,
+      assetType: 'image' as const, assetFileId: `asset-${index + 1}`, audioFileId: null, sfxPrompt: 'war drums', motionPrompt: '', sfxFileId: null,
+    })));
+    mocks.searchSfx.mockResolvedValue({ audio: null, reason: 'rate-limited', sound: null, detail: 'HTTP 429 after three attempts.' });
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    const summary = await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
+
+    expect(mocks.searchSfx).toHaveBeenCalledTimes(3);
+    expect(summary).toMatchObject({ failed: 3, rateLimitedStop: true, counts: { 'rate-limited': 3 } });
+    expect(summary.outcomes).toHaveLength(3);
+    expect(logs).toContain('Freesound đã chặn tạm thời — thử lại sau');
+    expect(progress.at(-1)).toBe(100);
   });
 
   it('stores BGM and updates the project mood/file reference atomically', async () => {
@@ -906,6 +936,27 @@ describe('video routes and worker handlers', () => {
     }
   });
 
+  it('defaults, persists, validates, and duplicates the project SFX volume', async () => {
+    const project = await seedProject();
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    expect(project.sfxVolume).toBe(0.5);
+    expect((await setProjectSfxVolume(project.id, 0.65)).sfxVolume).toBe(0.65);
+
+    const valid = await fetch(`${base}/api/project/${project.id}/sfx-volume`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sfxVolume: 0.7 }),
+    });
+    expect(valid.status).toBe(200);
+    expect((await valid.json()).sfxVolume).toBe(0.7);
+    expect((await duplicateProject(project.id)).sfxVolume).toBe(0.7);
+
+    for (const body of [{ sfxVolume: -0.01 }, { sfxVolume: 1.01 }, { sfxVolume: 0.555 }, { sfxVolume: 0.5, extra: true }]) {
+      const invalid = await fetch(`${base}/api/project/${project.id}/sfx-volume`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      expect(invalid.status).toBe(400);
+    }
+  });
+
   it('updates the render engine through the thin route and rejects invalid or missing projects', async () => {
     const project = await seedProject();
     const enqueueJob = vi.fn();
@@ -948,10 +999,15 @@ describe('video routes and worker handlers', () => {
     const sfxResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-all-sfx`, { method: 'POST' });
     expect(sfxResponse.status).toBe(201);
     expect(await sfxResponse.json()).toEqual({ jobId: 'job-1' });
+    const retrySfxResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-all-sfx`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ onlyMissing: true }) });
+    expect(retrySfxResponse.status).toBe(201);
+    const strictSfx = await fetch(`${base}/api/project/${project.id}/scenes/generate-all-sfx`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ onlyMissing: true, extra: true }) });
+    expect(strictSfx.status).toBe(400);
     await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'align-word-timings', projectId: project.id, payload: { projectId: project.id } }));
-    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id } }));
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id, onlyMissing: false } }));
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id, onlyMissing: true } }));
     expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id, draft: false } }));
 
     const strictDraft = await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ draft: true, unexpected: true }) });
@@ -1008,7 +1064,7 @@ describe('video routes and worker handlers', () => {
 
   it('handles SFX/BGM routes as successful project responses when providers miss', async () => {
     const project = await seedVoiceProject();
-    mocks.searchAndDownloadSfx.mockResolvedValue(null);
+    mocks.searchSfx.mockResolvedValue({ audio: null, reason: 'no-results', sound: null });
     mocks.searchAndDownloadBgm.mockResolvedValue(null);
     const enqueueJob = vi.fn();
     const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);

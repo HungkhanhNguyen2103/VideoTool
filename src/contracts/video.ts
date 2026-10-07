@@ -2,10 +2,31 @@ import { z } from 'zod';
 import { PARALLAX_STYLES, TRANSITION_STYLES } from './project';
 
 /** These string values are also used by the FFmpeg filter graph. */
-export const SFX_VOLUME = '0.31622777' as const;
+export const SFX_VOLUME = '0.5' as const;
 export const BGM_VOLUME = '0.1' as const;
 export const SFX_VOLUME_NUMBER = Number(SFX_VOLUME);
 export const BGM_VOLUME_NUMBER = Number(BGM_VOLUME);
+
+export const SfxBatchSceneOutcomeSchema = z.object({
+  sceneId: z.string(),
+  sceneNumber: z.number().int().positive(),
+  outcome: z.string().min(1),
+  reason: z.string().optional(),
+  sound: z.object({
+    id: z.number().int(), name: z.string(), tags: z.array(z.string()), duration: z.number().nonnegative(),
+    avg_rating: z.number().min(0).max(5), num_ratings: z.number().int().nonnegative(),
+  }).optional(),
+}).strict();
+export const SfxBatchSummarySchema = z.object({
+  generated: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  skippedNoPrompt: z.number().int().nonnegative(),
+  skippedExisting: z.number().int().nonnegative(),
+  rateLimitedStop: z.boolean(),
+  counts: z.record(z.string(), z.number().int().nonnegative()),
+  outcomes: z.array(SfxBatchSceneOutcomeSchema),
+}).strict();
+export type SfxBatchSummary = z.infer<typeof SfxBatchSummarySchema>;
 
 export const KEYWORD_KINDS = ['number', 'year', 'date', 'name'] as const;
 export type KeywordKind = (typeof KEYWORD_KINDS)[number];
@@ -52,6 +73,7 @@ export const RemotionInputPropsSchema = z.object({
   fps: z.number().positive(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
+  sfxVolume: z.number().min(0).max(1).default(0.5),
   scenes: z.array(RemotionScenePropsSchema),
   bgmRelPath: z.string().min(1).nullable(),
   logoRelPath: z.string().min(1).nullable().default(null),

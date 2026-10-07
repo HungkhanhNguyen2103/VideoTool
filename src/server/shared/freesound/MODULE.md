@@ -1,0 +1,7 @@
+# Freesound shared client
+
+`createFreesoundClient` is injectable with a fetch implementation and clock/sleep functions so tests never use the network. The singleton client shares a 1.1-second API request limiter and a 2,000-request UTC-day budget across SFX and BGM. 429, 5xx, and network failures retry at most three attempts with exponential backoff/jitter; `Retry-After` is honored for 429. Other 4xx responses are not retried.
+
+SFX searches translate known Vietnamese prompt phrases before searching, skip unmapped non-ASCII phrases, make at most three distinct ordered searches, request 15 candidates, reject voice-like tags/names, and rank the remaining candidates locally for phrase relevance, duration, and ratings. Results include a reason and selected sound metadata; `searchAndDownloadSfx` remains as a compatibility wrapper. Batch jobs log the chosen sound id/name/tags/rating because the file-store schema has no attribution fields.
+
+The client currently keeps `/apiv2/search/text/` in one named endpoint constant. Freesound marks it deprecated in favor of `/search/`; do not switch until a real request verifies `query`, CC0/duration `filter`, `fields`, `page_size`, negative terms, and `sort` behavior on the replacement. A manual, read-only project diagnosis is available with `node --env-file=.env --import tsx scripts/diagnose-sfx.ts`; it writes a Markdown report under `data/files/.verification/task-85/` and never changes project records.

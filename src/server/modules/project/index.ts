@@ -30,6 +30,7 @@ export {
   setProjectFilmLook,
   setProjectParallax,
   setProjectSceneTailSec,
+  setProjectSfxVolume,
   setProjectRenderEngine,
   setProjectAiProvider,
   setProjectVisualStylePreset,

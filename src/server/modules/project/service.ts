@@ -42,6 +42,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     parallax: doc.parallax,
     voiceoverVoice: doc.voiceoverVoice,
     sceneTailSec: doc.sceneTailSec,
+    sfxVolume: doc.sfxVolume,
     renderFileId: doc.renderFileId,
     draftRenderFileId: doc.draftRenderFileId,
     bgmMood: doc.bgmMood,
@@ -85,6 +86,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     parallax: 'off',
     voiceoverVoice: input.voiceoverVoice ?? 'Truc Ly',
     sceneTailSec: DEFAULT_SCENE_TAIL_SEC,
+    sfxVolume: 0.5,
     renderFileId: input.renderFileId ?? null,
     draftRenderFileId: null,
     bgmMood: input.bgmMood ?? '',
@@ -519,6 +521,11 @@ export async function setProjectParallax(id: string, parallax: ParallaxStyle): P
 
 export async function setProjectSceneTailSec(id: string, sceneTailSec: number): Promise<ProjectDetail> {
   await updateProject(id, { sceneTailSec });
+  return getProject(id);
+}
+
+export async function setProjectSfxVolume(id: string, sfxVolume: number): Promise<ProjectDetail> {
+  await updateProject(id, { sfxVolume });
   return getProject(id);
 }
 

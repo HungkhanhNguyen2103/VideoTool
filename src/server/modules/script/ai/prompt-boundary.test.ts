@@ -80,10 +80,13 @@ describe('script AI prompt boundary', () => {
     });
     expect(result.promptVersion).toBe('visual-prompt-v2/anime@2');
     expect(result.system).toContain(loadScriptPreset('documentary').system);
-    expect(result.system).toContain('sfxPrompt should be a short ambient or foley sound-search phrase in English (2-6 words');
+    expect(result.system).toContain('sfxPrompt must be 2-4 short English Freesound search phrases');
+    expect(result.system).toContain('non-speech, non-music ambience and sound effects only');
+    expect(result.system).toContain('Do not include human voice, speech, shouting, war cries, crowd chanting, singing, or music');
+    expect(result.system).toContain('comma-separated and ordered most important first');
     expect(result.system).toContain('motionPrompt');
     expect(result.system).toContain("Only write a non-empty motionPrompt when that scene's asset type is video");
-    expect(result.system).not.toContain('in the narration language');
+    expect(result.system).not.toContain('quiet sigh');
     expect(result.user).toContain(`Required visual style (must follow for every scene): ${loadVisualStylePreset('anime').style}`);
     expect(result.user).toContain('Core question: Why did the river change?');
     expect(result.user).toContain('Opening hook: At dawn, it reversed.');

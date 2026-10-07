@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setSceneTail, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -110,7 +110,19 @@ describe('asset API helpers', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-1' }), { status: 201, headers: { 'content-type': 'application/json' } }));
 
     await expect(generateAllSfx('project/1')).resolves.toEqual({ jobId: 'job-1' });
-    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-all-sfx', expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-all-sfx', expect.objectContaining({ method: 'POST', body: JSON.stringify({ onlyMissing: false }) }));
+  });
+
+  it('queues only missing SFX when retrying a failed batch', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-2' }), { status: 201, headers: { 'content-type': 'application/json' } }));
+    await expect(generateAllSfx('project/1', true)).resolves.toEqual({ jobId: 'job-2' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/generate-all-sfx', expect.objectContaining({ method: 'POST', body: JSON.stringify({ onlyMissing: true }) }));
+  });
+
+  it('persists the project SFX relative volume setting', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await setSfxVolume('project/1', 0.65);
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/sfx-volume', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ sfxVolume: 0.65 }) }));
   });
 
   it('queues the word-timing backfill through the project route', async () => {

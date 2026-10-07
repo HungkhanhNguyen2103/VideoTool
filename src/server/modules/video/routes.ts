@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectSceneTailSec, setProjectTransitionStyle } from '../project';
-import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
+import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectSceneTailSec, setProjectSfxVolume, setProjectTransitionStyle } from '../project';
+import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, SfxVolumeSchema, TRANSITION_STYLES } from '../../../contracts/project';
 import { SceneTailSecSchema } from '../../../contracts/scene-duration';
 import { getActiveJobByType } from '../job';
 import { AppError } from '../../shared/errors';
@@ -36,6 +36,8 @@ const TransitionStyleSchema = z.object({ style: z.enum(TRANSITION_STYLES) }).str
 const FilmLookSchema = z.object({ style: z.enum(FILM_LOOK_STYLES) }).strict();
 const ParallaxSchema = z.object({ style: z.enum(PARALLAX_STYLES) }).strict();
 const SceneTailSchema = z.object({ sceneTailSec: SceneTailSecSchema }).strict();
+const SfxVolumeSettingSchema = z.object({ sfxVolume: SfxVolumeSchema }).strict();
+const GenerateSfxSchema = z.object({ onlyMissing: z.boolean().optional().default(false) }).strict();
 const RenderSchema = z.object({ draft: z.boolean().optional().default(false) }).strict();
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyzeNameKeywords?: AnalyzeNameKeywords }): Router {
@@ -68,8 +70,9 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyz
   });
 
   router.post('/:id/scenes/generate-all-sfx', async (req, res) => {
+    const { onlyMissing } = GenerateSfxSchema.parse(req.body ?? {});
     const project = await getProject(req.params.id);
-    const job = await options.enqueueJob({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id } });
+    const job = await options.enqueueJob({ type: 'generate-all-sfx', projectId: project.id, payload: { projectId: project.id, onlyMissing } });
     res.status(201).json({ jobId: job.id });
   });
 
@@ -151,6 +154,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyz
   router.patch('/:id/scene-tail', async (req, res) => {
     const { sceneTailSec } = SceneTailSchema.parse(req.body);
     res.json(await setProjectSceneTailSec(req.params.id, sceneTailSec));
+  });
+
+  router.patch('/:id/sfx-volume', async (req, res) => {
+    const { sfxVolume } = SfxVolumeSettingSchema.parse(req.body);
+    res.json(await setProjectSfxVolume(req.params.id, sfxVolume));
   });
 
   router.post('/:id/scenes/recompute-durations', async (req, res) => {

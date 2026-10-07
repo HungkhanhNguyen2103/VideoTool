@@ -28,7 +28,8 @@ const handleAlignWordTimings: JobHandler = async (job, context) => {
 
 const handleGenerateAllSfx: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  await generateProjectSfx(projectIdFrom(job), context.appendLog, context.reportProgress);
+  const payload = job.payload as { onlyMissing?: unknown };
+  return generateProjectSfx(projectIdFrom(job), context.appendLog, context.reportProgress, { onlyMissing: payload.onlyMissing === true });
 };
 
 const handleGenerateDepthMaps: JobHandler = async (job, context) => {
