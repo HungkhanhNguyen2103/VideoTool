@@ -1,19 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { VIDEO_KEYFRAME_CROSSFADE_SEC, planVideoKeyframeSegments } from './video-segments';
+import { planVideoKeyframeSegments } from './video-segments';
 
 describe('video/keyframe segment planning', () => {
-  it('overlaps a short video and trailing keyframe by the local crossfade', () => {
-    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 180, fps: 30, videoDurationSec: 2, hasKeyframe: true })).toEqual({
-      videoFrames: 60,
-      imageFrom: 60 - Math.round(VIDEO_KEYFRAME_CROSSFADE_SEC * 30),
-      imageFrames: 180 - (60 - Math.round(VIDEO_KEYFRAME_CROSSFADE_SEC * 30)),
-      crossfadeFrames: Math.round(VIDEO_KEYFRAME_CROSSFADE_SEC * 30),
+  it('pads before a short video and starts the clip at its own frame zero', () => {
+    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 360, fps: 30, videoDurationSec: 8, hasKeyframe: true })).toEqual({
+      imageFrom: 0,
+      imageFrames: 120,
+      videoFrom: 120,
+      videoFrames: 240,
+      stillSource: 'keyframe',
     });
   });
 
-  it('falls back to one video segment when the keyframe split is not applicable', () => {
-    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 90, fps: 30, videoDurationSec: null, hasKeyframe: true })).toBeNull();
-    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 90, fps: 30, videoDurationSec: 1, hasKeyframe: false })).toBeNull();
+  it('plans the same leading freeze when no keyframe asset exists', () => {
+    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 360, fps: 30, videoDurationSec: 8, hasKeyframe: false })).toEqual({
+      imageFrom: 0,
+      imageFrames: 120,
+      videoFrom: 120,
+      videoFrames: 240,
+      stillSource: 'clip',
+    });
+  });
+
+  it('handles a very short clip without a zero-length segment', () => {
+    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 30, fps: 30, videoDurationSec: 0.01, hasKeyframe: false })).toEqual({
+      imageFrom: 0,
+      imageFrames: 29,
+      videoFrom: 29,
+      videoFrames: 1,
+      stillSource: 'clip',
+    });
+  });
+
+  it('uses one segment when timing is unknown, equal, or longer than the scene', () => {
+    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 90, fps: 30, videoDurationSec: null, hasKeyframe: false })).toBeNull();
     expect(planVideoKeyframeSegments({ sceneDurationInFrames: 90, fps: 30, videoDurationSec: 3, hasKeyframe: true })).toBeNull();
+    expect(planVideoKeyframeSegments({ sceneDurationInFrames: 90, fps: 30, videoDurationSec: 4, hasKeyframe: true })).toBeNull();
   });
 });

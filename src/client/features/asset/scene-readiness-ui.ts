@@ -10,7 +10,6 @@ const BADGES: Partial<Record<SceneReadinessStatus, ReadinessBadge>> = {
   'clip-unmeasured': { label: 'Chưa đo clip', tone: 'muted' },
   'clip-cut': { label: 'Clip bị cắt', tone: 'amber' },
   'clip-padded': { label: 'Clip được đệm', tone: 'amber' },
-  'no-tail': { label: 'Thiếu khung cuối', tone: 'muted' },
 };
 
 export function readinessBadgeForStatus(status: SceneReadinessStatus): ReadinessBadge | null {

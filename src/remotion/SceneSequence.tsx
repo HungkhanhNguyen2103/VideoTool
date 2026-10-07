@@ -40,27 +40,31 @@ function ImageScene({ scene, durationInFrames }: { scene: RemotionSceneProps; du
 }
 
 function VideoScene({ scene, durationInFrames, fps }: { scene: RemotionSceneProps; durationInFrames: number; fps: number }) {
-  const frame = useCurrentFrame();
-  const trailing = scene.videoTailRelPath ?? scene.videoKeyframeRelPath;
   const plan = planVideoKeyframeSegments({
     sceneDurationInFrames: durationInFrames,
     fps,
     videoDurationSec: scene.videoDurationSec,
-    hasKeyframe: Boolean(trailing),
+    hasKeyframe: Boolean(scene.videoKeyframeRelPath),
   });
-  const video = <OffthreadVideo muted src={staticFile(scene.assetRelPath)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
-  if (!plan || !trailing) return video;
-  const videoOpacity = interpolate(frame, [plan.imageFrom, plan.videoFrames], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const imageOpacity = interpolate(frame, [plan.imageFrom, plan.videoFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const videoStyle = { width: '100%', height: '100%', objectFit: 'contain' } as const;
+  const video = <OffthreadVideo muted src={staticFile(scene.assetRelPath)} style={videoStyle} />;
+  if (!plan) return video;
   return (
     <>
-      <Sequence from={0} durationInFrames={plan.videoFrames}>
-        <AbsoluteFill style={{ opacity: videoOpacity }}>{video}</AbsoluteFill>
-      </Sequence>
       <Sequence from={plan.imageFrom} durationInFrames={plan.imageFrames}>
-        <AbsoluteFill style={{ opacity: imageOpacity }}>
-          <Img src={staticFile(trailing)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-        </AbsoluteFill>
+        {plan.stillSource === 'keyframe' && scene.videoKeyframeRelPath ? (
+          <Img src={staticFile(scene.videoKeyframeRelPath)} style={videoStyle} />
+        ) : (
+          <OffthreadVideo
+            muted
+            playbackRate={0.000001}
+            src={staticFile(scene.assetRelPath)}
+            style={videoStyle}
+          />
+        )}
+      </Sequence>
+      <Sequence from={plan.videoFrom} durationInFrames={plan.videoFrames}>
+        {video}
       </Sequence>
     </>
   );

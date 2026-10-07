@@ -11,15 +11,19 @@ export type SceneRenderInputs = {
   sfxPath?: string;
   outputPath: string;
   durationSec: number;
+  videoDurationSec?: number | null;
   width: number;
   height: number;
   fps: number;
 };
 
-export function buildSceneFilterGraph(input: Pick<SceneRenderInputs, 'durationSec' | 'width' | 'height' | 'fps'> & Partial<Pick<SceneRenderInputs, 'assetType'>>): string {
+export function buildSceneFilterGraph(input: Pick<SceneRenderInputs, 'durationSec' | 'width' | 'height' | 'fps'> & Partial<Pick<SceneRenderInputs, 'assetType' | 'videoDurationSec'>>): string {
   const { durationSec, width, height, fps } = input;
-  const temporalPad = input.assetType === 'video' ? `,tpad=stop_mode=clone:stop_duration=${durationSec}` : '';
-  return `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${fps},format=yuv420p,setsar=1${temporalPad}[v];` +
+  const videoDurationSec = input.videoDurationSec;
+  const isMeasuredShortVideo = input.assetType === 'video' && videoDurationSec !== null && videoDurationSec !== undefined && videoDurationSec > 0 && videoDurationSec < durationSec;
+  const startPad = isMeasuredShortVideo ? `,tpad=start_mode=clone:start_duration=${durationSec - videoDurationSec}` : '';
+  const videoTrim = input.assetType === 'video' ? `,trim=duration=${durationSec},setpts=PTS-STARTPTS` : '';
+  return `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${fps},format=yuv420p,setsar=1${startPad}${videoTrim}[v];` +
     `[1:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:${durationSec},apad=whole_dur=${durationSec}[voiceD];` +
     `[2:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:${durationSec},apad=whole_dur=${durationSec},volume=${SFX_VOLUME}[sfxD];` +
     '[voiceD][sfxD]amix=inputs=2:duration=first:dropout_transition=0[a]';

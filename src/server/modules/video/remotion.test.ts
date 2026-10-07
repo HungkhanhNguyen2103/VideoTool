@@ -86,11 +86,12 @@ describe('Remotion contracts and frame math', () => {
     expect(source).toMatch(/<OffthreadVideo[\s\S]*muted/);
   });
 
-  it('uses the video tail frame before falling back to the keyframe', async () => {
+  it('uses the leading first-frame freeze before playing the clip', async () => {
     const source = await readFile('src/remotion/SceneSequence.tsx', 'utf8');
-    expect(source).toContain('const trailing = scene.videoTailRelPath ?? scene.videoKeyframeRelPath;');
-    expect(source).toContain('hasKeyframe: Boolean(trailing)');
-    expect(source).toContain('staticFile(trailing)');
+    expect(source).toContain('from={plan.videoFrom}');
+    expect(source).toContain('playbackRate={0.000001}');
+    expect(source).not.toContain('videoTailRelPath');
+    expect(source).not.toContain('crossfadeFrames');
   });
 
   it('uses a horizontal-only SVG blur for whip-pan transitions', async () => {
@@ -285,7 +286,7 @@ describe('Remotion props and public-dir staging', () => {
     await expect(buildRemotionInputProps(project, [scene], 'render-keyframe-only', resolver)).rejects.toMatchObject({ status: 422, code: 'INVALID_RENDER_ASSET' });
   });
 
-  it('prefers and stages a video tail frame alongside the keyframe', async () => {
+  it('does not stage the retained video tail frame for rendering', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'remotion-tail-'));
     try {
       const sources = new Map([
@@ -299,14 +300,14 @@ describe('Remotion props and public-dir staging', () => {
 
       const props = await buildRemotionInputProps(project, [scene], 'render-tail', resolver);
 
-      expect(props.scenes[0]).toMatchObject({ videoKeyframeRelPath: 'renders/render-tail/scene-01-keyframe.png', videoTailRelPath: 'renders/render-tail/scene-01-tail.png' });
-      expect(resolver).toHaveBeenCalledWith('project-1', 'tail-1');
+      expect(props.scenes[0]).toMatchObject({ videoKeyframeRelPath: 'renders/render-tail/scene-01-keyframe.png', videoTailRelPath: null });
+      expect(resolver).not.toHaveBeenCalledWith('project-1', 'tail-1');
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  it('falls back to the keyframe when the video tail cannot be resolved', async () => {
+  it('does not resolve an unused video tail even when the reference is stale', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'remotion-tail-fallback-'));
     try {
       const resolver = vi.fn(async (_projectId: string, fileId: string) => {
@@ -317,6 +318,7 @@ describe('Remotion props and public-dir staging', () => {
       const scene = { id: 'scene-1', assetType: 'video', assetFileId: 'video-1', videoKeyframeFileId: 'keyframe-1', videoTailFileId: 'tail-1', videoDurationSec: 1.2, audioFileId: null, sfxFileId: null, durationSec: 4 } as unknown as Scene;
 
       await expect(buildRemotionInputProps(project, [scene], 'render-tail-fallback', resolver)).resolves.toMatchObject({ scenes: [{ videoKeyframeRelPath: 'renders/render-tail-fallback/scene-01-keyframe.png', videoTailRelPath: null }] });
+      expect(resolver).not.toHaveBeenCalledWith('project-1', 'tail-1');
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

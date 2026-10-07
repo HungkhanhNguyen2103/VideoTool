@@ -9,7 +9,6 @@ describe('scene readiness UI', () => {
     expect(readinessBadgeForStatus('clip-unmeasured')).toEqual({ label: 'Chưa đo clip', tone: 'muted' });
     expect(readinessBadgeForStatus('clip-cut')).toEqual({ label: 'Clip bị cắt', tone: 'amber' });
     expect(readinessBadgeForStatus('clip-padded')).toEqual({ label: 'Clip được đệm', tone: 'amber' });
-    expect(readinessBadgeForStatus('no-tail')).toEqual({ label: 'Thiếu khung cuối', tone: 'muted' });
     expect(readinessBadgeForStatus('ok')).toBeNull();
   });
 });

@@ -1,10 +1,9 @@
-export const VIDEO_KEYFRAME_CROSSFADE_SEC = 0.35;
-
 export type VideoKeyframeSegmentPlan = {
   videoFrames: number;
   imageFrom: number;
   imageFrames: number;
-  crossfadeFrames: number;
+  videoFrom: number;
+  stillSource: 'keyframe' | 'clip';
 };
 
 export function planVideoKeyframeSegments(input: {
@@ -13,19 +12,16 @@ export function planVideoKeyframeSegments(input: {
   videoDurationSec: number | null | undefined;
   hasKeyframe: boolean;
 }): VideoKeyframeSegmentPlan | null {
-  if (!input.hasKeyframe || input.videoDurationSec === null || input.videoDurationSec === undefined || input.videoDurationSec <= 0) return null;
+  if (input.videoDurationSec === null || input.videoDurationSec === undefined || input.videoDurationSec <= 0) return null;
   const videoFrames = Math.max(1, Math.round(input.videoDurationSec * input.fps));
   if (videoFrames >= input.sceneDurationInFrames) return null;
-  const crossfadeFrames = Math.max(1, Math.min(
-    Math.round(VIDEO_KEYFRAME_CROSSFADE_SEC * input.fps),
-    videoFrames,
-    input.sceneDurationInFrames - videoFrames,
-  ));
-  const imageFrom = videoFrames - crossfadeFrames;
+  const imageFrom = 0;
+  const imageFrames = input.sceneDurationInFrames - videoFrames;
   return {
     videoFrames,
     imageFrom,
-    imageFrames: input.sceneDurationInFrames - imageFrom,
-    crossfadeFrames,
+    imageFrames,
+    videoFrom: imageFrames,
+    stillSource: input.hasKeyframe ? 'keyframe' : 'clip',
   };
 }

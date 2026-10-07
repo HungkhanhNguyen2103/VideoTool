@@ -8,8 +8,7 @@ export type SceneReadinessStatus =
   | 'keyframe-only'
   | 'clip-unmeasured'
   | 'clip-cut'
-  | 'clip-padded'
-  | 'no-tail';
+  | 'clip-padded';
 
 export type SceneReadiness = {
   kind: SceneReadinessKind;
@@ -35,8 +34,8 @@ function addVoiceoverHint(scene: Scene, messages: string[]): boolean {
   return needsVoiceover;
 }
 
-function noTailFallback(scene: Scene): string {
-  return scene.videoKeyframeFileId !== null ? 'bang khung keyframe' : 'dung khung dau';
+function leadingFrameFallback(scene: Scene): string {
+  return scene.videoKeyframeFileId !== null ? 'bang khung keyframe o dau clip' : 'dung khung dau clip';
 }
 
 export function analyzeScene(scene: Scene, _options: { fps?: number } = {}): SceneReadiness {
@@ -71,11 +70,8 @@ export function analyzeScene(scene: Scene, _options: { fps?: number } = {}): Sce
     } else if (difference < -CLIP_EPSILON_SEC) {
       status = 'clip-padded';
       deltaSec = roundedSeconds(Math.abs(difference));
-      const fallback = scene.videoTailFileId !== null ? 'bang khung cuoi' : noTailFallback(scene);
+      const fallback = leadingFrameFallback(scene);
       messages.push(`Clip ${displaySeconds(scene.videoDurationSec)}s, scene ${displaySeconds(scene.durationSec)}s: dem ${displaySeconds(Math.abs(difference))}s ${fallback}`);
-    } else if (scene.videoTailFileId === null) {
-      status = 'no-tail';
-      messages.push(`khong co khung cuoi, se ${noTailFallback(scene)}`);
     }
   }
 

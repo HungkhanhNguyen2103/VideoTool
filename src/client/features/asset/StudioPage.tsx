@@ -576,7 +576,7 @@ export function StudioPage() {
             {expandedScene.assetType === 'video' && <section className={styles.videoFacts} aria-label="Khung hinh video">
               <div className={styles.videoFactsHeader}><span className={styles.label}>Khung hinh video</span><span className={styles.muted}>{expandedReadiness?.messages.join(' · ')}</span></div>
               <div className={styles.videoFactsGrid}>
-                {([['Keyframe', expandedScene.videoKeyframeFileId ?? (expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('image/') ? expandedScene.assetFileId : null)], ['Khung cuoi', expandedScene.videoTailFileId], ['Clip', expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('video/') ? expandedScene.assetFileId : null]] as const).map(([label, fileId]) => {
+                {([['Keyframe', expandedScene.videoKeyframeFileId ?? (expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('image/') ? expandedScene.assetFileId : null)], ['Clip', expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('video/') ? expandedScene.assetFileId : null]] as const).map(([label, fileId]) => {
                   const file = fileId ? filesById.get(fileId) : undefined;
                   const src = file ? api.fileUrlForSummary(file) : null;
                   const mediaType = file ? api.mediaTypeForMime(file.mimeType) : null;

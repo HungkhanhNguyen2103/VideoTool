@@ -3,7 +3,6 @@ import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { RemotionInputPropsSchema, type RemotionInputProps, type RemotionSceneProps } from '../../../contracts/video';
 import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
-import { logger } from '../../shared/logger';
 import { annotateNameKeywords, annotateYearKeywords, resolveFilmLookByScene, selectKeywords } from './keywords';
 import { isDepthSceneEligible } from './depth-eligibility';
 
@@ -120,24 +119,6 @@ export async function resolveRemotionAssets(
       sources.push({ absolutePath: keyframe.file.absolutePath, relativePath: videoKeyframeRelPath });
     }
 
-    let videoTailRelPath: string | null = null;
-    if (scene.assetType === 'video' && scene.videoTailFileId) {
-      try {
-        const tail = await resolveFile(
-          project.id,
-          scene.videoTailFileId,
-          resolver,
-          'reference',
-          'image/',
-          `Scene ${scene.id} video tail`,
-        );
-        videoTailRelPath = `${prefix}-tail.${tail.extension}`;
-        sources.push({ absolutePath: tail.file.absolutePath, relativePath: videoTailRelPath });
-      } catch (error) {
-        logger.warn(`Scene ${scene.id} video tail unavailable; falling back to keyframe.`, error);
-      }
-    }
-
     let depthMapRelPath: string | null = null;
     if (isDepthSceneEligible(project.parallax ?? 'off', scene) && scene.depthMap) {
       const depth = await resolveFile(project.id, scene.depthMap.fileId, resolver, 'depth', 'image/', `Scene ${scene.id} depth map`);
@@ -167,7 +148,7 @@ export async function resolveRemotionAssets(
       voiceRelPath,
       sfxRelPath,
       videoKeyframeRelPath,
-      videoTailRelPath,
+      videoTailRelPath: null,
       videoDurationSec: scene.assetType === 'video' ? scene.videoDurationSec : null,
       depthMapRelPath,
       durationSec: scene.durationSec,

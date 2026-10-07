@@ -54,6 +54,13 @@ describe('scene preview helpers', () => {
     expect(scenePreviewStaleReason(fingerprint, changed)).toBe('cấu hình video đã thay đổi sau lần render');
   });
 
+  it('does not stale a preview when only the retained tail reference changes', () => {
+    const fingerprint = createScenePreviewFingerprint(scene, project);
+    const changed = { ...scene, videoTailFileId: 'new-tail' };
+
+    expect(firstChangedScenePreviewField(fingerprint, createScenePreviewFingerprint(changed, project))).toBeNull();
+  });
+
   it('formats the render arrival time, scene duration, and engine', () => {
     const renderedAt = new Date(2026, 9, 7, 11, 8).getTime();
 

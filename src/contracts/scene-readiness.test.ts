@@ -40,14 +40,14 @@ describe('analyzeScene', () => {
     expect(analyzeScene(makeScene({ assetType: 'video', videoDurationSec: 5.06 }))).toMatchObject({ status: 'clip-cut', deltaSec: 0.1 });
   });
 
-  it('reports clip padding and its tail-frame fallback', () => {
+  it('reports clip padding and its first-frame fallback', () => {
     const result = analyzeScene(makeScene({ assetType: 'video', videoDurationSec: 3.2, videoKeyframeFileId: 'keyframe-1', videoTailFileId: null }));
     expect(result).toMatchObject({ status: 'clip-padded', deltaSec: 1.8 });
     expect(result.messages.join(' ')).toContain('khung keyframe');
   });
 
-  it('reports no-tail when measured timing fits the scene', () => {
-    expect(analyzeScene(makeScene({ assetType: 'video', videoDurationSec: 5, videoTailFileId: null }))).toMatchObject({ status: 'no-tail' });
+  it('does not warn about a missing tail when measured timing fits the scene', () => {
+    expect(analyzeScene(makeScene({ assetType: 'video', videoDurationSec: 5, videoTailFileId: null }))).toMatchObject({ status: 'ok' });
     expect(analyzeScene(makeScene({ assetType: 'video', videoDurationSec: 5, videoTailFileId: 'tail-1' }))).toMatchObject({ status: 'ok' });
   });
 

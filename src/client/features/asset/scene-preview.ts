@@ -7,7 +7,6 @@ export type ScenePreviewFingerprint = {
     type: Scene['assetType'];
     fileId: string | null;
     keyframeFileId: string | null;
-    tailFileId: string | null;
     depthMapFileId: string | null;
   };
   voiceover: string | null;
@@ -64,7 +63,6 @@ export function createScenePreviewFingerprint(scene: Scene, project: ProjectDeta
       type: scene.assetType,
       fileId: scene.assetFileId,
       keyframeFileId: scene.videoKeyframeFileId,
-      tailFileId: scene.videoTailFileId,
       depthMapFileId: scene.depthMap?.fileId ?? null,
     },
     voiceover: scene.audioFileId,

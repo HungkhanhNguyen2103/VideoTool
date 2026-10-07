@@ -13,7 +13,7 @@ export interface VideoRenderer {
 
 export type RenderVideoOptions = { draft?: boolean };
 
-type RendererOptions = { filesDir?: string; ffmpegPath?: string; resolveFilePath?: ReturnType<typeof createFileStoreService>['resolveFilePath'] };
+type RendererOptions = { filesDir?: string; ffmpegPath?: string; ffprobePath?: string; resolveFilePath?: ReturnType<typeof createFileStoreService>['resolveFilePath'] };
 
 function runProcess(command: string, args: string[], appendLog?: (message: string) => Promise<void>): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -26,16 +26,34 @@ function runProcess(command: string, args: string[], appendLog?: (message: strin
   });
 }
 
+function probeDuration(command: string, inputPath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', inputPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    child.once('error', reject);
+    child.once('close', (code) => {
+      const duration = Number.parseFloat(stdout.trim());
+      if (code === 0 && Number.isFinite(duration) && duration > 0) resolve(duration);
+      else reject(new Error(stderr.trim() || `Could not measure video duration for ${inputPath}.`));
+    });
+  });
+}
+
 function quoteConcatPath(filePath: string): string {
   return `file '${filePath.replace(/'/g, "'\\''")}'`;
 }
 
 export class FfmpegRenderer implements VideoRenderer {
   private readonly ffmpegPath: string;
+  private readonly ffprobePath: string;
   private readonly resolveFilePath: ReturnType<typeof createFileStoreService>['resolveFilePath'];
 
   constructor(options: RendererOptions = {}) {
     this.ffmpegPath = options.ffmpegPath ?? process.env.FFMPEG_PATH ?? 'ffmpeg';
+    this.ffprobePath = options.ffprobePath ?? process.env.FFPROBE_PATH ?? 'ffprobe';
     this.resolveFilePath = options.resolveFilePath ?? createFileStoreService(options.filesDir ?? './data/files').resolveFilePath;
   }
 
@@ -87,6 +105,9 @@ export class FfmpegRenderer implements VideoRenderer {
     const asset = await this.resolveFilePath(project.id, scene.assetFileId);
     const audio = scene.audioFileId ? await this.resolveFilePath(project.id, scene.audioFileId) : undefined;
     const sfx = scene.sfxFileId ? await this.resolveFilePath(project.id, scene.sfxFileId) : undefined;
+    const videoDurationSec = scene.assetType === 'video'
+      ? scene.videoDurationSec ?? await probeDuration(this.ffprobePath, asset.absolutePath)
+      : null;
     const outputPath = path.join(directory, filename);
     await runProcess(this.ffmpegPath, buildSceneArguments({
       assetType: scene.assetType,
@@ -95,6 +116,7 @@ export class FfmpegRenderer implements VideoRenderer {
       sfxPath: sfx?.absolutePath,
       outputPath,
       durationSec: scene.durationSec,
+      videoDurationSec,
       width: project.renderSettings.width,
       height: project.renderSettings.height,
       fps: project.renderSettings.fps,

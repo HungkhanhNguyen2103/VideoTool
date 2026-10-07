@@ -242,8 +242,13 @@ describe('video renderer builders', () => {
     expect(args).not.toContain('-stream_loop');
     const silentArgs = buildSceneArguments({ assetType: 'image', videoPath: 'scene.png', outputPath: 'silent.mp4', durationSec: 5, width: 1920, height: 1080, fps: 30 });
     expect(silentArgs.join(' ')).toContain('anullsrc');
-    const videoArgs = buildSceneArguments({ assetType: 'video', videoPath: 'scene.mp4', outputPath: 'video-segment.mp4', durationSec: 5, width: 1920, height: 1080, fps: 30 });
-    expect(videoArgs.join(' ')).toContain('tpad=stop_mode=clone:stop_duration=5');
+    const videoArgs = buildSceneArguments({ assetType: 'video', videoPath: 'scene.mp4', outputPath: 'video-segment.mp4', durationSec: 5, videoDurationSec: 2, width: 1920, height: 1080, fps: 30 });
+    expect(videoArgs.join(' ')).toContain('tpad=start_mode=clone:start_duration=3');
+    expect(videoArgs.join(' ')).toContain('trim=duration=5');
+    expect(videoArgs.join(' ')).not.toContain('stop_mode=clone');
+
+    const longVideoArgs = buildSceneArguments({ assetType: 'video', videoPath: 'long-scene.mp4', outputPath: 'long-segment.mp4', durationSec: 5, videoDurationSec: 8, width: 1920, height: 1080, fps: 30 });
+    expect(longVideoArgs.join(' ')).not.toContain('tpad=');
   });
 
   it('does not silently use a keyframe when a video scene has no visual asset', async () => {

@@ -9,7 +9,7 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('title={readiness.messages.join(\' · \')}');
     expect(source).toContain('Khung hinh video');
     expect(source).toContain("['Keyframe'");
-    expect(source).toContain("['Khung cuoi'");
+    expect(source).not.toContain("['Khung cuoi'");
     expect(source).toContain("['Clip'");
     expect(source).toContain('Chưa có');
     expect(source).toContain("expandedScene.audioFileId ? 'từ voiceover' : 'ước tính'");

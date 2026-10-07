@@ -22,7 +22,7 @@ type ScenePreviewSectionProps = {
 
 function descriptionForEngine(engine: ProjectDetail['renderEngine']): string {
   return engine === 'remotion'
-    ? 'Có voiceover/SFX, hiệu ứng Remotion và logo nếu có; không có BGM dự án. Scene đơn không có chuyển cảnh.'
+    ? 'Voiceover/SFX + hiệu ứng Remotion + logo nếu có; không có BGM. Scene đơn, không có chuyển cảnh.'
     : 'Chỉ có asset + voiceover/SFX; bỏ hiệu ứng Remotion và logo.';
 }
 
