@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
+import { framesToSeconds, totalSceneFrames } from '../../../contracts/frame-math';
 import { createFileStoreService } from '../file-store';
 import { buildBgmArguments, buildConcatArguments, buildSceneArguments } from './docs';
 
@@ -90,7 +91,7 @@ export class FfmpegRenderer implements VideoRenderer {
       }
       const bgm = await this.resolveFilePath(project.id, project.bgmFileId);
       const outputPath = path.join(directory, 'final.mp4');
-      const totalDuration = project.scenes.reduce((sum, scene) => sum + scene.durationSec, 0);
+      const totalDuration = framesToSeconds(totalSceneFrames(project.scenes.map((scene) => scene.durationSec), project.renderSettings.fps), project.renderSettings.fps);
       await runProcess(this.ffmpegPath, buildBgmArguments(concatPath, bgm.absolutePath, outputPath, totalDuration), appendLog);
       const output = await readFile(outputPath);
       await reportProgress(100);

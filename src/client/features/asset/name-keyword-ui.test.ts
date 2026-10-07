@@ -6,7 +6,7 @@ import { nameKeywordPopupLine, nameKeywordStatusText } from './name-keyword-ui';
 function scene(overrides: Partial<Scene> = {}): Scene {
   return {
     id: 'scene-1', narration: 'Narration', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null,
-    audioFileId: 'voice-1', wordTimings: { audioFileId: 'voice-1', words: [{ text: 'Narration', startSec: 0, endSec: 4 }] },
+    audioFileId: 'voice-1', voiceoverDurationSec: null, wordTimings: { audioFileId: 'voice-1', words: [{ text: 'Narration', startSec: 0, endSec: 4 }] },
     nameCandidates: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null,
     videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null,
     ...overrides,

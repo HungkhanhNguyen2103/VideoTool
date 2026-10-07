@@ -138,6 +138,6 @@ describe('planTransitions', () => {
     expect(visual.map(({ id, from }) => ({ id, from }))).toEqual([
       { id: 'one', from: 0 }, { id: 'two', from: 38 }, { id: 'three', from: 113 },
     ]);
-    expect(totalDurationInFrames(audioScenes, 30)).toBe(165);
+    expect(totalDurationInFrames(audioScenes, 30)).toBe(166);
   });
 });

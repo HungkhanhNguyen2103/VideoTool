@@ -5,7 +5,7 @@ import { getProject, patchProjectScene } from '../project';
 import type { SceneDoc } from '../project';
 import { logger } from '../../shared/logger';
 import { AppError, NotFound } from '../../shared/errors';
-import { AUDIO_BUFFER_SECONDS } from './docs';
+import { durationWithTail } from '../../../contracts/scene-duration';
 import { alignSceneWordTimings } from './word-timing-service';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
@@ -28,7 +28,8 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
     voice: options.voice ?? project.voiceoverVoice,
   });
   const mastered = await masterAudio(raw);
-  const durationSec = Math.ceil((await probeAudioDuration(mastered)) + AUDIO_BUFFER_SECONDS);
+  const voiceoverDurationSec = await probeAudioDuration(mastered);
+  const durationSec = durationWithTail(voiceoverDurationSec, project.sceneTailSec);
   const stored = await storeFile({
     projectId,
     originalName: `${scene.id}.wav`,
@@ -36,7 +37,7 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
     buffer: mastered,
     purpose: 'voiceover',
   });
-  const updated = await patchProjectScene(projectId, sceneId, { audioFileId: stored.id, durationSec });
+  const updated = await patchProjectScene(projectId, sceneId, { audioFileId: stored.id, voiceoverDurationSec, durationSec });
   const updatedScene = updated.scenes.find((candidate) => candidate.id === sceneId)!;
   await alignSceneWordTimings(projectId, updatedScene, mastered);
   return updatedScene;

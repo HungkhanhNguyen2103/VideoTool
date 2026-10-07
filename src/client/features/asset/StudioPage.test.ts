@@ -41,4 +41,20 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('Xem asset gốc');
     expect(source).toContain('URL.revokeObjectURL(preview.url)');
   });
+
+  it('shows editable scene tail and the unapplied-duration recompute action', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('Khoảng nghỉ cuối scene (giây)');
+    expect(source).toContain('Cộng thêm vào cuối mỗi voiceover. Áp dụng khi tạo voiceover mới hoặc bấm Tính lại thời lượng.');
+    expect(source).toContain('Chưa áp dụng cho scene đã có voiceover — bấm Tính lại thời lượng');
+    expect(source).toContain('Tính lại thời lượng theo voiceover');
+    expect(source).toContain('hasUnappliedSceneTail');
+    expect(source).toContain('api.recomputeSceneDurations(projectId)');
+  });
+
+  it('formats fractional scene durations with at most one decimal in Studio', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('formatDurationSeconds(scene.durationSec)');
+    expect(source).toContain('formatDurationSeconds(expandedScene.durationSec)');
+  });
 });

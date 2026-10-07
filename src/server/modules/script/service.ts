@@ -407,6 +407,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       assetType: 'image' as const,
       assetFileId: null,
       audioFileId: null,
+      voiceoverDurationSec: null,
       wordTimings: null,
       sfxPrompt: '',
       motionPrompt: '',

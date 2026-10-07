@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { AbsoluteFill, cancelRender, continueRender, delayRender, Easing, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { RemotionKeyword, RemotionSceneProps } from '../contracts/video';
 import { formatVietnameseNumber, odometerColumnOffset } from './number-format';
+import { nameLowerThirdLayout } from './keyword-layout';
 
 const FADE_OUT_SEC = 0.3;
 const COUNT_UP_SEC = 0.7;
@@ -164,14 +165,14 @@ function LowerThird({ keyword, frame, fps, width, height, durationInFrames }: {
   const opacityIn = interpolate(frame, [0, Math.max(1, Math.round(0.18 * fps))], [0, 1], { extrapolateRight: 'clamp' });
   const opacity = Math.min(opacityIn, 1 - out);
   const translateX = ((1 - enter) * -110) + (out * -110);
-  const marginBottom = width / height < 0.8 ? 0.14 : 0.1;
+  const layout = nameLowerThirdLayout(width, height);
   const nameSize = Math.min(width, height) * 0.045;
   const pinSize = nameSize * 0.72;
   return (
     <AbsoluteFill style={{ pointerEvents: 'none' }}>
       <div style={{
-        position: 'absolute', left: width * 0.06, bottom: height * marginBottom, maxWidth: width * 0.82,
-        opacity, transform: `translateX(${translateX}%)`,
+        position: 'absolute', left: layout.left, bottom: layout.bottom, maxWidth: layout.maxWidth,
+        overflow: 'hidden', opacity, transform: `translateX(${translateX}%)`,
       }}>
         <div style={{
           display: 'flex', alignItems: 'stretch', overflow: 'hidden', borderRadius: 5,

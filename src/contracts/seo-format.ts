@@ -1,4 +1,5 @@
 import type { ProjectDetail } from './project';
+import { secondsToFrames } from './frame-math';
 import {
   SEO_HASHTAGS_MAX_COUNT,
   SEO_THUMBNAIL_MAX_BYTES,
@@ -28,10 +29,6 @@ export type ChapterTimestampsResult =
 
 /** Match 2+ digit numbers and grouped forms such as 1.954 or 1,954. */
 const FACT_NUMBER_RE = /(?<![\p{L}\p{N}])(?:\d{1,3}(?:[.,]\d{3})+|\d{2,})(?![\p{L}\p{N}])/gu;
-
-function sceneDurationInFrames(durationSec: number, fps: number): number {
-  return Math.round(durationSec * fps);
-}
 
 function numberKey(value: string): string {
   return value.replace(/[.,]/g, '');
@@ -74,7 +71,7 @@ export function chapterTimestamps(project: TimingProject): ChapterTimestampsResu
     const count = chapter.scenesCount!;
     let durationInFrames = 0;
     for (let offset = 0; offset < count; offset += 1) {
-      durationInFrames += sceneDurationInFrames(scenes[sceneIndex + offset]!.durationSec, fps);
+      durationInFrames += secondsToFrames(scenes[sceneIndex + offset]!.durationSec, fps);
     }
     timestamps.push({
       no: chapter.no,

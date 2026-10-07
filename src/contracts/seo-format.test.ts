@@ -26,6 +26,7 @@ function projectWithScenes(durations: number[], sceneCounts: number[], fps = 24)
       assetType: 'image' as const,
       assetFileId: `asset-${index + 1}`,
       audioFileId: null,
+      voiceoverDurationSec: null,
       wordTimings: null,
       sfxPrompt: '',
       motionPrompt: '',
@@ -34,6 +35,7 @@ function projectWithScenes(durations: number[], sceneCounts: number[], fps = 24)
       videoTailFileId: null,
       videoDurationSec: null,
       depthMap: null,
+      nameCandidates: null,
     })),
     chapters: sceneCounts.map((scenesCount, index) => ({
       id: `chapter-${index + 1}`,

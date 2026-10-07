@@ -42,6 +42,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).parallax).toBe('off');
   });
 
+  it('defaults legacy project documents to a 0.2 second scene tail', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).sceneTailSec).toBe(0.2);
+  });
+
   it('defaults legacy project documents to no draft render file', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).draftRenderFileId).toBeNull();
     expect(ProjectDocSchema.parse(validLegacyDoc).logoFileId).toBeNull();
@@ -70,5 +74,12 @@ describe('ProjectDocSchema visual style compatibility', () => {
 
   it('defaults legacy scene documents to no analyzed name candidates', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).nameCandidates).toBeNull();
+  });
+
+  it('accepts fractional scene durations and defaults legacy voiceover measurements to null', () => {
+    expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1.25 })).toMatchObject({
+      durationSec: 1.25,
+      voiceoverDurationSec: null,
+    });
   });
 });

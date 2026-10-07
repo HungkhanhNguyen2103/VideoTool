@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ChapterDocSchema, HubrisMotifSchema, OpenLoopSchema } from './script';
 import { SeoPackageSchema } from './seo';
+import { DEFAULT_SCENE_TAIL_SEC, SceneDurationSecSchema, SceneTailSecSchema } from './scene-duration';
 
 export const PROJECT_STATUSES = ['draft', 'script', 'assets', 'rendered'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -174,10 +175,11 @@ export const SceneSchema = z.object({
   id: z.string(),
   narration: z.string(),
   visualPrompt: z.string(),
-  durationSec: z.number().int().nonnegative(),
+  durationSec: SceneDurationSecSchema,
   assetType: z.enum(['image', 'video']).default('image'),
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),
+  voiceoverDurationSec: z.number().finite().nonnegative().nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
   nameCandidates: NameCandidatesSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
@@ -199,7 +201,7 @@ export const ProjectSummarySchema = z.object({
   title: z.string(),
   status: z.enum(PROJECT_STATUSES),
   scenesCount: z.number().int().nonnegative().nullable(),
-  durationSec: z.number().int().nonnegative().nullable(),
+  durationSec: SceneDurationSecSchema.nullable(),
   updatedAt: z.string(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
@@ -223,6 +225,7 @@ export const ProjectDetailSchema = z.object({
   filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
   parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
+  sceneTailSec: SceneTailSecSchema.default(DEFAULT_SCENE_TAIL_SEC),
   renderFileId: z.string().nullable().default(null),
   draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

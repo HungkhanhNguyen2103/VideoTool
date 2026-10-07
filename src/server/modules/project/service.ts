@@ -8,6 +8,7 @@ import { getCollection } from '../../db/client';
 import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
 import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
+import { DEFAULT_SCENE_TAIL_SEC, roundDurationSeconds } from '../../../contracts/scene-duration';
 
 function toSummary(row: ProjectSummaryRow): ProjectSummary {
   return {
@@ -40,6 +41,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     filmLook: doc.filmLook,
     parallax: doc.parallax,
     voiceoverVoice: doc.voiceoverVoice,
+    sceneTailSec: doc.sceneTailSec,
     renderFileId: doc.renderFileId,
     draftRenderFileId: doc.draftRenderFileId,
     bgmMood: doc.bgmMood,
@@ -82,6 +84,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     filmLook: 'auto',
     parallax: 'off',
     voiceoverVoice: input.voiceoverVoice ?? 'Truc Ly',
+    sceneTailSec: DEFAULT_SCENE_TAIL_SEC,
     renderFileId: input.renderFileId ?? null,
     draftRenderFileId: null,
     bgmMood: input.bgmMood ?? '',
@@ -131,7 +134,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
-    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, wordTimings: null, nameCandidates: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, voiceoverDurationSec: null, wordTimings: null, nameCandidates: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
     renderFileId: null,
     draftRenderFileId: null,
     bgmFileId: null,
@@ -160,6 +163,7 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
     const sameVoice = old && old.narration === scene.narration && old.audioFileId === scene.audioFileId;
     const parsed = SceneDocSchema.parse({
       ...scene,
+      voiceoverDurationSec: scene.audioFileId !== null && sameVoice ? old?.voiceoverDurationSec ?? scene.voiceoverDurationSec ?? null : scene.audioFileId !== null ? scene.voiceoverDurationSec ?? null : null,
       wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null,
       // Preserve analyzed names as stale history while audio still exists; a bulk reset to no audio clears them.
       nameCandidates: scene.audioFileId !== null ? old?.nameCandidates ?? null : null,
@@ -178,10 +182,10 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
 export async function patchProjectScene(
   id: string,
   sceneId: string,
-  patch: Partial<Pick<SceneDoc, 'narration' | 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
+  patch: Partial<Pick<SceneDoc, 'narration' | 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'voiceoverDurationSec' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
   expectedVersion?: number,
 ): Promise<ProjectDetail> {
-  const current = patch.narration !== undefined || patch.durationSec !== undefined ? await getProject(id) : null;
+  const current = patch.narration !== undefined || patch.durationSec !== undefined || patch.audioFileId !== undefined ? await getProject(id) : null;
   const currentScene = current?.scenes.find((scene) => scene.id === sceneId);
   if (patch.narration !== undefined && !currentScene) throw new NotFound('Không tìm thấy cảnh.');
   const normalizedNarration = patch.narration?.trim();
@@ -190,6 +194,11 @@ export async function patchProjectScene(
   if (narrationChanged) {
     scenePatch.durationSec = estimateNarrationDurationSec(normalizedNarration!);
     scenePatch.audioFileId = null;
+    scenePatch.voiceoverDurationSec = null;
+  } else if (patch.audioFileId !== undefined && currentScene && patch.audioFileId !== currentScene.audioFileId && patch.voiceoverDurationSec === undefined) {
+    scenePatch.voiceoverDurationSec = null;
+  } else if (patch.audioFileId === null) {
+    scenePatch.voiceoverDurationSec = null;
   }
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(scenePatch)) set[`scenes.$[scene].${field}`] = value;
@@ -230,6 +239,61 @@ export async function patchProjectScene(
   if (result.matchedCount === 0) {
     if (expectedVersion !== undefined && await findProjectById(id)) throw new AppError('Project changed, preview again.', 409, 'PROJECT_CHANGED');
     throw new NotFound('Không tìm thấy cảnh.');
+  }
+  return getProject(id);
+}
+
+export type ProjectSceneDurationUpdate = {
+  sceneId: string;
+  audioFileId: string;
+  voiceoverDurationSec: number;
+  durationSec: number;
+};
+
+/** Apply a probe batch only to the project version and voiceover files that were measured. */
+export async function setProjectSceneDurations(
+  id: string,
+  expectedVersion: number,
+  updates: readonly ProjectSceneDurationUpdate[],
+): Promise<ProjectDetail> {
+  const project = await getProject(id);
+  if (project.version !== expectedVersion) throw new AppError('Dự án vừa thay đổi, vui lòng tính lại thời lượng.', 409, 'PROJECT_CHANGED');
+  const uniqueUpdates = [...new Map(updates.map((update) => [update.sceneId, update])).values()];
+  if (uniqueUpdates.length === 0) return project;
+
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  const arrayFilters: Record<string, unknown>[] = [];
+  const durationsBySceneId = new Map(project.scenes.map((scene) => [scene.id, scene.durationSec]));
+  uniqueUpdates.forEach((update, index) => {
+    const scene = project.scenes.find((candidate) => candidate.id === update.sceneId);
+    if (!scene || scene.audioFileId !== update.audioFileId) {
+      throw new AppError('Dự án vừa thay đổi, vui lòng tính lại thời lượng.', 409, 'PROJECT_CHANGED');
+    }
+    const alias = `durationScene${index}`;
+    set[`scenes.$[${alias}].durationSec`] = update.durationSec;
+    set[`scenes.$[${alias}].voiceoverDurationSec`] = update.voiceoverDurationSec;
+    arrayFilters.push({ [`${alias}.id`]: update.sceneId, [`${alias}.audioFileId`]: update.audioFileId });
+    durationsBySceneId.set(update.sceneId, update.durationSec);
+  });
+
+  let sceneOffset = 0;
+  for (const [chapterIndex, chapter] of project.chapters.entries()) {
+    const count = chapter.scenesCount ?? chapter.paragraphs.length;
+    const durationSec = roundDurationSeconds(project.scenes
+      .slice(sceneOffset, sceneOffset + count)
+      .reduce((sum, scene) => sum + (durationsBySceneId.get(scene.id) ?? scene.durationSec), 0));
+    set[`chapters.${chapterIndex}.durationSec`] = durationSec;
+    sceneOffset += count;
+  }
+
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id, version: expectedVersion },
+    { $set: set, $inc: { version: 1 } },
+    { arrayFilters },
+  );
+  if (result.matchedCount === 0) {
+    if (await findProjectById(id)) throw new AppError('Dự án vừa thay đổi, vui lòng tính lại thời lượng.', 409, 'PROJECT_CHANGED');
+    throw new NotFound('Không tìm thấy dự án.');
   }
   return getProject(id);
 }
@@ -450,6 +514,11 @@ export async function setProjectFilmLook(id: string, filmLook: FilmLookStyle): P
 
 export async function setProjectParallax(id: string, parallax: ParallaxStyle): Promise<ProjectDetail> {
   await updateProject(id, { parallax });
+  return getProject(id);
+}
+
+export async function setProjectSceneTailSec(id: string, sceneTailSec: number): Promise<ProjectDetail> {
+  await updateProject(id, { sceneTailSec });
   return getProject(id);
 }
 

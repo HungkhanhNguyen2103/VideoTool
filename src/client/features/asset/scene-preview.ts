@@ -1,4 +1,5 @@
 import type { ProjectDetail, RenderEngine, Scene } from '../../../contracts/project';
+import { formatDurationSeconds } from '../../../contracts/scene-duration';
 
 export type ScenePreviewFingerprint = {
   narration: string;
@@ -102,6 +103,6 @@ export function scenePreviewStaleReason(previous: ScenePreviewFingerprint, curre
 
 export function scenePreviewStatusText(renderedAt: number, durationSec: number, renderEngine: RenderEngine): string {
   const time = new Date(renderedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
-  const duration = Number.isInteger(durationSec) ? String(durationSec) : String(Number(durationSec.toFixed(1)));
+  const duration = formatDurationSeconds(durationSec);
   return `Render lúc ${time} · scene ${duration}s · engine ${renderEngine === 'remotion' ? 'Remotion' : 'FFmpeg'}`;
 }

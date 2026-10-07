@@ -1,4 +1,5 @@
 import type { ProjectSummary } from '../../../../contracts/project';
+import { formatDurationSeconds } from '../../../../contracts/scene-duration';
 import { Badge } from '../../../shared/ui/Badge';
 import { Button } from '../../../shared/ui/Button';
 import { Icon } from '../../../shared/ui/Icon';
@@ -15,7 +16,7 @@ type ProjectCardProps = {
 
 export function ProjectCard({ project, isCurrent, onOpen, onDuplicate, onDelete }: ProjectCardProps) {
   const status = PROJECT_STATUS_META[project.status];
-  const meta = [project.scenesCount != null ? `${project.scenesCount} cảnh • ${project.durationSec}s` : null, relativeTime(project.updatedAt)]
+  const meta = [project.scenesCount != null ? `${project.scenesCount} cảnh • ${formatDurationSeconds(project.durationSec ?? 0)}s` : null, relativeTime(project.updatedAt)]
     .filter(Boolean)
     .join(' · ');
 

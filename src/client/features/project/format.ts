@@ -1,4 +1,5 @@
 import type { ProjectDetail, ProjectStatus } from '../../../contracts/project';
+import { formatDurationSeconds } from '../../../contracts/scene-duration';
 
 /** Label + Badge tone per status, copied from docs/prototypes/khoi-tao-du-an/app.js (STATUS). */
 export const PROJECT_STATUS_META: Record<ProjectStatus, { label: string; tone: 'muted' | 'indigo' | 'amber' | 'green' }> = {
@@ -31,7 +32,7 @@ export function relativeTime(iso: string): string {
 }
 
 export function projectMeta(p: { scenesCount: number | null; durationSec: number | null; status: ProjectStatus }): string {
-  return p.scenesCount != null ? `${p.scenesCount} cảnh • ${p.durationSec}s` : PROJECT_STATUS_META[p.status].label;
+  return p.scenesCount != null ? `${p.scenesCount} cảnh • ${formatDurationSeconds(p.durationSec ?? 0)}s` : PROJECT_STATUS_META[p.status].label;
 }
 
 /** Same "N cảnh • Ns" / status-label rule as projectMeta(), but from a full ProjectDetail (has `scenes`, not precomputed counts). */

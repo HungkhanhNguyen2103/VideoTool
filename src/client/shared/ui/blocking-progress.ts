@@ -18,7 +18,8 @@ export type BlockingTaskKind =
   | 'quick'
   | 'script-generation'
   | 'final-qa'
-  | 'name-keywords';
+  | 'name-keywords'
+  | 'recompute-durations';
 
 export type BlockingTask = {
   kind: BlockingTaskKind;
@@ -69,6 +70,7 @@ const TASK_TITLES: Record<BlockingTaskKind, string> = {
   'script-generation': 'Đang tạo kịch bản',
   'final-qa': 'Đang kiểm tra QA',
   'name-keywords': 'Đang phân tích tên popup',
+  'recompute-durations': 'Đang tính lại thời lượng scene',
 };
 
 export function blockingTaskTitle(task: BlockingTask): string {
@@ -93,6 +95,7 @@ export function taskFromBusyKey(busy: string | null, sceneLabelForId: (sceneId: 
   if (busy === 'visual-prompts') return { kind: 'visual-prompts' };
   if (busy === 'split-scenes') return { kind: 'split-scenes' };
   if (busy === 'name-keywords') return { kind: 'name-keywords' };
+  if (busy === 'recompute-durations') return { kind: 'recompute-durations' };
   const sceneMatch = /^(voice|sfx):(.+)$/.exec(busy);
   if (sceneMatch) {
     const kind = sceneMatch[1] === 'voice' ? 'voiceover' : 'sfx';
@@ -110,6 +113,7 @@ export function taskFromBusyKey(busy: string | null, sceneLabelForId: (sceneId: 
     parallax: 'đổi hiệu ứng chiều sâu',
     'ai-provider': 'đổi nhà cung cấp AI',
     'visual-style': 'đổi visual style',
+    'scene-tail': 'cập nhật khoảng nghỉ scene',
   };
   if (busy === 'scene' || busy.startsWith('scene:')) {
     const sceneId = busy.slice('scene:'.length);

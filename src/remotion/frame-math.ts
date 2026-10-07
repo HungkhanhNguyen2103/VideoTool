@@ -1,8 +1,9 @@
 import type { RemotionSceneProps } from '../contracts/video';
 import type { TransitionStyle } from '../contracts/project';
+import { secondsToFrames, totalSceneFrames } from '../contracts/frame-math';
 
 export function sceneDurationInFrames(durationSec: number, fps: number): number {
-  return Math.round(durationSec * fps);
+  return secondsToFrames(durationSec, fps);
 }
 
 export type KenBurnsTransform = {
@@ -153,6 +154,5 @@ export function totalDurationInFrames(
   scenes: ReadonlyArray<Pick<RemotionSceneProps, 'durationSec'>>,
   fps: number,
 ): number {
-  const totalDurationSec = scenes.reduce((total, scene) => total + scene.durationSec, 0);
-  return Math.round(totalDurationSec * fps);
+  return totalSceneFrames(scenes.map((scene) => scene.durationSec), fps);
 }

@@ -29,6 +29,7 @@ export { FfmpegRenderer } from './ffmpeg-renderer';
 export { RemotionRenderer } from './remotion-renderer';
 export { createVideoRouter } from './routes';
 export { alignProjectWordTimings } from './word-timing-service';
+export { recomputeProjectSceneDurations } from './scene-duration-service';
 export { analyzeProjectNameKeywords } from './name-keyword-service';
 export { autoAnalyzeProjectNameKeywordsIfStale } from './name-keyword-service';
 export { configureDepthMapService, generateProjectDepthMaps, generateSceneDepthMap } from './depth-map-service';

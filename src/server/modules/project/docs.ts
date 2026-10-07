@@ -2,15 +2,17 @@ import { z } from 'zod';
 import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, NameCandidatesSchema, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 import { SeoPackageSchema } from '../../../contracts/seo';
+import { DEFAULT_SCENE_TAIL_SEC, SceneDurationSecSchema, SceneTailSecSchema } from '../../../contracts/scene-duration';
 
 export const SceneDocSchema = z.object({
   id: z.string(),
   narration: z.string(),
   visualPrompt: z.string(),
-  durationSec: z.number().int().nonnegative(),
+  durationSec: SceneDurationSecSchema,
   assetType: z.enum(['image', 'video']).default('image'),
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),
+  voiceoverDurationSec: z.number().finite().nonnegative().nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
   nameCandidates: NameCandidatesSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
@@ -45,6 +47,7 @@ export const ProjectDocSchema = z.object({
   filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
   parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
+  sceneTailSec: SceneTailSecSchema.default(DEFAULT_SCENE_TAIL_SEC),
   renderFileId: z.string().nullable().default(null),
   draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),

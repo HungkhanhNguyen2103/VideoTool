@@ -19,6 +19,8 @@ describe('blocking progress helpers', () => {
     expect(taskFromBusyKey('voice:missing', () => undefined)).toEqual({ kind: 'voiceover' });
     expect(taskFromBusyKey('render-engine', () => undefined)).toEqual({ kind: 'quick', detail: 'đổi render engine', immediate: false });
     expect(taskFromBusyKey('copy', () => undefined)).toEqual({ kind: 'quick', detail: 'sao chép JSON', immediate: false });
+    expect(taskFromBusyKey('scene-tail', () => undefined)).toEqual({ kind: 'quick', detail: 'cập nhật khoảng nghỉ scene', immediate: false });
+    expect(taskFromBusyKey('recompute-durations', () => undefined)).toEqual({ kind: 'recompute-durations' });
     expect(taskFromBusyKey('unknown', () => undefined)).toBeNull();
   });
 

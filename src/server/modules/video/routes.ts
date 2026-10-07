@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectTransitionStyle } from '../project';
+import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectSceneTailSec, setProjectTransitionStyle } from '../project';
 import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, TRANSITION_STYLES } from '../../../contracts/project';
+import { SceneTailSecSchema } from '../../../contracts/scene-duration';
 import { getActiveJobByType } from '../job';
 import { AppError } from '../../shared/errors';
 import { uploadLogo } from '../../shared/upload';
@@ -12,6 +13,7 @@ import {
   assertProjectRenderReady,
   renderScenePreviewBuffer,
 } from './service';
+import { recomputeProjectSceneDurations } from './scene-duration-service';
 import { LOGO_MIME_TYPES, removeProjectLogo, replaceProjectLogo } from './logo-service';
 import { analyzeProjectNameKeywords, type NameKeywordAnalysisSummary } from './name-keyword-service';
 import { selectProjectSceneKeywords } from './keywords';
@@ -33,6 +35,7 @@ const KeywordPopupsSchema = z.object({ enabled: z.boolean() }).strict();
 const TransitionStyleSchema = z.object({ style: z.enum(TRANSITION_STYLES) }).strict();
 const FilmLookSchema = z.object({ style: z.enum(FILM_LOOK_STYLES) }).strict();
 const ParallaxSchema = z.object({ style: z.enum(PARALLAX_STYLES) }).strict();
+const SceneTailSchema = z.object({ sceneTailSec: SceneTailSecSchema }).strict();
 const RenderSchema = z.object({ draft: z.boolean().optional().default(false) }).strict();
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyzeNameKeywords?: AnalyzeNameKeywords }): Router {
@@ -143,6 +146,19 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyz
   router.patch('/:id/parallax', async (req, res) => {
     const { style } = ParallaxSchema.parse(req.body);
     res.json(await setProjectParallax(req.params.id, style));
+  });
+
+  router.patch('/:id/scene-tail', async (req, res) => {
+    const { sceneTailSec } = SceneTailSchema.parse(req.body);
+    res.json(await setProjectSceneTailSec(req.params.id, sceneTailSec));
+  });
+
+  router.post('/:id/scenes/recompute-durations', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const activeRender = await getActiveJobByType(project.id, 'render-full-video');
+    if (activeRender) throw new AppError('Không thể tính lại thời lượng khi render đang chạy.', 409, 'RENDER_IN_PROGRESS');
+    const result = await recomputeProjectSceneDurations(project.id, async () => undefined, async () => undefined);
+    res.json(result);
   });
 
   return router;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setSceneTail, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -227,6 +227,19 @@ describe('asset API helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/film-look', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ style: 'always' }),
     }));
+  });
+
+  it('patches scene tail and requests stored-voiceover duration recompute', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await setSceneTail('project/1', 0.35);
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/project/project%2F1/scene-tail', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ sceneTailSec: 0.35 }),
+    }));
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ updated: 2, skippedSceneNumbers: [], failedSceneNumbers: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(recomputeSceneDurations('project/1')).resolves.toEqual({ updated: 2, skippedSceneNumbers: [], failedSceneNumbers: [] });
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/project/project%2F1/scenes/recompute-durations', expect.objectContaining({ method: 'POST' }));
   });
 
   it('updates parallax and queues depth maps with exact routes and bodies', async () => {

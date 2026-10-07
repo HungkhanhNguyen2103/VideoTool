@@ -27,8 +27,14 @@ const VoiceoverBatchResultSchema = z.object({
   skippedSceneNumbers: z.array(z.number().int().positive()),
   failedSceneNumbers: z.array(z.number().int().positive()),
 });
+const RecomputeSceneDurationsResultSchema = z.object({
+  updated: z.number().int().nonnegative(),
+  skippedSceneNumbers: z.array(z.number().int().positive()),
+  failedSceneNumbers: z.array(z.number().int().positive()),
+});
 
 export type VoiceoverBatchResult = z.infer<typeof VoiceoverBatchResultSchema>;
+export type RecomputeSceneDurationsResult = z.infer<typeof RecomputeSceneDurationsResultSchema>;
 export type NameKeywordAnalysisSummary = z.infer<typeof NameKeywordAnalysisSummarySchema>;
 export type NameKeywordPopupPreview = z.infer<typeof NameKeywordPopupSchema>;
 export type NameKeywordScenePreview = z.infer<typeof NameKeywordPreviewsSchema>[number];
@@ -122,6 +128,16 @@ export function fitSceneToClip(projectId: string, sceneId: string, expectedVersi
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/fit-to-clip`, ProjectDetailSchema, {
     method: 'POST', body: { expectedVersion },
   });
+}
+
+export function setSceneTail(projectId: string, sceneTailSec: number): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scene-tail`, ProjectDetailSchema, {
+    method: 'PATCH', body: { sceneTailSec },
+  });
+}
+
+export function recomputeSceneDurations(projectId: string): Promise<RecomputeSceneDurationsResult> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/recompute-durations`, RecomputeSceneDurationsResultSchema, { method: 'POST' });
 }
 
 export function voiceoverSummary(result: unknown): string | null {

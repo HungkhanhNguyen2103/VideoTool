@@ -11,6 +11,7 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     assetType: 'image',
     assetFileId: 'asset-1',
     audioFileId: 'audio-1',
+    voiceoverDurationSec: null,
     wordTimings: null,
     sfxPrompt: '',
     motionPrompt: '',
@@ -19,6 +20,7 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     videoTailFileId: null,
     videoDurationSec: null,
     depthMap: null,
+    nameCandidates: null,
     ...overrides,
   };
 }

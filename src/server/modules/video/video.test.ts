@@ -20,6 +20,8 @@ import {
   setProjectRenderEngine,
   setProjectParallax,
   setProjectDraftRenderFile,
+  setProjectSceneTailSec,
+  setProjectSceneDurations,
   setProjectRenderFile,
   setProjectLogo,
   setProjectSceneNameCandidates,
@@ -30,7 +32,7 @@ import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
-import { alignProjectWordTimings, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, renderFullProject } from './index';
+import { alignProjectWordTimings, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, recomputeProjectSceneDurations, renderFullProject } from './index';
 import { createVideoRouter } from './routes';
 import type { NameKeywordAnalysisSummary } from './name-keyword-service';
 import { enqueueJob as insertJob } from '../job';
@@ -149,19 +151,20 @@ describe('video project mutations', () => {
   it('defaults legacy timings to null and conditionally invalidates them when audio or narration changes', async () => {
     const project = await seedProject();
     expect(project.scenes[0]!.wordTimings).toBeNull();
-    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', voiceoverDurationSec: 1.2 });
     const timing = { audioFileId: 'voice-1', words: [{ text: 'Narration', startSec: 0, endSec: 1 }] };
     expect(await setSceneWordTimings(project.id, 'scene-1', 'voice-1', 'Narration', timing)).toBe(true);
     expect(await setSceneWordTimings(project.id, 'scene-1', 'wrong-voice', 'Narration', timing)).toBe(false);
     await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-2' });
     expect((await getProject(project.id)).scenes[0]!.wordTimings).toBeNull();
+    expect((await getProject(project.id)).scenes[0]!.voiceoverDurationSec).toBeNull();
     expect(await setSceneWordTimings(project.id, 'scene-1', 'voice-1', 'Narration', timing)).toBe(false);
     await replaceProjectScenes(project.id, [{ ...(await getProject(project.id)).scenes[0]!, narration: 'Rewritten narration' }]);
     expect((await getProject(project.id)).scenes[0]!.wordTimings).toBeNull();
   });
   it('clears all cross-project media references when duplicating a project', async () => {
     const project = await seedProject();
-    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', sfxFileId: 'sfx-1' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', voiceoverDurationSec: 2.2, sfxFileId: 'sfx-1' });
     await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', nameCandidates: candidateRecord() }]);
     await setProjectBgm(project.id, 'calm', 'bgm-1');
     await setProjectRenderFile(project.id, 'render-1');
@@ -174,27 +177,29 @@ describe('video project mutations', () => {
     expect(duplicate.draftRenderFileId).toBeNull();
     expect(duplicate.bgmFileId).toBeNull();
     expect(duplicate.logoFileId).toBeNull();
-    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, sfxFileId: null, nameCandidates: null });
+    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, voiceoverDurationSec: null, sfxFileId: null, nameCandidates: null });
   });
 
   it('retains stale name candidates through narration edits and voiceover regeneration, then clears them on bulk reset', async () => {
     const project = await seedProject();
-    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', voiceoverDurationSec: 1.2 });
     const storedCandidates = candidateRecord();
     await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', nameCandidates: storedCandidates }]);
 
     await patchProjectScene(project.id, 'scene-1', { narration: 'Rewritten narration' });
     const afterNarrationEdit = (await getProject(project.id)).scenes[0]!;
+    expect(afterNarrationEdit.voiceoverDurationSec).toBeNull();
     expect(afterNarrationEdit.nameCandidates).toEqual(storedCandidates);
     expect(areNameCandidatesFresh(afterNarrationEdit.nameCandidates, afterNarrationEdit.narration, afterNarrationEdit.audioFileId)).toBe(false);
 
-    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-2' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-2', voiceoverDurationSec: 2.4 });
     const afterVoiceoverRegeneration = (await getProject(project.id)).scenes[0]!;
+    expect(afterVoiceoverRegeneration.voiceoverDurationSec).toBe(2.4);
     expect(afterVoiceoverRegeneration.nameCandidates).toEqual(storedCandidates);
     expect(areNameCandidatesFresh(afterVoiceoverRegeneration.nameCandidates, afterVoiceoverRegeneration.narration, afterVoiceoverRegeneration.audioFileId)).toBe(false);
 
     await replaceProjectScenes(project.id, [{ ...afterVoiceoverRegeneration, audioFileId: null }]);
-    expect((await getProject(project.id)).scenes[0]!.nameCandidates).toBeNull();
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ nameCandidates: null, voiceoverDurationSec: null });
   });
 
   it('does not apply a name-candidate batch update after narration or audio changed', async () => {
@@ -218,6 +223,20 @@ describe('video project mutations', () => {
 
     expect(updated.scenes[0]).toMatchObject({ audioFileId: 'voice-1', durationSec: 8, sfxPrompt: 'clock', sfxFileId: 'sfx-1' });
     expect(updated.version).toBe(project.version + 1);
+  });
+
+  it('applies a duration batch with one version increment and rejects a stale project version', async () => {
+    const project = await seedVoiceProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    const snapshot = await getProject(project.id);
+
+    const updated = await setProjectSceneDurations(project.id, snapshot.version, [{
+      sceneId: 'scene-1', audioFileId: 'voice-1', voiceoverDurationSec: 1.237, durationSec: 1.44,
+    }]);
+
+    expect(updated.version).toBe(snapshot.version + 1);
+    expect(updated.scenes[0]).toMatchObject({ durationSec: 1.44, voiceoverDurationSec: 1.237, wordTimings: null });
+    await expect(setProjectSceneDurations(project.id, snapshot.version, [])).rejects.toMatchObject({ status: 409, code: 'PROJECT_CHANGED' });
   });
 
   it('updates BGM mood and file reference atomically', async () => {
@@ -297,6 +316,15 @@ describe('video renderer builders', () => {
 
     const longVideoArgs = buildSceneArguments({ assetType: 'video', videoPath: 'long-scene.mp4', outputPath: 'long-segment.mp4', durationSec: 5, videoDurationSec: 8, width: 1920, height: 1080, fps: 30 });
     expect(longVideoArgs.join(' ')).not.toContain('tpad=');
+  });
+
+  it('aligns fractional scene seconds to one shared whole-frame duration for FFmpeg', () => {
+    const args = buildSceneArguments({ assetType: 'image', videoPath: 'scene.png', outputPath: 'segment.mp4', durationSec: 1.24, width: 1920, height: 1080, fps: 24 });
+
+    expect(args).toContain('30');
+    expect(args).toContain('1.25');
+    expect(args.join(' ')).toContain('atrim=0:1.25');
+    expect(args[args.indexOf('-frames:v') + 1]).toBe('30');
   });
 
   it('does not silently use a keyframe when a video scene has no visual asset', async () => {
@@ -412,10 +440,63 @@ describe('video orchestration services', () => {
 
     const updated = await generateSceneVoiceover(project.id, 'scene-1');
 
-    expect(updated).toMatchObject({ audioFileId: expect.any(String), durationSec: 3 });
+    expect(updated).toMatchObject({ audioFileId: expect.any(String), voiceoverDurationSec: 2.2, durationSec: 2.4 });
     const files = await createFileStoreService(filesDir).listProjectFiles(project.id);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatchObject({ purpose: 'voiceover', mimeType: 'audio/wav' });
+  });
+
+  it('recomputes durations from stored voiceovers, skips missing audio, and leaves failed probes unchanged', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [
+      { id: 'one', narration: 'One', visualPrompt: '', durationSec: 8, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+      { id: 'two', narration: 'Two', visualPrompt: '', durationSec: 9, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+      { id: 'three', narration: 'Three', visualPrompt: '', durationSec: 4, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    ]);
+    const store = createFileStoreService(filesDir);
+    const firstFile = await store.storeFile({ projectId: project.id, originalName: 'one.wav', mimeType: 'audio/wav', buffer: Buffer.from('one'), purpose: 'voiceover' });
+    const secondFile = await store.storeFile({ projectId: project.id, originalName: 'two.wav', mimeType: 'audio/wav', buffer: Buffer.from('two'), purpose: 'voiceover' });
+    await patchProjectScene(project.id, 'one', { audioFileId: firstFile.id });
+    await patchProjectScene(project.id, 'two', { audioFileId: secondFile.id });
+    mocks.probeAudioDuration.mockResolvedValueOnce(2.237).mockRejectedValueOnce(new Error('corrupt WAV'));
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    const result = await recomputeProjectSceneDurations(project.id, async (line) => { logs.push(line); }, async (percent) => { progress.push(percent); });
+
+    expect(result).toEqual({ updated: 1, skippedSceneNumbers: [3], failedSceneNumbers: [2] });
+    expect((await getProject(project.id)).scenes.map((scene) => [scene.durationSec, scene.voiceoverDurationSec])).toEqual([[2.44, 2.237], [9, null], [4, null]]);
+    expect(mocks.probeAudioDuration).toHaveBeenCalledTimes(2);
+    expect(progress).toEqual([33, 67, 100]);
+    expect(logs.join('\n')).toContain('Scene 2');
+  });
+
+  it('recomputes stored voiceover durations through the route without running TTS', async () => {
+    const project = await seedProject();
+    const voice = await createFileStoreService(filesDir).storeFile({ projectId: project.id, originalName: 'voice.wav', mimeType: 'audio/wav', buffer: Buffer.from('stored voice'), purpose: 'voiceover' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: voice.id });
+    mocks.probeAudioDuration.mockResolvedValue(1.237);
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/recompute-durations`, { method: 'POST' });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ updated: 1, skippedSceneNumbers: [], failedSceneNumbers: [] });
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ durationSec: 1.44, voiceoverDurationSec: 1.237 });
+    expect(mocks.probeAudioDuration).toHaveBeenCalledOnce();
+    expect(mocks.synthesize).not.toHaveBeenCalled();
+  });
+
+  it('rejects voiceover-duration recompute while a render job is active', async () => {
+    const project = await seedProject();
+    await insertJob({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id } });
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/recompute-durations`, { method: 'POST' });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'RENDER_IN_PROGRESS' } });
+    expect(mocks.probeAudioDuration).not.toHaveBeenCalled();
   });
 
   it('retains the prior name analysis as stale when a scene voiceover is regenerated', async () => {
@@ -800,6 +881,29 @@ describe('video routes and worker handlers', () => {
     expect(first.status).toBe(201);
     expect(second.status).toBe(200);
     expect(enqueueJob).toHaveBeenCalledOnce();
+  });
+
+  it('persists a validated scene-tail setting and copies it on duplicate', async () => {
+    const project = await seedProject();
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    expect(project.sceneTailSec).toBe(0.2);
+    expect((await setProjectSceneTailSec(project.id, 0.35)).sceneTailSec).toBe(0.35);
+
+    for (const sceneTailSec of [0, 0.2, 2]) {
+      const response = await fetch(`${base}/api/project/${project.id}/scene-tail`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sceneTailSec }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).sceneTailSec).toBe(sceneTailSec);
+    }
+    expect((await duplicateProject(project.id)).sceneTailSec).toBe(2);
+
+    for (const body of [{ sceneTailSec: -0.01 }, { sceneTailSec: 2.01 }, { sceneTailSec: 0.005 }, { sceneTailSec: 0.2, extra: true }]) {
+      const invalid = await fetch(`${base}/api/project/${project.id}/scene-tail`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      expect(invalid.status).toBe(400);
+    }
   });
 
   it('updates the render engine through the thin route and rejects invalid or missing projects', async () => {

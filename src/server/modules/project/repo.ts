@@ -52,7 +52,7 @@ export async function listProjectSummaries(filter: ListProjectsFilter): Promise<
           status: 1,
           updatedAt: 1,
           scenesCount: { $cond: [{ $gt: [{ $size: '$scenes' }, 0] }, { $size: '$scenes' }, null] },
-          durationSec: { $cond: [{ $gt: [{ $size: '$scenes' }, 0] }, { $sum: '$scenes.durationSec' }, null] },
+          durationSec: { $cond: [{ $gt: [{ $size: '$scenes' }, 0] }, { $round: [{ $sum: '$scenes.durationSec' }, 2] }, null] },
         },
       },
     ])

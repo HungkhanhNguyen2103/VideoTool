@@ -50,7 +50,7 @@ describe('Remotion contracts and frame math', () => {
       { id: 'one', from: 0, durationInFrames: 30 },
       { id: 'two', from: 30, durationInFrames: 30 },
     ]);
-    expect(totalDurationInFrames(scenes, 30)).toBe(61);
+    expect(totalDurationInFrames(scenes, 30)).toBe(60);
   });
 
   it('accepts only JSON-safe Remotion input props', () => {
