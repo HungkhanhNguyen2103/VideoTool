@@ -95,6 +95,45 @@ describe('selectKeywords', () => {
     ]))).toMatchObject([{ text: 'Rochester', kind: 'name', nameRole: 'place' }]);
   });
 
+  it('includes a lowercase geography prefix in the displayed place name and starts its timing at the prefix', () => {
+    const result = selectKeywords(words([
+      ['Trước', 0, .2], ['khi', .2, .4], ['trời', .4, .6], ['sáng,', .6, .8], ['trên', 1, 1.2], ['khúc', 1.2, 1.4],
+      ['sông', 1.4, 1.6], ['Tiền,', 1.6, 1.8], ['khoảng', 2, 2.2], ['300', 2.2, 2.4], ['thuyền', 2.4, 2.6],
+      ['Xiêm', 2.6, 2.8], ['đã', 3, 3.2], ['nằm', 3.2, 3.4], ['giữa', 3.4, 3.6], ['hai', 3.6, 3.8], ['làn', 3.8, 4], ['đạn.', 4, 4.2],
+    ]));
+    expect(result).toContainEqual(expect.objectContaining({ text: 'Sông Tiền', kind: 'name', nameRole: 'place', startSec: 1.4 }));
+    expect(result.filter((keyword) => keyword.kind === 'name').map((keyword) => keyword.text)).not.toContain('Xiêm');
+  });
+
+  it('handles geography and event prefixes without moving role text into the popup', () => {
+    expect(selectKeywords(words([
+      ['ở', 0, .2], ['thành', .3, .5], ['phố', .5, .7], ['Mỹ', .7, .9], ['Tho,', .9, 1.1], ['rất', 3, 3.2], ['đông.', 4, 4.2],
+    ]))).toContainEqual(expect.objectContaining({ text: 'Thành phố Mỹ Tho', nameRole: 'place', startSec: .3 }));
+    const eventResult = selectKeywords(words([
+      ['trong', 0, .2], ['trận', .3, .5], ['Rạch', .5, .7], ['Gầm,', .7, .9], ['quân', 3, 3.2], ['ta', 3.2, 3.4], ['thắng.', 4, 4.2],
+    ]));
+    expect(eventResult).toContainEqual(expect.objectContaining({ text: 'Trận Rạch Gầm', kind: 'name', startSec: .3 }));
+    expect(eventResult.find((keyword) => keyword.text === 'Trận Rạch Gầm')).not.toHaveProperty('nameRole');
+    expect(selectKeywords(words([
+      ['ông', 0, .2], ['Nguyễn', .3, .5], ['Huệ,', .5, .7], ['sau', 3, 3.2], ['đó.', 4, 4.2],
+    ]))).toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', subtitle: 'Ông', nameRole: 'person' }));
+    expect(selectKeywords(words([
+      ['nhà', 0, .2], ['khoa', .2, .4], ['học', .4, .6], ['Trần', .7, .9], ['Văn', .9, 1.1], ['A,', 1.1, 1.3], ['đã', 3, 3.2], ['nói.', 4, 4.2],
+    ]))).toContainEqual(expect.objectContaining({ text: 'Trần Văn A', subtitle: 'Nhà khoa học', nameRole: 'person' }));
+  });
+
+  it('allows only a prefixed proper name at sentence start', () => {
+    expect(selectKeywords(words([
+      ['Sông', 0, .2], ['Tiền', .2, .4], ['chảy', .5, .7], ['qua', .7, .9], ['đồng', 3, 3.2], ['bằng.', 4, 4.2],
+    ]))).toContainEqual(expect.objectContaining({ text: 'Sông Tiền', nameRole: 'place', startSec: 0 }));
+    expect(selectKeywords(words([
+      ['Nguyễn', 0, .2], ['Huệ', .2, .4], ['tiến', .5, .7], ['quân', 3, 3.2], ['sang', 4, 4.2],
+    ]))).not.toContainEqual(expect.objectContaining({ kind: 'name' }));
+    expect(selectKeywords(words([
+      ['trên', 0, .2], ['sông', .2, .4], ['lớn', .4, .6], ['chảy', 3, 3.2], ['mãi.', 4, 4.2],
+    ])).filter((keyword) => keyword.kind === 'name')).toEqual([]);
+  });
+
   it('uses the lower-third hold and skips names with too little remaining audio', () => {
     expect(LOWER_THIRD_HOLD_SEC).toBe(3);
     expect(selectKeywords(words([
@@ -173,6 +212,15 @@ describe('annotateNameKeywords', () => {
       [kw('1975', 2, 'year')],
       [kw('Rochester', 0, 'name')],
     ]);
+  });
+
+  it('deduplicates prefixed and bare mentions by their capitalized name run', () => {
+    const result = annotateNameKeywords([
+      [kw('Sông Tiền', 1, 'name')],
+      [kw('Tiền', 2, 'name')],
+      [kw('sông Tiền', 3, 'name')],
+    ]);
+    expect(result).toEqual([[kw('Sông Tiền', 1, 'name')], [], []]);
   });
 });
 

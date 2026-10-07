@@ -34,11 +34,23 @@ type Candidate = {
   subtitle?: string;
 };
 
-const ROLE_PHRASES = [
+export const ROLE_PHRASES = [
   'kỹ sư', 'ông', 'bà', 'giám đốc', 'tổng giám đốc', 'chủ tịch', 'tổng thống', 'thủ tướng',
-  'tướng', 'đại tướng', 'nhà khoa học', 'nhà sáng lập', 'nhà phát minh', 'người sáng lập',
+  'tướng', 'đại tướng', 'vua', 'hoàng đế', 'nhà khoa học', 'nhà sáng lập', 'nhà phát minh', 'người sáng lập',
 ].sort((a, b) => b.split(' ').length - a.split(' ').length);
 const LOCATIVE_PHRASES = ['ở', 'tại', 'từ', 'đến', 'sang', 'thành phố', 'bang', 'tỉnh', 'thủ đô']
+  .sort((a, b) => b.split(' ').length - a.split(' ').length);
+const GEOGRAPHY_NAME_PREFIXES = [
+  'sông', 'núi', 'biển', 'hồ', 'đảo', 'vịnh', 'đèo', 'cửa', 'cầu', 'bến', 'rạch', 'kênh',
+  'thành phố', 'thành', 'tỉnh', 'huyện', 'xã', 'làng', 'đồng bằng', 'cao nguyên', 'bán đảo', 'quần đảo', 'eo biển',
+];
+const EVENT_OR_POLITY_NAME_PREFIXES = [
+  'trận', 'chiến dịch', 'cuộc khởi nghĩa', 'hiệp ước', 'triều', 'nhà', 'vương quốc', 'đế quốc', 'đồn', 'pháo đài',
+];
+const GEOGRAPHY_NAME_PREFIX_SET = new Set(GEOGRAPHY_NAME_PREFIXES);
+
+/** Generic nouns that may be part of a proper name; longest phrases match first. */
+export const NAME_PREFIX_PHRASES = [...GEOGRAPHY_NAME_PREFIXES, ...EVENT_OR_POLITY_NAME_PREFIXES]
   .sort((a, b) => b.split(' ').length - a.split(' ').length);
 
 const isYearToken = (value: string) => /^\d{4}$/u.test(value) && Number(value) >= YEAR_RANGE.min && Number(value) <= YEAR_RANGE.max;
@@ -51,16 +63,56 @@ function matchesPhraseBefore(words: ReadonlyArray<TimedWord>, index: number, phr
   return parts.every((part, offset) => normalizedWord(words[index - parts.length + offset]!.text) === part);
 }
 
+function matchesPhraseAt(words: ReadonlyArray<TimedWord>, index: number, phrase: string): boolean {
+  const parts = phrase.split(' ');
+  if (index < 0 || index + parts.length > words.length) return false;
+  return parts.every((part, offset) => normalizedWord(words[index + offset]!.text) === part);
+}
+
 function sentenceCase(value: string): string {
   const lower = value.toLocaleLowerCase('vi');
   return `${lower.slice(0, 1).toLocaleUpperCase('vi')}${lower.slice(1)}`;
 }
 
-function nameMetadata(words: ReadonlyArray<TimedWord>, index: number): Pick<Candidate, 'nameRole' | 'subtitle'> {
+type NamePrefixMatch = { phrase: string; startIndex: number; nameIndex: number; kind: 'geography' | 'event' };
+
+function namePrefixKind(phrase: string): NamePrefixMatch['kind'] {
+  return GEOGRAPHY_NAME_PREFIX_SET.has(phrase) ? 'geography' : 'event';
+}
+
+function namePrefixBefore(words: ReadonlyArray<TimedWord>, index: number): NamePrefixMatch | null {
+  for (const phrase of NAME_PREFIX_PHRASES) {
+    const startIndex = index - phrase.split(' ').length;
+    if (matchesPhraseBefore(words, index, phrase)) {
+      return { phrase, startIndex, nameIndex: index, kind: namePrefixKind(phrase) };
+    }
+  }
+  return null;
+}
+
+function namePrefixAt(words: ReadonlyArray<TimedWord>, index: number): NamePrefixMatch | null {
+  if (!isCapitalized(clean(words[index]?.text ?? ''))) return null;
+  for (const phrase of NAME_PREFIX_PHRASES) {
+    const nameIndex = index + phrase.split(' ').length;
+    if (matchesPhraseAt(words, index, phrase) && isCapitalized(clean(words[nameIndex]?.text ?? ''))) {
+      return { phrase, startIndex: index, nameIndex, kind: namePrefixKind(phrase) };
+    }
+  }
+  return null;
+}
+
+function capitalizeFirst(value: string): string {
+  return `${value.slice(0, 1).toLocaleUpperCase('vi')}${value.slice(1)}`;
+}
+
+function nameMetadata(words: ReadonlyArray<TimedWord>, index: number, prefixKind?: NamePrefixMatch['kind']): Pick<Candidate, 'nameRole' | 'subtitle'> {
   const role = ROLE_PHRASES.find((phrase) => matchesPhraseBefore(words, index, phrase));
   const place = LOCATIVE_PHRASES.some((phrase) => matchesPhraseBefore(words, index, phrase));
+  if (prefixKind === 'event') {
+    return role ? { subtitle: sentenceCase(role) } : {};
+  }
   return {
-    nameRole: place ? 'place' : 'person',
+    nameRole: prefixKind === 'geography' || place ? 'place' : 'person',
     ...(role ? { subtitle: sentenceCase(role) } : {}),
   };
 }
@@ -98,6 +150,22 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
   const audioEndSec = words[words.length - 1]!.endSec;
   const centerCandidates: Candidate[] = [];
   const nameCandidates: Candidate[] = [];
+  const addNameCandidate = (nameIndex: number, last: number, prefix: NamePrefixMatch | null) => {
+    const role = ROLE_PHRASES.find((phrase) => matchesPhraseBefore(words, nameIndex, phrase));
+    const effectivePrefix = role ? null : prefix;
+    const nameText = words.slice(nameIndex, last + 1).map((word) => clean(word.text)).join(' ');
+    const prefixText = effectivePrefix
+      ? capitalizeFirst(words.slice(effectivePrefix.startIndex, nameIndex).map((word) => clean(word.text)).join(' '))
+      : '';
+    nameCandidates.push({
+      text: prefixText ? `${prefixText} ${nameText}` : nameText,
+      startSec: words[effectivePrefix?.startIndex ?? nameIndex]!.startSec,
+      phraseEndSec: words[last]!.endSec,
+      priority: 1,
+      kind: 'name',
+      ...nameMetadata(words, nameIndex, effectivePrefix?.kind),
+    });
+  };
   for (let index = 0; index < words.length; index++) {
     const date = dateCandidate(words, index);
     if (date) {
@@ -120,6 +188,15 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
       index = last;
       continue;
     }
+    const prefixBeforeCurrent = namePrefixBefore(words, index);
+    const prefixAtCurrent = prefixBeforeCurrent ? null : namePrefixAt(words, index);
+    if (prefixAtCurrent) {
+      let last = prefixAtCurrent.nameIndex;
+      while (last + 1 < words.length && isCapitalized(clean(words[last + 1]!.text))) last++;
+      addNameCandidate(prefixAtCurrent.nameIndex, last, prefixAtCurrent);
+      index = last;
+      continue;
+    }
     if (isSentenceStart(words, index) || !isCapitalized(firstText)) continue;
     // A capitalized continuation of a sentence-start run belongs to that run;
     // do not surface its trailing token as a single-name lower third.
@@ -127,14 +204,7 @@ export function selectKeywords(words: ReadonlyArray<TimedWord>): Keyword[] {
     let last = index;
     while (last + 1 < words.length && isCapitalized(clean(words[last + 1]!.text))) last++;
     if (last >= index) {
-      nameCandidates.push({
-        text: words.slice(index, last + 1).map((word) => clean(word.text)).join(' '),
-        startSec: first.startSec,
-        phraseEndSec: words[last]!.endSec,
-        priority: 1,
-        kind: 'name',
-        ...nameMetadata(words, index),
-      });
+      addNameCandidate(index, last, prefixBeforeCurrent);
       index = last;
     }
   }
@@ -256,12 +326,21 @@ function normalizeNameMention(value: string): string {
     .trim();
 }
 
+function normalizeNameDedupeKey(value: string): string {
+  const normalized = normalizeNameMention(value);
+  for (const prefix of NAME_PREFIX_PHRASES) {
+    const normalizedPrefix = normalizeNameMention(prefix);
+    if (normalized.startsWith(`${normalizedPrefix} `)) return normalized.slice(normalizedPrefix.length + 1);
+  }
+  return normalized;
+}
+
 /** Keep only the first lower-third mention of each name across the project. */
 export function annotateNameKeywords(scenes: ReadonlyArray<ReadonlyArray<Keyword>>): Keyword[][] {
   const seen = new Set<string>();
   return scenes.map((keywords) => keywords.filter((keyword) => {
     if (keyword.kind !== 'name') return true;
-    const key = normalizeNameMention(keyword.text);
+    const key = normalizeNameDedupeKey(keyword.text);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
