@@ -22,4 +22,14 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('Cảnh cảnh báo chỉ cần xác nhận');
     expect(source).toContain('disabled={studioLocked || missingScenes.length > 0}');
   });
+
+  it('wires scene preview results into the detail section and labeled card fallback', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+
+    expect(source).toContain('ScenePreviewSection');
+    expect(source).toContain('Đã render preview scene ${sceneNumber}.');
+    expect(source).toContain('Preview render');
+    expect(source).toContain('Xem asset gốc');
+    expect(source).toContain('URL.revokeObjectURL(preview.url)');
+  });
 });

@@ -10,10 +10,11 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-06 · Task 77 follow-up fixes QA card labels and chevrons_
+_Last updated: 2026-10-07 · Task 78 per-scene render preview_
 
 ### Works today (verified)
-- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (674 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Config validation, JSON error shape, `/api` 404, malformed-JSON 400, `/files` 404 and SPA fallback remain covered by the suite (715 tests pass, 1 skipped; the pre-existing `project` todo file is skipped). Typecheck and lint (incl. module boundary rules) pass.
+- Task 78 adds client-only per-scene render previews: render-time fingerprints and first-field stale reasons, engine-specific content notes, in-dialog result/error/retry states, session-only object-URL cleanup, a completion toast, and a scene-card `Preview render` badge with `Xem asset gốc`. Focused preview/component tests pass 10/10; the full suite passes 715 tests with 1 skipped; typecheck, lint, and build pass. Real-page acceptance covered a Remotion video scene and image scene, blocking progress, result players, the toast, card restore, and narration stale warning on Rạch Gầm in the available ~507×635 in-app viewport. Exact >=1280px and 900px browser captures, forced failed-render state, and FFmpeg browser state remain unverified. Mock captures are under `data/files/.verification/task-78/`; Remotion bundle time remains ~12s of ~27s per preview and the renderer was not changed.
 - `CreateProjectRequestSchema` (contracts/project.ts) validates title/brief/duration/chapterCount/renderSettings and produces the exact Vietnamese messages from `docs/prototypes/khoi-tao-du-an/app.js`; checked with a throwaway (uncommitted) script, not a committed test.
 - `titleSearch` normalization (`modules/project/title-search.ts`) matches the prototype's `norm()` (accent-insensitive), same throwaway script.
 - `npm run build` succeeds end to end: `vite build` (client bundle) and `tsup` (server.js, worker.js) both complete with no errors. This is the first time the full build has been exercised.
@@ -106,7 +107,7 @@ Unknown `/api/*` returns JSON 404.
 | `/production/:projectId/review` \| `/studio` \| `/seo` | ReviewScriptPage implemented for `/review`; Studio asset import/export/editor plus voiceover/SFX/BGM/preview/render controls implemented; SEO production page implements package editing, thumbnail upload, publish checklist, Markdown export, and download links |
 
 ### Run and verify
-`npm run typecheck`, `npm run lint`, `npm test` (184 passed; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
+`npm run typecheck`, `npm run lint`, `npm test` (715 passed, 1 skipped; the pre-existing `project` todo file is skipped), and `npm run build` all pass. The Remotion integration rendered a non-empty one-second MP4 with `node_modules/.remotion/chrome-headless-shell/win64/chrome-headless-shell-win64/chrome-headless-shell.exe`; FFmpeg/ffprobe were available as `C:\ffmpeg\bin\ffmpeg.exe` and `C:\ffmpeg\bin\ffprobe.exe`, and the real scene+BGM plus short-video duration integration ran. The artifact scan found no Remotion composition code in built server/worker/client outputs. Vite emits a non-blocking client chunk-size warning above 500 kB.
 - The post-review Remotion parity fix mutes embedded audio on source video scenes, and progress log writes are serialized and surfaced as controlled render failures instead of unhandled rejections; the focused Remotion suite passes 13/13.
 - Remotion cleanup failures are logged without replacing the primary staging/render error.
 - ReviewScriptPage now derives its production stepper from chapter/job state and uses the shared dark-theme tokens; four focused regression tests cover the state matrix and CSS token references.

@@ -17,6 +17,8 @@ import { computePipelineProgress } from './pipeline-progress';
 import { summarizeRenderReadiness } from './render-readiness';
 import { readinessBadgeForStatus } from './scene-readiness-ui';
 import { ProjectLogoControl } from './ProjectLogoControl';
+import { ScenePreviewSection, type ScenePreviewState } from './ScenePreviewSection';
+import { createScenePreviewFingerprint } from './scene-preview';
 import styles from './StudioPage.module.css';
 
 const statusTone = { draft: 'muted', script: 'indigo', assets: 'green', rendered: 'green' } as const;
@@ -44,12 +46,13 @@ export function StudioPage() {
   const [voiceoverJobId, setVoiceoverJobId] = useState<string | null>(null);
   const [voiceoverResetSceneIds, setVoiceoverResetSceneIds] = useState<Set<string>>(new Set());
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null);
-  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [scenePreviews, setScenePreviews] = useState<Record<string, ScenePreviewState>>({});
+  const [previewErrors, setPreviewErrors] = useState<Record<string, string | null>>({});
   const [videoDistributionPercent, setVideoDistributionPercent] = useState(20);
   const [videoDistributionTarget, setVideoDistributionTarget] = useState(20);
   const [videoDistributionPreview, setVideoDistributionPreview] = useState<VideoDistributionPreview | null>(null);
   const [renderConfirmationDraft, setRenderConfirmationDraft] = useState<boolean | null>(null);
-  const previewUrlsRef = useRef<Record<string, string>>({});
+  const scenePreviewsRef = useRef<Record<string, ScenePreviewState>>({});
   const refreshedJobRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const detailDialogRef = useRef<HTMLDialogElement>(null);
@@ -73,6 +76,10 @@ export function StudioPage() {
   const expandedVoiceoverFile = expandedScene?.audioFileId ? filesById.get(expandedScene.audioFileId) : undefined;
   const expandedSfxFile = expandedScene?.sfxFileId ? filesById.get(expandedScene.sfxFileId) : undefined;
   const expandedReadiness = expandedScene ? readinessBySceneId.get(expandedScene.id) : undefined;
+  const expandedSceneNumber = expandedScene ? scenes.findIndex((scene) => scene.id === expandedScene.id) + 1 : 0;
+  const expandedAssetFile = expandedScene?.assetFileId ? filesById.get(expandedScene.assetFileId) : undefined;
+  const expandedAssetSrc = expandedAssetFile ? api.fileUrlForSummary(expandedAssetFile) : null;
+  const expandedAssetType = expandedAssetFile ? api.mediaTypeForMime(expandedAssetFile.mimeType) : null;
   const progress = useJobProgress(jobId, jobReconnectKey);
   const busyTask = useMemo(() => taskFromBusyKey(busy, (sceneId) => {
     const index = scenes.findIndex((scene) => scene.id === sceneId);
@@ -83,7 +90,7 @@ export function StudioPage() {
   const studioLocked = !jobLocallyUnlocked && isStudioLocked(busy, jobId, progress);
 
   useEffect(() => { if (project) setBgmMood(project.bgmMood); }, [project?.id, project?.bgmMood]);
-  useEffect(() => () => { Object.values(previewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url)); }, []);
+  useEffect(() => () => { Object.values(scenePreviewsRef.current).forEach(({ url }) => URL.revokeObjectURL(url)); }, []);
   useEffect(() => {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;
     refreshedJobRef.current = jobId;
@@ -373,19 +380,42 @@ export function StudioPage() {
   }
 
   async function previewScene(sceneId: string) {
+    const scene = scenes.find((candidate) => candidate.id === sceneId);
+    if (!project || !scene) return;
+    const fingerprint = createScenePreviewFingerprint(scene, project);
+    const sceneNumber = scenes.findIndex((candidate) => candidate.id === sceneId) + 1;
     try {
       setBusy(`preview:${sceneId}`);
+      setPreviewErrors((current) => ({ ...current, [sceneId]: null }));
       const blob = await api.previewScene(projectId, sceneId);
       const url = URL.createObjectURL(blob);
-      setPreviewUrls((previous) => {
+      const preview = { url, renderedAt: Date.now(), fingerprint };
+      setScenePreviews((previous) => {
         const old = previous[sceneId];
-        if (old) URL.revokeObjectURL(old);
-        const next = { ...previous, [sceneId]: url };
-        previewUrlsRef.current = next;
+        if (old) URL.revokeObjectURL(old.url);
+        const next = { ...previous, [sceneId]: preview };
+        scenePreviewsRef.current = next;
         return next;
       });
-    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo preview.'); }
+      toast(`Đã render preview scene ${sceneNumber}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể tạo preview.';
+      setPreviewErrors((current) => ({ ...current, [sceneId]: message }));
+      toast(message);
+    }
     finally { setBusy(null); }
+  }
+
+  function clearScenePreview(sceneId: string): void {
+    const previous = scenePreviewsRef.current;
+    const preview = previous[sceneId];
+    if (!preview) return;
+    URL.revokeObjectURL(preview.url);
+    const next = { ...previous };
+    delete next[sceneId];
+    scenePreviewsRef.current = next;
+    setScenePreviews(next);
+    setPreviewErrors((current) => ({ ...current, [sceneId]: null }));
   }
 
   function startEdit(scene: Scene) { setEditingScene(scene.id); setDraftPrompt(scene.visualPrompt); }
@@ -514,11 +544,12 @@ export function StudioPage() {
           const actualType = file ? api.mediaTypeForMime(file.mimeType) : null;
           const previewType = actualType ?? scene.assetType;
           const typeMismatch = actualType !== null && actualType !== scene.assetType;
+          const scenePreview = scenePreviews[scene.id];
           const readiness = readinessBySceneId.get(scene.id)!;
           const readinessBadge = readinessBadgeForStatus(readiness.status);
           return <article className={styles.card} key={scene.id}>
             <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><span className={styles.muted}>{scene.durationSec}s{scene.assetType === 'video' && scene.videoDurationSec !== null ? ` · clip ${scene.videoDurationSec.toFixed(1)}s` : ''}</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={studioLocked} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
-            <div className={`${styles.preview} ${styles.cardPreview}`}>{previewUrls[scene.id] ? <video controls src={previewUrls[scene.id]} /> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
+            <div className={`${styles.preview} ${styles.cardPreview}`}>{scenePreview ? <><video controls src={scenePreview.url} aria-label={`Preview render scene ${index + 1}`} /><div className={styles.cardPreviewLabel}><Badge tone="amber">Preview render</Badge><Button size="sm" variant="ghost" disabled={studioLocked} onClick={() => clearScenePreview(scene.id)}>Xem asset gốc</Button></div></> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
             <div className={styles.cardFooter}><div className={styles.statusBadges}>{readinessBadge && <span title={readiness.messages.join(' · ')}><Badge tone={readinessBadge.tone}>{readinessBadge.label}</Badge></span>}{!scene.narration.trim() && <Badge tone="amber">Không có lời dẫn</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? 'green' : 'muted'}>{scene.audioFileId ? 'Đã có voiceover' : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
           </article>;
         })}
@@ -526,8 +557,22 @@ export function StudioPage() {
 
       <dialog ref={detailDialogRef} className={styles.detailDialog} aria-labelledby="scene-detail-title" onClose={() => { setExpandedSceneId(null); setEditingScene(null); setEditingNarrationScene(null); setEditingMotionScene(null); }}>
         {expandedScene ? <div key={expandedScene.id} className={styles.detailContent}>
-          <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(scenes.findIndex((scene) => scene.id === expandedScene.id) + 1).padStart(2, '0')}</h2><p className={styles.muted}>Chi tiết scene</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); setEditingNarrationScene(null); setEditingMotionScene(null); }}>Đóng</Button></div>
+          <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(expandedSceneNumber).padStart(2, '0')}</h2><p className={styles.muted}>Chi tiết scene</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); setEditingNarrationScene(null); setEditingMotionScene(null); }}>Đóng</Button></div>
           <div className={styles.detailBody}>
+            <section className={styles.detailAsset} aria-label="Asset gốc">
+              <div className={styles.detailAssetHeader}><span className={styles.label}>Asset gốc</span><span className={styles.muted}>{expandedAssetFile?.originalName ?? 'Chưa có asset'}</span></div>
+              {expandedAssetSrc && expandedAssetType === 'video' ? <video className={styles.detailAssetMedia} controls src={expandedAssetSrc} aria-label={`Asset gốc scene ${expandedSceneNumber}`} /> : expandedAssetSrc && expandedAssetType === 'image' ? <img className={styles.detailAssetMedia} src={expandedAssetSrc} alt={`Asset gốc scene ${expandedSceneNumber}`} /> : <span className={styles.placeholder}>Chưa có asset.</span>}
+            </section>
+            <ScenePreviewSection
+              scene={expandedScene}
+              currentScene={expandedScene}
+              sceneNumber={expandedSceneNumber}
+              project={project}
+              preview={scenePreviews[expandedScene.id] ?? null}
+              error={previewErrors[expandedScene.id] ?? null}
+              studioLocked={studioLocked}
+              onRender={() => void previewScene(expandedScene.id)}
+            />
             {expandedScene.assetType === 'video' && <section className={styles.videoFacts} aria-label="Khung hinh video">
               <div className={styles.videoFactsHeader}><span className={styles.label}>Khung hinh video</span><span className={styles.muted}>{expandedReadiness?.messages.join(' · ')}</span></div>
               <div className={styles.videoFactsGrid}>
@@ -557,7 +602,6 @@ export function StudioPage() {
                 <div className={styles.actions}><Button size="sm" disabled={studioLocked} onClick={() => void generateSfx(expandedScene.id)}>Tạo SFX</Button></div>
                 {expandedSfxFile?.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(expandedSfxFile)} /> : <span className={styles.placeholder}>Chưa có SFX.</span>}
               </section>
-              <div className={styles.actions}><Button size="sm" disabled={studioLocked} onClick={() => void previewScene(expandedScene.id)}>Preview</Button></div>
             </div>
           </div>
         </div> : null}

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Tool — Scene preview</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">▣</span><span>Video Tool</span></div>
+      <div class="sidebar-label">ĐANG XEM</div>
+      <strong class="sidebar-project">Rạch Gầm 1785</strong>
+      <span class="muted">44 cảnh · Remotion</span>
+      <nav class="steps" aria-label="Các bước sản xuất">
+        <a href="#">1. Khởi Tạo Dự Án</a>
+        <a href="#">2. Duyệt &amp; Tái Tạo</a>
+        <a class="active" href="#">3. Studio Phân Cảnh</a>
+        <a href="#">4. SEO &amp; Đóng Gói Kênh</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <div class="eyebrow">STUDIO PHÂN CẢNH &amp; XUẤT VIDEO</div>
+          <h1>Rạch Gầm 1785: Hạm đội 300 thuyền biến mất trong một đêm</h1>
+          <p class="muted">44 cảnh · 207s · scene detail preview</p>
+        </div>
+        <span class="engine-chip">Remotion · 1920×1080 · 30 fps</span>
+      </header>
+
+      <section class="panel toolbar">
+        <div><span class="eyebrow">TÀI SẢN &amp; XUẤT VIDEO</span><h2>Danh sách scene</h2></div>
+        <div class="toolbar-actions"><button class="button">Import ZIP</button><button class="button">Tạo voiceover</button><button class="button amber">Render video</button></div>
+      </section>
+
+      <section class="panel scenes-panel">
+        <div class="panel-head"><div><span class="eyebrow">SCENE &amp; HÌNH ẢNH</span><h2>44 / 44 scenes have assets</h2></div><span class="badge ok">Đang làm asset</span></div>
+        <div class="scene-grid">
+          <article class="scene-card preview-card">
+            <div class="scene-card-head"><span class="scene-number">01</span><span class="muted">8s · video</span><button class="button small">Chi tiết</button></div>
+            <div class="media preview-media"><div class="fake-video-scene"><span class="fake-caption">PREVIEW RENDER</span><span class="fake-river">300 THUYỀN · SÔNG TIỀN</span></div><div class="media-controls"><span>▶</span><span class="timeline"><i></i></span><span>0:00 / 0:08</span><span>🔊</span></div></div>
+            <div class="preview-card-footer"><span class="badge amber">Preview render</span><button class="link-button">Xem asset gốc</button></div>
+            <div class="scene-badges"><span class="badge ok">Đã có visual prompt</span><span class="badge muted-badge">Đã có voiceover</span><span class="badge muted-badge">Đã có SFX</span></div>
+          </article>
+          <article class="scene-card"><div class="scene-card-head"><span class="scene-number">02</span><span class="muted">4s · image</span><button class="button small">Chi tiết</button></div><div class="media asset-media"><span>ASSET GỐC</span><strong>Predawn river fleet</strong></div><div class="scene-badges"><span class="badge ok">Đã có visual prompt</span><span class="badge muted-badge">Đã có voiceover</span></div></article>
+          <article class="scene-card"><div class="scene-card-head"><span class="scene-number">03</span><span class="muted">5s · image</span><button class="button small">Chi tiết</button></div><div class="media asset-media blue"><span>ASSET GỐC</span><strong>Bãi cọc dưới nước</strong></div><div class="scene-badges"><span class="badge ok">Đã có visual prompt</span><span class="badge muted-badge">Chưa có SFX</span></div></article>
+        </div>
+      </section>
+
+      <section class="panel controls-panel"><div><span class="eyebrow">GIAO DIỆN VIDEO</span><h2>Remotion effects</h2></div><div class="control-row"><span>Chữ pop-up</span><span class="toggle on">ON</span><span class="control-separator">·</span><span>Chuyển cảnh đa dạng</span><span class="control-separator">·</span><span>Chiều sâu tự động</span></div></section>
+    </main>
+  </div>
+
+  <aside class="state-switcher" aria-label="Mock states">
+    <span>MOCK STATE</span><a href="#no-preview">No preview</a><a href="#rendering">Rendering</a><a href="#result">Result</a><a href="#stale">Stale</a><a href="#failed">Failed</a>
+  </aside>
+
+  <div class="dialog-backdrop"></div>
+  <section class="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+    <header class="dialog-header"><div><span class="eyebrow">SCENE DETAIL</span><h2 id="detail-title">Scene 01</h2><p class="muted">Chi tiết scene · video · 8s</p></div><button class="button">Đóng</button></header>
+    <div class="dialog-body">
+      <section class="asset-section"><div class="section-title"><span class="label">Asset gốc</span><span class="muted">video · clip 4.0s</span></div><div class="media dialog-asset"><div class="fake-river">ASSET GỐC<br><strong>VIDEO CLIP</strong></div><div class="media-controls"><span>▶</span><span class="timeline"><i></i></span><span>0:00 / 0:04</span><span>🔊</span></div></div></section>
+
+      <section class="preview-section">
+        <div class="section-title"><div><h3>Preview render</h3><p class="muted">Có voiceover/SFX, hiệu ứng Remotion và logo nếu có; không có BGM dự án. Scene đơn không có chuyển cảnh.</p></div><span class="badge amber">Remotion</span></div>
+
+        <div class="state state-no-preview" id="no-preview"><div class="preview-empty"><span class="empty-icon">▶</span><span>Chưa có preview render cho scene này.</span></div><button class="button amber">Render preview</button></div>
+        <div class="state state-rendering" id="rendering"><div class="preview-placeholder"><span class="spinner"></span><span>Đang tạo preview…</span><small>Blocking progress đang hiển thị riêng</small></div><button class="button amber" disabled>Đang render preview…</button></div>
+        <div class="state state-result" id="result"><div class="media preview-media dialog-preview"><div class="fake-video-scene"><span class="fake-caption">PREVIEW RENDER</span><span class="fake-river">300 THUYỀN · SÔNG TIỀN</span></div><div class="media-controls"><span>▶</span><span class="timeline"><i></i></span><span>0:00 / 0:08</span><span>🔊</span><span>⛶</span></div></div><p class="status-line">Render lúc 11:08 · scene 8s · engine Remotion</p><div class="preview-actions"><button class="button amber">Render lại preview</button><span class="muted">Preview chỉ lưu trong phiên này; tải lại trang sẽ mất.</span></div></div>
+        <div class="state state-stale" id="stale"><div class="media preview-media dialog-preview"><div class="fake-video-scene old"><span class="fake-caption">PREVIEW RENDER</span><span class="fake-river">NỘI DUNG CŨ</span></div><div class="media-controls"><span>▶</span><span class="timeline"><i></i></span><span>0:00 / 0:08</span><span>🔊</span></div></div><p class="status-line">Render lúc 11:08 · scene 8s · engine Remotion</p><p class="stale-line" aria-live="polite">⚠ Preview có thể đã cũ · lời dẫn scene đã thay đổi sau lần render</p><div class="preview-actions"><button class="button amber">Render lại preview</button></div></div>
+        <div class="state state-failed" id="failed"><div class="error-box"><strong>Không thể tạo preview.</strong><span>Remotion render failed: không tìm thấy asset scene.</span></div><button class="button amber">Render preview</button></div>
+      </section>
+
+      <div class="field"><span class="label">Lời dẫn</span><p>Trước khi trời sáng, trên khúc sông Tiền, khoảng 300 thuyền Xiêm…</p><button class="button small">Edit</button></div>
+      <div class="field"><span class="label">Visual prompt</span><p>Cel-shaded flat cartoon illustration with bold clean black outlines…</p><button class="button small">Edit</button></div>
+      <div class="field"><span class="label">Audio</span><div class="audio-chip">Voiceover ✓</div><div class="audio-chip">SFX · distant cannon rumble river</div></div>
+    </div>
+  </section>
+  <script>
+    const states = [...document.querySelectorAll('.state')];
+    function showState() {
+      const id = window.location.hash.slice(1) || 'result';
+      states.forEach((state) => state.classList.toggle('is-visible', state.id === id));
+    }
+    window.addEventListener('hashchange', showState);
+    showState();
+  </script>
+</body>
+</html>
