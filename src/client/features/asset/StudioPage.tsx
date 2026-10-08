@@ -11,6 +11,7 @@ import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import { BlockingProgressDialog } from '../../shared/ui/BlockingProgressDialog';
+import { AiModelSelect } from '../../shared/ai/AiModelSelect';
 import { isStudioLocked, taskFromBusyKey, type BlockingTask } from '../../shared/ui/blocking-progress';
 import { cancelJob } from '../../shared/job-api';
 import { ApiError } from '../../shared/api-client';
@@ -457,6 +458,13 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
+  async function setAiModel(model: string) {
+    if (model === project?.aiModel || studioLocked || !project) return;
+    try { setBusy('ai-model'); await api.setAiProvider(projectId, project.aiProvider, model); await refresh(); toast('Đã chọn model AI.'); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi model AI.'); }
+    finally { setBusy(null); }
+  }
+
   async function setVisualStyle(visualStylePresetId: VisualStyleId) {
     if (visualStylePresetId === project?.visualStylePresetId) return;
     const label = api.VISUAL_STYLE_OPTIONS.find((option) => option.value === visualStylePresetId)?.label ?? visualStylePresetId;
@@ -528,6 +536,7 @@ export function StudioPage() {
         <select aria-label="AI provider" className={styles.audioInput} disabled={studioLocked} value={project.aiProvider} onChange={(event) => void setAiProvider(event.target.value as 'deepseek' | 'claude')}>
           {api.AI_PROVIDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
+        <AiModelSelect className={styles.modelControl} selectClassName={styles.audioInput} provider={project.aiProvider} value={project.aiModel} disabled={studioLocked} onChange={(model) => void setAiModel(model)} />
         <div className={styles.styleSelector}>
           <select aria-label="Visual style" className={styles.audioInput} disabled={studioLocked} value={project.visualStylePresetId} onChange={(event) => void setVisualStyle(event.target.value as VisualStyleId)}>
             {api.VISUAL_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}

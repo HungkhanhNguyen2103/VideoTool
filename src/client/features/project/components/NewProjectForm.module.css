@@ -54,12 +54,15 @@
 .grid4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+.modelField { grid-column: span 2; }
+.modelField small { white-space: nowrap; font-size: 10px; }
 @media (max-width: 900px) {
   .grid2to1,
   .grid3,
   .grid4 {
     grid-template-columns: 1fr;
   }
+  .modelField { grid-column: auto; }
 }
 
 .field {

@@ -72,8 +72,8 @@ export function importFinalQa(projectId: string, raw: string): Promise<QAResult>
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/qa/manual-import`, QAResultSchema, { method: 'POST', body: { raw } });
 }
 
-export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, { method: 'PATCH', body: { provider } });
+export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude', aiModel?: string): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, { method: 'PATCH', body: { provider, ...(aiModel === undefined ? {} : { aiModel }) } });
 }
 
 export function getManualScriptPrompt(projectId: string): Promise<{ prompt: string; promptVersion: string }> {

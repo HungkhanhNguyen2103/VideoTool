@@ -7,6 +7,7 @@ import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/scri
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
+import { getAiClient } from '../../shared/ai';
 import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider } from '../project';
 import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
 import { runFinalQa } from './qa';
@@ -35,6 +36,7 @@ beforeEach(async () => {
   await getCollection('jobs').deleteMany({});
   aiMock.chat.mockReset();
   aiMock.stream.mockReset();
+  vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
 let server: Server | null = null;
@@ -227,6 +229,55 @@ describe('script contracts', () => {
     expect(response.status).toBe(200);
     expect((await response.json()).aiProvider).toBe('claude');
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('stores a valid model, resets it on provider change, and rejects a model for the wrong provider', async () => {
+    const baseUrl = await startScriptServer();
+    const createdResponse = await fetch(`${baseUrl}/api/project`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...projectInput, aiProvider: 'deepseek', aiModel: 'deepseek-flash' }),
+    });
+    const created = await createdResponse.json();
+    expect(createdResponse.status).toBe(201);
+    expect(created.aiModel).toBe('deepseek-flash');
+
+    const modelResponse = await fetch(`${baseUrl}/api/project/${created.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'deepseek', aiModel: 'deepseek-v4-pro' }),
+    });
+    expect(modelResponse.status).toBe(200);
+    expect(await modelResponse.json()).toMatchObject({ aiProvider: 'deepseek', aiModel: 'deepseek-v4-pro' });
+
+    const providerResponse = await fetch(`${baseUrl}/api/project/${created.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'claude' }),
+    });
+    const changed = await providerResponse.json();
+    expect(providerResponse.status).toBe(200);
+    expect(changed).toMatchObject({ aiProvider: 'claude', aiModel: 'claude-opus-4-5' });
+
+    const invalidResponse = await fetch(`${baseUrl}/api/project/${created.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'claude', aiModel: 'deepseek-flash' }),
+    });
+    const invalid = await invalidResponse.json();
+    expect(invalidResponse.status).toBe(422);
+    expect(invalid.error.message).toContain('deepseek-flash');
+    expect((await getProject(created.id)).aiModel).toBe('claude-opus-4-5');
+  });
+
+  it('rejects an unknown model on project creation with an actionable 422 error', async () => {
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...projectInput, aiProvider: 'deepseek', aiModel: 'deepseek-retired' }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toMatchObject({ code: 'AI_MODEL_UNAVAILABLE' });
+    expect(body.error.message).toContain('deepseek-retired');
+    expect(body.error.message).toContain('hãy chọn model khác');
+    expect(await getCollection('projects').countDocuments({})).toBe(0);
   });
 
   it('rejects an invalid provider before any project mutation', async () => {
@@ -666,8 +717,8 @@ describe('script contracts', () => {
         appendLog: async (message) => { logs.push(message); },
         isCancelled: async () => false,
         reportProgress: vi.fn(),
-      })).rejects.toMatchObject({ code: 'AI_REQUEST_FAILED', message: 'Cannot reach api.deepseek.com (timeout/network).' });
-      expect(logs).toContain('AI request failed: Cannot reach api.deepseek.com (timeout/network).');
+      })).rejects.toMatchObject({ code: 'AI_REQUEST_FAILED', message: 'Cannot reach api.deepseek.com (timeout/network) for model deepseek-chat.' });
+      expect(logs).toContain('AI request failed: Cannot reach api.deepseek.com (timeout/network) for model deepseek-chat.');
       expect((await getProject(project.id)).chapters).toEqual([]);
     } finally {
       if (previous === undefined) delete process.env.AI_REQUEST_TIMEOUT_MS;
@@ -801,6 +852,16 @@ describe('script contracts', () => {
 
     await expect(regenerateChapter(project.id, 'chapter-1', { instruction: 'rewrite', level: 'light' }, vi.fn(), new AbortController().signal)).resolves.toMatchObject({ reviewStatus: 'clean' });
     expect(aiMock.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the project model to chapter regeneration', async () => {
+    const project = await createProject({ ...projectInput, aiProvider: 'claude', aiModel: 'claude-haiku-4-5-20251001' });
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Only', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(); })());
+
+    await regenerateChapter(project.id, 'chapter-1', { instruction: 'rewrite', level: 'light' }, vi.fn(), new AbortController().signal);
+
+    expect(getAiClient).toHaveBeenCalledWith('claude', 'claude-haiku-4-5-20251001');
   });
 
   it('marks an aborted regeneration needs-fix and leaves old paragraphs unchanged', async () => {

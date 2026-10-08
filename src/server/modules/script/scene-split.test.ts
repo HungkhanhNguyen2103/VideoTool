@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { ProjectDetailSchema } from '../../../contracts/project';
 import { ChapterDocSchema } from '../../../contracts/script';
 import { getCollection } from '../../db/client';
+import { getAiClient } from '../../shared/ai';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createProject, getProject, getProjectHistory, replaceProjectChapters, replaceProjectScenes, type ProjectDoc } from '../project';
 import { buildSceneSplitPrompt } from './ai/build-prompt';
@@ -23,6 +24,7 @@ const projectInput = {
   title: 'Scene beats', brief: 'Split narration into visual beats.', language: 'en' as const,
   referencesText: '', scriptPresetId: 'documentary' as const, targetDurationSec: 60,
   chapterCount: 2, voiceId: null,
+  aiModel: 'deepseek-flash',
   renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
 };
 
@@ -60,6 +62,7 @@ beforeAll(() => startTestMongo());
 beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   aiMock.chat.mockReset();
+  vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
 
@@ -73,6 +76,7 @@ describe('splitProjectScenes', () => {
     const job = context();
 
     expect(await splitProjectScenes(project.id, job)).toEqual({ splitScenes: 1, skippedChapters: 0, failedChapters: [] });
+    expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
     const saved = await getProject(project.id);
     expect(saved.scenes.map((item) => item.narration)).toEqual(['First visual beat', 'Second visual beat', 'Untouched', 'Later chapter']);
     expect(saved.scenes.slice(0, 2).map((item) => item.durationSec)).toEqual([1, 1]);

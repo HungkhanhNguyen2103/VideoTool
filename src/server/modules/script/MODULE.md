@@ -16,8 +16,8 @@
 - Initial generation and chapter regeneration compose selected preset guidance in `ai/build-prompt.ts`; the prompt version is `script-prompt-v2/<id>@<version>`. The service uses `ai/parse-output.ts` for both response types, preserving the existing 422 `SCRIPT_PARSE_ERROR` contract and final scene shape.
 - Automatic generation uses separate outline and chapter-expansion contracts; manual mode uses its own complete-document contract. Preset-specific motif validation and explicit/AI-selected chapter-count validation happen before persistence. Shared narration word counting uses `NARRATION_WORDS_PER_MINUTE = 150`.
 - `saveGeneratedScript` is the shared persistence path for automatic and manual script documents: it assigns fresh chapter IDs, initializes pending status, preserves narrative metadata, and delegates project writes through `project/index.ts`.
-- Script owns the provider and manual-generation routes because it consumes AI settings and parsers: provider changes delegate to `project.setProjectAiProvider`, manual prompts flatten system/user text for display, and manual imports never call an AI client or enqueue a job.
-- The client exposes provider selection, automatic/manual entry controls, paste/import error preservation, and narrative metadata in the review page; API helpers validate all provider/manual responses through contracts.
+- Script owns the provider and manual-generation routes because it consumes AI settings and parsers: provider/model changes delegate to `project.setProjectAiProvider`, manual prompts flatten system/user text for display, and manual imports never call an AI client or enqueue a job.
+- The client exposes provider/model selection, automatic/manual entry controls, paste/import error preservation, and narrative metadata in the review page; model selection is hidden in manual mode and API helpers validate all provider/manual responses through contracts.
 - Visual-prompt generation slices finalized scenes by chapter count, assigns stable project-global one-based indexes, and sends every scene's narration and current prompt as reference. Internal scene IDs never enter the AI request.
 - Each visual batch must pass schema and exact index-set validation before a chapter write. A parse, schema, or index failure gets one retry with the validation error; provider and project-write failures are isolated to their chapter. Successful batches write only empty prompts through the public `project.applyEmptySceneVisualPromptsWithResult` companion, whose atomic pre-image IDs provide exact update counts.
 - The running continuity note starts as an ordered excerpt of all existing non-empty project prompts, capped at 500 characters. Only a successful chapter response replaces it with that batch's bounded `styleNote`; failed and skipped chapters preserve it. Progress is rounded by chapter, and the result records updated scenes, prefilled skipped scenes, and failed chapter numbers.
@@ -58,6 +58,7 @@ needs-fix ──edit/regen──> pending or generating
 
 ## AI abstraction
 - `src/server/shared/ai/` owns the `AiClient` interface, DeepSeek/OpenAI-compatible adapter, Claude adapter, and provider factory.
+- `src/contracts/ai-models.ts` is the shared model registry for provider IDs, defaults, user-facing labels/hints, and adapter capabilities. `getAiClient(provider, model)` validates the pair and caches clients by both values. Script generation, regeneration, Final QA, visual prompts, scene splitting, SEO generation, and video name/place analysis all pass the project's selected model.
 - Provider keys remain server/worker-only; the client receives only project/provider metadata and job/SSE results.
 - `generateVisualPrompts(projectId, context)` returns `{ updatedScenes, skippedScenes, failedChapters }`; `handleGenerateVisualPrompts(job, context)` is the public job handler for later worker registration.
 
@@ -65,7 +66,7 @@ needs-fix ──edit/regen──> pending or generating
 - Keep the shared chapter schema in `contracts/script.ts` to avoid a project-to-script import cycle.
 - Preserve the existing project status vocabulary (`assets`, `rendered`) unless an explicit migration is approved.
 - Use the existing job context (`isCancelled`, `appendLog`) and registry location in `src/worker/registry.ts`.
-- AI keys are server-only; absent keys warn when an adapter is constructed and provider streams honor `AbortSignal`.
+- AI keys are server-only; absent keys warn when an adapter is constructed and provider streams honor `AbortSignal`. Provider errors include the selected model; unknown/unavailable model errors tell the user to choose another model.
 - Finalization updates scenes and `assets` status atomically through `replaceProjectScenes`; chapter metadata/history is persisted before that final scene/status write.
 - The script handler is structurally compatible with `JobHandler` without importing the job module, so the module boundary remains enforced.
 - Routes receive job enqueueing from the app composition root and distinguish normal request-body close from an actual SSE response disconnect.

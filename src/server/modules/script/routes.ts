@@ -23,7 +23,7 @@ const RegenerateChapterSchema = z.object({
 const ManualRegeneratePromptSchema = RegenerateChapterSchema.strict();
 
 const RestoreSchema = z.object({ index: z.number().int().nonnegative() });
-const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']) }).strict();
+const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']), aiModel: z.string().optional() }).strict();
 const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
 
@@ -89,7 +89,7 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.patch('/:id/ai-provider', async (req, res) => {
     const body = ProviderSchema.parse(req.body);
-    res.json(await setProjectAiProvider(req.params.id, body.provider));
+    res.json(await setProjectAiProvider(req.params.id, body.provider, body.aiModel));
   });
 
   router.patch('/:id/visual-style', async (req, res) => {

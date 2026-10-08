@@ -1,6 +1,7 @@
 import { ApiError } from '../../shared/api-client';
 import { ApiErrorBodySchema } from '../../../contracts/common';
 import { ASPECT_RESOLUTIONS, ProjectImportSeedSchema, type CreateProjectRequest, type ProjectImportSeed } from '../../../contracts/project';
+import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
 import { z } from 'zod';
 
 const ReferenceTextResponseSchema = z.object({ text: z.string() });
@@ -16,12 +17,20 @@ export function appendReferenceText(current: string, imported: string): string {
 }
 
 export function mergeProjectPrefill(current: CreateProjectRequest, prefill: ProjectImportSeed): CreateProjectRequest {
+  const aiProvider = prefill.aiProvider ?? current.aiProvider ?? 'deepseek';
+  const aiModel = prefill.aiModel !== undefined
+    ? isAiModelForProvider(aiProvider, prefill.aiModel) ? prefill.aiModel : getDefaultAiModelId(aiProvider)
+    : prefill.aiProvider !== undefined && prefill.aiProvider !== current.aiProvider
+      ? getDefaultAiModelId(aiProvider)
+      : isAiModelForProvider(aiProvider, current.aiModel) ? current.aiModel : getDefaultAiModelId(aiProvider);
   const aspect = prefill.renderSettings?.aspect ?? current.renderSettings.aspect;
   const currentResolution = ASPECT_RESOLUTIONS[aspect].find(([w, h]) => w === current.renderSettings.width && h === current.renderSettings.height);
   const [width, height] = currentResolution ?? ASPECT_RESOLUTIONS[aspect][0] ?? [1920, 1080];
   return {
     ...current,
     ...prefill,
+    aiProvider,
+    aiModel,
     referencesText: appendReferenceText(current.referencesText, prefill.referencesText ?? ''),
     renderSettings: { ...current.renderSettings, ...prefill.renderSettings, aspect, width, height },
   };

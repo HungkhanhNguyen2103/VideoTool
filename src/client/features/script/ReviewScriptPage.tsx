@@ -14,6 +14,7 @@ import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import { BlockingProgressDialog } from '../../shared/ui/BlockingProgressDialog';
 import { isStudioLocked, type BlockingTask } from '../../shared/ui/blocking-progress';
 import { cancelJob } from '../../shared/job-api';
+import { AiModelSelect, aiModelForProviderChange } from '../../shared/ai/AiModelSelect';
 import * as api from './api';
 import {
   approveAllTargets,
@@ -502,9 +503,15 @@ export function ReviewScriptPage() {
     startEdit(match.chapter);
   }
 
-  async function changeProvider(provider: 'deepseek' | 'claude') {
+  async function changeProvider(provider: 'deepseek' | 'claude', model?: string) {
     setProviderBusy(true);
-    try { await api.setAiProvider(projectId, provider); await projectQuery.refetch(); toast('Đã đổi nhà cung cấp AI.'); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi nhà cung cấp AI.'); } finally { setProviderBusy(false); }
+    try { await api.setAiProvider(projectId, provider, model); await projectQuery.refetch(); toast(model ? 'Đã đổi model AI.' : 'Đã đổi nhà cung cấp AI.'); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi cấu hình AI.'); } finally { setProviderBusy(false); }
+  }
+
+  function changeModel(model: string) {
+    const provider = projectQuery.data?.aiProvider ?? 'deepseek';
+    if (model === projectQuery.data?.aiModel || controlsBusy) return;
+    void changeProvider(provider, model);
   }
 
   async function loadManualPrompt() {
@@ -791,7 +798,10 @@ export function ReviewScriptPage() {
           <h2 id="generate-title">Nháp kịch bản</h2>
           <p className={styles.muted}>AI sẽ viết kịch bản theo brief và preset của dự án.</p>
           <label className={styles.inlineField} htmlFor="review-provider">Nhà cung cấp AI
-            <select className={styles.input} id="review-provider" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+            <select className={styles.input} id="review-provider" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
+              const provider = event.target.value as 'deepseek' | 'claude';
+              void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
+            }}>
               <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
             </select>
           </label>
@@ -800,6 +810,7 @@ export function ReviewScriptPage() {
             <label><input type="radio" name="generation-mode" value="automatic" checked={effectiveGenerationMode === 'automatic'} disabled={controlsBusy} onChange={() => setGenerationMode('automatic')} />Tự động</label>
             <label><input type="radio" name="generation-mode" value="manual" checked={effectiveGenerationMode === 'manual'} disabled={controlsBusy} onChange={() => setGenerationMode('manual')} />Thủ công</label>
           </fieldset>
+          {effectiveGenerationMode === 'automatic' && <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy} onChange={changeModel} />}
           {effectiveGenerationMode === 'automatic' ? <Button variant="amber" disabled={controlsBusy} onClick={() => void generate()}>Tạo kịch bản</Button> : <div className={styles.manualBox}>
             <div className={styles.actions}><Button variant="indigoline" disabled={manualBusy || controlsBusy} onClick={() => void loadManualPrompt()}>Lấy prompt</Button>{manualPrompt && <Button disabled={manualBusy || controlsBusy} onClick={() => void copyManualPrompt()}>Sao chép</Button>}</div>
             {manualPrompt && <p className={styles.muted}>Prompt {manualPrompt.promptVersion}</p>}
@@ -822,10 +833,14 @@ export function ReviewScriptPage() {
             </div>
             <div className={styles.regenToolbar}>
               <label className={styles.compactField} htmlFor="review-provider-existing">AI
-                <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+                <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
+                  const provider = event.target.value as 'deepseek' | 'claude';
+                  void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
+                }}>
                   <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
                 </select>
               </label>
+              <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy || regenMode === 'manual'} mode={regenMode === 'manual' ? 'manual' : 'automatic'} onChange={changeModel} />
               <span className={styles.toolbarDivider} aria-hidden="true" />
               <fieldset className={`${styles.segmented} ${styles.regenMode}`} aria-label="Chế độ tái tạo" disabled={controlsBusy}>
                 <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} /><span>Tự động</span></label>

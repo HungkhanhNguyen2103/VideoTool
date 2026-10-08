@@ -79,7 +79,7 @@ export async function splitProjectScenes(projectId: string, context: SceneSplitJ
       current.chapters.reduce((sum, chapter) => sum + (chapter.scenesCount ?? 0), 0) !== current.scenes.length) {
     throw new AppError('Finalized scenes do not match chapters.', 422, 'SCENES_NOT_READY');
   }
-  const client = getAiClient(current.aiProvider);
+  const client = getAiClient(current.aiProvider, current.aiModel);
   const result: SceneSplitJobResult = { splitScenes: 0, skippedChapters: 0, failedChapters: [] };
   let snapshotRecorded = false;
   let cancelled = false;

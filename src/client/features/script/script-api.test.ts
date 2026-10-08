@@ -34,6 +34,16 @@ describe('script generation API', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/generate-script/manual-prompt', expect.objectContaining({ method: 'GET' }));
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/project/project%2F1/generate-script/manual-import', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raw: 'raw text' }) }));
   });
+
+  it('sends a selected model through the existing provider PATCH route', async () => {
+    const project = { id: 'project-1', title: 'Project', status: 'draft', language: 'vi', brief: 'A sufficiently long brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null, aiProvider: 'deepseek', aiModel: 'deepseek-flash', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: [], chapters: [], openLoops: [], motif: null, version: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(project), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(setAiProvider('project/1', 'deepseek', 'deepseek-flash')).resolves.toMatchObject({ aiModel: 'deepseek-flash' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/ai-provider', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ provider: 'deepseek', aiModel: 'deepseek-flash' }),
+    }));
+  });
 });
 
 describe('final QA API', () => {

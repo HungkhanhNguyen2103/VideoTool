@@ -7,11 +7,12 @@ import { SEO_SECTIONS } from '../../../contracts/seo';
 
 const mocks = vi.hoisted(() => ({
   chat: vi.fn(),
+  getAiClient: vi.fn(),
   getProject: vi.fn(),
   applyGeneratedSeoSections: vi.fn(),
 }));
 
-vi.mock('../../shared/ai', () => ({ getAiClient: () => ({ model: 'deepseek-chat', chat: mocks.chat }) }));
+vi.mock('../../shared/ai', () => ({ getAiClient: mocks.getAiClient }));
 vi.mock('../project', () => ({
   getProject: mocks.getProject,
   applyGeneratedSeoSections: mocks.applyGeneratedSeoSections,
@@ -40,6 +41,7 @@ const project = ProjectDetailSchema.parse({
     { id: 'chapter-3', no: 3, title: 'Kết luận', paragraphs: ['Kết luận.'], status: 'approved', scenesCount: 0, durationSec: 0 },
   ],
   aiProvider: 'deepseek',
+  aiModel: 'deepseek-flash',
   coreQuestion: 'Vì sao kế hoạch thất bại?',
   openingHook: 'Một kế hoạch tưởng như hoàn hảo bắt đầu sụp đổ.',
   version: 1,
@@ -68,6 +70,7 @@ const context = () => ({
 describe('SEO AI generation', () => {
   beforeEach(() => {
     mocks.chat.mockReset();
+    mocks.getAiClient.mockReset().mockImplementation(() => ({ model: 'deepseek-chat', chat: mocks.chat }));
     mocks.getProject.mockReset();
     mocks.applyGeneratedSeoSections.mockReset();
     mocks.getProject.mockResolvedValue(project);
@@ -113,6 +116,7 @@ describe('SEO AI generation', () => {
 
     await generateSeoPackage(project.id, ['titles', 'tags'], jobContext);
 
+    expect(mocks.getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
     expect(mocks.chat).toHaveBeenCalledTimes(2);
     expect(mocks.chat.mock.calls[1]?.[0][1].content).toContain('Validation error:');
     expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledOnce();

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { createProject, getProject } from '../project';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { getCollection } from '../../db/client';
+import { getAiClient } from '../../shared/ai';
 import { generateScript } from './service';
 
 const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), stream: vi.fn() }));
@@ -10,6 +11,7 @@ vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 const projectInput = {
   title: 'Generation project', brief: 'Explain the river mystery.', language: 'en' as const, referencesText: '',
   scriptPresetId: 'documentary' as const, targetDurationSec: 8, chapterCount: 2, voiceId: null,
+  aiModel: 'deepseek-flash',
   renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
 };
 
@@ -35,6 +37,7 @@ beforeAll(() => startTestMongo());
 beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   aiMock.chat.mockReset();
+  vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
 
@@ -67,6 +70,7 @@ describe('sequential script generation', () => {
     expect(saved.coreQuestion).toBe('What is at stake?');
     expect(saved.openingHook).toBe('A compelling opening.');
     expect(aiMock.chat).toHaveBeenCalledTimes(5);
+    expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
     expect(aiMock.chat.mock.calls[0]![1]).toMatchObject({ json: true, maxTokens: 4000 });
     expect(aiMock.chat.mock.calls[1]![1]).toMatchObject({ json: true, maxTokens: 6000 });
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Retry style');

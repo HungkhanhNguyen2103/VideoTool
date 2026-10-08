@@ -67,7 +67,7 @@ export async function generateVisualPrompts(
 ): Promise<VisualPromptJobResult> {
   const project = await getProject(projectId);
   const scenesByChapter = chapterScenes(project);
-  const client = getAiClient(project.aiProvider);
+  const client = getAiClient(project.aiProvider, project.aiModel);
   const result: VisualPromptJobResult = { updatedScenes: 0, skippedScenes: 0, failedChapters: [] };
   let styleNote = excerpt(project.scenes);
   let updatedSfxPrompts = 0;

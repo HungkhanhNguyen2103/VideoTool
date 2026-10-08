@@ -2,21 +2,24 @@ import type { SeoSection } from '../../../../contracts/seo';
 import { AI_PROVIDER_LABELS } from '../seo-view';
 import styles from '../SeoPage.module.css';
 import { Button } from '../../../shared/ui/Button';
+import { AiModelSelect } from '../../../shared/ai/AiModelSelect';
 
 type Props = {
   mode: 'automatic' | 'manual';
   provider: 'deepseek' | 'claude';
+  model?: string;
   busy: boolean;
   sections: SeoSection[];
   hasRaw: boolean;
   onModeChange: (mode: 'automatic' | 'manual') => void;
   onProviderChange: (provider: 'deepseek' | 'claude') => void;
+  onModelChange: (model: string) => void;
   onGenerate: () => void;
   onLoadPrompt: () => void;
   onImport: () => void;
 };
 
-export function Toolbar({ mode, provider, busy, sections, hasRaw, onModeChange, onProviderChange, onGenerate, onLoadPrompt, onImport }: Props) {
+export function Toolbar({ mode, provider, model, busy, sections, hasRaw, onModeChange, onProviderChange, onModelChange, onGenerate, onLoadPrompt, onImport }: Props) {
   return (
     <div className={styles.toolbar}>
       <label className={styles.field}>
@@ -35,6 +38,7 @@ export function Toolbar({ mode, provider, busy, sections, hasRaw, onModeChange, 
               <option value="claude">Claude</option>
             </select>
           </label>
+          <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={provider} value={model} disabled={busy} onChange={onModelChange} />
           <Button variant="amber" onClick={onGenerate} disabled={busy} busy={busy}>Tạo toàn bộ gói</Button>
         </>
       ) : (

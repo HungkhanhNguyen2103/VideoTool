@@ -41,6 +41,7 @@ export const ProjectDocSchema = z.object({
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
+  aiModel: z.string().optional(),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   keywordPopupsEnabled: z.boolean().default(true),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),

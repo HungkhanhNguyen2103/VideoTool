@@ -9,6 +9,7 @@ import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
 import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
 import { DEFAULT_SCENE_TAIL_SEC, roundDurationSeconds } from '../../../contracts/scene-duration';
+import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
 
 function toSummary(row: ProjectSummaryRow): ProjectSummary {
   return {
@@ -35,6 +36,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     chapterCount: doc.chapterCount,
     voiceId: doc.voiceId,
     aiProvider: doc.aiProvider,
+    aiModel: doc.aiModel,
     renderEngine: doc.renderEngine,
     keywordPopupsEnabled: doc.keywordPopupsEnabled,
     transitionStyle: doc.transitionStyle,
@@ -64,6 +66,10 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
 }
 
 export async function createProject(input: CreateProjectRequest): Promise<ProjectDetail> {
+  const aiProvider = input.aiProvider ?? 'deepseek';
+  if (input.aiModel !== undefined && !isAiModelForProvider(aiProvider, input.aiModel)) {
+    throw new AppError(`Model ${input.aiModel} không còn khả dụng hoặc không thuộc ${aiProvider}; hãy chọn model khác.`, 422, 'AI_MODEL_UNAVAILABLE');
+  }
   const now = new Date();
   const doc: ProjectDoc = {
     _id: newId(),
@@ -78,7 +84,8 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     targetDurationSec: input.targetDurationSec,
     chapterCount: input.chapterCount,
     voiceId: input.voiceId,
-    aiProvider: input.aiProvider ?? 'deepseek',
+    aiProvider,
+    ...(input.aiModel === undefined ? {} : { aiModel: input.aiModel }),
     renderEngine: input.renderEngine ?? 'ffmpeg',
     keywordPopupsEnabled: true,
     transitionStyle: 'varied',
@@ -529,8 +536,15 @@ export async function setProjectSfxVolume(id: string, sfxVolume: number): Promis
   return getProject(id);
 }
 
-export async function setProjectAiProvider(id: string, aiProvider: AiProvider): Promise<ProjectDetail> {
-  await updateProject(id, { aiProvider });
+export async function setProjectAiProvider(id: string, aiProvider: AiProvider, aiModel?: string): Promise<ProjectDetail> {
+  const current = await getProject(id);
+  const selectedModel = aiModel ?? (current.aiProvider === aiProvider && current.aiModel && isAiModelForProvider(aiProvider, current.aiModel)
+    ? current.aiModel
+    : getDefaultAiModelId(aiProvider));
+  if (!isAiModelForProvider(aiProvider, selectedModel)) {
+    throw new AppError(`Model ${selectedModel} không còn khả dụng hoặc không thuộc ${aiProvider}; hãy chọn model khác.`, 422, 'AI_MODEL_UNAVAILABLE');
+  }
+  await updateProject(id, { aiProvider, aiModel: selectedModel });
   return getProject(id);
 }
 

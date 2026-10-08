@@ -38,7 +38,7 @@ export type NameKeywordAnalysisSummary = {
 };
 
 type EligibleScene = { sceneNo: number; scene: Scene };
-type NameKeywordClientResolver = (provider: AiProvider) => AiClient;
+type NameKeywordClientResolver = (provider: AiProvider, model?: string) => AiClient;
 
 function userPrompt(scenes: readonly EligibleScene[]): string {
   return [
@@ -84,7 +84,7 @@ export async function analyzeProjectNameKeywords(
 ): Promise<NameKeywordAnalysisSummary> {
   const project = await getProject(projectId);
   const scenes = eligibleScenes(project);
-  const client = clientResolver(project.aiProvider);
+  const client = clientResolver(project.aiProvider, project.aiModel);
   const summary: NameKeywordAnalysisSummary = {
     scenesAnalyzed: scenes.length,
     scenesSkippedNoTimings: project.scenes.length - scenes.length,

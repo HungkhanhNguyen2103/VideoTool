@@ -9,15 +9,17 @@ import { createProject, getProject, replaceProjectChapters } from '../project';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
+import { getAiClient } from '../../shared/ai';
 
 type JobRecord = { _id: string; type: string; projectId: string; payload: unknown };
 
 const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn() }));
-vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
+vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn((_provider: string, model?: string) => ({ ...aiMock, model: model ?? aiMock.model })) }));
 
 const projectInput = {
   title: 'QA project', brief: 'A project for final quality assurance.', language: 'en' as const,
   referencesText: '', scriptPresetId: 'documentary' as const, targetDurationSec: 60,
+  aiModel: 'deepseek-flash',
   chapterCount: 1, voiceId: null,
   renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
 };
@@ -31,6 +33,7 @@ beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   await getCollection('jobs').deleteMany({});
   aiMock.chat.mockReset();
+  vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
 
@@ -120,10 +123,11 @@ describe('runFinalQa', () => {
 
     const result = await runFinalQa(project.id, jobContext);
 
-    expect(result).toEqual({ ...JSON.parse(qaJson), reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } });
+    expect(result).toEqual({ ...JSON.parse(qaJson), reviewedBy: { provider: 'deepseek', model: 'deepseek-flash' } });
     expect(await getProject(project.id)).toEqual(before);
     expect(aiMock.chat).toHaveBeenCalledOnce();
-    expect(jobContext.appendLog).toHaveBeenCalledWith('Final QA finished by deepseek/deepseek-chat: 1 issue found.');
+    expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Final QA finished by deepseek/deepseek-flash: 1 issue found.');
     const system = aiMock.chat.mock.calls[0]![0][0].content as string;
     const user = aiMock.chat.mock.calls[0]![0][1].content as string;
     expect(system).toContain('REPETITION, CONTRADICTION, DEAD_CHAPTER, POSSIBLE_FILLER, WEAK_HOOK, FLAT_PACING, PREMATURE_REVEAL, UNRESOLVED_LOOP, WEAK_PAYOFF, AWKWARD_TRANSITION, TONE_DRIFT, CREDIBILITY_RISK');

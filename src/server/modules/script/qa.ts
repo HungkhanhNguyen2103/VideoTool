@@ -14,7 +14,7 @@ export async function runFinalQa(projectId: string, context: FinalQaJobContext):
   const project = await getProject(projectId);
   if (await context.isCancelled()) return { issues: [] };
   const prompt = buildQaPrompt(project);
-  const client = getAiClient(project.aiProvider);
+  const client = getAiClient(project.aiProvider, project.aiModel);
   const raw = await client.chat([
     { role: 'system', content: prompt.system },
     { role: 'user', content: prompt.user },

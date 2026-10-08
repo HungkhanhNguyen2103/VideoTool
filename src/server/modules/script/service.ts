@@ -88,7 +88,7 @@ async function chatWithFailureLog(
   try {
     return await withAiRequestTimeout(() => aiClient.chat(messages, opts), aiRequestTimeoutMs());
   } catch (error) {
-    const normalized = normalizeAiError(aiProviderName(provider), error);
+    const normalized = normalizeAiError(aiProviderName(provider), aiClient.model, error);
     await context.appendLog(`AI request failed: ${normalized.message}`);
     throw normalized;
   }
@@ -183,7 +183,7 @@ export async function restoreChapters(projectId: string, index: number): Promise
 export async function generateScript(projectId: string, context: ScriptGenerationJobContext): Promise<void> {
   const project = await getProject(projectId);
   await context.appendLog('Loading project and AI client…');
-  const aiClient = getAiClient(project.aiProvider);
+  const aiClient = getAiClient(project.aiProvider, project.aiModel);
   if (await context.isCancelled()) return;
   const outlinePrompt = buildOutlinePrompt(project);
   await context.appendLog('Sending outline request to AI…');
@@ -343,7 +343,7 @@ export async function regenerateChapter(
   await patchProjectChapter(projectId, chapterId, { status: 'generating' }, snapshot);
 
   try {
-    const aiClient = getAiClient(project.aiProvider);
+    const aiClient = getAiClient(project.aiProvider, project.aiModel);
     const streamResponse = async (messages: ChatMessage[]): Promise<string> => {
       let raw = '';
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');

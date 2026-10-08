@@ -68,6 +68,7 @@ export const CreateProjectRequestBase = z.object({
   chapterCount: z.number().nullable(),
   voiceId: z.string().nullable(),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
+  aiModel: z.string().optional(),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   voiceoverVoice: z.string().default('Truc Ly'),
   renderFileId: z.string().nullable().default(null),
@@ -90,12 +91,14 @@ export const ProjectImportSeedSchema = CreateProjectRequestBase.pick({
   scriptPresetId: true,
   visualStylePresetId: true,
   aiProvider: true,
+  aiModel: true,
   targetDurationSec: true,
   chapterCount: true,
   voiceId: true,
 }).partial().extend({
   visualStylePresetId: z.enum(VISUAL_STYLE_IDS).optional(),
   aiProvider: z.enum(AI_PROVIDERS).optional(),
+  aiModel: z.string().optional(),
   renderSettings: ProjectImportRenderSettingsSchema.optional(),
 }).strict();
 export type ProjectImportSeed = z.infer<typeof ProjectImportSeedSchema>;
@@ -221,6 +224,7 @@ export const ProjectDetailSchema = z.object({
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
+  aiModel: z.string().optional(),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   keywordPopupsEnabled: z.boolean().default(true),
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),

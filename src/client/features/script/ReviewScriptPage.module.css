@@ -35,6 +35,8 @@
 .generationStatus { display: grid; gap: .45rem; padding: .85rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
 .inlineField, .compactField { display: inline-flex; align-items: center; gap: .5rem; color: var(--text-2); font-size: .8125rem; font-weight: 600; }
 .compactField { font-size: .75rem; }
+.modelSelect { display: grid; gap: .2rem; min-width: min(15rem, 100%); color: var(--text-2); font-size: .75rem; font-weight: 600; }
+.modelSelect small { color: var(--text-3); font-size: .65rem; font-weight: 400; white-space: nowrap; }
 .input { min-height: 36px; padding: 0 .625rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .5rem; color: var(--text); }
 .modeControls { display: flex; gap: .75rem; margin: 0; padding: 0; border: 0; color: var(--text-2); font-size: .8125rem; }
 .modeControls legend { width: 100%; margin-bottom: .35rem; color: var(--text-3); font-size: .6875rem; font-weight: 600; text-transform: uppercase; }
@@ -178,6 +180,8 @@
   .regenToolbar { gap: 0; padding-inline: .25rem; }
   .regenToolbar .compactField { gap: .25rem; }
   .regenToolbar .compactField .input { width: 64px; padding-inline: .25rem; font-size: .6875rem; }
+  .regenToolbar .modelSelect { flex: 1 1 15rem; min-width: 0; }
+  .regenToolbar .modelSelect .input { width: 100%; min-width: 0; }
   .regenMode { gap: .125rem; }
   .regenMode span { padding-inline: .125rem; font-size: .6875rem; }
   .regenStatus { flex: 0 0 100%; margin-left: 0; justify-content: flex-start; }
