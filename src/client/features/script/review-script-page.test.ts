@@ -297,4 +297,20 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(css).toContain('overflow: auto');
     expect(css).toContain('position: sticky');
   });
+
+  it('shows manual length summaries, chapter quality notes, and a nonblocking reference preflight', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
+
+    expect(page).toContain('getReferenceCoverage');
+    expect(page).toContain('referenceCoverage.charactersPerMinute} ký tự/phút; ngưỡng cảnh báo 500');
+    expect(page).toContain('Bạn vẫn có thể tiếp tục tạo kịch bản.');
+    expect(page).toContain('Nguồn mỏng — chương này dễ bị kéo dài');
+    expect(page).toContain('aria-live="polite" aria-labelledby="manual-quality-title"');
+    expect(page).toContain('outsideLengthRange');
+    expect(page).toContain('Chương {chapter.chapterNo}: {chapter.words} / {chapter.targetWords} từ');
+    expect(css).toContain('.thinSourceNote');
+    expect(css).toContain('.manualQuality');
+    expect(css).toContain('.qualityWarning');
+  });
 });

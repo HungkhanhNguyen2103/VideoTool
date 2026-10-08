@@ -24,19 +24,27 @@ export function createClaudeClient(model: string = getDefaultAiModelId('claude')
   if (!apiKey) logger.warn('ANTHROPIC_API_KEY is not configured. Claude calls will fail until it is set.');
   const timeoutMs = aiRequestTimeoutMs();
   const client = new Anthropic({ apiKey: apiKey || 'missing-anthropic-key', timeout: timeoutMs, maxRetries: 1 });
+  const chatWithMetadata = async (messages: ChatMessage[], opts: Parameters<AiClient['chat']>[1] = {}) => {
+    if (!apiKey) throw missingAiKeyError('ANTHROPIC_API_KEY');
+    try {
+      const response = await withAiRequestTimeout(() => client.messages.create(toRequest(model, definition.capabilities, messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS, opts.temperature, opts.json)), timeoutMs);
+      return {
+        text: response.content.filter((block) => block.type === 'text').map((block) => block.text).join(''),
+        truncated: response.stop_reason === 'max_tokens',
+      };
+    } catch (error) {
+      throw normalizeAiError('Claude', model, error);
+    }
+  };
 
   return {
     model,
 
     async chat(messages: ChatMessage[], opts = {}) {
-      if (!apiKey) throw missingAiKeyError('ANTHROPIC_API_KEY');
-      try {
-        const response = await withAiRequestTimeout(() => client.messages.create(toRequest(model, definition.capabilities, messages, opts.maxTokens ?? DEFAULT_MAX_TOKENS, opts.temperature, opts.json)), timeoutMs);
-        return response.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
-      } catch (error) {
-        throw normalizeAiError('Claude', model, error);
-      }
+      return (await chatWithMetadata(messages, opts)).text;
     },
+
+    chatWithMetadata,
 
     async *stream(messages: ChatMessage[], opts = {}) {
       if (!apiKey) throw missingAiKeyError('ANTHROPIC_API_KEY');

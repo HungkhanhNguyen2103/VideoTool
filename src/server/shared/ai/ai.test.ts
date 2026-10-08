@@ -137,6 +137,20 @@ describe('AI client abstraction', () => {
     expect(values).toEqual(['claude ', 'stream']);
   });
 
+  it('reports provider truncation metadata while preserving the public string chat API', async () => {
+    const deepseek = createDeepSeekClient();
+    mocks.deepseekCreate.mockResolvedValueOnce({ choices: [{ message: { content: '{"partial":' }, finish_reason: 'length' }] });
+    await expect(deepseek.chat([{ role: 'user', content: 'outline' }])).resolves.toBe('{"partial":');
+    mocks.deepseekCreate.mockResolvedValueOnce({ choices: [{ message: { content: '{"partial":' }, finish_reason: 'length' }] });
+    await expect(deepseek.chatWithMetadata!([{ role: 'user', content: 'outline' }])).resolves.toEqual({ text: '{"partial":', truncated: true });
+
+    const claude = createClaudeClient();
+    mocks.anthropicCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: '{"partial":' }], stop_reason: 'max_tokens' });
+    await expect(claude.chat([{ role: 'user', content: 'outline' }])).resolves.toBe('{"partial":');
+    mocks.anthropicCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: '{"partial":' }], stop_reason: 'max_tokens' });
+    await expect(claude.chatWithMetadata!([{ role: 'user', content: 'outline' }])).resolves.toEqual({ text: '{"partial":', truncated: true });
+  });
+
   it('constructs without provider keys', async () => {
     const clients = [getAiClient('deepseek'), getAiClient('claude')];
     expect(clients).toHaveLength(2);

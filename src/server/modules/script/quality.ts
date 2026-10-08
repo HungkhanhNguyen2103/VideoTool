@@ -1,7 +1,7 @@
 import { SCRIPT_PRESET_CONFIG } from './ai/presets/config';
 import { getDefaultAiModelId } from '../../../contracts/ai-models';
 import type { AiProvider, ScriptPresetId } from '../../../contracts/project';
-import type { ChapterDoc } from '../../../contracts/script';
+import { countNarrationWords, NARRATIVE_ROLES, NARRATION_WORDS_PER_MINUTE, type ChapterDoc, type ScriptQualitySummary } from '../../../contracts/script';
 
 type QualityChapter = Pick<ChapterDoc, 'no' | 'title' | 'role' | 'targetWords' | 'paragraphs'> & {
   sourceFacts?: string[];
@@ -86,6 +86,10 @@ export type ScriptQualityReport = {
 };
 
 const WORDS_PER_MINUTE = 150;
+const MANUAL_LENGTH_MIN_PCT = 85;
+const MANUAL_LENGTH_MAX_PCT = 115;
+const MANUAL_BUDGET_TOLERANCE_PCT = 2;
+const MANUAL_ACT_TOLERANCE_PCT_POINTS = 5;
 const NEAR_DUPLICATE_THRESHOLD = 0.85;
 const NAME_OR_NUMBER_RE = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]*(?:\s+\p{Lu}[\p{L}\p{M}'’-]*){0,3}/gu;
 const NUMERIC_RE = /(?<![\p{L}\p{N}])\d{1,4}(?:[.,:/-]\d{1,4})*(?:\s?%?)(?![\p{L}\p{N}])/gu;
@@ -341,6 +345,75 @@ export function analyzeScriptQuality(input: ScriptQualityInput): ScriptQualityRe
       chapters: structureChapters,
     },
     sourceUsage,
+  };
+}
+
+type ManualQualityInput = {
+  targetDurationSec: number;
+  scriptPresetId: ScriptPresetId;
+  chapters: Array<Pick<ChapterDoc, 'no' | 'title' | 'role' | 'targetWords' | 'paragraphs'>>;
+};
+
+export function summarizeManualScriptQuality(input: ManualQualityInput): ScriptQualitySummary {
+  const targetWords = Math.round(input.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE);
+  const fallbackChapterTarget = input.chapters.length ? Math.round(targetWords / input.chapters.length) : 0;
+  const chapters = input.chapters.map((chapter) => {
+    const words = chapter.paragraphs.reduce((sum, paragraph) => sum + countNarrationWords(paragraph), 0);
+    const chapterTargetWords = chapter.targetWords ?? fallbackChapterTarget;
+    const differenceWords = words - chapterTargetWords;
+    const exactTargetPercent = chapterTargetWords ? words / chapterTargetWords * 100 : 0;
+    return {
+      chapterNo: chapter.no,
+      title: chapter.title,
+      words,
+      targetWords: chapterTargetWords,
+      differenceWords,
+      deviationPct: chapterTargetWords ? round(differenceWords / chapterTargetWords * 100) : 0,
+      outsideLengthRange: exactTargetPercent < MANUAL_LENGTH_MIN_PCT || exactTargetPercent > MANUAL_LENGTH_MAX_PCT,
+    };
+  });
+  const totalWords = chapters.reduce((sum, chapter) => sum + chapter.words, 0);
+  const totalDifference = totalWords - targetWords;
+  const exactTargetPercent = targetWords ? totalWords / targetWords * 100 : 0;
+  const targetPercent = round(exactTargetPercent);
+  const outsideLengthRange = exactTargetPercent < MANUAL_LENGTH_MIN_PCT || exactTargetPercent > MANUAL_LENGTH_MAX_PCT;
+  const plannedWords = input.chapters.reduce((sum, chapter) => sum + (chapter.targetWords ?? fallbackChapterTarget), 0);
+  const plannedDifferenceWords = plannedWords - targetWords;
+  const exactPlannedDeviationPct = targetWords ? plannedDifferenceWords / targetWords * 100 : 0;
+  const plannedDeviationPct = round(exactPlannedDeviationPct);
+  const plannedBudgetWarning = targetWords > 0 && Math.abs(exactPlannedDeviationPct) > MANUAL_BUDGET_TOLERANCE_PCT;
+  const weighting = SCRIPT_PRESET_CONFIG[input.scriptPresetId].actWeighting;
+  const actShares = weighting
+    ? NARRATIVE_ROLES.map((role, index) => {
+      const words = chapters.filter((chapter) => input.chapters.find((candidate) => candidate.no === chapter.chapterNo)?.role === role)
+        .reduce((sum, chapter) => sum + chapter.words, 0);
+      const exactActualPct = totalWords ? words / totalWords * 100 : 0;
+      const actualPct = round(exactActualPct);
+      const targetPct = weighting[index]!;
+      const exactDifferencePctPoints = exactActualPct - targetPct;
+      const differencePctPoints = round(exactDifferencePctPoints);
+      return { act: index + 1, role, actualPct, targetPct, differencePctPoints, outsideTolerance: Math.abs(exactDifferencePctPoints) > MANUAL_ACT_TOLERANCE_PCT_POINTS };
+    })
+    : [];
+  const warnings = [
+    ...(outsideLengthRange ? ['Total narration is outside 85–115% of the target word budget.'] : []),
+    ...chapters.filter((chapter) => chapter.outsideLengthRange).map((chapter) => `Chapter ${chapter.chapterNo} is outside 85–115% of its target (${chapter.words}/${chapter.targetWords} words).`),
+    ...(plannedBudgetWarning ? [`Planned targetWords total is ${plannedWords} words, ${plannedDeviationPct > 0 ? '+' : ''}${plannedDeviationPct}% from the ${targetWords}-word project budget (tolerance ±${MANUAL_BUDGET_TOLERANCE_PCT}%).`] : []),
+    ...actShares.filter((act) => act.outsideTolerance).map((act) => `Act ${act.act} (${act.role}) is ${act.actualPct}%; target ${act.targetPct}% ±${MANUAL_ACT_TOLERANCE_PCT_POINTS} pp.`),
+  ];
+  return {
+    totalWords,
+    targetWords,
+    differenceWords: totalDifference,
+    targetPercent,
+    outsideLengthRange,
+    plannedWords,
+    plannedDifferenceWords,
+    plannedDeviationPct,
+    plannedBudgetWarning,
+    actShares,
+    chapters,
+    warnings,
   };
 }
 

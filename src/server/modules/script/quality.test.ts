@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ScriptPresetId } from '../../../contracts/project';
 import type { OpenLoop } from '../../../contracts/script';
-import { analyzeScriptQuality, formatQualityReport, type ScriptQualityInput } from './quality';
+import { analyzeScriptQuality, formatQualityReport, summarizeManualScriptQuality, type ScriptQualityInput } from './quality';
 
 function chapter(
   no: number,
@@ -136,5 +136,51 @@ describe('formatQualityReport', () => {
     expect(JSON.parse(formatQualityReport(report, 'json'))).toEqual(report);
     expect(formatQualityReport(report, 'md')).toContain('Provider/model: unknown / unknown');
     expect(formatQualityReport(report, 'md')).toContain('Repeated cross-chapter 6-grams:');
+  });
+});
+
+describe('summarizeManualScriptQuality', () => {
+  it('reports short and long manual imports without blocking either one', () => {
+    const base = {
+      targetDurationSec: 60,
+      scriptPresetId: 'documentary' as const,
+      chapters: [
+        { no: 1, title: 'One', role: 'hook' as const, targetWords: 75, paragraphs: ['short'] },
+        { no: 2, title: 'Two', role: 'context' as const, targetWords: 75, paragraphs: ['also short'] },
+      ],
+    };
+    const short = summarizeManualScriptQuality(base);
+    const first = base.chapters[0]!;
+    const second = base.chapters[1]!;
+    const long = summarizeManualScriptQuality({
+      ...base,
+      chapters: [{ ...first, paragraphs: [Array.from({ length: 182 }, () => 'word').join(' ')] }, second],
+    });
+
+    expect(short.outsideLengthRange).toBe(true);
+    expect(short.totalWords).toBe(3);
+    expect(short.chapters[0]).toMatchObject({ words: 1, targetWords: 75, outsideLengthRange: true });
+    expect(short.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+    expect(long.outsideLengthRange).toBe(true);
+    expect(long.totalWords).toBe(184);
+    expect(long.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+  });
+
+  it('warns when planned words miss the budget and hubris act shares exceed tolerance', () => {
+    const summary = summarizeManualScriptQuality({
+      targetDurationSec: 60,
+      scriptPresetId: 'hubris-trap',
+      chapters: [
+        { no: 1, title: 'One', role: 'hook', targetWords: 10, paragraphs: [Array.from({ length: 100 }, () => 'word').join(' ')] },
+        { no: 2, title: 'Two', role: 'context', targetWords: 10, paragraphs: [Array.from({ length: 100 }, () => 'word').join(' ')] },
+      ],
+    });
+
+    expect(summary.plannedBudgetWarning).toBe(true);
+    expect(summary.actShares.find(({ role }) => role === 'hook')?.outsideTolerance).toBe(true);
+    expect(summary.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('Planned targetWords total'),
+      expect.stringContaining('Act 1 (hook)'),
+    ]));
   });
 });

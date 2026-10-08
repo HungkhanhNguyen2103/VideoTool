@@ -11,6 +11,8 @@ const OutlineChapterSchema = z.object({
   beat: z.string().min(1),
   targetWords: z.number().int().positive(),
   endsOnTension: z.boolean(),
+  sourceFacts: z.array(z.string().trim().min(1).max(300)).max(10).optional(),
+  holdBack: z.array(z.string().trim().min(1).max(200)).max(4).optional(),
 }).strict();
 
 const OutlineBaseSchema = z.object({

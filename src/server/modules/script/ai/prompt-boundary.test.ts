@@ -18,11 +18,51 @@ const chapter = ChapterDocSchema.parse({ id: 'chapter-1', no: 1, title: 'Origins
 const generated = [{ no: 1, title: 'Origins', paragraphs: ['First beat'], scenesCount: null, durationSec: null }];
 
 describe('script AI prompt boundary', () => {
+  it('accepts optional sourced facts and reveal holdbacks in generated and manual chapter documents', () => {
+    const outlineRaw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Set the question.', targetWords: 100, endsOnTension: true, sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] }],
+      openLoops: [], coreQuestion: 'Why did it fail?', openingHook: 'The river changes direction.',
+    });
+    const manualRaw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Set the question.', targetWords: 100, endsOnTension: false, paragraphs: ['The river changed direction.'], sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] }],
+      openLoops: [], coreQuestion: 'Why did it fail?', openingHook: 'The river changes direction.',
+    });
+
+    expect(parseScriptOutline(outlineRaw, 'documentary').chapters[0]).toMatchObject({ sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] });
+    expect(parseManualScriptDocument(manualRaw, 'documentary').chapters[0]).toMatchObject({ sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] });
+    expect(parseScriptOutline(JSON.stringify({
+      chapters: [{ no: 1, title: 'Legacy', role: 'hook', beat: 'Old fields remain valid.', targetWords: 100, endsOnTension: false }],
+      openLoops: [], coreQuestion: 'Why?', openingHook: 'At dawn.',
+    }), 'documentary').chapters[0]).not.toHaveProperty('sourceFacts');
+  });
+
+  it('guides automatic outlines and manual documents to allocate cited facts and protect later reveals', () => {
+    const outline = buildOutlinePrompt({ ...project, referencesText: '[1] Archive source. [2] Oral history.' });
+    const manual = buildManualScriptPrompt({ ...project, referencesText: '[1] Archive source. [2] Oral history.' });
+
+    for (const prompt of [outline, manual]) {
+      expect(prompt.promptVersion).toBe('script-prompt-v4/documentary@3');
+      expect(prompt.system).toContain('sourceFacts');
+      expect(prompt.system).toContain('holdBack');
+      expect(prompt.system.toLowerCase()).toContain('never invent numbers, dates, names, or quotations');
+      expect(prompt.system).toContain('source tag');
+    }
+    expect(outline.system).toContain('source area is thin');
+    expect(manual.user).toContain('300 words');
+  });
+
+  it('uses the recommended exact chapter count when a project does not specify one', () => {
+    const longProject = { ...project, targetDurationSec: 840, chapterCount: null };
+
+    expect(buildOutlinePrompt(longProject).user).toContain('Create exactly 6 chapters; chapter count must be exact.');
+    expect(buildManualScriptPrompt(longProject).user).toContain('Use exactly 6 chapters; chapter count must be exact.');
+  });
+
   it.each(['documentary', 'explainer', 'strategist'] as const)('composes the %s preset into initial prompt with metadata and version', (id) => {
     const input = { ...project, scriptPresetId: id as never };
     const preset = loadScriptPreset(id as never);
     const result = buildScriptPrompt(input);
-    expect(result.promptVersion).toBe(`script-prompt-v3/${id}@${preset.version}`);
+    expect(result.promptVersion).toBe(`script-prompt-v4/${id}@${preset.version}`);
     expect(result.user).toContain(`Script preset: ${id}`);
     expect(result.system.indexOf('professional video script writer')).toBeLessThan(result.system.indexOf(preset.system));
     expect(result.system.indexOf(preset.system)).toBeLessThan(result.system.indexOf(preset.instructions));
@@ -47,7 +87,7 @@ describe('script AI prompt boundary', () => {
       coreQuestion: 'Why did the river change?', openingHook: 'At dawn, it reversed.', openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v3/documentary@3');
+    expect(result.promptVersion).toBe('script-prompt-v4/documentary@3');
     expect(result.system).toContain(loadScriptPreset('documentary').instructions);
     expect(result.user).toContain('Origins');
     expect(result.user).toContain('First beat');
@@ -61,7 +101,7 @@ describe('script AI prompt boundary', () => {
       coreQuestion: 'Why did the river change?', openingHook: null, openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v3/explainer@2');
+    expect(result.promptVersion).toBe('script-prompt-v4/explainer@2');
     expect(result.system).toContain(loadScriptPreset('explainer').instructions);
   });
 
@@ -276,11 +316,11 @@ describe('script AI parsers', () => {
     expect(outline.system).toContain('five-act');
     for (const role of ['hook', 'context', 'rising', 'climax', 'resolution']) expect(outline.system).toContain(role);
     expect(outline.system).toContain('no extra keys');
-    expect(outline.system).toContain('targetWords must be an integer');
+    expect(outline.system).toContain('targetWords must be a positive integer, not a string');
     expect(outline.system).toContain('plantedInChapter and resolvedInChapter are positive integers, not strings');
     expect(outline.system).toContain('Example chapter:');
     expect(outline.system).toContain('Example openLoop:');
-    expect(outline.promptVersion).toBe('script-prompt-v3/documentary@3');
+    expect(outline.promptVersion).toBe('script-prompt-v4/documentary@3');
 
     const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [], openLoops: ['What happens next?'], styleNote: 'Muted palette' });
     expect(expansion.user).toContain('Target words: 300');
@@ -299,7 +339,7 @@ describe('script AI parsers', () => {
     for (const role of ['hook', 'context', 'rising', 'climax', 'resolution']) expect(manual.system).toContain(role);
     expect(manual.system).toContain('Example chapter:');
     expect(manual.system).toContain('Example openLoop:');
-    expect(manual.promptVersion).toBe('script-prompt-v3/documentary@3');
+    expect(manual.promptVersion).toBe('script-prompt-v4/documentary@3');
   });
 
   it('keeps hubris-trap outline guidance distinct from flatter explainer weighting', () => {
@@ -330,7 +370,7 @@ describe('script AI parsers', () => {
     const strategist = buildOutlinePrompt({ ...project, scriptPresetId: 'strategist' as never });
     expect(strategist.system).toContain('5% / 10% / 25% / 40% / 20%');
     expect(strategist.system).toContain('guideline');
-    expect(strategist.promptVersion).toMatch(/^script-prompt-v3\/strategist@/);
+    expect(strategist.promptVersion).toMatch(/^script-prompt-v4\/strategist@/);
   });
 
   it.each(['coreQuestion', 'openingHook'] as const)('rejects an outline missing %s with SCRIPT_PARSE_ERROR', (field) => {

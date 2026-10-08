@@ -9,10 +9,10 @@ import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
 import { getAiClient } from '../../shared/ai';
 import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider } from '../project';
-import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
+import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
 import { runFinalQa } from './qa';
 
-const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), stream: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), chatWithMetadata: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 type JobRecord = { _id: string; type: string; payload: unknown };
 
@@ -35,6 +35,8 @@ beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   await getCollection('jobs').deleteMany({});
   aiMock.chat.mockReset();
+  aiMock.chatWithMetadata.mockReset();
+  aiMock.chatWithMetadata.mockImplementation(async (messages, options) => ({ text: await aiMock.chat(messages, options), truncated: false }));
   aiMock.stream.mockReset();
   vi.mocked(getAiClient).mockClear();
 });
@@ -319,7 +321,7 @@ describe('script contracts', () => {
     const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-prompt`);
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v3/documentary@3' });
+    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v4/documentary@3' });
     expect(body.prompt).toContain('SYSTEM');
     expect(body.prompt).toContain('USER');
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
@@ -364,7 +366,8 @@ describe('script contracts', () => {
     const history = await getProjectHistory(project.id);
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ id: 'chapter-2', paragraphs: ['Manual middle'], status: 'pending', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'], reviewStatus: 'clean' });
+    expect(body.chapter).toMatchObject({ id: 'chapter-2', paragraphs: ['Manual middle'], status: 'pending', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'], reviewStatus: 'clean' });
+    expect(body.quality).toMatchObject({ totalWords: 6, targetWords: 150, outsideLengthRange: true, chapters: [{ chapterNo: 1 }, { chapterNo: 2 }, { chapterNo: 3 }] });
     expect(saved.chapters[1]).toMatchObject({ paragraphs: ['Manual middle'], status: 'pending', reviewStatus: 'clean' });
     expect(saved.chapters[2]).toMatchObject({ reviewStatus: 'upstream-changed' });
     expect(saved.chapters[0]).toMatchObject({ status: 'approved', reviewStatus: 'clean' });
@@ -373,6 +376,25 @@ describe('script contracts', () => {
 
     const restored = await restoreChapters(project.id, 0);
     expect(restored.find((chapter) => chapter.id === 'chapter-2')?.paragraphs).toEqual(['Old middle']);
+  });
+
+  it('accepts an overlong manual chapter and returns a nonblocking whole-script length warning', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null, targetWords: 150,
+    }], null, 'script');
+    const longNarration = Array.from({ length: 180 }, () => 'word').join(' ');
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/chapters/chapter-1/regenerate/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: regeneratedResponse([longNarration]) }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.chapter.paragraphs).toEqual([longNarration]);
+    expect(body.quality).toMatchObject({ totalWords: 180, targetWords: 150, outsideLengthRange: true });
+    expect(body.quality.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+    expect(body.quality.chapters[0]).toMatchObject({ words: 180, targetWords: 150, outsideLengthRange: true });
   });
 
   it('rejects invalid regenerated JSON without changing the chapter', async () => {
@@ -456,9 +478,60 @@ describe('script contracts', () => {
     });
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body.chapters[0]).toMatchObject({ title: 'Opening', paragraphs: ['Manual paragraph'], status: 'pending' });
+    expect(body.project.chapters[0]).toMatchObject({ title: 'Opening', paragraphs: ['Manual paragraph'], status: 'pending' });
+    expect(body.quality).toMatchObject({ totalWords: 4, targetWords: 150, outsideLengthRange: true, plannedBudgetWarning: true });
     expect(aiMock.chat).not.toHaveBeenCalled();
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('accepts short and long manual scripts and returns nonblocking total and chapter length warnings', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const makeDocument = (paragraph: string) => JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 75, endsOnTension: true, paragraphs: [paragraph] },
+        { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 75, endsOnTension: false, paragraphs: ['Two'] },
+      ],
+      openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
+    });
+
+    const shortResponse = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: makeDocument('One') }),
+    });
+    const shortBody = await shortResponse.json();
+    expect(shortResponse.status).toBe(200);
+    expect(shortBody.quality).toMatchObject({ totalWords: 2, outsideLengthRange: true });
+    expect(shortBody.quality.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+    expect(shortBody.quality.chapters[0]).toMatchObject({ words: 1, targetWords: 75, outsideLengthRange: true });
+
+    const longResponse = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: makeDocument(Array.from({ length: 182 }, () => 'word').join(' ')) }),
+    });
+    const longBody = await longResponse.json();
+    expect(longResponse.status).toBe(200);
+    expect(longBody.quality.totalWords).toBe(183);
+    expect(longBody.quality.outsideLengthRange).toBe(true);
+    expect(longBody.quality.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+  });
+
+  it('returns a nonblocking hubris act-share warning for manual imports', async () => {
+    const project = await createProject({ ...projectInput, scriptPresetId: 'hubris-trap' });
+    const raw = JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 140, endsOnTension: true, paragraphs: [Array.from({ length: 100 }, () => 'word').join(' ')] },
+        { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 10, endsOnTension: false, paragraphs: ['Done'] },
+      ],
+      openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
+      motif: { hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The scheme turns inward' },
+    });
+    const baseUrl = await startScriptServer();
+
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw }),
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.quality.warnings).toEqual(expect.arrayContaining([expect.stringContaining('Act 1 (hook)')]));
   });
 
   it('rejects a manual document missing outline continuity fields before any write', async () => {
@@ -551,6 +624,7 @@ describe('script contracts', () => {
     const updated = await saveGeneratedScript(project.id, [{
       no: 1, title: 'Opening', paragraphs: ['A mystery'], scenesCount: null, durationSec: null,
       role: 'hook', beat: 'Open with a mystery', targetWords: 3, endsOnTension: true,
+      sourceFacts: ['The river crossing is dated 1776 [1]'], holdBack: ['The ambush is revealed in chapter 4.'],
     }], [{ question: 'What happened?', plantedInChapter: 1, resolvedInChapter: 1 }], {
       hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The plan turns inward',
     }, 'The core question', 'The opening hook');
@@ -559,10 +633,31 @@ describe('script contracts', () => {
     expect(updated.chapters).toHaveLength(1);
     expect(updated.chapters[0]).toMatchObject({ no: 1, status: 'pending', role: 'hook', targetWords: 3, endsOnTension: true });
     expect(updated.chapters[0]!.id).not.toBe('');
+    expect(updated.chapters[0]).toMatchObject({ sourceFacts: ['The river crossing is dated 1776 [1]'], holdBack: ['The ambush is revealed in chapter 4.'] });
     expect(updated.openLoops[0]!.question).toBe('What happened?');
     expect(updated.motif?.hunter).toBe('A rival');
     expect(updated.coreQuestion).toBe('The core question');
     expect(updated.openingHook).toBe('The opening hook');
+
+    await patchChapter(project.id, updated.chapters[0]!.id, { paragraphs: ['Changed paragraph'] });
+    const restored = await restoreChapters(project.id, 0);
+    expect(restored[0]).toMatchObject({
+      paragraphs: ['A mystery'],
+      sourceFacts: ['The river crossing is dated 1776 [1]'],
+      holdBack: ['The ambush is revealed in chapter 4.'],
+    });
+  });
+
+  it('copies source facts and hold-backs into independent history arrays', () => {
+    const chapter = ChapterDocSchema.parse({
+      id: 'chapter-copy', no: 1, title: 'Opening', paragraphs: ['Before'], status: 'pending', scenesCount: null, durationSec: null,
+      sourceFacts: ['Fact [1]'], holdBack: ['Later reveal'],
+    });
+    const snapshot = snapshotOf([chapter]);
+    chapter.sourceFacts!.push('Mutated [2]');
+    chapter.holdBack!.push('Mutated reveal');
+
+    expect(snapshot.chapters[0]).toMatchObject({ sourceFacts: ['Fact [1]'], holdBack: ['Later reveal'] });
   });
 
   it('accepts chapters and snapshots with stable chapter metadata', () => {
@@ -664,16 +759,18 @@ describe('script contracts', () => {
   });
 
   it('generates chapters, logs milestones, and sets project status to script', async () => {
+    const firstNarration = Array.from({ length: 30 }, (_, index) => `first${index}`).join(' ');
+    const secondNarration = Array.from({ length: 31 }, (_, index) => `second${index}`).join(' ');
     aiMock.chat
       .mockResolvedValueOnce(JSON.stringify({
         chapters: [
-      { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: true },
-      { no: 2, title: 'Context', role: 'resolution', beat: 'Close', targetWords: 1, endsOnTension: false },
+      { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 37, endsOnTension: true },
+      { no: 2, title: 'Context', role: 'resolution', beat: 'Close', targetWords: 38, endsOnTension: false },
         ], openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
       }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['First'], styleNote: 'Style 1', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'] }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Second'], styleNote: 'Style 2', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: ['Second fact'] }));
-    const project = await createProject(projectInput);
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [firstNarration], styleNote: 'Style 1', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [secondNarration], styleNote: 'Style 2', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: ['Second fact'] }));
+    const project = await createProject({ ...projectInput, targetDurationSec: 30 });
     const logs: string[] = [];
 
     await generateScript(project.id, {
@@ -685,17 +782,68 @@ describe('script contracts', () => {
     const saved = await getProject(project.id);
     expect(saved.status).toBe('script');
     expect(saved.chapters).toHaveLength(2);
-    expect(saved.chapters[0]!).toMatchObject({ no: 1, status: 'pending', paragraphs: ['First'], scenesCount: null, durationSec: null });
+    expect(saved.chapters[0]!).toMatchObject({ no: 1, status: 'pending', paragraphs: [firstNarration], scenesCount: null, durationSec: null, sourceFacts: [], holdBack: [] });
     expect(saved.chapters[0]!.id).toHaveLength(26);
     expect(await getProjectHistory(project.id)).toEqual([]);
     expect(logs).toEqual([
       'Loading project and AI client…',
+      'References are short: 0 characters for 0.5 target minutes (0 characters/min; warning threshold 500). Generation will continue.',
       'Sending outline request to AI…',
       'Expanding chapter 1/2…',
       'Expanding chapter 2/2…',
       'Script saved — 2 chapters.',
     ]);
-    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]), expect.objectContaining({ json: true, maxTokens: 4000 }));
+    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]), expect.objectContaining({ json: true, maxTokens: 3100 }));
+  });
+
+  it('retries a truncated outline once with the larger model-bounded budget', async () => {
+    const project = await createProject({ ...projectInput, targetDurationSec: 30 });
+    const outline = JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 37, endsOnTension: true },
+        { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 38, endsOnTension: false },
+      ], openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
+    });
+    aiMock.chatWithMetadata
+      .mockResolvedValueOnce({ text: '{"chapters":[', truncated: true })
+      .mockResolvedValueOnce({ text: outline, truncated: false });
+    aiMock.chat
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 30 }, () => 'first').join(' ')], styleNote: '', chapterSummary: 'First', avoidRepeating: [], persistentFactsNext: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 31 }, () => 'second').join(' ')], styleNote: '', chapterSummary: 'Second', avoidRepeating: [], persistentFactsNext: [] }));
+    const logs: string[] = [];
+
+    await generateScript(project.id, { appendLog: async (message) => { logs.push(message); }, isCancelled: async () => false, reportProgress: vi.fn() });
+
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(2);
+    expect(aiMock.chatWithMetadata.mock.calls[0]![1]).toMatchObject({ maxTokens: 3100, json: true });
+    expect(aiMock.chatWithMetadata.mock.calls[1]![1]).toMatchObject({ maxTokens: 4650, json: true });
+    expect(logs).toContain('AI response truncated at 3100 output tokens; retrying once with 4650.');
+  });
+
+  it('uses the recommended exact chapter count when none is configured', async () => {
+    const project = await createProject({ ...projectInput, targetDurationSec: 840, chapterCount: null });
+    aiMock.chat.mockResolvedValueOnce(JSON.stringify({
+      chapters: [
+        { no: 1, title: 'One', role: 'hook', beat: 'Open', targetWords: 350, endsOnTension: true },
+        { no: 2, title: 'Two', role: 'context', beat: 'Set context', targetWords: 350, endsOnTension: true },
+        { no: 3, title: 'Three', role: 'rising', beat: 'Raise stakes', targetWords: 350, endsOnTension: true },
+        { no: 4, title: 'Four', role: 'rising', beat: 'Escalate', targetWords: 350, endsOnTension: true },
+        { no: 5, title: 'Five', role: 'climax', beat: 'Decisive moment', targetWords: 350, endsOnTension: true },
+        { no: 6, title: 'Six', role: 'resolution', beat: 'Reflect', targetWords: 350, endsOnTension: false },
+      ],
+      openLoops: [
+        { question: 'What caused the turn?', plantedInChapter: 1, resolvedInChapter: 4 },
+        { question: 'Who bears the cost?', plantedInChapter: 2, resolvedInChapter: 5 },
+      ],
+      coreQuestion: 'What changed?', openingHook: 'At dawn, the river turned.',
+    }));
+    const isCancelled = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    await generateScript(project.id, { appendLog: vi.fn(), isCancelled, reportProgress: vi.fn() });
+
+    expect(aiMock.chat).toHaveBeenCalledTimes(1);
+    expect(aiMock.chat.mock.calls[0]![0][1].content).toContain('Create exactly 6 chapters; chapter count must be exact.');
+    expect((await getProject(project.id)).chapters).toEqual([]);
   });
 
   it('maps invalid AI JSON to SCRIPT_PARSE_ERROR without writing chapters', async () => {
@@ -1008,17 +1156,17 @@ describe('script contracts', () => {
   });
 
   it('traces generation retry, finalize, regeneration, manual edit/import, and final QA end to end', async () => {
-    const project = await createProject({ ...projectInput, targetDurationSec: 8 });
+    const project = await createProject({ ...projectInput, targetDurationSec: 2 });
     aiMock.chat
       .mockResolvedValueOnce(JSON.stringify({
         chapters: [
           { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 2, endsOnTension: true },
-          { no: 2, title: 'Close', role: 'resolution', beat: 'Resolve', targetWords: 2, endsOnTension: false },
+          { no: 2, title: 'Close', role: 'resolution', beat: 'Resolve', targetWords: 3, endsOnTension: false },
         ], openLoops: [], coreQuestion: 'What changed?', openingHook: 'At dawn, everything changed.',
       }))
       .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['short'], styleNote: 'First', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['Fact'] }))
       .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['first', 'chapter'], styleNote: 'First retry', chapterSummary: 'First summary', avoidRepeating: ['repeat'], persistentFactsNext: ['Fact'] }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['second', 'chapter'], styleNote: 'Second', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: [] }));
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['second', 'chapter now'], styleNote: 'Second', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: [] }));
     await generateScript(project.id, { appendLog: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), reportProgress: vi.fn() });
 
     await patchChapter(project.id, 'chapter-missing', { status: 'approved' }).catch(() => undefined);

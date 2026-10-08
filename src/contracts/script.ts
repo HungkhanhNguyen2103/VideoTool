@@ -35,12 +35,49 @@ export const ChapterDocSchema = z.object({
   beat: z.string().default(''),
   targetWords: z.number().int().positive().nullable().default(null),
   endsOnTension: z.boolean().default(false),
+  sourceFacts: z.array(z.string().trim().min(1).max(300)).max(10).optional(),
+  holdBack: z.array(z.string().trim().min(1).max(200)).max(4).optional(),
   chapterSummary: z.string().max(250).nullable().default(null),
   avoidRepeating: z.array(z.string().max(80)).max(5).default([]),
   persistentFacts: z.array(z.string().max(120)).max(5).default([]),
   reviewStatus: z.enum(['clean', 'upstream-changed']).default('clean'),
 });
 export type ChapterDoc = z.input<typeof ChapterDocSchema>;
+
+export const ScriptQualityChapterSummarySchema = z.object({
+  chapterNo: z.number().int().positive(),
+  title: z.string(),
+  words: z.number().int().nonnegative(),
+  targetWords: z.number().int().nonnegative(),
+  differenceWords: z.number().int(),
+  deviationPct: z.number(),
+  outsideLengthRange: z.boolean(),
+});
+
+export const ScriptQualityActShareSchema = z.object({
+  act: z.number().int().positive(),
+  role: z.string(),
+  actualPct: z.number(),
+  targetPct: z.number(),
+  differencePctPoints: z.number(),
+  outsideTolerance: z.boolean(),
+});
+
+export const ScriptQualitySummarySchema = z.object({
+  totalWords: z.number().int().nonnegative(),
+  targetWords: z.number().int().nonnegative(),
+  differenceWords: z.number().int(),
+  targetPercent: z.number(),
+  outsideLengthRange: z.boolean(),
+  plannedWords: z.number().int().nonnegative(),
+  plannedDifferenceWords: z.number().int(),
+  plannedDeviationPct: z.number(),
+  plannedBudgetWarning: z.boolean(),
+  actShares: z.array(ScriptQualityActShareSchema),
+  chapters: z.array(ScriptQualityChapterSummarySchema),
+  warnings: z.array(z.string()),
+});
+export type ScriptQualitySummary = z.infer<typeof ScriptQualitySummarySchema>;
 
 export const ChapterSnapshotSchema = z.object({
   takenAt: z.date(),
@@ -56,4 +93,21 @@ export function countNarrationWords(text: string): number {
 
 export function estimateNarrationDurationSec(text: string): number {
   return Math.max(1, Math.round(countNarrationWords(text) / NARRATION_WORDS_PER_MINUTE * 60));
+}
+
+export function getReferenceCoverage(referencesText: string, targetDurationSec: number): {
+  referenceCharacters: number;
+  targetMinutes: number;
+  charactersPerMinute: number;
+  shouldWarn: boolean;
+} {
+  const referenceCharacters = referencesText.trim().length;
+  const targetMinutes = targetDurationSec / 60;
+  const charactersPerMinute = targetMinutes > 0 ? Math.round(referenceCharacters / targetMinutes) : 0;
+  return {
+    referenceCharacters,
+    targetMinutes,
+    charactersPerMinute,
+    shouldWarn: charactersPerMinute < 500,
+  };
 }

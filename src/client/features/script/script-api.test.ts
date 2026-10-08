@@ -20,15 +20,16 @@ describe('script SSE parser', () => {
 describe('script generation API', () => {
   it('uses the provider PATCH route and manual prompt/import contracts', async () => {
     const project = { id: 'project-1', title: 'Project', status: 'draft', language: 'vi', brief: 'A sufficiently long brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null, aiProvider: 'claude', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: [], chapters: [], openLoops: [], motif: null, version: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const quality = { totalWords: 70, targetWords: 150, differenceWords: -80, targetPercent: 46.7, outsideLengthRange: true, plannedWords: 150, plannedDifferenceWords: 0, plannedDeviationPct: 0, plannedBudgetWarning: false, actShares: [], chapters: [], warnings: ['Total narration is outside 85–115% of the target word budget.'] };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
-      const body = url.endsWith('manual-prompt') ? { prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v2/documentary@2' } : project;
+      const body = url.endsWith('manual-prompt') ? { prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v2/documentary@2' } : url.endsWith('manual-import') ? { project, quality } : project;
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     });
 
     await expect(setAiProvider('project/1', 'claude')).resolves.toMatchObject({ aiProvider: 'claude' });
     await expect(getManualScriptPrompt('project/1')).resolves.toEqual({ prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v2/documentary@2' });
-    await expect(importManualScript('project/1', 'raw text')).resolves.toMatchObject({ id: 'project-1' });
+    await expect(importManualScript('project/1', 'raw text')).resolves.toMatchObject({ project: { id: 'project-1' }, quality: { totalWords: 70, outsideLengthRange: true } });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/ai-provider', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ provider: 'claude' }) }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/generate-script/manual-prompt', expect.objectContaining({ method: 'GET' }));
@@ -81,12 +82,13 @@ describe('final QA API', () => {
 
 describe('chapter regeneration manual API', () => {
   it('gets a chapter prompt and imports a parsed chapter through the dedicated routes', async () => {
+    const quality = { totalWords: 70, targetWords: 150, differenceWords: -80, targetPercent: 46.7, outsideLengthRange: true, plannedWords: 150, plannedDifferenceWords: 0, plannedDeviationPct: 0, plannedBudgetWarning: false, actShares: [], chapters: [], warnings: [] };
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v2/documentary@2' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Updated'], status: 'pending', scenesCount: null, durationSec: null }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ chapter: { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Updated'], status: 'pending', scenesCount: null, durationSec: null }, quality }), { status: 200 }));
 
     await expect(getRegenerationManualPrompt('project/1', 'chapter/1', { instruction: 'Shorter', level: 'light' })).resolves.toEqual({ prompt: 'SYSTEM\n...', promptVersion: 'script-prompt-v2/documentary@2' });
-    await expect(importRegeneratedChapter('project/1', 'chapter/1', '{"paragraphs":["Updated"]}')).resolves.toMatchObject({ id: 'chapter-1', paragraphs: ['Updated'] });
+    await expect(importRegeneratedChapter('project/1', 'chapter/1', '{"paragraphs":["Updated"]}')).resolves.toMatchObject({ chapter: { id: 'chapter-1', paragraphs: ['Updated'] }, quality: { totalWords: 70 } });
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/chapters/chapter%2F1/regenerate/manual-prompt', expect.objectContaining({ method: 'POST', body: JSON.stringify({ instruction: 'Shorter', level: 'light' }) }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/chapters/chapter%2F1/regenerate/manual-import', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raw: '{"paragraphs":["Updated"]}' }) }));
     fetchMock.mockRestore();

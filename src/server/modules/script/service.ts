@@ -1,6 +1,7 @@
 import type { ProjectDetail } from '../../../contracts/project';
 import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
-import { getAiClient, type AiClient, type ChatMessage } from '../../shared/ai';
+import { getAiModelDefinition } from '../../../contracts/ai-models';
+import { getAiClient, type AiChatMetadata, type AiClient, type ChatMessage } from '../../shared/ai';
 import { aiRequestTimeoutMs, normalizeAiError, withAiRequestTimeout, type AiProviderName } from '../../shared/ai/errors';
 import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
@@ -17,9 +18,15 @@ import type { SceneDoc } from '../project';
 import { buildChapterExpansionPrompt, buildOutlinePrompt, buildRegenerationPrompt, type BuiltPrompt } from './ai/build-prompt';
 import { parseChapterExpansion, parseRegeneratedParagraphs, parseScriptOutline, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { countNarrationWords } from '../../../contracts/script';
+import { getOutlineOutputBudgets, getShortReferenceWarning, recommendScriptChapterCount, validateScriptOutline } from './ai/outline-validation';
 
 export function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
-  return { takenAt: new Date(), chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })) };
+  return { takenAt: new Date(), chapters: chapters.map((chapter) => ({
+    ...chapter,
+    paragraphs: [...chapter.paragraphs],
+    ...(chapter.sourceFacts ? { sourceFacts: [...chapter.sourceFacts] } : {}),
+    ...(chapter.holdBack ? { holdBack: [...chapter.holdBack] } : {}),
+  })) };
 }
 
 function paragraphsEqual(left: readonly string[], right: readonly string[]): boolean {
@@ -58,7 +65,7 @@ export async function getChapterHistory(projectId: string): Promise<ChapterSnaps
 }
 
 export type GeneratedScriptChapter = Pick<ChapterDoc, 'no' | 'title' | 'paragraphs'> &
-  Partial<Pick<ChapterDoc, 'scenesCount' | 'durationSec' | 'role' | 'beat' | 'targetWords' | 'endsOnTension' | 'chapterSummary' | 'avoidRepeating' | 'persistentFacts' | 'reviewStatus'>>;
+  Partial<Pick<ChapterDoc, 'scenesCount' | 'durationSec' | 'role' | 'beat' | 'targetWords' | 'endsOnTension' | 'sourceFacts' | 'holdBack' | 'chapterSummary' | 'avoidRepeating' | 'persistentFacts' | 'reviewStatus'>>;
 
 export type ScriptGenerationJobContext = {
   reportProgress: (pct: number, result?: unknown) => Promise<void>;
@@ -66,7 +73,7 @@ export type ScriptGenerationJobContext = {
   appendLog: (message: string) => Promise<void>;
 };
 
-type JsonChatOptions = { maxTokens: number; json: true };
+type JsonChatOptions = { maxTokens: number; json: true; truncationRetryMaxTokens?: number };
 
 function aiProviderName(provider: ProjectDetail['aiProvider']): AiProviderName {
   return provider === 'deepseek' ? 'DeepSeek' : 'Claude';
@@ -84,9 +91,13 @@ async function chatWithFailureLog(
   messages: ChatMessage[],
   context: ScriptGenerationJobContext,
   opts?: JsonChatOptions,
-): Promise<string> {
+): Promise<AiChatMetadata> {
   try {
-    return await withAiRequestTimeout(() => aiClient.chat(messages, opts), aiRequestTimeoutMs());
+    const chatOptions = opts ? { maxTokens: opts.maxTokens, json: opts.json } : undefined;
+    const response = await withAiRequestTimeout(() => opts?.truncationRetryMaxTokens !== undefined && aiClient.chatWithMetadata
+      ? aiClient.chatWithMetadata(messages, chatOptions)
+      : aiClient.chat(messages, chatOptions).then((text) => ({ text, truncated: false })), aiRequestTimeoutMs());
+    return response;
   } catch (error) {
     const normalized = normalizeAiError(aiProviderName(provider), aiClient.model, error);
     await context.appendLog(`AI request failed: ${normalized.message}`);
@@ -112,13 +123,33 @@ async function requestJsonWithRepair<T>(
   context: ScriptGenerationJobContext,
   opts: JsonChatOptions,
 ): Promise<T> {
+  let truncationRetryUsed = false;
+  const requestText = async (requestMessages: ChatMessage[]): Promise<string> => {
+    let response = await chatWithFailureLog(provider, aiClient, requestMessages, context, opts);
+    if (response.truncated) {
+      const retryMaxTokens = opts.truncationRetryMaxTokens;
+      if (!truncationRetryUsed && retryMaxTokens !== undefined && retryMaxTokens > opts.maxTokens) {
+        truncationRetryUsed = true;
+        await context.appendLog(`AI response truncated at ${opts.maxTokens} output tokens; retrying once with ${retryMaxTokens}.`);
+        response = await chatWithFailureLog(provider, aiClient, requestMessages, context, { ...opts, maxTokens: retryMaxTokens });
+      }
+      if (response.truncated) {
+        const message = retryMaxTokens && retryMaxTokens > opts.maxTokens
+          ? `AI response remained truncated after one retry at ${retryMaxTokens} output tokens.`
+          : `AI response was truncated at the ${opts.maxTokens}-token output budget; the selected model has no larger available output budget.`;
+        await context.appendLog(message);
+        throw new AppError(`AI returned invalid script structure: ${message}`, 422, 'SCRIPT_PARSE_ERROR');
+      }
+    }
+    return response.text;
+  };
   const parseResponse = async (raw: string): Promise<T> => {
     const notices: string[] = [];
     const result = parse(raw, (notice) => notices.push(notice));
     for (const notice of notices) await context.appendLog(notice);
     return result;
   };
-  const raw = await chatWithFailureLog(provider, aiClient, messages, context, opts);
+  const raw = await requestText(messages);
   try {
     return await parseResponse(raw);
   } catch (error) {
@@ -133,7 +164,7 @@ async function requestJsonWithRepair<T>(
         content: `${lastMessage?.content ?? ''}\n\nFailed response:\n${raw}\n\nYour JSON was invalid: ${issue}. Return the corrected JSON only.`,
       },
     ];
-    const repairedRaw = await chatWithFailureLog(provider, aiClient, repairMessages, context, opts);
+    const repairedRaw = await requestText(repairMessages);
     try {
       return await parseResponse(repairedRaw);
     } catch (repairError) {
@@ -185,24 +216,38 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
   await context.appendLog('Loading project and AI client…');
   const aiClient = getAiClient(project.aiProvider, project.aiModel);
   if (await context.isCancelled()) return;
-  const outlinePrompt = buildOutlinePrompt(project);
+  const chapterCount = project.chapterCount ?? recommendScriptChapterCount(project.targetDurationSec);
+  const outlineProject = project.chapterCount === chapterCount ? project : { ...project, chapterCount };
+  const shortReferenceWarning = getShortReferenceWarning(project);
+  if (shortReferenceWarning) await context.appendLog(shortReferenceWarning);
+  const outlinePrompt = buildOutlinePrompt(outlineProject);
   await context.appendLog('Sending outline request to AI…');
   const outlineMessages: ChatMessage[] = [
     { role: 'system', content: outlinePrompt.system },
     { role: 'user', content: outlinePrompt.user },
   ];
+  const modelOutputCap = getAiModelDefinition(project.aiProvider, aiClient.model)?.capabilities.maxOutputTokens ?? 32_000;
+  const outlineBudgets = getOutlineOutputBudgets(chapterCount, project.referencesText.trim().length, modelOutputCap);
+  let outlineWarnings: string[] = [];
   const outline = await requestJsonWithRepair(
     project.aiProvider,
     aiClient,
     outlineMessages,
-    (raw) => validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId), project.chapterCount),
+    (raw) => {
+      const parsed = validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId), chapterCount);
+      outlineWarnings = validateScriptOutline(parsed, outlineProject);
+      return parsed;
+    },
     context,
-    { json: true, maxTokens: 4_000 },
+    { json: true, maxTokens: outlineBudgets.initial, truncationRetryMaxTokens: outlineBudgets.retry },
   );
+  for (const warning of outlineWarnings) await context.appendLog(warning);
   if (await context.isCancelled()) return;
   const saved = await saveGeneratedScript(projectId, outline.chapters.map((chapter) => ({
     ...chapter,
     paragraphs: [],
+    sourceFacts: chapter.sourceFacts ?? [],
+    holdBack: chapter.holdBack ?? [],
     scenesCount: null,
     durationSec: null,
   })), outline.openLoops, 'motif' in outline ? outline.motif : null, outline.coreQuestion, outline.openingHook);

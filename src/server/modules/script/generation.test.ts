@@ -71,7 +71,7 @@ describe('sequential script generation', () => {
     expect(saved.openingHook).toBe('A compelling opening.');
     expect(aiMock.chat).toHaveBeenCalledTimes(5);
     expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
-    expect(aiMock.chat.mock.calls[0]![1]).toMatchObject({ json: true, maxTokens: 4000 });
+    expect(aiMock.chat.mock.calls[0]![1]).toMatchObject({ json: true, maxTokens: 3100 });
     expect(aiMock.chat.mock.calls[1]![1]).toMatchObject({ json: true, maxTokens: 6000 });
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Retry style');
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('What caused it?');
@@ -91,11 +91,11 @@ describe('sequential script generation', () => {
   it('persists outline core question and opening hook', async () => {
     aiMock.chat
       .mockResolvedValueOnce(JSON.stringify({
-        chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: false }],
+        chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 5, endsOnTension: false }],
         openLoops: [], coreQuestion: 'Why did the river change?', openingHook: 'At dawn, the river ran backward.',
       }))
-      .mockResolvedValueOnce(expansion(['One'], 'Style'));
-    const project = await createProject({ ...projectInput, chapterCount: 1 });
+      .mockResolvedValueOnce(expansion(['One two three four'], 'Style'));
+    const project = await createProject({ ...projectInput, targetDurationSec: 2, chapterCount: 1 });
 
     await generateScript(project.id, context());
 
@@ -107,7 +107,7 @@ describe('sequential script generation', () => {
 
   it('persists paragraphs when continuity memory exceeds schema limits and logs truncations', async () => {
     const singleOutline = JSON.stringify({
-      chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: false }],
+      chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 5, endsOnTension: false }],
       openLoops: [], coreQuestion: 'Why did the river change?', openingHook: 'At dawn, the river ran backward.',
     });
     const paragraphs = ['  Narration must survive memory cleanup.  '];
@@ -119,7 +119,7 @@ describe('sequential script generation', () => {
         avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'discarded'],
         persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
       }));
-    const project = await createProject({ ...projectInput, chapterCount: 1 });
+    const project = await createProject({ ...projectInput, targetDurationSec: 2, chapterCount: 1 });
 
     await generateScript(project.id, ctx);
 
@@ -134,13 +134,13 @@ describe('sequential script generation', () => {
   });
 
   it('repairs an invalid outline once and continues with the corrected response', async () => {
-    const smallOutline = outline.replaceAll('targetWords":10', 'targetWords":1');
+    const smallOutline = outline;
     const invalidOutline = smallOutline.replace('"role":"hook"', '"role":"introduction"');
     aiMock.chat
       .mockResolvedValueOnce(invalidOutline)
       .mockResolvedValueOnce(smallOutline)
-      .mockResolvedValueOnce(expansion(['First'], 'First style'))
-      .mockResolvedValueOnce(expansion(['Second'], 'Second style'));
+      .mockResolvedValueOnce(expansion([words(8)], 'First style'))
+      .mockResolvedValueOnce(expansion([words(8)], 'Second style'));
     const project = await createProject(projectInput);
     const ctx = context();
 
@@ -169,27 +169,27 @@ describe('sequential script generation', () => {
   });
 
   it('repairs an invalid chapter expansion once before applying length retry logic', async () => {
-    const smallOutline = outline.replaceAll('targetWords":10', 'targetWords":1');
+    const smallOutline = outline;
     const invalidExpansion = JSON.stringify({ paragraphs: ['First'], styleNote: 'First style', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'], extra: true });
     aiMock.chat
       .mockResolvedValueOnce(smallOutline)
       .mockResolvedValueOnce(invalidExpansion)
-      .mockResolvedValueOnce(expansion(['First repaired'], 'First repaired style'))
-      .mockResolvedValueOnce(expansion(['Second'], 'Second style'));
+      .mockResolvedValueOnce(expansion([words(8)], 'First repaired style'))
+      .mockResolvedValueOnce(expansion([words(8)], 'Second style'));
     const project = await createProject(projectInput);
 
     await generateScript(project.id, context());
 
     expect(aiMock.chat).toHaveBeenCalledTimes(4);
     expect(aiMock.chat.mock.calls[2]![0][1].content).toContain(invalidExpansion);
-    expect((await getProject(project.id)).chapters.map((chapter) => chapter.paragraphs)).toEqual([['First repaired'], ['Second']]);
+    expect((await getProject(project.id)).chapters.map((chapter) => chapter.paragraphs)).toEqual([[words(8)], [words(8)]]);
   });
 
   it('marks a failed chapter needs-fix and continues with later chapters', async () => {
     aiMock.chat
-      .mockResolvedValueOnce(outline.replaceAll('targetWords":10', 'targetWords":1'))
+      .mockResolvedValueOnce(outline)
       .mockRejectedValueOnce(new Error('provider down'))
-      .mockResolvedValueOnce(expansion(['Later chapter'], 'Later style'))
+      .mockResolvedValueOnce(expansion([words(8)], 'Later style'))
       .mockResolvedValueOnce(expansion(['Later retry'], 'Later retry style'));
     const project = await createProject(projectInput);
 
@@ -197,7 +197,7 @@ describe('sequential script generation', () => {
 
     const saved = await getProject(project.id);
     expect(saved.chapters.map((chapter) => chapter.status)).toEqual(['needs-fix', 'pending']);
-    expect(saved.chapters[1]!.paragraphs).toEqual(['Later chapter']);
+    expect(saved.chapters[1]!.paragraphs).toEqual([words(8)]);
     expect(saved.chapters[0]).toMatchObject({ chapterSummary: null, avoidRepeating: [], persistentFacts: [], status: 'needs-fix' });
   });
 
@@ -225,7 +225,7 @@ describe('sequential script generation', () => {
 
   it('discards a valid expansion when cancellation arrives before the write', async () => {
     aiMock.chat
-      .mockResolvedValueOnce(outline.replaceAll('targetWords":10', 'targetWords":1'))
+      .mockResolvedValueOnce(outline)
       .mockResolvedValueOnce(expansion(['Should not persist'], 'Style'));
     const checks = vi.fn()
       .mockResolvedValueOnce(false)
@@ -242,22 +242,22 @@ describe('sequential script generation', () => {
   it('passes only chapter-relevant open loops to each expansion prompt', async () => {
     const threeChapterOutline = JSON.stringify({
       chapters: [
-        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: true },
-        { no: 2, title: 'Middle', role: 'rising', beat: 'Develop', targetWords: 1, endsOnTension: true },
-        { no: 3, title: 'End', role: 'resolution', beat: 'Close', targetWords: 1, endsOnTension: false },
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 10, endsOnTension: true },
+        { no: 2, title: 'Middle', role: 'rising', beat: 'Develop', targetWords: 10, endsOnTension: true },
+        { no: 3, title: 'End', role: 'resolution', beat: 'Close', targetWords: 10, endsOnTension: false },
       ],
       openLoops: [
         { question: 'Relevant to the opening?', plantedInChapter: 1, resolvedInChapter: 2 },
-        { question: 'Only for the ending?', plantedInChapter: 3, resolvedInChapter: 3 },
+        { question: 'Only for the ending?', plantedInChapter: 1, resolvedInChapter: 3 },
       ],
       coreQuestion: 'What is at stake?',
       openingHook: 'A compelling opening.',
     });
     aiMock.chat
       .mockResolvedValueOnce(threeChapterOutline)
-      .mockResolvedValueOnce(expansion(['One'], 'Style one'))
-      .mockResolvedValueOnce(expansion(['Two'], 'Style two'))
-      .mockResolvedValueOnce(expansion(['Three'], 'Style three'));
+      .mockResolvedValueOnce(expansion([words(8)], 'Style one'))
+      .mockResolvedValueOnce(expansion([words(8)], 'Style two'))
+      .mockResolvedValueOnce(expansion([words(8)], 'Style three'));
     const project = await createProject({ ...projectInput, chapterCount: 3, targetDurationSec: 12 });
 
     await generateScript(project.id, context());

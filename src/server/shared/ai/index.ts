@@ -3,7 +3,7 @@ import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai
 import { AppError } from '../errors';
 import { createClaudeClient } from './claude';
 import { createDeepSeekClient } from './deepseek';
-import type { AiClient, ChatMessage } from './types';
+import type { AiChatMetadata, AiClient, ChatMessage } from './types';
 
 const clients = new Map<string, AiClient>();
 
@@ -20,4 +20,4 @@ export function getAiClient(provider: AiProvider, requestedModel?: string): AiCl
   return client;
 }
 
-export type { AiClient, AiProvider, ChatMessage };
+export type { AiChatMetadata, AiClient, AiProvider, ChatMessage };
