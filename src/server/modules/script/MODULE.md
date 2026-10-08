@@ -6,6 +6,7 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
+- Task 91 Phase 0 adds a pure quality analyzer in `quality.ts` and the `analyze:script-quality` CLI, which reads projects through the public project API and never calls an AI provider. It reports length/duration, accent-insensitive unsupported numbers/dates/capitalized phrases, cross-chapter repeated 6-grams, repeated paragraph openers, near-duplicate paragraphs (word-set Jaccard ≥0.85), preset role shares, open-loop key-term placement (at least 35% term overlap), sentence/paragraph structure, and source-fact usage when available. Grounding and loop checks are screening heuristics, not factuality guarantees; Vietnamese number words, name variants, sentence-initial capitalization, and paraphrased loop terms can produce false results.
 - Phase 3 Prompt 1 complete: shared contracts, project-owned chapter/history persistence, provider-neutral AI adapters, prompts, generation/regeneration/finalization service, explicit worker handler, project routes/SSE, edge coverage, typed client streaming API, and ReviewScriptPage are implemented and verified.
 - The module may call the project module only through its public `index.ts`; it must not write the `projects` collection directly.
 - Versioned Markdown files in `ai/presets/*.md` are the only preset source; `ai/presets/loader.ts` validates and loads them, and production builds copy them beside the bundled server and worker.
@@ -28,6 +29,7 @@
 - `POST /api/project/:id/qa` is a manual trigger only; the `final-qa` worker handler is registered explicitly and exposes its terminal result through the generic job SSE stream.
 
 ## Flow
+- Run `npm run analyze:script-quality -- <project-id> [--format md|json]` to inspect a saved script without generating content or mutating the project.
 - Generate chapters asynchronously through the `generate-script` job: persist a validated outline first, then expand chapters sequentially with one short-response retry and cooperative cancellation.
 - Regenerate one chapter through inline SSE so token chunks can be cancelled by the client.
 - Snapshot chapter state before mutations and retain the newest ten snapshots.
