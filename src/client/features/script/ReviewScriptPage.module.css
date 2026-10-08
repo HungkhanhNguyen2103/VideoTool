@@ -94,7 +94,11 @@
 .regenMode span { padding: 0 .75rem; white-space: nowrap; }
 .blockButton { width: 100%; margin-top: .2rem; }
 
-.historyList { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.historyPanel { width: 100%; max-width: 22rem; }
+.historyList { display: grid; gap: .5rem; max-height: min(60vh, 30rem); margin: 0; padding: 0; padding-right: .35rem; overflow-y: auto; list-style: none; scrollbar-color: var(--border-2) var(--panel-2); scrollbar-width: thin; }
+.historyList::-webkit-scrollbar { width: .45rem; }
+.historyList::-webkit-scrollbar-track { background: var(--panel-2); border-radius: 999px; }
+.historyList::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 999px; }
 .historyItem { display: flex; align-items: center; justify-content: space-between; gap: .625rem; min-height: 48px; padding: .375rem .875rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
 .historyName { color: var(--text); font-size: .875rem; font-weight: 600; }
 .historyNote { color: var(--text-3); font-size: .75rem; }
@@ -159,6 +163,7 @@
 @media (max-width: 1200px) {
   .reviewGrid { flex-direction: column; }
   .side { width: 100%; }
+  .historyPanel { max-width: 100%; }
   .stepLine { display: none; }
 }
 

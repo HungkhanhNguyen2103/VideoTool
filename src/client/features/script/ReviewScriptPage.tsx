@@ -937,7 +937,7 @@ export function ReviewScriptPage() {
                {regenMode === 'manual' && <p className={styles.muted}>Chế độ thủ công: dùng “Lấy prompt tái tạo” trên từng chương.</p>}
             </section>
 
-            <section className={styles.panel} aria-labelledby="history-title">
+            <section className={`${styles.panel} ${styles.historyPanel}`} aria-labelledby="history-title">
               <h2 className={styles.panelTitle} id="history-title"><Icon name="history" />Lịch sử phiên bản</h2>
               <ul className={styles.historyList}>
                 <li className={styles.historyItem}><div><div className={styles.historyName}>Bản {history.length + 1}</div><div className={styles.historyNote}>Bản đang mở · {projectQuery.data?.updatedAt ? new Date(projectQuery.data.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'vừa xong'}</div></div><Badge tone="green">Hiện tại</Badge></li>

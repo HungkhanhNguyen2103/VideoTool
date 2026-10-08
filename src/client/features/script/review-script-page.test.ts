@@ -111,6 +111,22 @@ describe('ReviewScriptPage QA reviewer display', () => {
   });
 });
 
+describe('ReviewScriptPage version history layout', () => {
+  it('keeps the history heading fixed while the version list scrolls within the side grid', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
+
+    expect(page).toContain('className={`${styles.panel} ${styles.historyPanel}`}');
+    expect(page).toContain('<h2 className={styles.panelTitle} id="history-title"><Icon name="history" />Lịch sử phiên bản</h2>');
+    expect(css).toContain('.historyPanel { width: 100%; max-width: 22rem; }');
+    expect(css).toContain('max-height: min(60vh, 30rem);');
+    expect(css).toContain('overflow-y: auto;');
+    expect(css).toContain('padding-right: .35rem;');
+    expect(css).toContain('scrollbar-width: thin;');
+    expect(css).toContain('scrollbar-color: var(--border-2) var(--panel-2);');
+  });
+});
+
 describe('ReviewScriptPage theme tokens', () => {
   it('uses the shared dark-theme tokens instead of undefined light fallbacks', async () => {
     const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
