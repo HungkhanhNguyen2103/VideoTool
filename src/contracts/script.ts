@@ -39,7 +39,7 @@ export const ChapterDocSchema = z.object({
   holdBack: z.array(z.string().trim().min(1).max(200)).max(4).optional(),
   chapterSummary: z.string().max(250).nullable().default(null),
   avoidRepeating: z.array(z.string().max(80)).max(5).default([]),
-  persistentFacts: z.array(z.string().max(120)).max(5).default([]),
+  persistentFacts: z.array(z.string().max(120)).max(10).default([]),
   reviewStatus: z.enum(['clean', 'upstream-changed']).default('clean'),
 });
 export type ChapterDoc = z.input<typeof ChapterDocSchema>;

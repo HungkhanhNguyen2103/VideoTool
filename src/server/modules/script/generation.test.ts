@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createProject, getProject } from '../project';
+import { createProject, getProject, getProjectHistory } from '../project';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { getCollection } from '../../db/client';
 import { getAiClient } from '../../shared/ai';
 import { generateScript } from './service';
 
-const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), stream: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), chatWithMetadata: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 
 const projectInput = {
@@ -37,6 +37,8 @@ beforeAll(() => startTestMongo());
 beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   aiMock.chat.mockReset();
+  aiMock.chatWithMetadata.mockReset();
+  aiMock.chatWithMetadata.mockImplementation(async (messages, opts) => ({ text: await aiMock.chat(messages, opts), truncated: false }));
   vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
@@ -54,16 +56,16 @@ describe('sequential script generation', () => {
     aiMock.chat
       .mockResolvedValueOnce(outline)
       .mockResolvedValueOnce(expansion(['short'], 'First style', { chapterSummary: 'First chapter summary', avoidRepeating: ['Do not repeat the river origin'], persistentFactsNext: ['The river changed at dawn'] }))
-      .mockResolvedValueOnce(expansion([words(8)], 'Retry style', { chapterSummary: 'First chapter summary', avoidRepeating: ['Do not repeat the river origin'], persistentFactsNext: ['The river changed at dawn'] }))
+      .mockResolvedValueOnce(expansion([words(9)], 'Retry style', { chapterSummary: 'First chapter summary', avoidRepeating: ['Do not repeat the river origin'], persistentFactsNext: ['The river changed at dawn'] }))
       .mockResolvedValueOnce(expansion(['short second'], 'Second style'))
-      .mockResolvedValueOnce(expansion(['still short'], 'Accepted style'));
+      .mockResolvedValueOnce(expansion([words(9)], 'Accepted style'));
     const project = await createProject(projectInput);
     const ctx = context();
 
     await generateScript(project.id, ctx);
 
     const saved = await getProject(project.id);
-    expect(saved.chapters.map((chapter) => chapter.paragraphs)).toEqual([[words(8)], ['still short']]);
+    expect(saved.chapters.map((chapter) => chapter.paragraphs)).toEqual([[words(9)], [words(9)]]);
     expect(saved.chapters.map((chapter) => chapter.status)).toEqual(['pending', 'pending']);
     expect(saved.chapters[0]).toMatchObject({ chapterSummary: 'First chapter summary', avoidRepeating: ['Do not repeat the river origin'], persistentFacts: ['The river changed at dawn'] });
     expect(saved.openLoops[0]!.question).toBe('What caused it?');
@@ -72,19 +74,18 @@ describe('sequential script generation', () => {
     expect(aiMock.chat).toHaveBeenCalledTimes(5);
     expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
     expect(aiMock.chat.mock.calls[0]![1]).toMatchObject({ json: true, maxTokens: 3100 });
-    expect(aiMock.chat.mock.calls[1]![1]).toMatchObject({ json: true, maxTokens: 6000 });
+    expect(aiMock.chat.mock.calls[1]![1]).toMatchObject({ json: true, maxTokens: 3000 });
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Retry style');
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('What caused it?');
     expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Core question: What is at stake?');
     expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Opening hook: A compelling opening.');
-    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Persistent facts: (none)');
+    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Persistent facts (complete next state, max 10): (none)');
     expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Core question: What is at stake?');
-    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Previous chapter summary: First chapter summary');
-    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Avoid repeating: Do not repeat the river origin');
-    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Persistent facts: The river changed at dawn');
-    expect(aiMock.chat.mock.calls[3]![0][1].content).not.toContain('Opening hook:');
-    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('meaningful progression');
-    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('Do not paraphrase the same content');
+    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Story so far: Chapter 1 — First chapter summary');
+    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Avoid repeating (latest 30): Do not repeat the river origin');
+    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Persistent facts (complete next state, max 10): The river changed at dawn');
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('actual 1 words versus target 10');
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('Never invent facts');
     expect(ctx.reportProgress).toHaveBeenCalled();
   });
 
@@ -94,7 +95,7 @@ describe('sequential script generation', () => {
         chapters: [{ no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 5, endsOnTension: false }],
         openLoops: [], coreQuestion: 'Why did the river change?', openingHook: 'At dawn, the river ran backward.',
       }))
-      .mockResolvedValueOnce(expansion(['One two three four'], 'Style'));
+      .mockResolvedValueOnce(expansion(['One two three four five'], 'Style'));
     const project = await createProject({ ...projectInput, targetDurationSec: 2, chapterCount: 1 });
 
     await generateScript(project.id, context());
@@ -117,7 +118,7 @@ describe('sequential script generation', () => {
       .mockResolvedValueOnce(expansion(paragraphs, `  ${'style '.repeat(100)}  `, {
         chapterSummary: 'summary '.repeat(50),
         avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'discarded'],
-        persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+        persistentFactsNext: Array.from({ length: 12 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
       }));
     const project = await createProject({ ...projectInput, targetDurationSec: 2, chapterCount: 1 });
 
@@ -127,9 +128,9 @@ describe('sequential script generation', () => {
     expect(saved.chapters[0]).toMatchObject({ paragraphs: paragraphs.map((paragraph) => paragraph.trim()), status: 'pending' });
     expect(saved.chapters[0]!.chapterSummary!.length).toBeLessThanOrEqual(250);
     expect(saved.chapters[0]!.avoidRepeating).toHaveLength(5);
-    expect(saved.chapters[0]!.persistentFacts).toHaveLength(5);
+    expect(saved.chapters[0]!.persistentFacts).toHaveLength(10);
     expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Truncated chapterSummary from'));
-    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Truncated persistentFactsNext from 7 to 5 items'));
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Truncated persistentFactsNext from 12 to 10 items'));
     expect(aiMock.chat).toHaveBeenCalledTimes(2);
   });
 
@@ -139,8 +140,8 @@ describe('sequential script generation', () => {
     aiMock.chat
       .mockResolvedValueOnce(invalidOutline)
       .mockResolvedValueOnce(smallOutline)
-      .mockResolvedValueOnce(expansion([words(8)], 'First style'))
-      .mockResolvedValueOnce(expansion([words(8)], 'Second style'));
+      .mockResolvedValueOnce(expansion([words(9)], 'First style'))
+      .mockResolvedValueOnce(expansion([words(9)], 'Second style'));
     const project = await createProject(projectInput);
     const ctx = context();
 
@@ -174,30 +175,28 @@ describe('sequential script generation', () => {
     aiMock.chat
       .mockResolvedValueOnce(smallOutline)
       .mockResolvedValueOnce(invalidExpansion)
-      .mockResolvedValueOnce(expansion([words(8)], 'First repaired style'))
-      .mockResolvedValueOnce(expansion([words(8)], 'Second style'));
+      .mockResolvedValueOnce(expansion([words(9)], 'First repaired style'))
+      .mockResolvedValueOnce(expansion([words(9)], 'Second style'));
     const project = await createProject(projectInput);
 
     await generateScript(project.id, context());
 
     expect(aiMock.chat).toHaveBeenCalledTimes(4);
     expect(aiMock.chat.mock.calls[2]![0][1].content).toContain(invalidExpansion);
-    expect((await getProject(project.id)).chapters.map((chapter) => chapter.paragraphs)).toEqual([[words(8)], [words(8)]]);
+    expect((await getProject(project.id)).chapters.map((chapter) => chapter.paragraphs)).toEqual([[words(9)], [words(9)]]);
   });
 
-  it('marks a failed chapter needs-fix and continues with later chapters', async () => {
+  it('stops after a hard chapter failure and leaves later chapters empty', async () => {
     aiMock.chat
       .mockResolvedValueOnce(outline)
-      .mockRejectedValueOnce(new Error('provider down'))
-      .mockResolvedValueOnce(expansion([words(8)], 'Later style'))
-      .mockResolvedValueOnce(expansion(['Later retry'], 'Later retry style'));
+      .mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { status: 401 }));
     const project = await createProject(projectInput);
 
-    await generateScript(project.id, context());
+    await expect(generateScript(project.id, context())).rejects.toMatchObject({ status: 401 });
 
     const saved = await getProject(project.id);
     expect(saved.chapters.map((chapter) => chapter.status)).toEqual(['needs-fix', 'pending']);
-    expect(saved.chapters[1]!.paragraphs).toEqual([words(8)]);
+    expect(saved.chapters[1]!.paragraphs).toEqual([]);
     expect(saved.chapters[0]).toMatchObject({ chapterSummary: null, avoidRepeating: [], persistentFacts: [], status: 'needs-fix' });
   });
 
@@ -239,7 +238,7 @@ describe('sequential script generation', () => {
     expect((await getProject(project.id)).chapters[0]!.paragraphs).toEqual([]);
   });
 
-  it('passes only chapter-relevant open loops to each expansion prompt', async () => {
+  it('passes every open loop with its state for each expansion prompt', async () => {
     const threeChapterOutline = JSON.stringify({
       chapters: [
         { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 10, endsOnTension: true },
@@ -255,15 +254,177 @@ describe('sequential script generation', () => {
     });
     aiMock.chat
       .mockResolvedValueOnce(threeChapterOutline)
-      .mockResolvedValueOnce(expansion([words(8)], 'Style one'))
-      .mockResolvedValueOnce(expansion([words(8)], 'Style two'))
-      .mockResolvedValueOnce(expansion([words(8)], 'Style three'));
+      .mockResolvedValueOnce(expansion([words(9)], 'Style one'))
+      .mockResolvedValueOnce(expansion([words(9)], 'Style two'))
+      .mockResolvedValueOnce(expansion([words(9)], 'Style three'));
     const project = await createProject({ ...projectInput, chapterCount: 3, targetDurationSec: 12 });
 
     await generateScript(project.id, context());
 
-    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('Relevant to the opening?');
-    expect(aiMock.chat.mock.calls[2]![0][1].content).not.toContain('Only for the ending?');
-    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Only for the ending?');
+    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Relevant to the opening? — plant');
+    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Only for the ending? — plant');
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('Relevant to the opening? — resolve');
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('Only for the ending? — pending');
+  });
+
+  it('retries a response below 85% and accepts the first response inside the 85–115% window', async () => {
+    aiMock.chat
+      .mockResolvedValueOnce(outline)
+      .mockResolvedValueOnce(expansion([words(8)], 'Short'))
+      .mockResolvedValueOnce(expansion([words(9)], 'In range'))
+      .mockResolvedValueOnce(expansion([words(9)], 'Second in range'));
+    const project = await createProject(projectInput);
+
+    await generateScript(project.id, context());
+
+    expect((await getProject(project.id)).chapters.map((item) => countWords(item.paragraphs))).toEqual([9, 9]);
+    expect(aiMock.chat).toHaveBeenCalledTimes(4);
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('8 words');
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('versus target 10 words');
+  });
+
+  it('uses two length retries, keeps the closest result, adjusts the remaining budget, and logs the final total', async () => {
+    aiMock.chat
+      .mockResolvedValueOnce(outline)
+      .mockResolvedValueOnce(expansion([words(14)], 'Too long'))
+      .mockResolvedValueOnce(expansion([words(7)], 'Too short'))
+      .mockResolvedValueOnce(expansion([words(12)], 'Closest'))
+      .mockResolvedValueOnce(expansion([words(9)], 'Second chapter'));
+    const project = await createProject(projectInput);
+    const ctx = context();
+
+    await generateScript(project.id, ctx);
+
+    const saved = await getProject(project.id);
+    expect(saved.chapters[0]!.paragraphs).toEqual([words(12)]);
+    expect(aiMock.chat).toHaveBeenCalledTimes(5);
+    expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('actual 14 words versus target 10');
+    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('actual 7 words versus target 10');
+    expect(aiMock.chat.mock.calls[4]![0][1].content).toContain('Remaining total budget is 8 words');
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('accepted the closest result at 12 words'));
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Final narration total: 21 words versus 20-word budget'));
+  });
+
+  it('retries transient chapter errors with bounded backoff and stops immediately on hard provider errors', async () => {
+    const project = await createProject(projectInput);
+    aiMock.chat.mockResolvedValueOnce(outline)
+      .mockRejectedValueOnce(Object.assign(new Error('busy'), { status: 503 }))
+      .mockResolvedValueOnce(expansion([words(9)], 'Recovered'))
+      .mockResolvedValueOnce(expansion([words(9)], 'Second'));
+    const ctx = context();
+
+    await generateScript(project.id, ctx);
+
+    expect((await getProject(project.id)).chapters.map((item) => item.status)).toEqual(['pending', 'pending']);
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('transient failure; retrying after 500 ms'));
+
+    await getCollection('projects').deleteMany({});
+    aiMock.chat.mockReset().mockResolvedValueOnce(outline).mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { status: 401 }));
+    const hardProject = await createProject(projectInput);
+    const hardContext = context();
+    await expect(generateScript(hardProject.id, hardContext)).rejects.toMatchObject({ status: 401 });
+    expect(aiMock.chat).toHaveBeenCalledTimes(2);
+    expect((await getProject(hardProject.id)).chapters[1]!.paragraphs).toEqual([]);
+  });
+
+  it('stops after chapter retries are exhausted and resumes at the first empty chapter without an outline call', async () => {
+    const project = await createProject(projectInput);
+    const initialContext = context();
+    aiMock.chat.mockResolvedValueOnce(outline)
+      .mockResolvedValueOnce(expansion([words(9)], 'First chapter'))
+      .mockRejectedValueOnce(Object.assign(new Error('busy 1'), { status: 503 }))
+      .mockRejectedValueOnce(Object.assign(new Error('busy 2'), { status: 503 }))
+      .mockRejectedValueOnce(Object.assign(new Error('busy 3'), { status: 503 }));
+
+    await expect(generateScript(project.id, initialContext)).rejects.toMatchObject({ status: 503 });
+
+    const beforeResume = await getProject(project.id);
+    const earlierParagraphs = [...beforeResume.chapters[0]!.paragraphs];
+    const earlierHistory = await getProjectHistory(project.id);
+    expect(beforeResume.chapters.map((item) => item.status)).toEqual(['pending', 'needs-fix']);
+    expect(aiMock.chat).toHaveBeenCalledTimes(5);
+    expect(initialContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('retrying after 500 ms'));
+    expect(initialContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('retrying after 1000 ms'));
+    aiMock.chat.mockResolvedValueOnce(expansion([words(9)], 'Resumed second'));
+
+    await generateScript(project.id, context(), { resume: true });
+
+    const resumed = await getProject(project.id);
+    expect(aiMock.chat).toHaveBeenCalledTimes(6);
+    expect(aiMock.chat.mock.calls[5]![0][1].content).toContain('Chapter 2: Answer');
+    expect(resumed.chapters[0]!.paragraphs).toEqual(earlierParagraphs);
+    expect(resumed.chapters.map((item) => item.status)).toEqual(['pending', 'pending']);
+    expect(await getProjectHistory(project.id)).toEqual(earlierHistory);
+  });
+
+  it('runs a synthetic 20-minute, 10-chapter script through truncation and transient recovery', async () => {
+    const chapters = Array.from({ length: 10 }, (_, index) => ({
+      no: index + 1, title: `Chapter ${index + 1}`, role: index === 0 ? 'hook' : index === 9 ? 'resolution' : 'rising',
+      beat: `Advance evidence ${index + 1}.`, targetWords: 300, endsOnTension: index < 9,
+      sourceFacts: [`Evidence ${index + 1} [1]`], holdBack: [],
+    }));
+    const longOutline = JSON.stringify({
+      chapters, coreQuestion: 'What changed?', openingHook: 'The river reversed.',
+      openLoops: [
+        { question: 'Cause one?', plantedInChapter: 1, resolvedInChapter: 3 },
+        { question: 'Cause two?', plantedInChapter: 2, resolvedInChapter: 5 },
+        { question: 'Cause three?', plantedInChapter: 4, resolvedInChapter: 7 },
+        { question: 'Cause four?', plantedInChapter: 6, resolvedInChapter: 9 },
+      ],
+    });
+    const project = await createProject({ ...projectInput, targetDurationSec: 1200, chapterCount: 10 });
+    const metadataCalls = [
+      { text: longOutline, truncated: false },
+      { text: expansion([words(260)], 'Truncated candidate'), truncated: true },
+      { text: expansion([words(260)], 'Recovered truncation'), truncated: false },
+      { text: expansion([words(260)], 'Chapter 2'), truncated: false },
+      { text: expansion([words(260)], 'Chapter 3'), truncated: false },
+      Object.assign(new Error('temporary 503'), { status: 503 }),
+      { text: expansion([words(260)], 'Chapter 4 recovered'), truncated: false },
+      ...Array.from({ length: 6 }, (_, index) => ({ text: expansion([words(260)], `Chapter ${index + 5}`), truncated: false })),
+    ];
+    aiMock.chatWithMetadata.mockImplementation(async () => {
+      const next = metadataCalls.shift();
+      if (next instanceof Error) throw next;
+      if (!next) throw new Error('unexpected extra AI call');
+      return next;
+    });
+    const ctx = context();
+
+    await generateScript(project.id, ctx);
+
+    const saved = await getProject(project.id);
+    expect(saved.chapters).toHaveLength(10);
+    expect(saved.chapters.every((item) => item.paragraphs.length === 1 && item.status === 'pending')).toBe(true);
+    expect(metadataCalls).toHaveLength(0);
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(13);
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('truncated at'));
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Final narration total: 2600 words versus 3000-word budget'));
+  });
+
+  it('derives missing continuity summaries from the first and last narration sentences and logs the fallback', async () => {
+    const threeChapterOutline = JSON.stringify({
+      chapters: [
+        { no: 1, title: 'First', role: 'hook', beat: 'Open.', targetWords: 10, endsOnTension: true },
+        { no: 2, title: 'Middle', role: 'rising', beat: 'Develop.', targetWords: 10, endsOnTension: true },
+        { no: 3, title: 'End', role: 'resolution', beat: 'Close.', targetWords: 10, endsOnTension: false },
+      ], openLoops: [{ question: 'Why?', plantedInChapter: 1, resolvedInChapter: 3 }], coreQuestion: 'Why?', openingHook: 'At dawn.',
+    });
+    aiMock.chat.mockResolvedValueOnce(threeChapterOutline)
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['The water rose at dawn. The town woke to its sound.'], styleNote: 'Style', chapterSummary: '', avoidRepeating: [], persistentFactsNext: [] }))
+      .mockResolvedValueOnce(expansion([words(9)], 'Middle'))
+      .mockResolvedValueOnce(expansion([words(9)], 'End'));
+    const project = await createProject({ ...projectInput, chapterCount: 3, targetDurationSec: 12 });
+    const ctx = context();
+
+    await generateScript(project.id, ctx);
+
+    const middlePrompt = aiMock.chat.mock.calls[2]![0][1].content;
+    expect(middlePrompt).toContain('The water rose at dawn. The town woke to its sound.');
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('derived a continuity summary for chapter 1'));
   });
 });
+
+function countWords(paragraphs: string[]): number {
+  return paragraphs.join(' ').trim().split(/\s+/u).filter(Boolean).length;
+}

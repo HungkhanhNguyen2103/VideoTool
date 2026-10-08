@@ -28,6 +28,7 @@ const RestoreSchema = z.object({ index: z.number().int().nonnegative() });
 const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']), aiModel: z.string().optional() }).strict();
 const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
+const GenerateScriptSchema = z.object({ resume: z.boolean().optional() }).strict();
 
 function writeEvent(res: { write: (chunk: string) => boolean }, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -48,12 +49,13 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.post('/:id/generate-script', async (req, res) => {
     const project = await getProject(req.params.id);
+    const body = GenerateScriptSchema.parse(req.body ?? {});
     const activeJob = await options.getActiveJob?.(project.id, 'generate-script');
     if (activeJob) {
       res.status(200).json({ jobId: activeJob.id });
       return;
     }
-    const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id } });
+    const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id, ...(body.resume ? { resume: true } : {}) } });
     res.status(201).json({ jobId: job.id });
   });
 

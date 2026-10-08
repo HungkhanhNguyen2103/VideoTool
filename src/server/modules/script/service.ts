@@ -1,5 +1,5 @@
 import type { ProjectDetail } from '../../../contracts/project';
-import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
+import { estimateNarrationDurationSec, NARRATION_WORDS_PER_MINUTE, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
 import { getAiModelDefinition } from '../../../contracts/ai-models';
 import { getAiClient, type AiChatMetadata, type AiClient, type ChatMessage } from '../../shared/ai';
 import { aiRequestTimeoutMs, normalizeAiError, withAiRequestTimeout, type AiProviderName } from '../../shared/ai/errors';
@@ -94,7 +94,7 @@ async function chatWithFailureLog(
 ): Promise<AiChatMetadata> {
   try {
     const chatOptions = opts ? { maxTokens: opts.maxTokens, json: opts.json } : undefined;
-    const response = await withAiRequestTimeout(() => opts?.truncationRetryMaxTokens !== undefined && aiClient.chatWithMetadata
+    const response = await withAiRequestTimeout(() => opts !== undefined && aiClient.chatWithMetadata
       ? aiClient.chatWithMetadata(messages, chatOptions)
       : aiClient.chat(messages, chatOptions).then((text) => ({ text, truncated: false })), aiRequestTimeoutMs());
     return response;
@@ -138,7 +138,7 @@ async function requestJsonWithRepair<T>(
           ? `AI response remained truncated after one retry at ${retryMaxTokens} output tokens.`
           : `AI response was truncated at the ${opts.maxTokens}-token output budget; the selected model has no larger available output budget.`;
         await context.appendLog(message);
-        throw new AppError(`AI returned invalid script structure: ${message}`, 422, 'SCRIPT_PARSE_ERROR');
+        throw new AppError(`AI response remained truncated: ${message}`, 503, 'AI_RESPONSE_TRUNCATED');
       }
     }
     return response.text;
@@ -211,115 +211,244 @@ export async function restoreChapters(projectId: string, index: number): Promise
   return updated.chapters;
 }
 
-export async function generateScript(projectId: string, context: ScriptGenerationJobContext): Promise<void> {
+export type GenerateScriptOptions = { resume?: boolean };
+
+function getChapterOutputBudgets(targetWords: number, modelOutputCap: number): JsonChatOptions {
+  const initial = Math.min(modelOutputCap, Math.max(3_000, Math.ceil(targetWords * 8 + 1_000)));
+  const retry = Math.min(modelOutputCap, Math.ceil(initial * 1.5));
+  return { json: true, maxTokens: initial, ...(retry > initial ? { truncationRetryMaxTokens: retry } : {}) };
+}
+
+function wordsInChapter(chapter: ChapterDoc): number {
+  return countNarrationWords(chapter.paragraphs.join(' '));
+}
+
+function firstOrLastSentence(text: string, useLast: boolean): string {
+  const sentences = text.trim().split(/(?<=[.!?。！？])\s+/u).filter(Boolean);
+  return useLast ? sentences.at(-1) ?? text.trim() : sentences[0] ?? text.trim();
+}
+
+function fallbackChapterSummary(chapter: ChapterDoc): string {
+  const firstParagraph = chapter.paragraphs[0] ?? '';
+  const lastParagraph = chapter.paragraphs.at(-1) ?? firstParagraph;
+  const first = firstOrLastSentence(firstParagraph, false);
+  const last = firstOrLastSentence(lastParagraph, true);
+  return first === last ? first : `${first} ${last}`;
+}
+
+function loopStateForChapter(loop: OpenLoop, chapterNo: number): 'upcoming' | 'plant' | 'pending' | 'resolve' | 'resolved' {
+  if (chapterNo < loop.plantedInChapter) return 'upcoming';
+  if (chapterNo === loop.plantedInChapter) return 'plant';
+  if (chapterNo < loop.resolvedInChapter) return 'pending';
+  if (chapterNo === loop.resolvedInChapter) return 'resolve';
+  return 'resolved';
+}
+
+function isTransientChapterFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if ('code' in error && (error as { code?: unknown }).code === 'AI_RESPONSE_TRUNCATED') return true;
+  const status = 'status' in error ? (error as { status?: unknown }).status : undefined;
+  return typeof status === 'number' && (status === 408 || status === 425 || status === 429 || status >= 500);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function generateScript(
+  projectId: string,
+  context: ScriptGenerationJobContext,
+  options: GenerateScriptOptions = {},
+): Promise<void> {
   const project = await getProject(projectId);
   await context.appendLog('Loading project and AI client…');
   const aiClient = getAiClient(project.aiProvider, project.aiModel);
   if (await context.isCancelled()) return;
-  const chapterCount = project.chapterCount ?? recommendScriptChapterCount(project.targetDurationSec);
-  const outlineProject = project.chapterCount === chapterCount ? project : { ...project, chapterCount };
-  const shortReferenceWarning = getShortReferenceWarning(project);
-  if (shortReferenceWarning) await context.appendLog(shortReferenceWarning);
-  const outlinePrompt = buildOutlinePrompt(outlineProject);
-  await context.appendLog('Sending outline request to AI…');
-  const outlineMessages: ChatMessage[] = [
-    { role: 'system', content: outlinePrompt.system },
-    { role: 'user', content: outlinePrompt.user },
-  ];
-  const modelOutputCap = getAiModelDefinition(project.aiProvider, aiClient.model)?.capabilities.maxOutputTokens ?? 32_000;
-  const outlineBudgets = getOutlineOutputBudgets(chapterCount, project.referencesText.trim().length, modelOutputCap);
-  let outlineWarnings: string[] = [];
-  const outline = await requestJsonWithRepair(
-    project.aiProvider,
-    aiClient,
-    outlineMessages,
-    (raw) => {
-      const parsed = validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId), chapterCount);
-      outlineWarnings = validateScriptOutline(parsed, outlineProject);
-      return parsed;
-    },
-    context,
-    { json: true, maxTokens: outlineBudgets.initial, truncationRetryMaxTokens: outlineBudgets.retry },
-  );
-  for (const warning of outlineWarnings) await context.appendLog(warning);
-  if (await context.isCancelled()) return;
-  const saved = await saveGeneratedScript(projectId, outline.chapters.map((chapter) => ({
-    ...chapter,
-    paragraphs: [],
-    sourceFacts: chapter.sourceFacts ?? [],
-    holdBack: chapter.holdBack ?? [],
-    scenesCount: null,
-    durationSec: null,
-  })), outline.openLoops, 'motif' in outline ? outline.motif : null, outline.coreQuestion, outline.openingHook);
-  await context.reportProgress(0, { chapters: saved.chapters.length });
 
+  let openLoops: OpenLoop[];
+  let motif = project.motif;
+  let coreQuestion = project.coreQuestion;
+  let openingHook = project.openingHook;
+  let saved = project;
+  const modelOutputCap = getAiModelDefinition(project.aiProvider, aiClient.model)?.capabilities.maxOutputTokens ?? 32_000;
+
+  if (options.resume) {
+    if (project.chapters.length === 0) throw new AppError('There is no saved outline to resume.', 422, 'SCRIPT_NOT_RESUMABLE');
+    openLoops = project.openLoops;
+    const incompleteIndex = project.chapters.findIndex((chapter) => chapter.paragraphs.length === 0);
+    if (incompleteIndex < 0) {
+      await context.appendLog('No empty chapters remain; script generation is already complete.');
+      return;
+    }
+    await context.appendLog(`Resuming from chapter ${project.chapters[incompleteIndex]!.no} using the saved outline; no outline request will be made.`);
+  } else {
+    const chapterCount = project.chapterCount ?? recommendScriptChapterCount(project.targetDurationSec);
+    const outlineProject = project.chapterCount === chapterCount ? project : { ...project, chapterCount };
+    const shortReferenceWarning = getShortReferenceWarning(project);
+    if (shortReferenceWarning) await context.appendLog(shortReferenceWarning);
+    const outlinePrompt = buildOutlinePrompt(outlineProject);
+    await context.appendLog('Sending outline request to AI…');
+    const outlineMessages: ChatMessage[] = [
+      { role: 'system', content: outlinePrompt.system },
+      { role: 'user', content: outlinePrompt.user },
+    ];
+    const outlineBudgets = getOutlineOutputBudgets(chapterCount, project.referencesText.trim().length, modelOutputCap);
+    let outlineWarnings: string[] = [];
+    const outline = await requestJsonWithRepair(
+      project.aiProvider,
+      aiClient,
+      outlineMessages,
+      (raw) => {
+        const parsed = validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId), chapterCount);
+        outlineWarnings = validateScriptOutline(parsed, outlineProject);
+        return parsed;
+      },
+      context,
+      { json: true, maxTokens: outlineBudgets.initial, truncationRetryMaxTokens: outlineBudgets.retry },
+    );
+    for (const warning of outlineWarnings) await context.appendLog(warning);
+    if (await context.isCancelled()) return;
+    coreQuestion = outline.coreQuestion;
+    openingHook = outline.openingHook;
+    openLoops = outline.openLoops;
+    motif = 'motif' in outline ? outline.motif : null;
+    saved = await saveGeneratedScript(projectId, outline.chapters.map((chapter) => ({
+      ...chapter,
+      paragraphs: [],
+      sourceFacts: chapter.sourceFacts ?? [],
+      holdBack: chapter.holdBack ?? [],
+      scenesCount: null,
+      durationSec: null,
+    })), openLoops, motif, coreQuestion, openingHook);
+    await context.reportProgress(0, { chapters: saved.chapters.length });
+  }
+
+  const totalBudgetWords = Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE);
+  const firstEmptyIndex = saved.chapters.findIndex((chapter) => chapter.paragraphs.length === 0);
+  if (firstEmptyIndex < 0) return;
+  if (options.resume) await context.reportProgress(Math.round((firstEmptyIndex / saved.chapters.length) * 100));
   let styleNote = '';
-  for (const [index, chapter] of saved.chapters.entries()) {
+
+  for (let index = firstEmptyIndex; index < saved.chapters.length; index += 1) {
+    const chapter = saved.chapters[index]!;
+    if (chapter.paragraphs.length > 0) continue;
     if (await context.isCancelled()) return;
     try {
-      const openLoops = outline.openLoops.filter((loop) => loop.plantedInChapter === chapter.no || loop.resolvedInChapter === chapter.no);
+      const chapterTarget = chapter.targetWords ?? Math.max(1, Math.round(totalBudgetWords / saved.chapters.length));
+      const alreadyWrittenWords = saved.chapters.reduce((sum, item, itemIndex) => itemIndex === index || item.paragraphs.length === 0 ? sum : sum + wordsInChapter(item), 0);
+      const remainingBudgetWords = Math.max(0, totalBudgetWords - alreadyWrittenWords);
+      const unfilledChapters = saved.chapters.filter((item) => item.paragraphs.length === 0);
+      const plannedRemainingWords = unfilledChapters.reduce((sum, item) => sum + (item.targetWords ?? chapterTarget), 0);
+      const driftPerChapter = (remainingBudgetWords - plannedRemainingWords) / Math.max(1, unfilledChapters.length);
+      const generationTargetWords = Math.max(1, Math.round(chapterTarget + driftPerChapter));
+      const priorChapters = saved.chapters.slice(0, index).filter((item) => item.paragraphs.length > 0);
+      const storySoFar: Array<{ chapterNo: number; title: string; summary: string; fallback: boolean }> = [];
+      for (const item of priorChapters) {
+        const summary = item.chapterSummary?.trim() || fallbackChapterSummary(item);
+        const fallback = !item.chapterSummary?.trim();
+        if (fallback) await context.appendLog(`Chapter ${item.no} has narration but no summary; derived a continuity summary for chapter ${item.no} from its first and last narration sentences.`);
+        storySoFar.push({ chapterNo: item.no, title: item.title, summary, fallback });
+      }
       const previousChapter = saved.chapters[index - 1];
-      const input = {
+      const avoidRepeating = [...new Set(priorChapters.flatMap((item) => item.avoidRepeating))].slice(-30);
+      const loopStates = openLoops.map((loop) => ({ question: loop.question, state: loopStateForChapter(loop, chapter.no) }));
+      const previousOpeners = priorChapters.map((item) => (item.paragraphs[0] ?? '').trim().split(/\s+/u).slice(0, 6).join(' ')).filter(Boolean);
+      const voiceAnchorParagraphs = chapter.no > 1 ? (saved.chapters[0]?.paragraphs ?? []).slice(0, 2) : [];
+      const prompt = buildChapterExpansionPrompt({
         project,
         chapter,
-        coreQuestion: outline.coreQuestion,
-        openingHook: index === 0 ? outline.openingHook : null,
-        previousChapterSummary: previousChapter?.chapterSummary ?? null,
-        previousAvoidRepeating: previousChapter?.avoidRepeating ?? [],
-        previousPersistentFacts: previousChapter?.persistentFacts ?? [],
-        openLoops,
+        outlineChapters: saved.chapters,
+        motif,
+        coreQuestion,
+        openingHook,
+        storySoFar,
+        persistentFacts: previousChapter?.persistentFacts ?? [],
+        avoidRepeating,
+        loopStates,
+        nextChapter: saved.chapters[index + 1] ?? null,
+        previousTailParagraphs: previousChapter?.paragraphs.slice(-2) ?? [],
+        previousOpeners,
+        voiceAnchorParagraphs,
+        remainingBudgetWords,
+        generationTargetWords,
         styleNote,
-      };
-      const prompt = buildChapterExpansionPrompt(input);
-      await context.appendLog(`Expanding chapter ${index + 1}/${saved.chapters.length}…`);
-      const expansionMessages: ChatMessage[] = [
+      });
+      const baseMessages: ChatMessage[] = [
         { role: 'system', content: prompt.system },
         { role: 'user', content: prompt.user },
       ];
-      let expansion = await requestJsonWithRepair(
-        project.aiProvider,
-        aiClient,
-        expansionMessages,
-        parseChapterExpansion,
-        context,
-        { json: true, maxTokens: 6_000 },
-      );
-      if (await context.isCancelled()) return;
-      if (chapter.targetWords !== null && countNarrationWords(expansion.paragraphs.join(' ')) < chapter.targetWords * 0.8) {
-        const retryPrompt = {
-          ...prompt,
-          user: `${prompt.user}\n\nPrevious response was ${countNarrationWords(expansion.paragraphs.join(' '))} words; target is ${chapter.targetWords}. Retry once and reach at least 80% of the target. Every added sentence must provide meaningful progression: new evidence, a concrete consequence, a causal explanation, or escalation. Do not paraphrase the same content, add generic padding, or repeat an already-stated fact just to raise the word count.`,
-        };
-        const retryMessages: ChatMessage[] = [
-          { role: 'system', content: retryPrompt.system },
-          { role: 'user', content: retryPrompt.user },
-        ];
-        expansion = await requestJsonWithRepair(
-          project.aiProvider,
-          aiClient,
-          retryMessages,
-          parseChapterExpansion,
-          context,
-          { json: true, maxTokens: 6_000 },
-        );
-        if (await context.isCancelled()) return;
+      const budgets = getChapterOutputBudgets(generationTargetWords, modelOutputCap);
+      await context.appendLog(`Expanding chapter ${chapter.no}/${saved.chapters.length}…`);
+      if ((chapter.sourceFacts?.length ?? 0) < 2 && chapterTarget > 150) {
+        await context.appendLog(`Chapter ${chapter.no} has thin source coverage (${chapter.sourceFacts?.length ?? 0} source facts for ${chapterTarget} target words).`);
+      }
+      let selected: { expansion: Awaited<ReturnType<typeof parseChapterExpansion>>; words: number } | null = null;
+      const candidates: Array<{ expansion: Awaited<ReturnType<typeof parseChapterExpansion>>; words: number }> = [];
+      for (let lengthAttempt = 0; lengthAttempt <= 2; lengthAttempt += 1) {
+        let expansion: Awaited<ReturnType<typeof parseChapterExpansion>> | null = null;
+        for (let providerRetry = 0; ; providerRetry += 1) {
+          if (await context.isCancelled()) return;
+          try {
+            const requestMessages = lengthAttempt === 0 ? baseMessages : [
+              ...baseMessages.slice(0, -1),
+              {
+                role: 'user' as const,
+                content: `${prompt.user}\n\nLength correction: the last response had actual ${candidates.at(-1)!.words} words versus target ${chapterTarget} words (acceptable 85–115%: ${Math.ceil(chapterTarget * 0.85)}–${Math.floor(chapterTarget * 1.15)}). The adjusted generation target is ${generationTargetWords}; use it as guidance to help the remaining project budget. Retry by shortening or extending with distinct evidence from sourceFacts only. Never invent facts or add generic padding.`,
+              },
+            ];
+            expansion = await requestJsonWithRepair(
+              project.aiProvider,
+              aiClient,
+              requestMessages,
+              parseChapterExpansion,
+              context,
+              budgets,
+            );
+            break;
+          } catch (error) {
+            if (!isTransientChapterFailure(error) || providerRetry >= 2) throw error;
+            const backoffMs = 500 * (2 ** providerRetry);
+            await context.appendLog(`Chapter ${chapter.no} transient failure; retrying after ${backoffMs} ms (attempt ${providerRetry + 2}/3): ${error instanceof Error ? error.message : String(error)}`);
+            await delay(backoffMs);
+          }
+        }
+        if (!expansion || await context.isCancelled()) return;
+        const actualWords = countNarrationWords(expansion.paragraphs.join(' '));
+        candidates.push({ expansion, words: actualWords });
+        const minimumWords = chapterTarget * 0.85;
+        const maximumWords = chapterTarget * 1.15;
+        if (actualWords >= minimumWords && actualWords <= maximumWords) {
+          selected = { expansion, words: actualWords };
+          break;
+        }
+        if (lengthAttempt < 2) {
+        await context.appendLog(`Chapter ${chapter.no} length ${actualWords} is outside 85–115% of ${chapterTarget}; retry ${lengthAttempt + 1}/2.`);
+        }
+      }
+      selected ??= [...candidates].sort((left, right) => Math.abs(left.words - chapterTarget) - Math.abs(right.words - chapterTarget))[0]!;
+      if (selected.words < chapterTarget * 0.85 || selected.words > chapterTarget * 1.15) {
+        await context.appendLog(`Chapter ${chapter.no} accepted the closest result at ${selected.words} words versus ${chapterTarget}; it remains outside 85–115%.`);
       }
       if (await context.isCancelled()) return;
       const updated = await patchProjectChapter(projectId, chapter.id, {
-        paragraphs: expansion.paragraphs,
+        paragraphs: selected.expansion.paragraphs,
         status: 'pending',
-        chapterSummary: expansion.chapterSummary,
-        avoidRepeating: expansion.avoidRepeating,
-        persistentFacts: expansion.persistentFactsNext,
+        chapterSummary: selected.expansion.chapterSummary,
+        avoidRepeating: selected.expansion.avoidRepeating,
+        persistentFacts: selected.expansion.persistentFactsNext,
       });
       saved.chapters = updated.chapters;
-      styleNote = expansion.styleNote;
+      styleNote = selected.expansion.styleNote;
     } catch (error) {
       await patchProjectChapter(projectId, chapter.id, { status: 'needs-fix' });
-      await context.appendLog(`Chapter ${index + 1} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      await context.appendLog(`Chapter ${chapter.no} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      await context.appendLog(`Generation stopped at chapter ${chapter.no}; earlier chapters are saved. Resume with “Viết tiếp từ chương ${chapter.no}”.`);
+      throw error;
     }
     await context.reportProgress(Math.round(((index + 1) / saved.chapters.length) * 100));
   }
+  const finalTotalWords = saved.chapters.reduce((sum, chapter) => sum + wordsInChapter(chapter), 0);
+  await context.appendLog(`Final narration total: ${finalTotalWords} words versus ${totalBudgetWords}-word budget.`);
   await context.appendLog(`Script saved — ${saved.chapters.length} chapters.`);
 }
 

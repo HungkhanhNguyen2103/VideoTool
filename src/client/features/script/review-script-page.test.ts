@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { getReviewStepperState, qaReviewerDisplay, regenerationStatusLabel, shouldOfferOpeningHook } from './ReviewScriptPage';
+import { getResumableChapterNo, getReviewStepperState, qaReviewerDisplay, regenerationStatusLabel, shouldOfferOpeningHook } from './ReviewScriptPage';
 
 describe('ReviewScriptPage stepper', () => {
   it('marks script generation as not started when there are no chapters or job', () => {
@@ -66,6 +66,26 @@ describe('ReviewScriptPage opening hook action', () => {
     expect(shouldOfferOpeningHook({ no: 1, paragraphs: ['Different first paragraph'] }, 'The opening hook.')).toBe(true);
     expect(shouldOfferOpeningHook({ no: 1, paragraphs: [' The opening hook. '] }, 'The opening hook.')).toBe(false);
     expect(shouldOfferOpeningHook({ no: 2, paragraphs: ['Different first paragraph'] }, 'The opening hook.')).toBe(false);
+  });
+});
+
+describe('ReviewScriptPage resume action', () => {
+  it('offers the first empty chapter only when no generation job is active', () => {
+    const chapters = [
+      { no: 1, paragraphs: ['Completed'] },
+      { no: 2, paragraphs: [] },
+      { no: 3, paragraphs: [] },
+    ];
+    expect(getResumableChapterNo(chapters, null)).toBe(2);
+    expect(getResumableChapterNo(chapters, 'job-active')).toBeNull();
+    expect(getResumableChapterNo([{ no: 1, paragraphs: ['Done'] }], null)).toBeNull();
+  });
+
+  it('labels the action with the first incomplete chapter and sends resume mode', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    expect(page).toContain('Viết tiếp từ chương {resumeChapterNo}');
+    expect(page).toContain('api.generateScript(projectId, resume ? { resume: true } : {})');
+    expect(page).toContain("progress.status === 'cancelled' ? 'Đã hủy; bạn có thể viết tiếp từ chương còn trống.'");
   });
 });
 

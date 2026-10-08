@@ -65,10 +65,10 @@ function truncateMemoryString(value: string, field: string, limit: number, onTru
   return truncateAtWordBoundary(value, limit);
 }
 
-function normalizeMemoryArray(value: unknown, field: string, itemLimit: number, onTruncate?: TruncationNotice): unknown {
+function normalizeMemoryArray(value: unknown, field: string, itemLimit: number, onTruncate?: TruncationNotice, itemCountLimit = 5): unknown {
   if (!Array.isArray(value)) return value;
-  const limited = value.length > 5 ? value.slice(0, 5) : value;
-  if (value.length > 5) onTruncate?.(`Truncated ${field} from ${value.length} to 5 items`);
+  const limited = value.length > itemCountLimit ? value.slice(0, itemCountLimit) : value;
+  if (value.length > itemCountLimit) onTruncate?.(`Truncated ${field} from ${value.length} to ${itemCountLimit} items`);
   return limited.map((item, index) => typeof item === 'string'
     ? truncateMemoryString(item, `${field}[${index}]`, itemLimit, onTruncate)
     : item);
@@ -87,7 +87,7 @@ function normalizeMemoryFields(value: unknown, onTruncate?: TruncationNotice): u
     normalized.avoidRepeating = normalizeMemoryArray(normalized.avoidRepeating, 'avoidRepeating', 80, onTruncate);
   }
   if ('persistentFactsNext' in normalized) {
-    normalized.persistentFactsNext = normalizeMemoryArray(normalized.persistentFactsNext, 'persistentFactsNext', 120, onTruncate);
+    normalized.persistentFactsNext = normalizeMemoryArray(normalized.persistentFactsNext, 'persistentFactsNext', 120, onTruncate, 10);
   }
   return normalized;
 }

@@ -124,6 +124,11 @@ export function shouldOfferOpeningHook(chapter: Pick<ChapterDoc, 'no' | 'paragra
   return chapter.no === 1 && hook.length > 0 && chapter.paragraphs[0]?.trim() !== hook;
 }
 
+export function getResumableChapterNo(chapters: readonly Pick<ChapterDoc, 'no' | 'paragraphs'>[], generationJobId: string | null): number | null {
+  if (generationJobId) return null;
+  return chapters.find((chapter) => chapter.paragraphs.length === 0)?.no ?? null;
+}
+
 export function ReviewScriptPage() {
   const { projectId = '' } = useParams();
   const navigate = useNavigate();
@@ -179,6 +184,7 @@ export function ReviewScriptPage() {
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const historyQuery = useQuery({ queryKey: ['projects', 'chapters', 'history', projectId], queryFn: () => api.getChapterHistory(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
+  const resumeChapterNo = getResumableChapterNo(chapters, jobId);
   const visibleManualQuality = manualQuality?.projectId === projectId && manualQuality.signature === manualQualitySignature(chapters) ? manualQuality.summary : null;
   const referenceCoverage = projectQuery.data ? getReferenceCoverage(projectQuery.data.referencesText, projectQuery.data.targetDurationSec) : null;
   const approvedCount = chapters.filter((chapter) => chapter.status === 'approved').length;
@@ -293,7 +299,10 @@ export function ReviewScriptPage() {
       setReviewJobTask(null);
       toast('Đã tạo xong bản nháp kịch bản.');
     } else if (progress?.status === 'failed' || progress?.status === 'cancelled') {
-      toast(progress.error ?? 'Không thể tạo kịch bản.');
+      void refresh();
+      setJobId(null);
+      setReviewJobTask(null);
+      toast(progress.error ?? (progress.status === 'cancelled' ? 'Đã hủy; bạn có thể viết tiếp từ chương còn trống.' : 'Không thể tạo kịch bản.'));
     }
   }, [progress?.status]);
 
@@ -349,8 +358,16 @@ export function ReviewScriptPage() {
   }, [editing, editParagraphs]);
 
   async function generate() {
+    await enqueueScriptGeneration(false);
+  }
+
+  async function resumeScriptGeneration() {
+    await enqueueScriptGeneration(true);
+  }
+
+  async function enqueueScriptGeneration(resume: boolean) {
     try {
-      const result = await api.generateScript(projectId);
+      const result = await api.generateScript(projectId, resume ? { resume: true } : {});
       setReviewJobTask({ kind: 'script-generation' });
       setReviewJobStartedAt(Date.now());
       setReviewJobLastEventAt(Date.now());
@@ -840,6 +857,7 @@ export function ReviewScriptPage() {
                 <div className={styles.summary}>{chaptersSummaryText(chapters)}</div>
               </div>
               <div className={styles.actions}>
+                {resumeChapterNo !== null && <Button variant="amber" disabled={controlsBusy} onClick={() => void resumeScriptGeneration()}>Viết tiếp từ chương {resumeChapterNo}</Button>}
                 <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
                 <Button variant="red" title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>

@@ -104,19 +104,22 @@ describe('chapter word budget note', () => {
     expect(chapterWordBudgetNote(chapter('c1', 'pending'))).toBeNull();
   });
 
-  it('shows the signed percentage and amber tone outside the 80-120% band', () => {
+  it('shows the signed percentage and amber tone outside the 85–115% band', () => {
     expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 520, paragraphs: [' '.repeat(0) + Array.from({ length: 330 }, (_, index) => `word${index}`).join(' ')] }))).toEqual({
       text: 'mục tiêu 520 từ · hiện 330 (−37%)',
       tone: 'amber',
     });
   });
 
-  it('uses muted tone inside the target band and amber when over target', () => {
+  it('uses muted tone inside the 85–115% target band and amber when over target', () => {
     expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 100, paragraphs: [Array.from({ length: 100 }, (_, index) => `word${index}`).join(' ')] }))).toEqual({
       text: 'mục tiêu 100 từ · hiện 100 (+0%)',
       tone: 'muted',
     });
     expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 100, paragraphs: [Array.from({ length: 121 }, (_, index) => `word${index}`).join(' ')] }))).toMatchObject({ tone: 'amber' });
+    expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 100, paragraphs: [Array.from({ length: 85 }, (_, index) => `word${index}`).join(' ')] }))).toMatchObject({ tone: 'muted' });
+    expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 100, paragraphs: [Array.from({ length: 115 }, (_, index) => `word${index}`).join(' ')] }))).toMatchObject({ tone: 'muted' });
+    expect(chapterWordBudgetNote(chapter('c1', 'pending', { targetWords: 100, paragraphs: [Array.from({ length: 84 }, (_, index) => `word${index}`).join(' ')] }))).toMatchObject({ tone: 'amber' });
   });
 });
 

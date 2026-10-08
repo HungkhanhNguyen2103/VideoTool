@@ -256,7 +256,7 @@ describe('script AI parsers', () => {
       styleNote: `  ${'style '.repeat(100)}  `,
       chapterSummary: 'summary '.repeat(50),
       avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'also discarded'],
-      persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+      persistentFactsNext: Array.from({ length: 12 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
     }), (notice) => notices.push(notice));
 
     expect(result.paragraphs).toEqual(['Keep this narration exactly.', 'A second paragraph.']);
@@ -265,7 +265,7 @@ describe('script AI parsers', () => {
     expect(result.chapterSummary.length).toBeLessThanOrEqual(250);
     expect(result.avoidRepeating).toHaveLength(5);
     expect(result.avoidRepeating[0]!.length).toBeLessThanOrEqual(80);
-    expect(result.persistentFactsNext).toHaveLength(5);
+    expect(result.persistentFactsNext).toHaveLength(10);
     expect(result.persistentFactsNext.every((fact) => fact.length <= 120)).toBe(true);
     expect(notices).toEqual(expect.arrayContaining([
       expect.stringContaining('Truncated chapterSummary from'),
@@ -281,12 +281,12 @@ describe('script AI parsers', () => {
       paragraphs: ['Updated narration'],
       chapterSummary: 'summary '.repeat(50),
       avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'discarded'],
-      persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+      persistentFactsNext: Array.from({ length: 12 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
     }), (notice) => notices.push(notice));
     expect(result.paragraphs).toEqual(['Updated narration']);
     expect(result.chapterSummary.length).toBeLessThanOrEqual(250);
     expect(result.avoidRepeating).toHaveLength(5);
-    expect(result.persistentFactsNext).toHaveLength(5);
+    expect(result.persistentFactsNext).toHaveLength(10);
     expect(notices.length).toBeGreaterThan(0);
 
     expect(() => parseChapterExpansion(JSON.stringify({
@@ -322,7 +322,8 @@ describe('script AI parsers', () => {
     expect(outline.system).toContain('Example openLoop:');
     expect(outline.promptVersion).toBe('script-prompt-v4/documentary@3');
 
-    const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [], openLoops: ['What happens next?'], styleNote: 'Muted palette' });
+    const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, outlineChapters: [], motif: null, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', storySoFar: [], persistentFacts: [], avoidRepeating: [], loopStates: [{ question: 'What happens next?', state: 'plant' }], nextChapter: null, previousTailParagraphs: [], previousOpeners: [], voiceAnchorParagraphs: [], remainingBudgetWords: 300, generationTargetWords: 300, styleNote: 'Muted palette' });
+    expect(expansion.promptVersion).toBe('script-prompt-v5/documentary@3');
     expect(expansion.user).toContain('Target words: 300');
     expect(expansion.user).toContain('What happens next?');
     expect(expansion.user).toContain('Muted palette');
@@ -330,7 +331,7 @@ describe('script AI parsers', () => {
     expect(expansion.system).toContain('styleNote max 500 chars');
     expect(expansion.system).toContain('chapterSummary max 250 chars');
     expect(expansion.system).toContain('avoidRepeating max 5 items each max 80 chars');
-    expect(expansion.system).toContain('persistentFactsNext max 5 items each max 120 chars');
+    expect(expansion.system).toContain('persistentFactsNext max 10 items each max 120 chars');
 
     const manual = buildManualScriptPrompt(project);
     expect(manual.system).toContain('paragraphs');
@@ -340,6 +341,70 @@ describe('script AI parsers', () => {
     expect(manual.system).toContain('Example chapter:');
     expect(manual.system).toContain('Example openLoop:');
     expect(manual.promptVersion).toBe('script-prompt-v4/documentary@3');
+  });
+
+  it('keeps the project and complete outline as a byte-identical prefix and appends full continuity per chapter', () => {
+    const outlineChapters = [
+      { no: 1, title: 'First', role: 'hook', beat: 'Open with the flood.', targetWords: 150, endsOnTension: true, sourceFacts: ['Water rose at dawn [1]'], holdBack: ['The cause stays hidden.'] },
+      { no: 2, title: 'Answer', role: 'resolution', beat: 'Reveal the source.', targetWords: 150, endsOnTension: false, sourceFacts: ['The gate failed [2]'], holdBack: [] },
+    ];
+    const common = {
+      project,
+      outlineChapters,
+      motif: { hunter: 'A commander', perfectPlan: 'One strike', blindSpot: 'The channel', selfDestruction: 'The tide' },
+      coreQuestion: 'Why did the river change?',
+      openingHook: 'At dawn, the river reversed.',
+      openLoops: [
+        { question: 'Who opened the gate?', plantedInChapter: 1, resolvedInChapter: 2 },
+        { question: 'Where did the fleet go?', plantedInChapter: 1, resolvedInChapter: 2 },
+      ],
+      persistentFacts: ['The source is upstream.'],
+      avoidRepeating: Array.from({ length: 35 }, (_, index) => `Avoid item ${index + 1}`),
+      storySoFar: [{ chapterNo: 1, title: 'First', summary: 'The water rose.', fallback: false }],
+      loopStates: [
+        { question: 'Who opened the gate?', state: 'resolved' as const },
+        { question: 'Where did the fleet go?', state: 'pending' as const },
+      ],
+      nextChapter: outlineChapters[1],
+      previousTailParagraphs: ['Verbatim paragraph one.', 'Verbatim paragraph two.'],
+      previousOpeners: ['The first six words from the'],
+      voiceAnchorParagraphs: ['Anchor paragraph one.', 'Anchor paragraph two.'],
+      remainingBudgetWords: 150,
+      generationTargetWords: 150,
+      styleNote: 'Muted palette',
+    };
+    const first = buildChapterExpansionPrompt({ ...common, chapter: { ...chapter, no: 2, title: 'Answer', role: 'resolution', beat: 'Reveal the source.', targetWords: 150, endsOnTension: false, sourceFacts: ['The gate failed [2]'], holdBack: [] } } as never);
+    const later = buildChapterExpansionPrompt({ ...common, chapter: { ...chapter, no: 3, title: 'Aftermath', role: 'resolution', beat: 'Show the consequence.', targetWords: 150, endsOnTension: false, sourceFacts: [], holdBack: [] } } as never);
+    const prefixFor = (prompt: typeof first) => prompt.user.split('\n\n--- CHAPTER-SPECIFIC CONTEXT ---')[0] ?? '';
+
+    expect(prefixFor(first)).toBe(prefixFor(later));
+    expect(first.user.startsWith(prefixFor(first))).toBe(true);
+    for (const value of ['River History', 'Explain the history of the river.', 'Archive notes', 'Why did the river change?', 'At dawn, the river reversed.', 'perfectPlan', 'Chapter 1: First; role=hook; beat=Open with the flood.; targetWords=150', 'Chapter 2: Answer; role=resolution; beat=Reveal the source.; targetWords=150']) {
+      expect(prefixFor(first)).toContain(value);
+    }
+    for (const value of [
+      'Source facts: The gate failed [2]',
+      'Hold back: (none)',
+      'Story so far: Chapter 1 — The water rose.',
+      'Avoid repeating (latest 30): Avoid item 6 | Avoid item 7',
+      'Persistent facts (complete next state, max 10): The source is upstream.',
+      'Who opened the gate? — resolved',
+      'Where did the fleet go? — pending',
+      'Next chapter preview (do not reveal its events or holdbacks): Chapter 2: Answer — resolution — Reveal the source.',
+      'Verbatim continuity tail:\nVerbatim paragraph one.\nVerbatim paragraph two.',
+      'Prior chapter opening words (first six words each): The first six words from the',
+      'Voice anchor (tone only; never reuse its facts):\nAnchor paragraph one.\nAnchor paragraph two.',
+      'Remaining total budget is 150 words',
+      'about 25 words',
+      'Do not put parentheses, lists, headings, or stage directions inside narration',
+    ]) expect(first.user + first.system).toContain(value);
+    expect(first.system).toContain('persistentFactsNext max 10 items');
+  });
+
+  it('accepts a complete persistent-facts state up to ten items and normalizes overflow to ten', () => {
+    const facts = Array.from({ length: 11 }, (_, index) => `Fact ${index + 1}`);
+    const parsed = parseChapterExpansion(JSON.stringify({ paragraphs: ['A narrated paragraph.'], styleNote: 'Style', chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: facts }));
+    expect(parsed.persistentFactsNext).toEqual(facts.slice(0, 10));
   });
 
   it('keeps hubris-trap outline guidance distinct from flatter explainer weighting', () => {

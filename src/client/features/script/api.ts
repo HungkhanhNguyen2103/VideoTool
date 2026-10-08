@@ -60,8 +60,8 @@ export function getProject(id: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(id)}`, ProjectDetailSchema);
 }
 
-export function generateScript(projectId: string): Promise<{ jobId: string }> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script`, JobResponseSchema, { method: 'POST' });
+export function generateScript(projectId: string, options: { resume?: boolean } = {}): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script`, JobResponseSchema, { method: 'POST', body: options });
 }
 
 export function runFinalQa(projectId: string): Promise<{ jobId: string }> {

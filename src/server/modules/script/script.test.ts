@@ -682,7 +682,8 @@ describe('script contracts', () => {
     expect(chapter).toMatchObject({ chapterSummary: null, avoidRepeating: [], persistentFacts: [], reviewStatus: 'clean' });
     expect(ChapterDocSchema.safeParse({ ...chapter, avoidRepeating: Array.from({ length: 6 }, () => 'Avoid') }).success).toBe(false);
     expect(ChapterDocSchema.safeParse({ ...chapter, avoidRepeating: ['x'.repeat(81)] }).success).toBe(false);
-    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: Array.from({ length: 6 }, () => 'Fact') }).success).toBe(false);
+    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: Array.from({ length: 6 }, () => 'Fact') }).success).toBe(true);
+    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: Array.from({ length: 11 }, () => 'Fact') }).success).toBe(false);
     expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: ['x'.repeat(121)] }).success).toBe(false);
     expect(ChapterDocSchema.safeParse({ ...chapter, chapterSummary: 'x'.repeat(251) }).success).toBe(false);
   });
@@ -759,8 +760,8 @@ describe('script contracts', () => {
   });
 
   it('generates chapters, logs milestones, and sets project status to script', async () => {
-    const firstNarration = Array.from({ length: 30 }, (_, index) => `first${index}`).join(' ');
-    const secondNarration = Array.from({ length: 31 }, (_, index) => `second${index}`).join(' ');
+    const firstNarration = Array.from({ length: 32 }, (_, index) => `first${index}`).join(' ');
+    const secondNarration = Array.from({ length: 33 }, (_, index) => `second${index}`).join(' ');
     aiMock.chat
       .mockResolvedValueOnce(JSON.stringify({
         chapters: [
@@ -791,6 +792,7 @@ describe('script contracts', () => {
       'Sending outline request to AI…',
       'Expanding chapter 1/2…',
       'Expanding chapter 2/2…',
+      'Final narration total: 65 words versus 75-word budget.',
       'Script saved — 2 chapters.',
     ]);
     expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]), expect.objectContaining({ json: true, maxTokens: 3100 }));
@@ -808,13 +810,13 @@ describe('script contracts', () => {
       .mockResolvedValueOnce({ text: '{"chapters":[', truncated: true })
       .mockResolvedValueOnce({ text: outline, truncated: false });
     aiMock.chat
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 30 }, () => 'first').join(' ')], styleNote: '', chapterSummary: 'First', avoidRepeating: [], persistentFactsNext: [] }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 31 }, () => 'second').join(' ')], styleNote: '', chapterSummary: 'Second', avoidRepeating: [], persistentFactsNext: [] }));
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 32 }, () => 'first').join(' ')], styleNote: '', chapterSummary: 'First', avoidRepeating: [], persistentFactsNext: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 33 }, () => 'second').join(' ')], styleNote: '', chapterSummary: 'Second', avoidRepeating: [], persistentFactsNext: [] }));
     const logs: string[] = [];
 
     await generateScript(project.id, { appendLog: async (message) => { logs.push(message); }, isCancelled: async () => false, reportProgress: vi.fn() });
 
-    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(2);
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(4);
     expect(aiMock.chatWithMetadata.mock.calls[0]![1]).toMatchObject({ maxTokens: 3100, json: true });
     expect(aiMock.chatWithMetadata.mock.calls[1]![1]).toMatchObject({ maxTokens: 4650, json: true });
     expect(logs).toContain('AI response truncated at 3100 output tokens; retrying once with 4650.');
@@ -1222,6 +1224,20 @@ describe('script contracts', () => {
     const body = await response.json() as { jobId: string };
     expect(body.jobId).toEqual(expect.any(String));
     expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({ type: 'generate-script', payload: { projectId: project.id } });
+  });
+
+  it('enqueues a resumable generate-script job with the resume flag', async () => {
+    const project = await createProject(projectInput);
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/generate-script`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ resume: true }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as { jobId: string };
+    expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({
+      type: 'generate-script', payload: { projectId: project.id, resume: true },
+    });
   });
 
   it('reuses an active generate-script job instead of enqueuing a duplicate', async () => {

@@ -34,7 +34,7 @@ export const ChapterExpansionSchema = z.object({
   styleNote: z.string().max(500),
   chapterSummary: z.string().max(250),
   avoidRepeating: z.array(z.string().max(80)).max(5),
-  persistentFactsNext: z.array(z.string().max(120)).max(5),
+  persistentFactsNext: z.array(z.string().max(120)).max(10),
 }).strict();
 export type ChapterExpansion = z.infer<typeof ChapterExpansionSchema>;
 
@@ -70,7 +70,7 @@ export const RegeneratedParagraphsSchema = z.object({
   paragraphs: z.array(NarrationParagraphSchema).min(1),
   chapterSummary: z.string().max(250),
   avoidRepeating: z.array(z.string().max(80)).max(5),
-  persistentFactsNext: z.array(z.string().max(120)).max(5),
+  persistentFactsNext: z.array(z.string().max(120)).max(10),
 }).strict();
 
 export const VisualPromptBatchSchema = z.object({

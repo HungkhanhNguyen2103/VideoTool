@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getFinalQaManualPrompt, getManualScriptPrompt, getRegenerationManualPrompt, importFinalQa, importManualScript, importRegeneratedChapter, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
+import { generateScript, getFinalQaManualPrompt, getManualScriptPrompt, getRegenerationManualPrompt, importFinalQa, importManualScript, importRegeneratedChapter, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -18,6 +18,14 @@ describe('script SSE parser', () => {
 });
 
 describe('script generation API', () => {
+  it('posts resume mode to the existing script-generation route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-script-1' }), { status: 201 }));
+
+    await expect(generateScript('project/1', { resume: true })).resolves.toEqual({ jobId: 'job-script-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/generate-script', expect.objectContaining({ method: 'POST', body: JSON.stringify({ resume: true }) }));
+    fetchMock.mockRestore();
+  });
+
   it('uses the provider PATCH route and manual prompt/import contracts', async () => {
     const project = { id: 'project-1', title: 'Project', status: 'draft', language: 'vi', brief: 'A sufficiently long brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null, aiProvider: 'claude', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: [], chapters: [], openLoops: [], motif: null, version: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     const quality = { totalWords: 70, targetWords: 150, differenceWords: -80, targetPercent: 46.7, outsideLengthRange: true, plannedWords: 150, plannedDifferenceWords: 0, plannedDeviationPct: 0, plannedBudgetWarning: false, actShares: [], chapters: [], warnings: ['Total narration is outside 85–115% of the target word budget.'] };
