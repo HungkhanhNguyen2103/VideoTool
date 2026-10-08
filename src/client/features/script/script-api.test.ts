@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getFinalQaManualPrompt, getManualScriptPrompt, getRegenerationManualPrompt, importFinalQa, importManualScript, importRegeneratedChapter, parseSseFrames, QAResultSchema, runFinalQa, setAiProvider } from './api';
+import { getFinalQaManualPrompt, getManualScriptPrompt, getRegenerationManualPrompt, importFinalQa, importManualScript, importRegeneratedChapter, isHardStopRegenerationError, parseSseFrames, QAResultSchema, regenerateChapter, runFinalQa, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -14,6 +14,39 @@ describe('script SSE parser', () => {
   it('ignores heartbeat comments and parses default message events', () => {
     const result = parseSseFrames(': heartbeat\n\ndata: {"status":"running"}\n\n');
     expect(result.frames).toEqual([{ event: 'message', data: '{"status":"running"}' }]);
+  });
+
+  it('keeps legacy error messages per-chapter and classifies only explicit provider outages as hard stops', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('event: error\ndata: "Provider unavailable"\n\n', { status: 200 }))
+      .mockResolvedValueOnce(new Response('event: error\ndata: "Legacy failure"\n\nevent: error-details\ndata: {"code":"AI_REQUEST_FAILED","status":503}\n\n', { status: 200 }));
+    const request = (historyBatchId: string) => regenerateChapter('project-1', 'chapter-1', { instruction: 'Improve', level: 'medium', historyBatchId }, vi.fn(), new AbortController().signal);
+    try {
+      const legacyError = await request('legacy-batch').catch((error: unknown) => error);
+      expect(legacyError).toMatchObject({ message: 'Provider unavailable' });
+      expect(isHardStopRegenerationError(legacyError)).toBe(false);
+      const structuredError = await request('structured-batch').catch((error: unknown) => error);
+      expect(structuredError).toMatchObject({ message: 'Legacy failure', code: 'AI_REQUEST_FAILED', status: 503 });
+      expect(isHardStopRegenerationError(structuredError)).toBe(true);
+      expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project-1/chapters/chapter-1/regenerate', expect.objectContaining({ body: JSON.stringify({ instruction: 'Improve', level: 'medium', historyBatchId: 'legacy-batch' }) }));
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('covers six hard-stop and five ordinary chapter-failure classifications', () => {
+    const error = (code?: string, status?: number) => Object.assign(new Error('failure'), { code, status });
+    const hardStops = [
+      error('AI_KEY_MISSING', 400),
+      error('AI_REQUEST_FAILED', 401),
+      error('AI_REQUEST_FAILED', 403),
+      error('AI_REQUEST_FAILED', 429),
+      error('AI_REQUEST_FAILED', 502),
+      error('AI_REQUEST_FAILED', 503),
+    ];
+    const chapterFailures = [error(), error('AI_REQUEST_FAILED', 400), error('AI_REQUEST_FAILED', 402), error('conflict', 409), error('AI_REQUEST_FAILED')];
+    expect(hardStops.map(isHardStopRegenerationError)).toEqual([true, true, true, true, true, true]);
+    expect(chapterFailures.map(isHardStopRegenerationError)).toEqual([false, false, false, false, false]);
   });
 });
 

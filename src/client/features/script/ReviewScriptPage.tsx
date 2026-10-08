@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import type { AiProvider } from '../../../contracts/project';
 import type { ChapterDoc } from '../../../contracts/script';
 import type { QAIssue, QAResult } from './api';
+import { isHardStopRegenerationError } from './api';
+import { QaApplyAllDialog, type QaApplyAllResult } from './components/QaApplyAllDialog';
 import { QaIssueCard } from './components/QaIssueCard';
 import { QaFixDialog } from './components/QaFixDialog';
 import { Badge } from '../../shared/ui/Badge';
@@ -12,7 +14,7 @@ import { Icon } from '../../shared/ui/Icon';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import { BlockingProgressDialog } from '../../shared/ui/BlockingProgressDialog';
-import { isStudioLocked, type BlockingTask } from '../../shared/ui/blocking-progress';
+import { isStudioLocked, type BlockingProgressInput, type BlockingTask } from '../../shared/ui/blocking-progress';
 import { cancelJob } from '../../shared/job-api';
 import * as api from './api';
 import {
@@ -35,6 +37,9 @@ import {
   selectedRegenTargets,
   qaIssueInstruction,
   qaIssueKey,
+  planBulkQaApply,
+  bulkUndoIsSafe,
+  bulkUndoRevisionMatches,
   qaLevelForAction,
   qaSeverityTone,
   sortQaIssues,
@@ -43,7 +48,11 @@ import {
   summarizeQaIssuesByChapter,
   toggleApproveStatus,
   toggleFlagStatus,
+  runBulkQaApplyQueue,
+  regenerationOutcomeAfterStream,
   type QuoteMatchOutcome,
+  type QaBulkApplyOption,
+  type QaBulkApplyPlan,
 } from './chapter-actions';
 import styles from './ReviewScriptPage.module.css';
 
@@ -101,6 +110,13 @@ type QaDialogState = {
   restored: boolean;
 };
 
+type QaBulkUndoContext = {
+  historyBatchId: string;
+  expectedVersion: number;
+  expectedAfter: ChapterDoc[];
+  issueKeys: string[];
+};
+
 export function getReviewStepperState(chapterCount: number, approvedCount: number, jobId: string | null) {
   const hasChapters = chapterCount > 0;
   const allApproved = hasChapters && approvedCount === chapterCount;
@@ -138,6 +154,11 @@ export function ReviewScriptPage() {
   const [qaIssueStates, setQaIssueStates] = useState<Record<string, 'accepted' | 'dismissed'>>({});
   const [qaPatchConfirming, setQaPatchConfirming] = useState<string | null>(null);
   const [qaPatchBusy, setQaPatchBusy] = useState(false);
+  const [qaBulkRunning, setQaBulkRunning] = useState(false);
+  const [qaBulkProgress, setQaBulkProgress] = useState<BlockingProgressInput | null>(null);
+  const [qaBulkStartedAt, setQaBulkStartedAt] = useState<number | null>(null);
+  const [qaBulkLastEventAt, setQaBulkLastEventAt] = useState<number | null>(null);
+  const [qaBulkResult, setQaBulkResult] = useState<QaApplyAllResult | null>(null);
   const [qaStale, setQaStale] = useState(false);
   const [qaResultsOpen, setQaResultsOpen] = useState(true);
   const [expandedQaKeys, setExpandedQaKeys] = useState<Set<string>>(new Set());
@@ -160,6 +181,8 @@ export function ReviewScriptPage() {
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const regenControllerRef = useRef<AbortController | null>(null);
+  const qaBulkCancelRequestedRef = useRef(false);
+  const qaBulkUndoRef = useRef<QaBulkUndoContext | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const editFocusRequestRef = useRef<{ chapterId: string; quote?: string } | null>(null);
   const manualRegenBoxRef = useRef<HTMLDivElement>(null);
@@ -187,10 +210,23 @@ export function ReviewScriptPage() {
   const activeReviewJobId = jobId ?? qaJobId;
   const activeReviewProgress = jobId ? progress : qaProgress;
   const reviewJobLocked = !reviewJobLocallyUnlocked && isStudioLocked(null, activeReviewJobId, activeReviewProgress);
-  const controlsBusy = reviewJobLocked || hasGenerating || manualBusy || manualRegenBusy || providerBusy;
+  const controlsBusy = reviewJobLocked || hasGenerating || manualBusy || manualRegenBusy || providerBusy || qaBulkRunning;
   const qaBusy = !reviewJobLocallyUnlocked && isStudioLocked(null, qaJobId, qaProgress);
-  const qaControlsBusy = qaBusy || qaManualBusy;
+  const qaControlsBusy = qaBusy || qaManualBusy || qaBulkRunning;
   const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
+  const qaBulkPlans = useMemo<Record<QaBulkApplyOption, QaBulkApplyPlan>>(() => {
+    const plan = (option: QaBulkApplyOption) => planBulkQaApply({
+      issues: qaResult?.issues ?? [],
+      chapters,
+      option,
+      issueStates: qaIssueStates,
+      regenMode,
+      instructionForIssue: (issue) => qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]),
+    });
+    return { high: plan('high'), 'high-medium': plan('high-medium'), all: plan('all') };
+  }, [chapters, qaIssueStates, qaResult, regenMode]);
+  const bulkApplyDisabled = !qaResult || controlsBusy || qaBusy || qaManualBusy || qaPatchBusy || qaBulkRunning
+    || Boolean(editing || manualRegen || qaDialog) || Object.values(qaBulkPlans).every((plan) => plan.actionableCount === 0);
   const activeQaIssues = useMemo(() => qaResult ? sortQaIssues(qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] !== 'dismissed')) : [], [qaResult, qaIssueStates]);
   const qaSummary = useMemo(() => summarizeQaIssues(activeQaIssues), [activeQaIssues]);
   const qaPlacement = useMemo(() => splitQaIssuesByChapter(activeQaIssues, chapters), [activeQaIssues, chapters]);
@@ -227,6 +263,13 @@ export function ReviewScriptPage() {
     setQaIssueStates({});
     setQaPatchConfirming(null);
     setQaPatchBusy(false);
+    setQaBulkRunning(false);
+    setQaBulkProgress(null);
+    setQaBulkStartedAt(null);
+    setQaBulkLastEventAt(null);
+    setQaBulkResult(null);
+    qaBulkCancelRequestedRef.current = false;
+    qaBulkUndoRef.current = null;
     setQaStale(false);
     setQaResultsOpen(true);
     setExpandedQaKeys(new Set());
@@ -234,6 +277,7 @@ export function ReviewScriptPage() {
     editFocusRequestRef.current = null;
     initialExpansionProjectIdRef.current = null;
     return () => {
+      qaBulkCancelRequestedRef.current = true;
       if (lifecycleRef.current === lifecycle) lifecycleRef.current += 1;
       regenControllerRef.current?.abort();
     };
@@ -565,6 +609,192 @@ export function ReviewScriptPage() {
 
   async function refresh() { await Promise.all([projectQuery.refetch(), historyQuery.refetch()]); }
 
+  function recordQaBulkProgress(detail: string, completed: number, total: number): void {
+    const now = Date.now();
+    setQaBulkProgress((current) => ({
+      status: 'running',
+      progress: total > 0 ? Math.round(completed / total * 100) : 0,
+      error: null,
+      logs: [...(current?.logs ?? []), detail].slice(-8),
+    }));
+    setQaBulkLastEventAt(now);
+  }
+
+  async function runQaBulkApply(option: QaBulkApplyOption): Promise<void> {
+    const startingProject = projectQuery.data;
+    const plan = qaBulkPlans[option];
+    if (!startingProject || plan.actionableCount === 0 || qaBulkRunning) return;
+
+    const lifecycle = lifecycleRef.current;
+    const historyBatchId = crypto.randomUUID();
+    const startedAt = Date.now();
+    const result: QaApplyAllResult = {
+      option,
+      appliedPatches: 0,
+      regeneratedChapters: 0,
+      skipped: [...plan.skipped],
+      failures: [],
+      cancelled: false,
+      undoAvailable: false,
+      undoBlocked: null,
+      restored: false,
+    };
+    const appliedIssueKeys: string[] = [];
+    // Batch writes increment Project.version once per chapter write; paragraph changes
+    // also write the next chapter's upstream-review marker.
+    let expectedBatchVersion = startingProject.version;
+    let revisionTrackingCertain = true;
+    const hasNextChapter = (chapterNo: number) => startingProject.chapters.some((chapter) => chapter.no === chapterNo + 1);
+    qaBulkCancelRequestedRef.current = false;
+    qaBulkUndoRef.current = null;
+    setQaBulkResult(null);
+    setQaBulkProgress({ status: 'running', progress: 0, error: null, logs: [] });
+    setQaBulkStartedAt(startedAt);
+    setQaBulkLastEventAt(startedAt);
+    setQaBulkRunning(true);
+
+    const cancelled = () => qaBulkCancelRequestedRef.current || lifecycleRef.current !== lifecycle;
+    const markAccepted = (issues: readonly QAIssue[]) => {
+      const keys = issues.map(qaIssueKey);
+      appliedIssueKeys.push(...keys);
+      setQaIssueStates((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, 'accepted' as const])) }));
+    };
+
+    try {
+      const latestAtStart = await api.getProject(projectId);
+      if (latestAtStart.version !== startingProject.version) {
+        await refresh();
+        throw new Error('Kịch bản đã thay đổi trước khi bắt đầu. Hãy kiểm tra lại kết quả QA rồi thử lại.');
+      }
+      const execution = await runBulkQaApplyQueue(plan, {
+        applyPatch: async (patchPlan) => {
+          try {
+            await api.patchChapter(projectId, patchPlan.chapterId, { paragraphs: patchPlan.paragraphs, historyBatchId });
+            expectedBatchVersion += 1 + (hasNextChapter(patchPlan.chapterNo) ? 1 : 0);
+          } catch (error) {
+            revisionTrackingCertain = false;
+            throw error;
+          }
+        },
+        regenerate: async (regeneration) => {
+          const chapter = chapters.find((item) => item.id === regeneration.chapterId);
+          if (!chapter) return { status: 'failed', hardStop: false, message: 'Không tìm thấy chương tương ứng.' };
+          let regenerationError: unknown;
+          const outcome = await regenerate(chapter, regeneration.instruction, regeneration.level, {
+            historyBatchId,
+            quiet: true,
+            onError: (error) => { regenerationError = error; },
+            onChunk: () => setQaBulkLastEventAt(Date.now()),
+          });
+          if (outcome === 'success') {
+            // Success writes generating + regenerated chapter, and may mark the next chapter.
+            expectedBatchVersion += 2 + (hasNextChapter(regeneration.chapterNo) ? 1 : 0);
+            return { status: 'success' };
+          }
+          if (outcome === 'aborted') {
+            // The server marks generating, then resets the chapter after stream abort.
+            expectedBatchVersion += 2;
+            return { status: 'aborted' };
+          }
+          if (regenerationError instanceof api.RegenerationStreamError) expectedBatchVersion += 2;
+          else revisionTrackingCertain = false;
+          return {
+            status: 'failed',
+            hardStop: isHardStopRegenerationError(regenerationError),
+            message: regenerationError instanceof Error ? regenerationError.message : 'Không thể tái tạo chương.',
+          };
+        },
+        isCancelled: cancelled,
+        onProgress: recordQaBulkProgress,
+        onApplied: (issues) => {
+          markAccepted(issues);
+          setQaStale(true);
+        },
+      });
+      Object.assign(result, execution);
+
+      if (cancelled()) result.cancelled = true;
+      if (lifecycleRef.current !== lifecycle) return;
+      const hasAttemptedChange = result.appliedPatches > 0 || result.regeneratedChapters > 0 || result.failures.length > 0;
+      try {
+        await refresh().catch(() => undefined);
+        const [finishedProject, finishedHistory] = await Promise.all([api.getProject(projectId), api.getChapterHistory(projectId)]);
+        if (lifecycleRef.current !== lifecycle) return;
+        const snapshotIndex = finishedHistory.findIndex((snapshot) => snapshot.historyBatchId === historyBatchId);
+        const revisionMatches = bulkUndoRevisionMatches(expectedBatchVersion, finishedProject.version, revisionTrackingCertain);
+        result.undoAvailable = snapshotIndex >= 0 && hasAttemptedChange && revisionMatches;
+        if (hasAttemptedChange && !revisionMatches) {
+          result.undoBlocked = 'Kịch bản đã thay đổi trong hoặc sau lượt chạy; không thể hoàn tác an toàn.';
+        } else if (hasAttemptedChange && snapshotIndex < 0) {
+          result.undoBlocked = 'Không còn bản hoàn tác trong lịch sử phiên bản.';
+        }
+        if (result.undoAvailable) {
+          qaBulkUndoRef.current = {
+            historyBatchId,
+            expectedVersion: expectedBatchVersion,
+            expectedAfter: finishedProject.chapters,
+            issueKeys: [...new Set(appliedIssueKeys)],
+          };
+        }
+      } catch {
+        if (hasAttemptedChange) {
+          result.undoAvailable = false;
+          result.undoBlocked = 'Lượt đã chạy xong nhưng không thể xác minh bản hoàn tác an toàn.';
+        }
+      }
+      setQaBulkResult(result);
+    } catch (error) {
+      if (lifecycleRef.current === lifecycle) toast(error instanceof Error ? error.message : 'Không thể áp dụng các gợi ý QA.');
+    } finally {
+      if (lifecycleRef.current === lifecycle) {
+        setQaBulkRunning(false);
+        setQaBulkStartedAt(null);
+      }
+    }
+  }
+
+  function cancelQaBulkApply(): void {
+    qaBulkCancelRequestedRef.current = true;
+    regenControllerRef.current?.abort();
+    setQaBulkLastEventAt(Date.now());
+  }
+
+  async function undoQaBulkApply(): Promise<void> {
+    const context = qaBulkUndoRef.current;
+    if (!context || !qaBulkResult?.undoAvailable || qaBulkResult.restored) return;
+    try {
+      const [currentProject, currentHistory] = await Promise.all([api.getProject(projectId), api.getChapterHistory(projectId)]);
+      if (currentProject.version !== context.expectedVersion || !bulkUndoIsSafe(context.expectedAfter, currentProject.chapters)) {
+        setQaBulkResult((current) => current ? {
+          ...current,
+          undoAvailable: false,
+          undoBlocked: 'Dự án đã thay đổi kể từ lượt áp dụng; không thể hoàn tác an toàn. Hãy khôi phục thủ công hoặc xem lịch sử phiên bản.',
+        } : current);
+        return;
+      }
+      const snapshotIndex = currentHistory.findIndex((snapshot) => snapshot.historyBatchId === context.historyBatchId);
+      if (snapshotIndex < 0) {
+        setQaBulkResult((current) => current ? { ...current, undoAvailable: false, undoBlocked: 'Không còn bản hoàn tác trong lịch sử phiên bản.' } : current);
+        return;
+      }
+      let restoreError: string | null = null;
+      const restored = await restore(snapshotIndex, 'Hoàn tác toàn bộ lượt áp dụng QA về bản trước khi chạy?', context.expectedVersion, (message) => { restoreError = message; });
+      if (!restored) {
+        if (restoreError) setQaBulkResult((current) => current ? { ...current, undoAvailable: false, undoBlocked: restoreError } : current);
+        return;
+      }
+      setQaIssueStates((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !context.issueKeys.includes(key))));
+      setQaStale(true);
+      setQaBulkResult((current) => current ? { ...current, restored: true, undoAvailable: false, undoBlocked: null } : current);
+    } catch (error) {
+      setQaBulkResult((current) => current ? {
+        ...current,
+        undoAvailable: false,
+        undoBlocked: error instanceof Error ? error.message : 'Không thể hoàn tác lượt áp dụng QA an toàn.',
+      } : current);
+    }
+  }
+
   async function patch(chapterId: string, body: Parameters<typeof api.patchChapter>[2]): Promise<boolean> {
     try { await api.patchChapter(projectId, chapterId, body); await refresh(); return true; } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật chương.'); return false; }
   }
@@ -595,29 +825,44 @@ export function ReviewScriptPage() {
 
   async function saveEdit(chapterId: string) { if (await patch(chapterId, { paragraphs: editParagraphs })) setQaStale(true); setEditing(null); }
 
-  async function regenerate(chapter: ChapterDoc, instruction = regenInstruction, level: 'light' | 'medium' | 'rewrite' = regenLevel): Promise<'success' | 'aborted' | 'failed'> {
+  async function regenerate(
+    chapter: ChapterDoc,
+    instruction = regenInstruction,
+    level: 'light' | 'medium' | 'rewrite' = regenLevel,
+    options: { historyBatchId?: string; quiet?: boolean; onError?: (error: unknown) => void; onChunk?: () => void } = {},
+  ): Promise<'success' | 'aborted' | 'failed'> {
     if (regenControllerRef.current) return 'failed';
     const controller = new AbortController();
     let aborted = false;
     let failed = false;
+    let streamCompleted = false;
     regenControllerRef.current = controller;
     setRegen({ id: chapter.id, instruction, level, preview: '', controller });
     try {
-      await api.regenerateChapter(projectId, chapter.id, { instruction, level }, (chunk) => setRegen((current) => current ? { ...current, preview: current.preview + chunk } : current), controller.signal);
-      await refresh();
+      await api.regenerateChapter(projectId, chapter.id, { instruction, level, ...(options.historyBatchId ? { historyBatchId: options.historyBatchId } : {}) }, (chunk) => {
+        setRegen((current) => current ? { ...current, preview: current.preview + chunk } : current);
+        options.onChunk?.();
+      }, controller.signal);
+      streamCompleted = true;
       setQaStale(true);
     } catch (error) {
-      aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
+      streamCompleted = error instanceof api.RegenerationStreamError;
+      aborted = !streamCompleted && (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError'));
       if (!aborted) {
         failed = true;
-        toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
+        options.onError?.(error);
+        if (!options.quiet) toast(error instanceof Error ? error.message : 'Không thể tái tạo chương.');
       }
-      await refresh();
     } finally {
+      try {
+        await refresh();
+      } catch (error) {
+        if (streamCompleted && !failed && !options.quiet) toast(error instanceof Error ? error.message : 'Đã tái tạo nhưng không thể làm mới dữ liệu.');
+      }
       if (regenControllerRef.current === controller) regenControllerRef.current = null;
       setRegen((current) => current?.controller === controller ? null : current);
     }
-    return aborted || controller.signal.aborted ? 'aborted' : failed ? 'failed' : 'success';
+    return regenerationOutcomeAfterStream(streamCompleted, aborted || controller.signal.aborted, failed);
   }
 
   async function regenerateChapterIds(chapterIds: readonly string[]) {
@@ -652,9 +897,14 @@ export function ReviewScriptPage() {
     }
   }
 
-  async function restore(index: number, confirmMessage = 'Khôi phục phiên bản này?'): Promise<boolean> {
+  async function restore(index: number, confirmMessage = 'Khôi phục phiên bản này?', expectedVersion?: number, onError?: (message: string) => void): Promise<boolean> {
     if (!window.confirm(confirmMessage)) return false;
-    try { await api.restoreChapters(projectId, index); await refresh(); setQaStale(true); return true; } catch (error) { toast(error instanceof Error ? error.message : 'Không thể khôi phục.'); return false; }
+    try { await api.restoreChapters(projectId, index, expectedVersion); await refresh(); setQaStale(true); return true; } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể khôi phục.';
+      if (onError) onError(message);
+      else toast(message);
+      return false;
+    }
   }
 
   async function runQaDialogRegeneration(instruction: string, level: 'light' | 'medium' | 'rewrite') {
@@ -849,6 +1099,19 @@ export function ReviewScriptPage() {
                 <span className={styles.qaSummaryHigh}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.high} cao</span>
                 <span className={styles.qaSummaryMedium}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.medium} trung bình</span>
                 <span className={styles.qaSummaryLow}><i className={styles.qaSummaryDot} aria-hidden="true" />{qaSummary.low} thấp</span>
+                <QaApplyAllDialog
+                  plans={qaBulkPlans}
+                  providerLabel={aiProviderLabel[projectQuery.data?.aiProvider ?? 'deepseek']}
+                  regenMode={regenMode}
+                  qaStale={qaStale}
+                  historyAtLimit={history.length >= 10}
+                  disabled={bulkApplyDisabled}
+                  busy={qaBulkRunning}
+                  result={qaBulkResult}
+                  onStart={(option) => void runQaBulkApply(option)}
+                  onUndo={() => void undoQaBulkApply()}
+                  onDismissResult={() => setQaBulkResult(null)}
+                />
               </div>
               {qaChapterSummaries.size > 0 && <div className={styles.qaChapterIndex} aria-label="QA theo chương">
                 {chapters.filter((chapter) => qaChapterSummaries.has(chapter.no)).map((chapter) => {
@@ -1015,6 +1278,17 @@ export function ReviewScriptPage() {
         onClose={closeReviewJob}
         onReload={() => void reloadReviewJob()}
         onUnlock={() => setReviewJobLocallyUnlocked(true)}
+      />}
+      {qaBulkRunning && qaBulkStartedAt !== null && <BlockingProgressDialog
+        visible
+        task={{ kind: 'qa-bulk-apply', detail: qaBulkProgress?.logs[qaBulkProgress.logs.length - 1], immediate: true }}
+        jobId={null}
+        progress={qaBulkProgress}
+        uploadProgress={null}
+        startedAt={qaBulkStartedAt}
+        lastEventAt={qaBulkLastEventAt}
+        onCancel={cancelQaBulkApply}
+        onClose={() => undefined}
       />}
     </div>
   );

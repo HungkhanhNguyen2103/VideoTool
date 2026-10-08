@@ -4,6 +4,7 @@ import type { Server } from 'node:http';
 import { Collection } from 'mongodb';
 import { CreateProjectRequestSchema, ProjectDetailSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema } from '../../../contracts/script';
+import { AppError } from '../../shared/errors';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
@@ -1137,6 +1138,23 @@ describe('script contracts', () => {
     expect((await restored.json() as { chapters: Array<{ paragraphs: string[] }> }).chapters[0]!.paragraphs).toEqual(['Old']);
   });
 
+  it('refuses restore when the project version changed after the caller read it', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['Batch result'] });
+    const expectedVersion = (await getProject(project.id)).version;
+    await patchChapter(project.id, 'chapter-1', { paragraphs: ['Edited after batch'] });
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/chapters/restore`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ index: 0, expectedVersion }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'conflict' } });
+    expect((await getProject(project.id)).chapters[0]!.paragraphs).toEqual(['Edited after batch']);
+  });
+
   it('finalizes through the route and returns scenes with assets status', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'approved', scenesCount: null, durationSec: null }], null, 'script');
@@ -1163,6 +1181,62 @@ describe('script contracts', () => {
     expect(text).toContain('event: chunk\ndata: "{\\"paragraphs\\":[\\"New\\"],\\"chapterSummary\\":\\"New summary\\"');
     expect(text.match(/event: done/g)).toHaveLength(1);
     expect(text).toContain('"paragraphs":["New"]');
+  });
+
+  it('preserves the legacy SSE error string and emits additive code and status metadata', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    const providerError = new AppError('DeepSeek API key invalid (HTTP 401).', 401, 'AI_REQUEST_FAILED');
+    aiMock.stream.mockImplementation(() => (async function* () { throw providerError; })());
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/chapters/chapter-1/regenerate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ instruction: 'rewrite', level: 'rewrite' }),
+    });
+    const text = await response.text();
+
+    expect(text).toContain('event: error\ndata: "DeepSeek API key invalid (HTTP 401)."\n\n');
+    expect(text).toContain('event: error-details\ndata: {"code":"AI_REQUEST_FAILED","status":401}\n\n');
+  });
+
+  it('coalesces three chapter patches and two regenerations into one batch snapshot', async () => {
+    const legacyProject = await createProject(projectInput);
+    const makeChapters = () => Array.from({ length: 5 }, (_, index) => ({
+      id: `chapter-${index + 1}`, no: index + 1, title: `Chapter ${index + 1}`, paragraphs: [`Original ${index + 1}`], status: 'pending' as const, scenesCount: null, durationSec: null,
+    }));
+    await replaceProjectChapters(legacyProject.id, makeChapters(), null, 'script');
+    for (let index = 1; index <= 3; index += 1) {
+      await patchChapter(legacyProject.id, `chapter-${index}`, { paragraphs: [`Patched ${index}`] });
+    }
+    aiMock.stream.mockImplementation(() => (async function* () { yield regeneratedResponse(['Regenerated']); })());
+    for (const chapterId of ['chapter-4', 'chapter-5']) {
+      await regenerateChapter(legacyProject.id, chapterId, { instruction: 'Improve the chapter.', level: 'medium' }, vi.fn(), new AbortController().signal);
+    }
+    expect(await getProjectHistory(legacyProject.id)).toHaveLength(5);
+
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, makeChapters(), null, 'script');
+    await patchChapter(project.id, 'chapter-1', { title: 'Older version 1' });
+    await patchChapter(project.id, 'chapter-1', { title: 'Older version 2' });
+    await patchChapter(project.id, 'chapter-1', { title: 'Older version 3' });
+    const historyBefore = await getProjectHistory(project.id);
+    const beforeBatch = await getProject(project.id);
+    const historyBatchId = '8f4c55f5-8a1d-4f50-8e89-6f5c2c7c0139';
+
+    for (let index = 1; index <= 3; index += 1) {
+      await patchChapter(project.id, `chapter-${index}`, { paragraphs: [`Patched ${index}`] }, historyBatchId);
+    }
+    for (const chapterId of ['chapter-4', 'chapter-5']) {
+      await regenerateChapter(project.id, chapterId, { instruction: 'Improve the chapter.', level: 'medium', historyBatchId }, vi.fn(), new AbortController().signal);
+    }
+
+    const finishedProject = await getProject(project.id);
+    const historyAfter = await getProjectHistory(project.id);
+    expect(historyBefore).toHaveLength(3);
+    expect(historyAfter).toHaveLength(4);
+    expect(finishedProject.version).toBe(beforeBatch.version + 11);
+    expect(historyAfter[0]).toMatchObject({ historyBatchId, chapters: beforeBatch.chapters });
+    expect(historyAfter.slice(1)).toEqual(historyBefore);
   });
 
   it('prunes chapter history to the ten newest snapshots', async () => {

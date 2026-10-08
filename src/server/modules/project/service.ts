@@ -2,7 +2,7 @@ import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery
 import { SeoPackageSchema, SeoPatchSchema, type GeneratedSeoSections, type SeoPatch, type SeoSection } from '../../../contracts/seo';
 import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
 import type { z } from 'zod';
-import { AppError, NotFound } from '../../shared/errors';
+import { AppError, Conflict, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
 import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
@@ -700,19 +700,35 @@ export async function patchProjectChapter(
 ): Promise<ProjectDetail> {
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(patch)) set[`chapters.$[elem].${field}`] = value;
-  const update: Record<string, unknown> = { $set: set };
-  if (snapshot) update.$push = { chapterHistory: { $each: [snapshot], $position: 0, $slice: 10 } };
-  const result = await getCollection<ProjectDoc>('projects').updateOne(
-    { _id: id },
-    { ...update, $inc: { version: 1 } },
-    { arrayFilters: [{ 'elem.id': chapterId }] },
-  );
+  const collection = getCollection<ProjectDoc>('projects');
+  const arrayFilters = { arrayFilters: [{ 'elem.id': chapterId }] };
+  const chapterFilter = { _id: id, 'chapters.id': chapterId };
+  let result;
+  if (snapshot?.historyBatchId) {
+    const update: Record<string, unknown> = {
+      $set: set,
+      $push: { chapterHistory: { $each: [snapshot], $position: 0, $slice: 10 } },
+      $inc: { version: 1 },
+    };
+    result = await collection.updateOne(
+      { ...chapterFilter, 'chapterHistory.historyBatchId': { $ne: snapshot.historyBatchId } },
+      update as never,
+      arrayFilters,
+    );
+    if (result.matchedCount === 0) {
+      result = await collection.updateOne(chapterFilter, { $set: set, $inc: { version: 1 } }, arrayFilters);
+    }
+  } else {
+    const update: Record<string, unknown> = { $set: set };
+    if (snapshot) update.$push = { chapterHistory: { $each: [snapshot], $position: 0, $slice: 10 } };
+    result = await collection.updateOne(chapterFilter, { ...update, $inc: { version: 1 } }, arrayFilters);
+  }
   if (result.matchedCount === 0 || result.modifiedCount === 0) throw new NotFound('Không tìm thấy chương.');
   return getProject(id);
 }
 
-export async function restoreProjectChapters(id: string, chapters: ChapterDoc[], snapshot: ChapterSnapshot): Promise<ProjectDetail> {
-  await updateProject(id, { chapters }, snapshot);
+export async function restoreProjectChapters(id: string, chapters: ChapterDoc[], snapshot: ChapterSnapshot, expectedVersion?: number): Promise<ProjectDetail> {
+  await updateProject(id, { chapters }, snapshot, expectedVersion);
   return getProject(id);
 }
 
@@ -722,10 +738,14 @@ export async function getProjectHistory(id: string): Promise<ChapterSnapshot[]> 
   return project.chapterHistory;
 }
 
-async function updateProject(id: string, fields: Record<string, unknown>, snapshot: ChapterSnapshot | null = null): Promise<void> {
+async function updateProject(id: string, fields: Record<string, unknown>, snapshot: ChapterSnapshot | null = null, expectedVersion?: number): Promise<void> {
   const $set = { ...fields, updatedAt: new Date() };
   const update: Record<string, unknown> = { $set, $inc: { version: 1 } };
   if (snapshot) update.$push = { chapterHistory: { $each: [snapshot], $position: 0, $slice: 10 } };
-  const result = await getCollection<ProjectDoc>('projects').updateOne({ _id: id }, update as never);
-  if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
+  const filter = expectedVersion === undefined ? { _id: id } : { _id: id, version: expectedVersion };
+  const result = await getCollection<ProjectDoc>('projects').updateOne(filter, update as never);
+  if (result.matchedCount === 0) {
+    if (expectedVersion !== undefined) throw new Conflict('Dự án đã thay đổi kể từ lượt áp dụng; không thể hoàn tác an toàn.');
+    throw new NotFound('Không tìm thấy dự án.');
+  }
 }

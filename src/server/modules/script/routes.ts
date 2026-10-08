@@ -14,15 +14,17 @@ const PatchChapterSchema = z.object({
   status: z.enum(['pending', 'approved', 'needs-fix']).optional(),
   paragraphs: z.array(z.string()).optional(),
   title: z.string().optional(),
-}).refine((value) => Object.keys(value).length > 0, 'At least one chapter field is required.');
+  historyBatchId: z.string().uuid().optional(),
+}).refine((value) => value.status !== undefined || value.paragraphs !== undefined || value.title !== undefined, 'At least one chapter field is required.');
 
 const RegenerateChapterSchema = z.object({
   instruction: z.string(),
   level: z.enum(['light', 'medium', 'rewrite']),
+  historyBatchId: z.string().uuid().optional(),
 });
 const ManualRegeneratePromptSchema = RegenerateChapterSchema.strict();
 
-const RestoreSchema = z.object({ index: z.number().int().nonnegative() });
+const RestoreSchema = z.object({ index: z.number().int().nonnegative(), expectedVersion: z.number().int().nonnegative().optional() });
 const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']) }).strict();
 const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
@@ -144,7 +146,8 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.patch('/:id/chapters/:chapterId', async (req, res) => {
     const patch = PatchChapterSchema.parse(req.body);
-    res.json({ chapters: await patchChapter(req.params.id, req.params.chapterId, patch) });
+    const { historyBatchId, ...chapterPatch } = patch;
+    res.json({ chapters: await patchChapter(req.params.id, req.params.chapterId, chapterPatch, historyBatchId) });
   });
 
   router.post('/:id/chapters/:chapterId/regenerate', async (req, res) => {
@@ -172,6 +175,7 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
     } catch (error) {
       if (!closed) {
         writeEvent(res, 'error', error instanceof Error ? error.message : String(error));
+        writeEvent(res, 'error-details', error instanceof AppError ? { code: error.code, status: error.status } : { code: null, status: null });
         res.end();
       }
     }
@@ -207,7 +211,7 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.post('/:id/chapters/restore', async (req, res) => {
     const body = RestoreSchema.parse(req.body);
-    res.json({ chapters: await restoreChapters(req.params.id, body.index) });
+    res.json({ chapters: await restoreChapters(req.params.id, body.index, body.expectedVersion) });
   });
 
   router.post('/:id/finalize-script', async (req, res) => {

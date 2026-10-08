@@ -32,6 +32,12 @@ import {
   splitQaIssuesByChapter,
   summarizeQaIssuesByChapter,
   chaptersWithHighQaIssues,
+  planBulkQaApply,
+  qaIssueKey,
+  bulkUndoIsSafe,
+  bulkUndoRevisionMatches,
+  regenerationOutcomeAfterStream,
+  runBulkQaApplyQueue,
 } from './chapter-actions';
 
 function chapter(id: string, status: ChapterStatus, extra: Partial<ChapterDoc> = {}): ChapterDoc {
@@ -427,5 +433,234 @@ describe('final QA helpers', () => {
     ];
 
     expect(defaultExpandedQaKeys(issues)).toEqual(new Set(['1:REPETITION:highest']));
+  });
+
+  it('filters three severity options and excludes accepted or dismissed issues from executable counts', () => {
+    const make = (severity: QAIssue['severity'], reason: string): QAIssue => ({
+      chapter: 1, type: 'REPETITION', severity, reason, suggestedAction: 'SHORTEN', quote: reason, replacement: `${reason}!`,
+    });
+    const high = make('high', 'high');
+    const medium = make('medium', 'medium');
+    const low = make('low', 'low');
+    const accepted = make('high', 'accepted');
+    const dismissed = make('medium', 'dismissed');
+    const plan = (option: 'high' | 'high-medium' | 'all') => planBulkQaApply({
+      issues: [high, medium, low, accepted, dismissed],
+      chapters: [chapter('c1', 'pending', { paragraphs: ['high medium low accepted dismissed'] })],
+      option,
+      issueStates: { [qaIssueKey(accepted)]: 'accepted', [qaIssueKey(dismissed)]: 'dismissed' },
+      regenMode: 'automatic',
+    });
+    const actionableCount = (planned: ReturnType<typeof plan>) => planned.patches.reduce((sum, item) => sum + item.issues.length, 0)
+      + planned.regenerations.reduce((sum, item) => sum + item.issues.length, 0);
+
+    expect(actionableCount(plan('high'))).toBe(1);
+    expect(actionableCount(plan('high-medium'))).toBe(2);
+    expect(actionableCount(plan('all'))).toBe(3);
+  });
+
+  it('re-finds sequential replacements, sorts chapters first, and skips stale or ambiguous quotes', () => {
+    const first: QAIssue = { chapter: 1, type: 'REPETITION', severity: 'high', reason: 'First', suggestedAction: 'SHORTEN', quote: 'First target', replacement: 'A much longer inserted phrase' };
+    const second: QAIssue = { chapter: 1, type: 'FLAT_PACING', severity: 'medium', reason: 'Second', suggestedAction: 'SHORTEN', quote: 'Later target', replacement: 'Later fixed' };
+    const shifted: QAIssue = { chapter: 1, type: 'POSSIBLE_FILLER', severity: 'low', reason: 'Shifted', suggestedAction: 'SHORTEN', quote: 'A much longer inserted phrase', replacement: 'Final phrase' };
+    const stale: QAIssue = { chapter: 1, type: 'DEAD_CHAPTER', severity: 'low', reason: 'Stale', suggestedAction: 'SHORTEN', quote: 'not present', replacement: 'ignored' };
+    const ambiguous: QAIssue = { chapter: 1, type: 'TONE_DRIFT', severity: 'low', reason: 'Ambiguous', suggestedAction: 'SHORTEN', quote: 'repeat', replacement: 'ignored' };
+    const laterChapter: QAIssue = { chapter: 2, type: 'REPETITION', severity: 'high', reason: 'Later chapter', suggestedAction: 'SHORTEN', quote: 'Chapter two', replacement: 'Chapter 2' };
+    const result = planBulkQaApply({
+      issues: [second, shifted, stale, ambiguous, laterChapter, first],
+      chapters: [
+        chapter('c2', 'pending', { no: 2, paragraphs: ['Chapter two starts here.'] }),
+        chapter('c1', 'pending', { no: 1, paragraphs: ['First target then Later target.', 'repeat this', 'and repeat that'] }),
+      ],
+      option: 'all', issueStates: {}, regenMode: 'automatic',
+    });
+
+    expect(result.patches.map((item) => item.chapterNo)).toEqual([1, 2]);
+    expect(result.patches[0]!.paragraphs).toEqual(['Final phrase then Later fixed.', 'repeat this', 'and repeat that']);
+    expect(result.patches[0]!.issues.map((item) => item.reason)).toEqual(['First', 'Second', 'Shifted']);
+    expect(result.skipped.map((item) => [item.issue.reason, item.reason])).toEqual([
+      ['Stale', 'quote-not-found'], ['Ambiguous', 'ambiguous-quote'],
+    ]);
+  });
+
+  it('merges one regeneration per chapter, selects the strongest level, and skips fact review or manual AI work', () => {
+    const patchIssue: QAIssue = { chapter: 1, type: 'REPETITION', severity: 'high', reason: 'Patch', suggestedAction: 'SHORTEN', quote: 'duplicated', replacement: 'single' };
+    const light: QAIssue = { chapter: 1, type: 'POSSIBLE_FILLER', severity: 'high', reason: 'Light', suggestedAction: 'SHORTEN', fixInstruction: 'Remove filler.' };
+    const medium: QAIssue = { chapter: 1, type: 'WEAK_HOOK', severity: 'medium', reason: 'Medium', suggestedAction: 'REGENERATE', fixInstruction: 'Strengthen the opening.' };
+    const fact: QAIssue = { chapter: 1, type: 'CREDIBILITY_RISK', severity: 'high', reason: 'Fact', suggestedAction: 'REVIEW_FACT', quote: 'fact', replacement: 'unverified' };
+    const inputs = { issues: [medium, fact, patchIssue, light], chapters: [chapter('c1', 'pending', { paragraphs: ['duplicated fact'] })], option: 'all' as const, issueStates: {} };
+    const automatic = planBulkQaApply({ ...inputs, regenMode: 'automatic', instructionForIssue: (issue) => issue.fixInstruction ?? issue.reason });
+
+    expect(automatic.patches[0]!.issues).toEqual([patchIssue]);
+    expect(automatic.regenerations).toHaveLength(1);
+    expect(automatic.regenerations[0]).toMatchObject({ level: 'medium', instruction: expect.stringContaining('Remove filler.\nStrengthen the opening.') });
+    expect(automatic.regenerations[0]!.instruction).toContain('Giữ nguyên các câu đã chỉnh theo QA');
+    expect(automatic.skipped.map((item) => [item.issue.reason, item.reason])).toEqual([['Fact', 'review-fact']]);
+
+    const manual = planBulkQaApply({ ...inputs, regenMode: 'manual', instructionForIssue: (issue) => issue.fixInstruction ?? issue.reason });
+    expect(manual.patches[0]!.issues).toEqual([patchIssue]);
+    expect(manual.regenerations).toEqual([]);
+    expect(manual.skipped.map((item) => [item.issue.reason, item.reason])).toEqual([
+      ['Fact', 'review-fact'], ['Light', 'manual-regeneration'], ['Medium', 'manual-regeneration'],
+    ]);
+  });
+
+  it('omits the patched-sentence preservation note when the combined instruction exceeds its 4,000-character budget', () => {
+    const patchIssue: QAIssue = { chapter: 1, type: 'REPETITION', severity: 'high', reason: 'Patch', suggestedAction: 'SHORTEN', quote: 'duplicated', replacement: 'single' };
+    const regenIssue: QAIssue = { chapter: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'Hook', suggestedAction: 'REGENERATE', fixInstruction: 'Rewrite the hook.' };
+    const result = planBulkQaApply({
+      issues: [patchIssue, regenIssue],
+      chapters: [chapter('c1', 'pending', { paragraphs: ['duplicated sentence'] })],
+      option: 'all',
+      issueStates: {},
+      regenMode: 'automatic',
+      instructionForIssue: (issue) => issue === regenIssue ? 'x'.repeat(4_000) : issue.reason,
+    });
+
+    expect(result.regenerations[0]!.instruction).toBe('x'.repeat(4_000));
+    expect(result.regenerations[0]!.instruction).not.toContain('Giữ nguyên các câu đã chỉnh theo QA');
+  });
+
+  it('skips missing chapters and replacement issues without a quote instead of guessing', () => {
+    const missingChapter: QAIssue = { chapter: 2, type: 'REPETITION', severity: 'high', reason: 'Missing chapter', suggestedAction: 'REGENERATE' };
+    const missingQuote: QAIssue = { chapter: 1, type: 'REPETITION', severity: 'high', reason: 'Missing quote', suggestedAction: 'SHORTEN', replacement: 'new text' };
+    const result = planBulkQaApply({ issues: [missingChapter, missingQuote], chapters: [chapter('c1', 'pending', { paragraphs: ['Current text'] })], option: 'high', issueStates: {}, regenMode: 'automatic' });
+    expect(result.patches).toEqual([]);
+    expect(result.regenerations).toEqual([]);
+    expect(result.skipped.map((item) => [item.issue.reason, item.reason])).toEqual([
+      ['Missing quote', 'quote-missing'], ['Missing chapter', 'missing-chapter'],
+    ]);
+  });
+
+  it('executes chapters in ascending order with each patch before its single regeneration', async () => {
+    const plan = planBulkQaApply({
+      issues: [
+        { chapter: 2, type: 'REPETITION', severity: 'low', reason: 'patch 2', suggestedAction: 'SHORTEN', quote: 'two old', replacement: 'two new' },
+        { chapter: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'regen 1', suggestedAction: 'REGENERATE' },
+        { chapter: 2, type: 'WEAK_HOOK', severity: 'low', reason: 'regen 2', suggestedAction: 'REGENERATE' },
+        { chapter: 1, type: 'REPETITION', severity: 'high', reason: 'patch 1', suggestedAction: 'SHORTEN', quote: 'one old', replacement: 'one new' },
+      ],
+      chapters: [
+        chapter('c2', 'pending', { no: 2, paragraphs: ['two old'] }),
+        chapter('c1', 'pending', { no: 1, paragraphs: ['one old'] }),
+      ],
+      option: 'all', issueStates: {}, regenMode: 'automatic',
+    });
+    const order: string[] = [];
+
+    const result = await runBulkQaApplyQueue(plan, {
+      applyPatch: async (patch) => { order.push(`patch:${patch.chapterNo}`); },
+      regenerate: async (regeneration) => { order.push(`regen:${regeneration.chapterNo}`); return { status: 'success' }; },
+      isCancelled: () => false,
+    });
+
+    expect(order).toEqual(['patch:1', 'regen:1', 'patch:2', 'regen:2']);
+    expect(result).toMatchObject({ appliedPatches: 2, regeneratedChapters: 2, failures: [], cancelled: false, skipped: [] });
+  });
+
+  it('continues after an ordinary chapter failure but stops all later work after a hard-stop failure', async () => {
+    const plan = planBulkQaApply({
+      issues: [
+        { chapter: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'regen 1', suggestedAction: 'REGENERATE' },
+        { chapter: 2, type: 'REPETITION', severity: 'low', reason: 'patch 2', suggestedAction: 'SHORTEN', quote: 'old two', replacement: 'new two' },
+        { chapter: 2, type: 'WEAK_HOOK', severity: 'low', reason: 'regen 2', suggestedAction: 'REGENERATE' },
+      ],
+      chapters: [chapter('c1', 'pending', { no: 1, paragraphs: ['one'] }), chapter('c2', 'pending', { no: 2, paragraphs: ['old two'] })],
+      option: 'all', issueStates: {}, regenMode: 'automatic',
+    });
+    const ordinaryOrder: string[] = [];
+    const ordinary = await runBulkQaApplyQueue(plan, {
+      applyPatch: async (patch) => { ordinaryOrder.push(`patch:${patch.chapterNo}`); },
+      regenerate: async (regeneration) => {
+        ordinaryOrder.push(`regen:${regeneration.chapterNo}`);
+        return { status: 'failed', hardStop: false, message: 'chapter error' };
+      },
+      isCancelled: () => false,
+    });
+    expect(ordinaryOrder).toEqual(['regen:1', 'patch:2', 'regen:2']);
+    expect(ordinary.failures.map((failure) => failure.chapterNo)).toEqual([1, 2]);
+
+    const hardStopOrder: string[] = [];
+    const hardStop = await runBulkQaApplyQueue(plan, {
+      applyPatch: async (patch) => { hardStopOrder.push(`patch:${patch.chapterNo}`); },
+      regenerate: async (regeneration) => {
+        hardStopOrder.push(`regen:${regeneration.chapterNo}`);
+        return { status: 'failed', hardStop: true, message: 'provider auth failed' };
+      },
+      isCancelled: () => false,
+    });
+    expect(hardStopOrder).toEqual(['regen:1']);
+    expect(hardStop.skipped.map((item) => [item.issue.reason, item.reason])).toEqual([
+      ['patch 2', 'provider-hard-stop'], ['regen 2', 'provider-hard-stop'],
+    ]);
+  });
+
+  it('stops after the current regeneration is aborted and keeps already applied edits', async () => {
+    const plan = planBulkQaApply({
+      issues: [
+        { chapter: 1, type: 'REPETITION', severity: 'high', reason: 'patch 1', suggestedAction: 'SHORTEN', quote: 'old one', replacement: 'new one' },
+        { chapter: 1, type: 'WEAK_HOOK', severity: 'high', reason: 'regen 1', suggestedAction: 'REGENERATE' },
+        { chapter: 2, type: 'REPETITION', severity: 'low', reason: 'patch 2', suggestedAction: 'SHORTEN', quote: 'old two', replacement: 'new two' },
+        { chapter: 2, type: 'WEAK_HOOK', severity: 'low', reason: 'regen 2', suggestedAction: 'REGENERATE' },
+      ],
+      chapters: [chapter('c1', 'pending', { no: 1, paragraphs: ['old one'] }), chapter('c2', 'pending', { no: 2, paragraphs: ['old two'] })],
+      option: 'all', issueStates: {}, regenMode: 'automatic',
+    });
+    const order: string[] = [];
+
+    const result = await runBulkQaApplyQueue(plan, {
+      applyPatch: async (patch) => { order.push(`patch:${patch.chapterNo}`); },
+      regenerate: async (regeneration) => { order.push(`regen:${regeneration.chapterNo}`); return { status: 'aborted' }; },
+      isCancelled: () => false,
+    });
+
+    expect(order).toEqual(['patch:1', 'regen:1']);
+    expect(result).toMatchObject({ appliedPatches: 1, regeneratedChapters: 0, cancelled: true });
+    expect(result.skipped.map((item) => [item.issue.reason, item.reason])).toEqual([
+      ['regen 1', 'cancelled-before-run'], ['patch 2', 'cancelled-before-run'], ['regen 2', 'cancelled-before-run'],
+    ]);
+  });
+
+  it('allows bulk undo only while every chapter still matches the post-run state', () => {
+    const chapterOne = chapter('c1', 'pending', { paragraphs: ['Applied QA patch'], reviewStatus: 'clean' });
+    const chapterTwo = chapter('c2', 'pending', { no: 2, paragraphs: ['Unaffected'] });
+    const expectedAfter = [chapterOne, chapterTwo];
+
+    expect(bulkUndoIsSafe(expectedAfter, [{ ...chapterOne }, { ...chapterTwo }])).toBe(true);
+    expect(bulkUndoIsSafe(expectedAfter, [{ ...chapterOne, paragraphs: ['Newer manual edit'] }, { ...chapterTwo }])).toBe(false);
+    expect(bulkUndoIsSafe(expectedAfter, [{ ...chapterOne }, { ...chapterTwo, reviewStatus: 'upstream-changed' }])).toBe(false);
+    expect(bulkUndoIsSafe(expectedAfter, [chapterOne])).toBe(false);
+  });
+
+  it('accepts undo only at the exact batch revision and after a completed stream wins over a late cancel', () => {
+    expect(bulkUndoRevisionMatches(14, 14, true)).toBe(true);
+    expect(bulkUndoRevisionMatches(14, 15, true)).toBe(false);
+    expect(bulkUndoRevisionMatches(14, 14, false)).toBe(false);
+    expect(regenerationOutcomeAfterStream(true, true, false)).toBe('success');
+    expect(regenerationOutcomeAfterStream(false, true, false)).toBe('aborted');
+    expect(regenerationOutcomeAfterStream(true, false, true)).toBe('failed');
+  });
+
+  it('reports progress by chapter position rather than patch/regeneration operation count', async () => {
+    const plan = planBulkQaApply({
+      issues: [
+        { chapter: 4, type: 'REPETITION', severity: 'high', reason: 'patch', suggestedAction: 'SHORTEN', quote: 'old', replacement: 'new' },
+        { chapter: 4, type: 'WEAK_HOOK', severity: 'high', reason: 'regen', suggestedAction: 'REGENERATE' },
+        { chapter: 8, type: 'WEAK_HOOK', severity: 'high', reason: 'last', suggestedAction: 'REGENERATE' },
+      ],
+      chapters: [chapter('c4', 'pending', { no: 4, paragraphs: ['old'] }), chapter('c8', 'pending', { no: 8 })],
+      option: 'all', issueStates: {}, regenMode: 'automatic',
+    });
+    const progress: Array<[string, number, number]> = [];
+
+    await runBulkQaApplyQueue(plan, {
+      applyPatch: async () => undefined,
+      regenerate: async () => ({ status: 'success' }),
+      isCancelled: () => false,
+      onProgress: (detail, completed, total) => progress.push([detail, completed, total]),
+    });
+
+    expect(progress.at(-1)).toEqual(['Chương 2/2 · Đã tái tạo', 2, 2]);
+    expect(progress.some(([detail]) => detail === 'Chương 1/2 · Đang áp dụng sửa cục bộ')).toBe(true);
   });
 });

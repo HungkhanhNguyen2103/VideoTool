@@ -32,6 +32,22 @@ describe('blocking progress helpers', () => {
     expect(blockingProgressViewModel({ task: task!, jobId: null, progress: null, uploadProgress: null, startedAt: 0, lastEventAt: null, now: 1 }).indeterminate).toBe(true);
   });
 
+  it('shows and allows cancellation of a local bulk QA apply task', () => {
+    const task = { kind: 'qa-bulk-apply', detail: 'Chương 1/3 · Áp dụng gợi ý', immediate: true } as const;
+    const view = blockingProgressViewModel({
+      task,
+      jobId: null,
+      progress: { status: 'running', progress: 25, error: null, logs: ['Chương 1/3 · Đang áp dụng sửa cục bộ'] },
+      uploadProgress: null,
+      startedAt: 0,
+      lastEventAt: 100,
+      now: 200,
+    });
+    expect(blockingTaskTitle(task)).toBe('Đang áp dụng QA · Chương 1/3 · Áp dụng gợi ý');
+    expect(view.canCancel).toBe(true);
+    expect(view.logs).toEqual(['Chương 1/3 · Đang áp dụng sửa cục bộ']);
+  });
+
   it('locks while an operation is busy or an active job has not reached a terminal state', () => {
     expect(isStudioLocked('import', null, null)).toBe(true);
     expect(isStudioLocked(null, 'job-1', null)).toBe(true);

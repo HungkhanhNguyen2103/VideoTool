@@ -150,6 +150,300 @@ export function qaIssueInstruction(issue: QAIssue, typeLabel: string, actionLabe
   return issue.fixInstruction?.trim() || buildQaRegenInstruction(issue, typeLabel, actionLabel);
 }
 
+export type QaBulkApplyOption = 'high' | 'high-medium' | 'all';
+export type QaBulkSkipReason = 'review-fact' | 'missing-chapter' | 'quote-missing' | 'quote-not-found' | 'ambiguous-quote' | 'manual-regeneration' | 'replacement-unchanged' | 'cancelled-before-run' | 'provider-hard-stop' | 'chapter-failed';
+export type QaBulkSkip = { issue: QAIssue; reason: QaBulkSkipReason; label: string };
+export type QaBulkPatchPlan = { chapterNo: number; chapterId: string; issues: QAIssue[]; paragraphs: string[] };
+export type QaBulkRegenerationPlan = { chapterNo: number; chapterId: string; issues: QAIssue[]; instruction: string; level: 'light' | 'medium' | 'rewrite' };
+export type QaBulkApplyPlan = {
+  option: QaBulkApplyOption;
+  patches: QaBulkPatchPlan[];
+  regenerations: QaBulkRegenerationPlan[];
+  skipped: QaBulkSkip[];
+  actionableCount: number;
+};
+
+const QA_BULK_INSTRUCTION_LIMIT = 4_000;
+const QA_BULK_PRESERVE_PATCH_NOTE = 'Giữ nguyên các câu đã chỉnh theo QA nếu không trực tiếp bị yêu cầu sửa.';
+
+const QA_BULK_SKIP_LABELS: Record<QaBulkSkipReason, string> = {
+  'review-fact': 'Cần người kiểm tra dữ kiện',
+  'missing-chapter': 'Chương không còn tồn tại',
+  'quote-missing': 'Gợi ý sửa không có trích dẫn để đối chiếu',
+  'quote-not-found': 'Không tìm thấy trích dẫn trong bản hiện tại',
+  'ambiguous-quote': 'Trích dẫn xuất hiện nhiều lần, không thể xác định an toàn',
+  'manual-regeneration': 'Cần tái tạo chương thủ công',
+  'replacement-unchanged': 'Gợi ý không làm thay đổi câu hiện tại',
+  'cancelled-before-run': 'Không thực hiện vì lượt chạy đã bị huỷ',
+  'provider-hard-stop': 'Chưa chạy vì đã dừng do lỗi xác thực hoặc nhà cung cấp',
+  'chapter-failed': 'Chưa tái tạo vì thao tác khác trong chương thất bại',
+};
+
+function severityIncluded(severity: QAIssue['severity'], option: QaBulkApplyOption): boolean {
+  if (option === 'high') return severity === 'high';
+  if (option === 'high-medium') return severity === 'high' || severity === 'medium';
+  return true;
+}
+
+function sameParagraphs(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((paragraph, index) => paragraph === right[index]);
+}
+
+export function planBulkQaApply(args: {
+  issues: readonly QAIssue[];
+  chapters: readonly ChapterDoc[];
+  option: QaBulkApplyOption;
+  issueStates: Readonly<Record<string, 'accepted' | 'dismissed'>>;
+  regenMode: ScriptGenerationMode;
+  instructionForIssue?: (issue: QAIssue) => string;
+}): QaBulkApplyPlan {
+  const activeIssues = args.issues.filter((issue) => (
+    severityIncluded(issue.severity, args.option)
+    && args.issueStates[qaIssueKey(issue)] !== 'accepted'
+    && args.issueStates[qaIssueKey(issue)] !== 'dismissed'
+  ));
+  const grouped = new Map<number, QAIssue[]>();
+  for (const issue of activeIssues) {
+    const existing = grouped.get(issue.chapter);
+    if (existing) existing.push(issue);
+    else grouped.set(issue.chapter, [issue]);
+  }
+
+  const chapterByNo = new Map(args.chapters.map((chapter) => [chapter.no, chapter]));
+  const patches: QaBulkPatchPlan[] = [];
+  const regenerations: QaBulkRegenerationPlan[] = [];
+  const skipped: QaBulkSkip[] = [];
+  const skip = (issue: QAIssue, reason: QaBulkSkipReason) => skipped.push({ issue, reason, label: QA_BULK_SKIP_LABELS[reason] });
+
+  for (const chapterNo of [...grouped.keys()].sort((left, right) => left - right)) {
+    const chapter = chapterByNo.get(chapterNo);
+    const chapterIssues = sortQaIssues(grouped.get(chapterNo)!);
+    if (!chapter) {
+      for (const issue of chapterIssues) skip(issue, 'missing-chapter');
+      continue;
+    }
+
+    let paragraphs = [...chapter.paragraphs];
+    const patchIssues: QAIssue[] = [];
+    const regenerationIssues: QAIssue[] = [];
+    for (const issue of chapterIssues) {
+      if (issue.suggestedAction === 'REVIEW_FACT') {
+        skip(issue, 'review-fact');
+        continue;
+      }
+      if (issue.replacement !== undefined) {
+        if (!issue.quote) {
+          skip(issue, 'quote-missing');
+          continue;
+        }
+        const target = findQuoteTarget({ paragraphs }, issue);
+        if (!target) {
+          skip(issue, explainQuoteMatch({ paragraphs }, issue) === 'multiple' ? 'ambiguous-quote' : 'quote-not-found');
+          continue;
+        }
+        const replaced = applyReplacementToParagraphs(paragraphs, target, issue.replacement);
+        if (sameParagraphs(paragraphs, replaced)) {
+          skip(issue, 'replacement-unchanged');
+          continue;
+        }
+        paragraphs = replaced;
+        patchIssues.push(issue);
+        continue;
+      }
+      if (args.regenMode === 'manual') {
+        skip(issue, 'manual-regeneration');
+        continue;
+      }
+      regenerationIssues.push(issue);
+    }
+
+    if (patchIssues.length > 0) patches.push({ chapterNo, chapterId: chapter.id, issues: patchIssues, paragraphs });
+    if (regenerationIssues.length > 0) {
+      const instructions = regenerationIssues.map((issue) => (
+        args.instructionForIssue?.(issue) ?? qaIssueInstruction(issue, issue.type, issue.suggestedAction)
+      )).map((instruction) => instruction.trim()).filter(Boolean);
+      const levelPriority = { light: 0, medium: 1, rewrite: 2 } as const;
+      const level = regenerationIssues
+        .map((issue) => qaLevelForAction(issue.suggestedAction))
+        .reduce<'light' | 'medium' | 'rewrite'>((strongest, candidate) => levelPriority[candidate] > levelPriority[strongest] ? candidate : strongest, 'light');
+      const instruction = instructions.join('\n');
+      const preserveNoteFits = patchIssues.length > 0
+        && instruction.length + QA_BULK_PRESERVE_PATCH_NOTE.length + 2 <= QA_BULK_INSTRUCTION_LIMIT;
+      regenerations.push({ chapterNo, chapterId: chapter.id, issues: regenerationIssues, instruction, level });
+      if (preserveNoteFits) regenerations[regenerations.length - 1]!.instruction += `\n\n${QA_BULK_PRESERVE_PATCH_NOTE}`;
+    }
+  }
+
+  return {
+    option: args.option,
+    patches,
+    regenerations,
+    skipped,
+    actionableCount: patches.reduce((sum, item) => sum + item.issues.length, 0) + regenerations.reduce((sum, item) => sum + item.issues.length, 0),
+  };
+}
+
+export type QaBulkExecutionResult = {
+  appliedPatches: number;
+  regeneratedChapters: number;
+  skipped: QaBulkSkip[];
+  failures: Array<{ chapterNo: number; issues: QAIssue[]; message: string }>;
+  cancelled: boolean;
+};
+
+export type QaBulkRegenerationOutcome =
+  | { status: 'success' }
+  | { status: 'aborted' }
+  | { status: 'failed'; message: string; hardStop: boolean };
+
+/** Runs each chapter in order: its patch first, then at most one regeneration. */
+export async function runBulkQaApplyQueue(
+  plan: QaBulkApplyPlan,
+  callbacks: {
+    applyPatch: (patch: QaBulkPatchPlan) => Promise<void>;
+    regenerate: (regeneration: QaBulkRegenerationPlan) => Promise<QaBulkRegenerationOutcome>;
+    isCancelled: () => boolean;
+    onProgress?: (detail: string, completed: number, total: number) => void;
+    onApplied?: (issues: readonly QAIssue[]) => void;
+  },
+): Promise<QaBulkExecutionResult> {
+  const result: QaBulkExecutionResult = { appliedPatches: 0, regeneratedChapters: 0, skipped: [...plan.skipped], failures: [], cancelled: false };
+  const patchByChapter = new Map(plan.patches.map((item) => [item.chapterNo, item]));
+  const regenerationByChapter = new Map(plan.regenerations.map((item) => [item.chapterNo, item]));
+  const chapterNos = [...new Set([...patchByChapter.keys(), ...regenerationByChapter.keys()])].sort((left, right) => left - right);
+  const total = chapterNos.length;
+  const addSkips = (items: readonly { issues: QAIssue[] }[], reason: 'cancelled-before-run' | 'provider-hard-stop') => {
+    for (const item of items) {
+      for (const issue of item.issues) result.skipped.push({ issue, reason, label: QA_BULK_SKIP_LABELS[reason] });
+    }
+  };
+  let completed = 0;
+  let lastProcessedChapterNo = 0;
+  let hardStop = false;
+  let stopReason: 'cancelled-before-run' | 'provider-hard-stop' | null = null;
+
+  for (const chapterNo of chapterNos) {
+    if (callbacks.isCancelled()) {
+      result.cancelled = true;
+      stopReason = 'cancelled-before-run';
+      break;
+    }
+    if (hardStop) {
+      stopReason = 'provider-hard-stop';
+      break;
+    }
+    lastProcessedChapterNo = chapterNo;
+    const chapterLabel = `Chương ${completed + 1}/${total}`;
+    const patch = patchByChapter.get(chapterNo);
+    const regeneration = regenerationByChapter.get(chapterNo);
+    let patchFailed = false;
+
+    if (patch) {
+      callbacks.onProgress?.(`${chapterLabel} · Đang áp dụng sửa cục bộ`, completed, total);
+      try {
+        await callbacks.applyPatch(patch);
+        result.appliedPatches += patch.issues.length;
+        callbacks.onApplied?.(patch.issues);
+      } catch (error) {
+        patchFailed = true;
+        result.failures.push({ chapterNo, issues: patch.issues, message: error instanceof Error ? error.message : 'Không thể áp dụng sửa cục bộ.' });
+      }
+      callbacks.onProgress?.(`${chapterLabel} · ${patchFailed ? 'Sửa cục bộ thất bại' : 'Đã áp dụng sửa cục bộ'}`, completed, total);
+      if (callbacks.isCancelled()) {
+        result.cancelled = true;
+        if (regeneration) addSkips([regeneration], 'cancelled-before-run');
+        stopReason = 'cancelled-before-run';
+        completed += 1;
+        callbacks.onProgress?.(`${chapterLabel} · Đã huỷ`, completed, total);
+        break;
+      }
+    }
+
+    if (!regeneration) {
+      completed += 1;
+      callbacks.onProgress?.(`${chapterLabel} · ${patchFailed ? 'Hoàn tất với lỗi sửa cục bộ' : 'Hoàn tất'}`, completed, total);
+      continue;
+    }
+    if (patchFailed) {
+      for (const issue of regeneration.issues) result.skipped.push({ issue, reason: 'chapter-failed', label: QA_BULK_SKIP_LABELS['chapter-failed'] });
+      completed += 1;
+      callbacks.onProgress?.(`${chapterLabel} · Bỏ qua tái tạo do lỗi sửa cục bộ`, completed, total);
+      continue;
+    }
+
+    callbacks.onProgress?.(`${chapterLabel} · Đang tái tạo`, completed, total);
+    let outcome: QaBulkRegenerationOutcome;
+    try {
+      outcome = await callbacks.regenerate(regeneration);
+    } catch (error) {
+      outcome = { status: 'failed', hardStop: false, message: error instanceof Error ? error.message : 'Không thể tái tạo chương.' };
+    }
+    if (outcome.status === 'success') {
+      result.regeneratedChapters += 1;
+      callbacks.onApplied?.(regeneration.issues);
+    } else if (outcome.status === 'aborted') {
+      result.cancelled = true;
+      addSkips([regeneration], 'cancelled-before-run');
+      stopReason = 'cancelled-before-run';
+    } else {
+      result.failures.push({ chapterNo, issues: regeneration.issues, message: outcome.message });
+      if (outcome.hardStop) hardStop = true;
+    }
+    completed += 1;
+    callbacks.onProgress?.(`${chapterLabel} · ${outcome.status === 'success' ? 'Đã tái tạo' : outcome.status === 'aborted' ? 'Đã huỷ' : 'Tái tạo thất bại'}`, completed, total);
+    if (stopReason) break;
+  }
+
+  if (stopReason) {
+    addSkips(plan.patches.filter((item) => item.chapterNo > lastProcessedChapterNo), stopReason);
+    addSkips(plan.regenerations.filter((item) => item.chapterNo > lastProcessedChapterNo), stopReason);
+  }
+  return result;
+}
+
+function bulkUndoComparableChapter(chapter: ChapterDoc): string {
+  return JSON.stringify({
+    id: chapter.id,
+    no: chapter.no,
+    title: chapter.title,
+    paragraphs: chapter.paragraphs,
+    status: chapter.status,
+    scenesCount: chapter.scenesCount,
+    durationSec: chapter.durationSec,
+    role: chapter.role ?? null,
+    beat: chapter.beat ?? '',
+    targetWords: chapter.targetWords ?? null,
+    endsOnTension: chapter.endsOnTension ?? false,
+    chapterSummary: chapter.chapterSummary ?? null,
+    avoidRepeating: chapter.avoidRepeating ?? [],
+    persistentFacts: chapter.persistentFacts ?? [],
+    reviewStatus: chapter.reviewStatus ?? 'clean',
+  });
+}
+
+/** Restoring the legacy history snapshot replaces every chapter, so require the entire script to be unchanged since the bulk run completed. */
+export function bulkUndoIsSafe(expectedAfter: readonly ChapterDoc[], current: readonly ChapterDoc[]): boolean {
+  if (expectedAfter.length !== current.length) return false;
+  const currentById = new Map(current.map((chapter) => [chapter.id, chapter]));
+  return expectedAfter.every((chapter) => {
+    const currentChapter = currentById.get(chapter.id);
+    return currentChapter !== undefined && bulkUndoComparableChapter(chapter) === bulkUndoComparableChapter(currentChapter);
+  });
+}
+
+export function bulkUndoRevisionMatches(expectedVersion: number, currentVersion: number, revisionTrackingCertain: boolean): boolean {
+  return revisionTrackingCertain && currentVersion === expectedVersion;
+}
+
+export function regenerationOutcomeAfterStream(
+  streamCompleted: boolean,
+  signalAborted: boolean,
+  failed: boolean,
+): 'success' | 'aborted' | 'failed' {
+  if (!streamCompleted && signalAborted) return 'aborted';
+  return failed ? 'failed' : 'success';
+}
+
 const qaSeverityOrder = { high: 0, medium: 1, low: 2 } as const;
 
 export function sortQaIssues(issues: readonly QAIssue[]): QAIssue[] {

@@ -44,6 +44,7 @@ export type ChapterDoc = z.input<typeof ChapterDocSchema>;
 
 export const ChapterSnapshotSchema = z.object({
   takenAt: z.date(),
+  historyBatchId: z.string().uuid().optional(),
   chapters: z.array(ChapterDocSchema),
 });
 export type ChapterSnapshot = z.input<typeof ChapterSnapshotSchema>;

@@ -18,8 +18,12 @@ import { buildChapterExpansionPrompt, buildOutlinePrompt, buildRegenerationPromp
 import { parseChapterExpansion, parseRegeneratedParagraphs, parseScriptOutline, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { countNarrationWords } from '../../../contracts/script';
 
-export function snapshotOf(chapters: ChapterDoc[]): ChapterSnapshot {
-  return { takenAt: new Date(), chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })) };
+export function snapshotOf(chapters: ChapterDoc[], historyBatchId?: string): ChapterSnapshot {
+  return {
+    takenAt: new Date(),
+    ...(historyBatchId ? { historyBatchId } : {}),
+    chapters: chapters.map((chapter) => ({ ...chapter, paragraphs: [...chapter.paragraphs] })),
+  };
 }
 
 function paragraphsEqual(left: readonly string[], right: readonly string[]): boolean {
@@ -30,6 +34,7 @@ export async function patchChapter(
   projectId: string,
   chapterId: string,
   patch: Partial<Pick<ChapterDoc, 'paragraphs' | 'status' | 'title'>>,
+  historyBatchId?: string,
 ): Promise<ChapterDoc[]> {
   const project = await getProject(projectId);
   const chapter = project.chapters.find((item) => item.id === chapterId);
@@ -45,7 +50,7 @@ export async function patchChapter(
     ...(acknowledgesUpstreamChange ? { reviewStatus: 'clean' as const } : {}),
   };
   if (Object.keys(normalizedPatch).length === 0) return project.chapters;
-  const updated = await patchProjectChapter(projectId, chapterId, normalizedPatch, paragraphsChanged || titleChanged ? snapshotOf(project.chapters) : null);
+  const updated = await patchProjectChapter(projectId, chapterId, normalizedPatch, paragraphsChanged || titleChanged ? snapshotOf(project.chapters, historyBatchId) : null);
   if (paragraphsChanged) {
     const nextChapter = project.chapters.find((item) => item.no === chapter.no + 1);
     if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' });
@@ -171,12 +176,12 @@ export async function saveGeneratedScript(
   return replaceProjectScript(projectId, saved, openLoops, motif, coreQuestion, openingHook, snapshot, 'script');
 }
 
-export async function restoreChapters(projectId: string, index: number): Promise<ChapterDoc[]> {
+export async function restoreChapters(projectId: string, index: number, expectedVersion?: number): Promise<ChapterDoc[]> {
   const project = await getProject(projectId);
   const history = await getChapterHistory(projectId);
   const snapshot = history[index];
   if (!snapshot) throw new AppError('History snapshot not found.', 422, 'INVALID_HISTORY_INDEX');
-  const updated = await restoreProjectChapters(projectId, snapshot.chapters, snapshotOf(project.chapters));
+  const updated = await restoreProjectChapters(projectId, snapshot.chapters, snapshotOf(project.chapters), expectedVersion);
   return updated.chapters;
 }
 
@@ -278,7 +283,7 @@ export async function generateScript(projectId: string, context: ScriptGeneratio
   await context.appendLog(`Script saved — ${saved.chapters.length} chapters.`);
 }
 
-export type RegenerationOptions = { instruction: string; level: 'light' | 'medium' | 'rewrite' };
+export type RegenerationOptions = { instruction: string; level: 'light' | 'medium' | 'rewrite'; historyBatchId?: string };
 
 export function buildRegenerationPromptForChapter(
   project: ProjectDetail,
@@ -339,7 +344,7 @@ export async function regenerateChapter(
 ): Promise<ChapterDoc> {
   const project = await getProject(projectId);
   const { prompt, chapter, nextChapter } = buildRegenerationPromptForChapter(project, chapterId, opts);
-  const snapshot = snapshotOf(project.chapters);
+  const snapshot = snapshotOf(project.chapters, opts.historyBatchId);
   await patchProjectChapter(projectId, chapterId, { status: 'generating' }, snapshot);
 
   try {

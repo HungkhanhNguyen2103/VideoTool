@@ -127,6 +127,43 @@ describe('ReviewScriptPage version history layout', () => {
   });
 });
 
+describe('bulk QA apply controls', () => {
+  it('provides a keyboard menu, explicit confirmation, progress cancel, and guarded undo without changing per-issue actions', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const dialog = await readFile('src/client/features/script/components/QaApplyAllDialog.tsx', 'utf8');
+    const css = await readFile('src/client/features/script/components/QaApplyAllDialog.module.css', 'utf8');
+    const issueCard = await readFile('src/client/features/script/components/QaIssueCard.tsx', 'utf8');
+
+    expect(page).toContain('<QaApplyAllDialog');
+    expect(page).toContain('disabled={bulkApplyDisabled}');
+    expect(page).toContain("kind: 'qa-bulk-apply'");
+    expect(page).toContain('isHardStopRegenerationError');
+    expect(page).toContain('bulkUndoIsSafe');
+    expect(page).toContain('bulkUndoRevisionMatches');
+    expect(page).toContain('bulkUndoRevisionMatches(expectedBatchVersion, finishedProject.version, revisionTrackingCertain)');
+    expect(page).toContain('Lượt đã chạy xong nhưng không thể xác minh bản hoàn tác an toàn.');
+    expect(page).toContain('onCancel={cancelQaBulkApply}');
+    expect(page).toContain('regenControllerRef.current?.abort();');
+    expect(dialog).toContain('aria-haspopup="menu"');
+    expect(dialog).toContain('role="menu"');
+    expect(dialog).toContain('role="menuitem"');
+    expect(dialog).toContain('Escape');
+    expect(dialog).toContain('pointerdown');
+    expect(dialog).toContain('Mức cao');
+    expect(dialog).toContain('Cao + trung bình');
+    expect(dialog).toContain('Toàn bộ');
+    expect(dialog).toContain('Bắt đầu');
+    expect(dialog).toContain('Huỷ');
+    expect(dialog).toContain('Chỉ áp dụng các sửa cục bộ');
+    expect(dialog).toContain('Tái tạo có thể diễn đạt lại chương');
+    expect(dialog).toContain('Hoàn tác tất cả');
+    expect(css).toContain('max-height: min(80vh, 48rem)');
+    expect(css).toContain('overflow-y: auto');
+    expect(css).toContain('position: sticky');
+    expect(issueCard).toContain('Áp dụng gợi ý');
+  });
+});
+
 describe('ReviewScriptPage theme tokens', () => {
   it('uses the shared dark-theme tokens instead of undefined light fallbacks', async () => {
     const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AI_PROVIDERS } from '../../../contracts/project';
 import type { ProjectDetail } from '../../../contracts/project';
 import { ProjectDetailSchema } from '../../../contracts/project';
-import { ChapterDocSchema, type ChapterDoc, type ChapterSnapshot } from '../../../contracts/script';
+import { ChapterDocSchema, ChapterSnapshotSchema, type ChapterDoc, type ChapterSnapshot } from '../../../contracts/script';
 import { apiRequest } from '../../shared/api-client';
 
 export type { ChapterSnapshot } from '../../../contracts/script';
@@ -28,7 +28,7 @@ export function parseSseFrames(input: string): { frames: SseFrame[]; remainder: 
 
 const ChaptersResponseSchema = z.object({ chapters: z.array(ChapterDocSchema) });
 const JobResponseSchema = z.object({ jobId: z.string() });
-const HistoryResponseSchema = z.array(z.object({ takenAt: z.coerce.date(), chapters: z.array(ChapterDocSchema) }));
+const HistoryResponseSchema = z.array(ChapterSnapshotSchema.extend({ takenAt: z.coerce.date() }));
 const ManualPromptResponseSchema = z.object({ prompt: z.string(), promptVersion: z.string() });
 export const QA_ISSUE_TYPES = ['REPETITION', 'CONTRADICTION', 'DEAD_CHAPTER', 'POSSIBLE_FILLER', 'WEAK_HOOK', 'FLAT_PACING', 'PREMATURE_REVEAL', 'UNRESOLVED_LOOP', 'WEAK_PAYOFF', 'AWKWARD_TRANSITION', 'TONE_DRIFT', 'CREDIBILITY_RISK'] as const;
 export const QA_SEVERITIES = ['low', 'medium', 'high'] as const;
@@ -51,6 +51,21 @@ export const QAResultSchema = z.object({
 }).strict();
 export type QAIssue = z.infer<typeof QAIssueSchema>;
 export type QAResult = z.infer<typeof QAResultSchema>;
+
+export class RegenerationStreamError extends Error {
+  constructor(message: string, readonly code?: string, readonly status?: number) {
+    super(message);
+    this.name = 'RegenerationStreamError';
+  }
+}
+
+export function isHardStopRegenerationError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const details = error as { code?: unknown; status?: unknown };
+  if (details.code === 'AI_KEY_MISSING') return true;
+  if (details.code !== 'AI_REQUEST_FAILED' || typeof details.status !== 'number') return false;
+  return [401, 403, 429].includes(details.status) || (details.status >= 500 && details.status <= 599);
+}
 
 export function getProject(id: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(id)}`, ProjectDetailSchema);
@@ -99,7 +114,7 @@ export function importRegeneratedChapter(projectId: string, chapterId: string, r
 export async function patchChapter(
   projectId: string,
   chapterId: string,
-  body: { status?: 'pending' | 'approved' | 'needs-fix'; paragraphs?: string[]; title?: string },
+  body: { status?: 'pending' | 'approved' | 'needs-fix'; paragraphs?: string[]; title?: string; historyBatchId?: string },
 ): Promise<ChapterDoc[]> {
   const response = await apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}`, ChaptersResponseSchema, {
     method: 'PATCH', body,
@@ -110,7 +125,7 @@ export async function patchChapter(
 export async function regenerateChapter(
   projectId: string,
   chapterId: string,
-  body: { instruction: string; level: 'light' | 'medium' | 'rewrite' },
+  body: { instruction: string; level: 'light' | 'medium' | 'rewrite'; historyBatchId?: string },
   onChunk: (text: string) => void,
   signal: AbortSignal,
 ): Promise<ChapterDoc> {
@@ -122,6 +137,9 @@ export async function regenerateChapter(
   const decoder = new TextDecoder();
   let buffer = '';
   let result: ChapterDoc | null = null;
+  let errorMessage: string | null = null;
+  let errorCode: string | undefined;
+  let errorStatus: number | undefined;
   const consume = (text: string) => {
     buffer += text;
     const parsed = parseSseFrames(buffer);
@@ -129,7 +147,18 @@ export async function regenerateChapter(
     for (const frame of parsed.frames) {
       if (frame.event === 'chunk') onChunk(JSON.parse(frame.data) as string);
       else if (frame.event === 'done') result = ChapterDocSchema.parse(JSON.parse(frame.data));
-      else if (frame.event === 'error') throw new Error(JSON.parse(frame.data) as string);
+      else if (frame.event === 'error') {
+        const parsed: unknown = JSON.parse(frame.data);
+        errorMessage = typeof parsed === 'string'
+          ? parsed
+          : typeof parsed === 'object' && parsed !== null && typeof (parsed as { error?: unknown }).error === 'string'
+            ? (parsed as { error: string }).error
+            : 'Không thể tái tạo chương.';
+      } else if (frame.event === 'error-details') {
+        const parsed = JSON.parse(frame.data) as { code?: unknown; status?: unknown };
+        errorCode = typeof parsed.code === 'string' ? parsed.code : undefined;
+        errorStatus = typeof parsed.status === 'number' ? parsed.status : undefined;
+      }
     }
   };
   while (true) {
@@ -140,6 +169,7 @@ export async function regenerateChapter(
     }
     consume(decoder.decode(next.value, { stream: true }));
   }
+  if (errorMessage !== null) throw new RegenerationStreamError(errorMessage, errorCode, errorStatus);
   if (!result) throw new Error('Regeneration ended without a done event.');
   return result;
 }
@@ -148,9 +178,9 @@ export async function getChapterHistory(projectId: string): Promise<ChapterSnaps
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/history`, HistoryResponseSchema);
 }
 
-export async function restoreChapters(projectId: string, index: number): Promise<ChapterDoc[]> {
+export async function restoreChapters(projectId: string, index: number, expectedVersion?: number): Promise<ChapterDoc[]> {
   const response = await apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/restore`, ChaptersResponseSchema, {
-    method: 'POST', body: { index },
+    method: 'POST', body: { index, ...(expectedVersion !== undefined ? { expectedVersion } : {}) },
   });
   return response.chapters;
 }

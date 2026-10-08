@@ -19,7 +19,8 @@ export type BlockingTaskKind =
   | 'script-generation'
   | 'final-qa'
   | 'name-keywords'
-  | 'recompute-durations';
+  | 'recompute-durations'
+  | 'qa-bulk-apply';
 
 export type BlockingTask = {
   kind: BlockingTaskKind;
@@ -71,6 +72,7 @@ const TASK_TITLES: Record<BlockingTaskKind, string> = {
   'final-qa': 'Đang kiểm tra QA',
   'name-keywords': 'Đang phân tích tên popup',
   'recompute-durations': 'Đang tính lại thời lượng scene',
+  'qa-bulk-apply': 'Đang áp dụng QA',
 };
 
 export function blockingTaskTitle(task: BlockingTask): string {
@@ -184,6 +186,6 @@ export function blockingProgressViewModel(args: {
     detail: null,
     terminal,
     staleConnection,
-    canCancel: Boolean(args.jobId) && !terminal,
+    canCancel: !terminal && (Boolean(args.jobId) || args.task.kind === 'qa-bulk-apply'),
   };
 }
