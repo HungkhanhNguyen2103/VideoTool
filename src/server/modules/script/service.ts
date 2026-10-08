@@ -464,13 +464,33 @@ export function buildRegenerationPromptForChapter(
   const chapterIndex = project.chapters.findIndex((item) => item.id === chapterId);
   const previousChapter = chapter.no === 1 ? undefined : project.chapters[chapterIndex - 1];
   const nextChapter = project.chapters.find((item) => item.no === chapter.no + 1);
+  const priorChapters = project.chapters.slice(0, chapterIndex).filter((item) => item.paragraphs.length > 0);
+  const storySoFar = priorChapters.map((item) => ({
+    chapterNo: item.no,
+    title: item.title,
+    summary: item.chapterSummary?.trim() || fallbackChapterSummary(item),
+    fallback: !item.chapterSummary?.trim(),
+  }));
+  const loopStates = project.openLoops.map((loop) => ({ question: loop.question, state: loopStateForChapter(loop, chapter.no) }));
+  const previousOpeners = priorChapters.map((item) => (item.paragraphs[0] ?? '').trim().split(/\s+/u).slice(0, 6).join(' ')).filter(Boolean);
+  const avoidRepeating = [...new Set(priorChapters.flatMap((item) => item.avoidRepeating))].slice(-30);
   const prompt = buildRegenerationPrompt(project, chapter, opts.instruction, opts.level, {
     coreQuestion: project.coreQuestion,
-    openingHook: chapter.no === 1 ? project.openingHook : null,
-    openLoops: project.openLoops.filter((loop) => loop.plantedInChapter === chapter.no || loop.resolvedInChapter === chapter.no),
-    previousChapterSummary: previousChapter?.chapterSummary ?? null,
+    openingHook: project.openingHook,
+    openLoops: project.openLoops,
+    previousChapterSummary: storySoFar.at(-1)?.summary ?? null,
     previousAvoidRepeating: previousChapter?.avoidRepeating ?? [],
     previousPersistentFacts: previousChapter?.persistentFacts ?? [],
+    outlineChapters: project.chapters,
+    motif: project.motif,
+    storySoFar,
+    persistentFacts: previousChapter?.persistentFacts ?? [],
+    avoidRepeating,
+    loopStates,
+    nextChapter: nextChapter ?? null,
+    previousTailParagraphs: previousChapter?.paragraphs.slice(-2) ?? [],
+    previousOpeners,
+    voiceAnchorParagraphs: chapter.no > 1 ? (project.chapters[0]?.paragraphs ?? []).slice(0, 2) : [],
   });
   return { prompt, chapter, nextChapter };
 }

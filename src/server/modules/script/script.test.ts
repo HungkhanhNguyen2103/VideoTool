@@ -328,10 +328,10 @@ describe('script contracts', () => {
   });
 
   it('returns the same chapter regeneration prompt as the automatic path without changing state', async () => {
-    const project = await createProject(projectInput);
+    const project = await createProject({ ...projectInput, referencesText: '[1] Harbor log documents the departure.' });
     await replaceProjectChapters(project.id, [
-      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old opening'], status: 'pending', scenesCount: null, durationSec: null },
-      { id: 'chapter-2', no: 2, title: 'Close', paragraphs: ['Old close'], status: 'approved', scenesCount: null, durationSec: null },
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old opening'], status: 'pending', scenesCount: null, durationSec: null, role: 'hook', beat: 'Set the mystery.', targetWords: 100, sourceFacts: ['The departure was at dawn [1]'], holdBack: ['The reason appears later.'] },
+      { id: 'chapter-2', no: 2, title: 'Close', paragraphs: ['Old close'], status: 'approved', scenesCount: null, durationSec: null, role: 'resolution', beat: 'Answer the question.', targetWords: 100 },
     ], null, 'script');
     const current = await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [{ question: 'What changed?', plantedInChapter: 1, resolvedInChapter: 2 }], null, 'Why did it happen?', 'It began at dawn.', null, 'script');
     const expected = buildRegenerationPromptForChapter(current, 'chapter-1', { instruction: 'Make the hook sharper', level: 'light' });
@@ -344,6 +344,10 @@ describe('script contracts', () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ prompt: `SYSTEM\n${expected.prompt.system}\n\nUSER\n${expected.prompt.user}`, promptVersion: expected.prompt.promptVersion });
+    expect(body.prompt).toContain('References: [1] Harbor log documents the departure.');
+    expect(body.prompt).toContain('Chapter 2: Close; role=resolution; beat=Answer the question.; targetWords=100');
+    expect(body.prompt).toContain('The departure was at dawn [1]');
+    expect(body.prompt).toContain('The reason appears later.');
     expect(await getProject(project.id)).toEqual(current);
     expect(aiMock.chat).not.toHaveBeenCalled();
     expect(aiMock.stream).not.toHaveBeenCalled();
@@ -952,12 +956,28 @@ describe('script contracts', () => {
     expect(aiMock.stream).toHaveBeenCalledTimes(1);
   });
 
-  it('passes regeneration narrative context and marks only the next chapter upstream-changed', async () => {
+  it('omits earlier empty outline chapters from story-so-far context', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [
-      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'pending', scenesCount: null, durationSec: null, chapterSummary: 'Previous summary', avoidRepeating: ['Previous avoidance'], persistentFacts: ['Previous fact'] },
-      { id: 'chapter-2', no: 2, title: 'Middle', paragraphs: ['Old middle'], status: 'pending', scenesCount: null, durationSec: null, role: 'rising', beat: 'Escalate', targetWords: 20, endsOnTension: true },
-      { id: 'chapter-3', no: 3, title: 'Ending', paragraphs: ['Old ending'], status: 'pending', scenesCount: null, durationSec: null },
+      { id: 'chapter-1', no: 1, title: 'Written', paragraphs: ['A prior chapter begins.', 'It ends here.'], status: 'pending', scenesCount: null, durationSec: null },
+      { id: 'chapter-2', no: 2, title: 'Empty outline placeholder', paragraphs: [], status: 'pending', scenesCount: null, durationSec: null },
+      { id: 'chapter-3', no: 3, title: 'Target', paragraphs: ['Existing target.'], status: 'pending', scenesCount: null, durationSec: null },
+    ], null, 'script');
+    const current = await getProject(project.id);
+    const { prompt } = buildRegenerationPromptForChapter(current, 'chapter-3', { instruction: 'Keep continuity', level: 'medium' });
+    const storySoFar = prompt.user.split('Story so far: ')[1]?.split('\n\n')[0] ?? '';
+
+    expect(storySoFar).toContain('Chapter 1 — A prior chapter begins. It ends here.');
+    expect(storySoFar).not.toContain('Empty outline placeholder');
+    expect(storySoFar).not.toContain('Chapter 2 —');
+  });
+
+  it('passes regeneration narrative context and marks only the next chapter upstream-changed', async () => {
+    const project = await createProject({ ...projectInput, referencesText: '[1] Harbor archive: the gate failed at dawn.' });
+    await replaceProjectChapters(project.id, [
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One. Two.'], status: 'pending', scenesCount: null, durationSec: null, chapterSummary: 'Previous summary', avoidRepeating: ['Previous avoidance'], persistentFacts: ['Previous fact'] },
+      { id: 'chapter-2', no: 2, title: 'Middle', paragraphs: ['Old middle, first.', 'Old middle, last.'], status: 'pending', scenesCount: null, durationSec: null, role: 'rising', beat: 'Escalate', targetWords: 20, endsOnTension: true, sourceFacts: ['The gate failed [1]'], holdBack: ['The fleet turns later.'] },
+      { id: 'chapter-3', no: 3, title: 'Ending', paragraphs: ['Old ending'], status: 'pending', scenesCount: null, durationSec: null, role: 'resolution', beat: 'Reveal the cause.', targetWords: 10, sourceFacts: ['The tide changed [1]'], holdBack: [] },
     ], null, 'script');
     await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [{ question: 'What changed?', plantedInChapter: 2, resolvedInChapter: 3 }], null, 'Why did the river change?', 'At dawn, it reversed.', null, 'script');
     aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(['New middle']); })());
@@ -966,21 +986,29 @@ describe('script contracts', () => {
 
     const prompt = aiMock.stream.mock.calls[0]![0][1].content as string;
     expect(prompt).toContain('Core question:');
+    expect(prompt).toContain(`Project title: ${project.title}`);
+    expect(prompt).toContain(`Brief: ${project.brief}`);
+    expect(prompt).toContain('References: [1] Harbor archive: the gate failed at dawn.');
+    expect(prompt).toContain('Chapter 3: Ending; role=resolution; beat=Reveal the cause.; targetWords=10');
     expect(prompt).toContain('Role: rising');
     expect(prompt).toContain('Beat: Escalate');
     expect(prompt).toContain('Target words: 20');
-    expect(prompt).toContain('Open loops: What changed?');
+    expect(prompt).toContain('What changed? — plant');
+    expect(prompt).toContain('The gate failed [1]');
+    expect(prompt).toContain('The fleet turns later.');
+    expect(prompt).toContain('Next chapter preview');
+    expect(prompt).toContain('Old middle, first.\n\nOld middle, last.');
+    expect(prompt).toContain('Opening hook: At dawn, it reversed.');
     expect(prompt).toContain('Previous chapter summary: Previous summary');
-    expect(prompt).toContain('Avoid repeating: Previous avoidance');
+    expect(prompt).toContain('Avoid repeating (latest 30): Previous avoidance');
     expect(prompt).toContain('Persistent facts: Previous fact');
-    expect(prompt).not.toContain('Opening hook:');
 
     const saved = await getProject(project.id);
     expect(saved.chapters[1]).toMatchObject({ reviewStatus: 'clean', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'] });
     expect(saved.chapters[2]).toMatchObject({ reviewStatus: 'upstream-changed' });
   });
 
-  it('passes opening hook only to chapter one with empty previous continuity', async () => {
+  it('passes the global opening hook and empty previous continuity to chapter one', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
     await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [], null, 'Why did it happen?', 'It began at dawn.', null, 'script');
@@ -991,7 +1019,7 @@ describe('script contracts', () => {
     const prompt = aiMock.stream.mock.calls[0]![0][1].content as string;
     expect(prompt).toContain('Opening hook: It began at dawn.');
     expect(prompt).toContain('Previous chapter summary: (none)');
-    expect(prompt).toContain('Avoid repeating: (none)');
+    expect(prompt).toContain('Avoid repeating (latest 30): (none)');
     expect(prompt).toContain('Persistent facts: (none)');
   });
 

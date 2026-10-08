@@ -5,7 +5,7 @@ import { NARRATIVE_ROLES, NARRATION_WORDS_PER_MINUTE } from '../../../../contrac
 import { loadScriptPreset, type ScriptPreset } from './presets/loader';
 import { loadVisualStylePreset } from './presets/visual-style-loader';
 import { SCRIPT_PRESET_CONFIG } from './presets/config';
-import { recommendScriptChapterCount } from './outline-validation';
+import { ACT_SHARE_TOLERANCE_PCT_POINTS, recommendScriptChapterCount } from './outline-validation';
 import { QA_ISSUE_TYPES, QA_SUGGESTED_ACTIONS } from './qa-schema';
 
 export type BuiltPrompt = { system: string; user: string; promptVersion: string; stablePrefix?: string };
@@ -87,6 +87,16 @@ type RegenerationPromptContext = {
   previousChapterSummary: string | null;
   previousAvoidRepeating: string[];
   previousPersistentFacts: string[];
+  outlineChapters?: ChapterExpansionPromptInput['outlineChapters'];
+  motif?: HubrisMotif | null;
+  storySoFar?: ChapterExpansionPromptInput['storySoFar'];
+  persistentFacts?: string[];
+  avoidRepeating?: string[];
+  loopStates?: ChapterExpansionPromptInput['loopStates'];
+  nextChapter?: ChapterExpansionPromptInput['nextChapter'];
+  previousTailParagraphs?: string[];
+  previousOpeners?: string[];
+  voiceAnchorParagraphs?: string[];
 };
 
 function version(preset: ScriptPreset, contractVersion = 4): string {
@@ -94,11 +104,43 @@ function version(preset: ScriptPreset, contractVersion = 4): string {
 }
 
 function qaVersion(preset: ScriptPreset): string {
-  return `qa-prompt-v2/${preset.id}@${preset.version}`;
+  return `qa-prompt-v3/${preset.id}@${preset.version}`;
 }
 
 function language(project: ProjectDetail): string {
   return project.language === 'vi' ? 'Vietnamese' : 'English';
+}
+
+function sourceTagInstruction(referencesText: string): string {
+  const tags = [...new Set([...referencesText.matchAll(/\[(\d+)\]/gu)].map((match) => match[1]!))];
+  return tags.length > 0
+    ? `Available source tags for sourceFacts: ${tags.map((tag) => `[${tag}]`).join(', ')}. End each fact with its exact supporting tag; omit a fact if its source cannot be identified. Do not combine tags or use a tag not listed here.`
+    : 'References contain no numbered source tags; do not add source tags to sourceFacts.';
+}
+
+function narrationBudgetGuidance(project: ProjectDetail): string {
+  const budget = Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE);
+  const minimum = Math.ceil(budget * 0.98);
+  const maximum = Math.floor(budget * 1.02);
+  const format = (value: number) => Math.round(value).toLocaleString('en-US');
+  return `Project narration budget: ${format(budget)} words; acceptable sum of chapter targetWords is ${format(minimum)}–${format(maximum)}. Aim for exactly ${format(budget)} words total, and verify the sum before returning JSON.`;
+}
+
+function hubrisActWordGuidance(project: ProjectDetail, chapterCount: number): string {
+  if (project.scriptPresetId !== 'hubris-trap' || chapterCount < NARRATIVE_ROLES.length) return '';
+  const totalWords = Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE);
+  const weighting = SCRIPT_PRESET_CONFIG['hubris-trap'].actWeighting!;
+  const format = (value: number) => Math.round(value).toLocaleString('en-US');
+  const allocations = NARRATIVE_ROLES.map((role, index) => {
+    const targetPct = weighting[index]!;
+    const minimumPct = Math.max(0, targetPct - ACT_SHARE_TOLERANCE_PCT_POINTS);
+    const maximumPct = Math.min(100, targetPct + ACT_SHARE_TOLERANCE_PCT_POINTS);
+    const targetWords = Math.round(totalWords * targetPct / 100);
+    const minimumWords = Math.ceil(totalWords * minimumPct / 100);
+    const maximumWords = Math.floor(totalWords * maximumPct / 100);
+    return `${role} ${format(targetWords)} words (acceptable total ${format(minimumWords)}–${format(maximumWords)})`;
+  });
+  return `Act target totals for ${format(totalWords)} words, summed across chapters by role (±${ACT_SHARE_TOLERANCE_PCT_POINTS} percentage points): ${allocations.join('; ')}. Assign each chapter role and targetWords so each role's summed target lands in its listed range.`;
 }
 
 function systemMessage(preset: ScriptPreset, contract: string): string {
@@ -140,14 +182,16 @@ export function buildOutlinePrompt(project: ProjectDetail): BuiltPrompt {
     : weightingConfig.weightingStrictness === 'soft'
       ? `Use five-act weighting as a guideline: ${weightingConfig.actWeighting!.join('% / ')}%; deviate if pacing calls for it.`
       : `Follow five-act weighting closely as a requirement: ${weightingConfig.actWeighting!.join('% / ')}%.`;
+  const actWordGuidance = hubrisActWordGuidance(project, chapterCount);
   return {
-    system: systemMessage(preset, `Return one JSON outline object with non-empty coreQuestion, openingHook, chapters, openLoops, and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. ${shape} ${weighting} ${OUTLINE_QUALITY_CONTRACT}`),
+    system: systemMessage(preset, `Return one JSON outline object with non-empty coreQuestion, openingHook, chapters, openLoops, and the preset-specific motif rule. ${SCRIPT_STRUCTURE_CONTRACT} coreQuestion must name the central question or problem the whole video answers. openingHook must be the actual candidate opening line or idea for the video, not a description of one. ${shape} ${weighting} ${OUTLINE_QUALITY_CONTRACT} ${actWordGuidance}`),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
       `References: ${project.referencesText || '(none)'}`,
+      sourceTagInstruction(project.referencesText),
       `Language: ${language(project)}`,
-      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words; the sum of all targetWords must be within 2% of this budget.`,
+      narrationBudgetGuidance(project),
       `Create ${count}; chapter count must be exact.`,
     ].join('\n'),
     promptVersion: version(preset),
@@ -157,17 +201,7 @@ export function buildOutlinePrompt(project: ProjectDetail): BuiltPrompt {
 export function buildChapterExpansionPrompt(input: ChapterExpansionPromptInput): BuiltPrompt {
   const { project, chapter, coreQuestion, openingHook, outlineChapters, motif, storySoFar, persistentFacts, avoidRepeating, loopStates, nextChapter, previousTailParagraphs, previousOpeners, voiceAnchorParagraphs, remainingBudgetWords, generationTargetWords, styleNote } = input;
   const preset = loadScriptPreset(project.scriptPresetId);
-  const stablePrefix = [
-    `Project title: ${project.title}`,
-    `Brief: ${project.brief}`,
-    `References: ${project.referencesText || '(none)'}`,
-    'Outline overview:',
-    `Core question: ${coreQuestion}`,
-    `Opening hook: ${openingHook}`,
-    `Motif: ${motif ? `hunter=${motif.hunter}; perfectPlan=${motif.perfectPlan}; blindSpot=${motif.blindSpot}; selfDestruction=${motif.selfDestruction}` : '(none)'}`,
-    'Full chapter list:',
-    ...outlineChapters.map((item) => `Chapter ${item.no}: ${item.title}; role=${item.role ?? '(unspecified)'}; beat=${item.beat || '(unspecified)'}; targetWords=${item.targetWords ?? '(unspecified)'}`),
-  ].join('\n');
+  const stablePrefix = buildStableScriptPrefix(project, outlineChapters, motif, coreQuestion, openingHook);
   const nextChapterPreview = nextChapter
     ? `Chapter ${nextChapter.no}: ${nextChapter.title} — ${nextChapter.role ?? '(unspecified)'} — ${nextChapter.beat}`
     : '(none; this is the final chapter)';
@@ -208,12 +242,33 @@ export function buildManualScriptPrompt(project: ProjectDetail): BuiltPrompt {
       `Write the complete script document for project: ${project.title}`,
       `Brief: ${project.brief}`,
       `References: ${project.referencesText || '(none)'}`,
+      sourceTagInstruction(project.referencesText),
       `Language: ${language(project)}`,
-      `Total narration word budget: ${Math.round(project.targetDurationSec / 60 * NARRATION_WORDS_PER_MINUTE)} words; the sum of all targetWords must be within 2% of this budget.`,
+      narrationBudgetGuidance(project),
       `Use exactly ${chapterCount} chapters; chapter count must be exact.`,
     ].join('\n'),
     promptVersion: version(preset),
   };
+}
+
+function buildStableScriptPrefix(
+  project: ProjectDetail,
+  outlineChapters: ChapterExpansionPromptInput['outlineChapters'],
+  motif: HubrisMotif | null,
+  coreQuestion: string,
+  openingHook: string | null,
+): string {
+  return [
+    `Project title: ${project.title}`,
+    `Brief: ${project.brief}`,
+    `References: ${project.referencesText || '(none)'}`,
+    'Outline overview:',
+    `Core question: ${coreQuestion}`,
+    `Opening hook: ${openingHook ?? '(none)'}`,
+    `Motif: ${motif ? `hunter=${motif.hunter}; perfectPlan=${motif.perfectPlan}; blindSpot=${motif.blindSpot}; selfDestruction=${motif.selfDestruction}` : '(none)'}`,
+    'Full chapter list:',
+    ...outlineChapters.map((item) => `Chapter ${item.no}: ${item.title}; role=${item.role ?? '(unspecified)'}; beat=${item.beat || '(unspecified)'}; targetWords=${item.targetWords ?? '(unspecified)'}`),
+  ].join('\n');
 }
 
 export function buildRegenerationPrompt(
@@ -224,26 +279,55 @@ export function buildRegenerationPrompt(
   context: RegenerationPromptContext,
 ): BuiltPrompt {
   const preset = loadScriptPreset(project.scriptPresetId);
+  const outlineChapters = context.outlineChapters ?? project.chapters;
+  const stablePrefix = buildStableScriptPrefix(
+    project,
+    outlineChapters,
+    context.motif ?? project.motif,
+    context.coreQuestion,
+    context.openingHook,
+  );
+  const storySoFar = context.storySoFar ?? [];
+  const loopStates = context.loopStates ?? context.openLoops.map((loop) => ({
+    question: typeof loop === 'string' ? loop : loop.question,
+    state: 'pending' as const,
+  }));
+  const avoidRepeating = context.avoidRepeating ?? context.previousAvoidRepeating;
+  const persistentFacts = context.persistentFacts ?? context.previousPersistentFacts;
+  const previousTailParagraphs = context.previousTailParagraphs ?? [];
+  const previousOpeners = context.previousOpeners ?? [];
+  const voiceAnchorParagraphs = context.voiceAnchorParagraphs ?? [];
+  const nextChapter = context.nextChapter ?? null;
+  const nextChapterPreview = nextChapter
+    ? `Chapter ${nextChapter.no}: ${nextChapter.title} — ${nextChapter.role ?? '(unspecified)'} — ${nextChapter.beat}`
+    : '(none; this is the final chapter)';
   return {
-    system: systemMessage(preset, `Rewrite one chapter and return one JSON object with paragraphs (string array), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 5 items of at most 120 characters each). ${PERSISTENT_FACTS_INSTRUCTION} ${REGENERATION_CONTRACT}`),
-    user: [
+    system: systemMessage(preset, `Rewrite one chapter and return one JSON object with paragraphs (string array), chapterSummary (string, at most 250 characters), avoidRepeating (array, at most 5 items of at most 80 characters each), and persistentFactsNext (array, at most 10 items of at most 120 characters each). ${PERSISTENT_FACTS_INSTRUCTION} ${REGENERATION_CONTRACT}`),
+    user: `${stablePrefix}\n\n${[
+      '--- CHAPTER-SPECIFIC CONTEXT ---',
       `Language: ${language(project)}`,
-      `Core question: ${context.coreQuestion}`,
-      ...(context.openingHook !== null ? [`Opening hook: ${context.openingHook}`] : []),
       `Chapter ${chapter.no}: ${chapter.title}`,
       `Role: ${chapter.role || '(unspecified)'}`,
       `Beat: ${chapter.beat || '(unspecified)'}`,
       `Target words: ${chapter.targetWords ?? '(unspecified)'}`,
+      `Source facts: ${chapter.sourceFacts?.join(' | ') || '(none)'}`,
+      `Hold back: ${chapter.holdBack?.join(' | ') || '(none)'}`,
       `Ends on tension: ${chapter.endsOnTension ? 'yes' : 'no'}`,
+      `Story so far: ${storySoFar.map((item) => `Chapter ${item.chapterNo} — ${item.summary}${item.fallback ? ' [deterministic fallback]' : ''}`).join('\n') || '(none)'}`,
       `Current paragraphs:\n${chapter.paragraphs.join('\n\n')}`,
       `Previous chapter summary: ${context.previousChapterSummary ?? '(none)'}`,
-      `Avoid repeating: ${context.previousAvoidRepeating.join(' | ') || '(none)'}`,
-      `Persistent facts: ${context.previousPersistentFacts.join(' | ') || '(none)'}`,
-      `Open loops: ${context.openLoops.map((loop) => typeof loop === 'string' ? loop : loop.question).join(' | ') || '(none)'}`,
+      `Avoid repeating (latest 30): ${avoidRepeating.slice(-30).join(' | ') || '(none)'}`,
+      `Persistent facts: ${persistentFacts.join(' | ') || '(none)'}`,
+      `Open-loop state for every loop: ${loopStates.map((item) => `${item.question} — ${item.state}`).join(' | ') || '(none)'}`,
+      `Next chapter preview (do not reveal its events or holdbacks): ${nextChapterPreview}`,
+      `Verbatim continuity tail:\n${previousTailParagraphs.join('\n') || '(none)'}`,
+      `Prior chapter opening words (first six words each): ${previousOpeners.join(' | ') || '(none)'}`,
+      `Voice anchor (tone only; never reuse its facts):\n${voiceAnchorParagraphs.join('\n') || '(not available yet)'}`,
       `Instruction: ${instruction || '(none)'}`,
       `Regeneration level: ${level}`,
-    ].join('\n\n'),
-    promptVersion: version(preset),
+    ].join('\n\n')}`,
+    stablePrefix,
+    promptVersion: version(preset, 6),
   };
 }
 
@@ -299,6 +383,7 @@ export function buildQaPrompt(project: ProjectDetail): BuiltPrompt {
     system: systemMessage(preset, `Return one strict JSON object: {"issues":[...]}. Each issue must contain only chapter (positive integer), type (${issueTypes}), severity (low, medium, or high), reason, and suggestedAction (${actions}), plus optional paragraph (positive integer), quote (string, max 240 characters), fixInstruction (string, max 300 characters), and replacement (string, max 600 characters). Do not return a score, suggestedFix, or any other field. Detect and flag issues only; do not rewrite any text. ${QA_RUBRIC_CONTRACT}`),
     user: [
       `Project title: ${project.title}`,
+      `References: ${project.referencesText || '(none)'}`,
       `Language: ${language(project)}`,
       `Write each issue reason in ${language(project)}.`,
       `Core question: ${project.coreQuestion || '(none)'}`,

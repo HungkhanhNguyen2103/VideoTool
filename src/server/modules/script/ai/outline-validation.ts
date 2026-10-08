@@ -8,7 +8,7 @@ import type { ScriptOutline } from './output-schema';
 export type OutlineProjectContext = Pick<ProjectDetail, 'targetDurationSec' | 'chapterCount' | 'referencesText' | 'scriptPresetId'>;
 export type OutlineInspection = { errors: string[]; warnings: string[] };
 
-const ACT_SHARE_TOLERANCE_PCT_POINTS = 5;
+export const ACT_SHARE_TOLERANCE_PCT_POINTS = 5;
 const OUTLINE_WORD_BUDGET_TOLERANCE_PCT = 2;
 const CHAPTER_WORD_CEILING = 600;
 const THIN_SOURCE_MIN_FACTS = 2;
