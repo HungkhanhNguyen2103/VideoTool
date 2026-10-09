@@ -143,7 +143,7 @@ export async function handleCliRegeneration(
       level: payload.level,
       ...(payload.historyBatchId ? { historyBatchId: payload.historyBatchId } : {}),
     });
-    await context.appendLog(`Đang tái tạo chương ${chapter.no}/${total} bằng Claude CLI.`);
+    await context.appendLog(`Đang tái tạo lần ${index + 1}/${total} (chương ${chapter.no}) bằng Claude CLI.`);
 
     let accumulatedDurationMs = 0;
     let validOutput: string | null = null;

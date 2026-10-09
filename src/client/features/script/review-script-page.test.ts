@@ -94,6 +94,7 @@ describe('ReviewScriptPage regeneration toolbar', () => {
     expect(regenerationStatusLabel('automatic', 'deepseek')).toBe('Tự động bằng DeepSeek');
     expect(regenerationStatusLabel('automatic', 'claude')).toBe('Tự động bằng Claude');
     expect(regenerationStatusLabel('manual', 'deepseek')).toBe('Thủ công: tự dán JSON');
+    expect(regenerationStatusLabel('cli', 'deepseek')).toBe('Claude CLI trên máy này');
   });
 });
 
@@ -236,6 +237,11 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).not.toContain('Tái tạo tự động bằng');
     expect(source).not.toContain('Tái tạo thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào');
     expect(source).toContain('Lấy prompt tái tạo');
+    expect(source).toContain('Claude CLI (máy này)');
+    expect(source).toContain('api.regenerateWithClaudeCli');
+    expect(source).toContain('api.getClaudeCliStatus');
+    expect(source).toContain('Tái tạo bằng Claude CLI');
+    expect(source).toContain('cliStatusQuery.data?.available === false');
     expect(source).toContain('Chế độ thủ công chỉ tái tạo từng chương');
     expect(source).toContain('{"paragraphs":[…],"chapterSummary":"…","avoidRepeating":[…],"persistentFactsNext":[…]}');
     expect(source).toContain('Đã nhập chương ${chapter.no}.');

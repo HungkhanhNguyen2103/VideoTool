@@ -3,6 +3,7 @@ import { AI_PROVIDERS } from '../../../contracts/project';
 import type { ProjectDetail } from '../../../contracts/project';
 import { ProjectDetailSchema } from '../../../contracts/project';
 import { ChapterDocSchema, ChapterSnapshotSchema, ScriptQualitySummarySchema, type ChapterDoc, type ChapterSnapshot, type ScriptQualitySummary } from '../../../contracts/script';
+import { ClaudeCliStatusSchema, type CliRegenerateRequest, type ClaudeCliStatus } from '../../../contracts/script';
 import { apiRequest } from '../../shared/api-client';
 
 export type { ChapterSnapshot } from '../../../contracts/script';
@@ -81,6 +82,14 @@ export function generateScript(projectId: string, options: { resume?: boolean } 
 
 export function runFinalQa(projectId: string): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/qa`, JobResponseSchema, { method: 'POST' });
+}
+
+export function getClaudeCliStatus(): Promise<ClaudeCliStatus> {
+  return apiRequest('/api/script/cli-status', ClaudeCliStatusSchema);
+}
+
+export function regenerateWithClaudeCli(projectId: string, body: CliRegenerateRequest): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/regenerate/cli`, JobResponseSchema, { method: 'POST', body });
 }
 
 export function getFinalQaManualPrompt(projectId: string): Promise<{ prompt: string; promptVersion: string }> {

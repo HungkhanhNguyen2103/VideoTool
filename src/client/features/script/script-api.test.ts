@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { generateScript, getFinalQaManualPrompt, getManualScriptPrompt, getRegenerationManualPrompt, importFinalQa, importManualScript, importRegeneratedChapter, isHardStopRegenerationError, parseSseFrames, QAResultSchema, regenerateChapter, runFinalQa, setAiProvider } from './api';
+import { generateScript, getClaudeCliStatus, getFinalQaManualPrompt, getManualScriptPrompt, getRegenerationManualPrompt, importFinalQa, importManualScript, importRegeneratedChapter, isHardStopRegenerationError, parseSseFrames, QAResultSchema, regenerateChapter, regenerateWithClaudeCli, runFinalQa, setAiProvider } from './api';
 
 describe('script SSE parser', () => {
   it('buffers incomplete frames and returns complete events in order', () => {
@@ -85,6 +85,25 @@ describe('script generation API', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/ai-provider', expect.objectContaining({
       method: 'PATCH', body: JSON.stringify({ provider: 'deepseek', aiModel: 'deepseek-flash' }),
     }));
+  });
+});
+
+describe('Claude CLI regeneration API', () => {
+  it('reads CLI availability and enqueues a chapter batch with its local model selection', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ available: true, version: 'Claude Code 2.1.294', authPathLikely: 'subscription' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jobId: 'job-cli-1' }), { status: 201 }));
+
+    await expect(getClaudeCliStatus()).resolves.toMatchObject({ available: true, version: 'Claude Code 2.1.294' });
+    await expect(regenerateWithClaudeCli('project/1', {
+      chapterIds: ['chapter-1', 'chapter-2'], instruction: 'Tighten the opening', level: 'medium', model: 'claude-sonnet-5-5',
+    })).resolves.toEqual({ jobId: 'job-cli-1' });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/script/cli-status', expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/chapters/regenerate/cli', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ chapterIds: ['chapter-1', 'chapter-2'], instruction: 'Tighten the opening', level: 'medium', model: 'claude-sonnet-5-5' }),
+    }));
+    fetchMock.mockRestore();
   });
 });
 

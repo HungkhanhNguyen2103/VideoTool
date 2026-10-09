@@ -31,8 +31,9 @@
 
 ## HTTP surface
 - `POST /api/job/:id/cancel` returns the current summary after requesting cancellation.
-- `GET /api/job/:id/events` sends the current `{ status, progress, error, result }` immediately, with `result: null` before terminal and the persisted result only after terminal, then deltas and 15-second heartbeats until terminal.
+- `GET /api/job/:id/events` sends the current `{ status, progress, error, result }` immediately, with `result: null` before terminal and the persisted result only after terminal, then deltas and a named `heartbeat` event every 15 seconds until terminal. Heartbeat data is a timestamp; clients use it to keep long-running job progress from appearing stale when no log or progress delta is due.
 - The same SSE stream sends existing and newly appended log lines as named `log` events, tracked by an index so each line is emitted once.
+- Task 93 browser acceptance exposed that the client did not refresh its liveness timestamp on an SSE heartbeat. The route now emits the documented named event, and `useJobProgress` records heartbeat arrival so the shared blocking dialog remains cancellable and does not report a live CLI process as disconnected.
 
 ## Worker integration
 - `worker/main.ts` calls `recoverStaleJobs` every poll tick and drains claims while checking its closing flag between jobs.

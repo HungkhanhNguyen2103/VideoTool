@@ -71,7 +71,7 @@ function createContext(cancelled: () => boolean = () => false) {
   return {
     reportProgress: vi.fn(async () => undefined),
     isCancelled: vi.fn(async () => cancelled()),
-    appendLog: vi.fn(async () => undefined),
+    appendLog: vi.fn(async (message: string) => { void message; }),
   } satisfies ScriptCliJobContext;
 }
 
@@ -133,6 +133,22 @@ describe('Claude CLI regeneration request contract and route', () => {
 });
 
 describe('handleCliRegeneration', () => {
+  it('logs batch position separately from chapter number for non-contiguous selections', async () => {
+    const root = await makeRoot();
+    const project = await makeProject();
+    const cli = await scriptedCli(root, ['valid', 'valid']);
+    const context = createContext();
+    await handleCliRegeneration({ payload: {
+      projectId: project.id, chapterIds: ['chapter-3', 'chapter-1'], instruction: '', level: 'medium',
+    } }, context, {
+      config: { ...baseCliConfig, FILES_DIR: root }, env: { ...process.env }, spawnProcess: cli.spawnProcess,
+    });
+
+    const logs = context.appendLog.mock.calls.map(([message]) => message).join('\n');
+    expect(logs).toContain('Đang tái tạo lần 1/2 (chương 1) bằng Claude CLI.');
+    expect(logs).toContain('Đang tái tạo lần 2/2 (chương 3) bằng Claude CLI.');
+  });
+
   it('sends the byte-identical manual prompt and imports through the shared parser/apply path', async () => {
     const root = await makeRoot();
     const project = await makeProject();

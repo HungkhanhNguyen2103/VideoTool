@@ -11,6 +11,7 @@ import {
 describe('blocking progress helpers', () => {
   it('derives human-readable task titles, including a scene label', () => {
     expect(blockingTaskTitle({ kind: 'render' })).toBe('Đang render video');
+    expect(blockingTaskTitle({ kind: 'claude-cli-regeneration' })).toBe('Đang tái tạo bằng Claude CLI');
     expect(blockingTaskTitle({ kind: 'voiceover', detail: 'Scene 02' })).toBe('Đang tạo voiceover · Scene 02');
   });
 

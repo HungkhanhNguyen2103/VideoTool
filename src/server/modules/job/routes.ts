@@ -59,7 +59,7 @@ export function createJobRouter(): Router {
     await sendCurrent();
     if (closed) return;
     pollTimer = setInterval(() => { void sendCurrent(); }, 1_000);
-    heartbeatTimer = setInterval(() => { if (!closed) res.write(': heartbeat\n\n'); }, 15_000);
+    heartbeatTimer = setInterval(() => { if (!closed) res.write(`event: heartbeat\ndata: ${Date.now()}\n\n`); }, 15_000);
   });
 
   return router;

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { AiProvider } from '../../../contracts/project';
+import { AI_MODEL_REGISTRY } from '../../../contracts/ai-models';
 import { getReferenceCoverage, type ChapterDoc, type ScriptQualitySummary } from '../../../contracts/script';
 import type { ManualScriptImportResult, QAIssue, QAResult } from './api';
 import { isHardStopRegenerationError } from './api';
@@ -69,14 +70,15 @@ const qaActionLabel: Record<QAResult['issues'][number]['suggestedAction'], strin
   REMOVE_DUPLICATION: 'Loại bỏ trùng lặp', REGENERATE: 'Tái tạo', SHORTEN: 'Rút gọn', MOVE_REVEAL: 'Dời tiết lộ', REVIEW_FACT: 'Kiểm tra dữ kiện',
 };
 const aiProviderLabel: Record<AiProvider, string> = { deepseek: 'DeepSeek', claude: 'Claude' };
+type ClaudeCliModelId = (typeof AI_MODEL_REGISTRY.claude.models)[number]['id'];
 const manualRegenHelp = 'lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào';
 
 function manualQualitySignature(chapters: readonly ChapterDoc[]): string {
   return JSON.stringify(chapters.map(({ no, title, role, targetWords, paragraphs }) => ({ no, title, role, targetWords, paragraphs })));
 }
 
-export function regenerationStatusLabel(mode: 'automatic' | 'manual', provider: AiProvider): string {
-  return mode === 'automatic' ? `Tự động bằng ${aiProviderLabel[provider]}` : 'Thủ công: tự dán JSON';
+export function regenerationStatusLabel(mode: 'automatic' | 'cli' | 'manual', provider: AiProvider): string {
+  return mode === 'automatic' ? `Tự động bằng ${aiProviderLabel[provider]}` : mode === 'cli' ? 'Claude CLI trên máy này' : 'Thủ công: tự dán JSON';
 }
 
 const qaSameProviderHint = 'Model kiểm tra có thể bỏ sót các lỗi giống model đã viết kịch bản nếu hai bên cùng nhà cung cấp. Hãy đối chiếu số liệu với tài liệu tham khảo.';
@@ -180,7 +182,11 @@ export function ReviewScriptPage() {
   const [regenInstruction, setRegenInstruction] = useState('');
   const [instructionOrigin, setInstructionOrigin] = useState<{ kind: 'user' } | { kind: 'qa'; chapterId: string }>({ kind: 'user' });
   const [regenLevel, setRegenLevel] = useState<'light' | 'medium' | 'rewrite'>('medium');
-  const [regenMode, setRegenMode] = useState<'automatic' | 'manual'>('automatic');
+  const [regenMode, setRegenMode] = useState<'automatic' | 'cli' | 'manual'>('automatic');
+  const [cliModel, setCliModel] = useState<ClaudeCliModelId>(AI_MODEL_REGISTRY.claude.defaultModelId);
+  const [cliJobId, setCliJobId] = useState<string | null>(null);
+  const [cliJobStartedAt, setCliJobStartedAt] = useState<number | null>(null);
+  const [cliJobLastEventAt, setCliJobLastEventAt] = useState<number | null>(null);
   const [manualRegen, setManualRegen] = useState<{ chapterId: string; prompt: string; promptVersion: string; raw: string; error: string | null } | null>(null);
   const [manualRegenBusy, setManualRegenBusy] = useState(false);
   const [generationMode, setGenerationMode] = useState<'automatic' | 'manual'>('automatic');
@@ -204,6 +210,8 @@ export function ReviewScriptPage() {
   const selectAllRef = useRef<HTMLInputElement>(null);
   const progress = useJobProgress(jobId, reviewJobReconnectKey);
   const qaProgress = useJobProgress(qaJobId, reviewJobReconnectKey);
+  const cliProgress = useJobProgress(cliJobId, reviewJobReconnectKey);
+  const cliStatusQuery = useQuery({ queryKey: ['script', 'claude-cli-status'], queryFn: api.getClaudeCliStatus, enabled: Boolean(projectId), staleTime: 15_000, retry: false });
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const historyQuery = useQuery({ queryKey: ['projects', 'chapters', 'history', projectId], queryFn: () => api.getChapterHistory(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
@@ -224,7 +232,9 @@ export function ReviewScriptPage() {
   const activeReviewJobId = jobId ?? qaJobId;
   const activeReviewProgress = jobId ? progress : qaProgress;
   const reviewJobLocked = !reviewJobLocallyUnlocked && isStudioLocked(null, activeReviewJobId, activeReviewProgress);
-  const controlsBusy = reviewJobLocked || hasGenerating || manualBusy || manualRegenBusy || providerBusy || qaBulkRunning;
+  const cliJobLocked = isStudioLocked(null, cliJobId, cliProgress);
+  const controlsBusy = reviewJobLocked || cliJobLocked || hasGenerating || manualBusy || manualRegenBusy || providerBusy || qaBulkRunning;
+  const qaRegenMode = regenMode === 'manual' ? 'manual' : 'automatic';
   const qaBusy = !reviewJobLocallyUnlocked && isStudioLocked(null, qaJobId, qaProgress);
   const qaControlsBusy = qaBusy || qaManualBusy || qaBulkRunning;
   const qaReviewer = qaReviewerDisplay(projectQuery.data?.aiProvider ?? 'deepseek', qaResult);
@@ -234,11 +244,11 @@ export function ReviewScriptPage() {
       chapters,
       option,
       issueStates: qaIssueStates,
-      regenMode,
+      regenMode: qaRegenMode,
       instructionForIssue: (issue) => qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]),
     });
     return { high: plan('high'), 'high-medium': plan('high-medium'), all: plan('all') };
-  }, [chapters, qaIssueStates, qaResult, regenMode]);
+  }, [chapters, qaIssueStates, qaResult, qaRegenMode]);
   const bulkApplyDisabled = !qaResult || controlsBusy || qaBusy || qaManualBusy || qaPatchBusy || qaBulkRunning
     || Boolean(editing || manualRegen || qaDialog) || Object.values(qaBulkPlans).every((plan) => plan.actionableCount === 0);
   const activeQaIssues = useMemo(() => qaResult ? sortQaIssues(qaResult.issues.filter((issue) => qaIssueStates[qaIssueKey(issue)] !== 'dismissed')) : [], [qaResult, qaIssueStates]);
@@ -265,6 +275,9 @@ export function ReviewScriptPage() {
     setFinalizeError(null);
     setJobId(null);
     setQaJobId(null);
+    setCliJobId(null);
+    setCliJobStartedAt(null);
+    setCliJobLastEventAt(null);
     setReviewJobTask(null);
     setReviewJobStartedAt(null);
     setReviewJobLastEventAt(null);
@@ -369,10 +382,24 @@ export function ReviewScriptPage() {
       toast(qaProgress.error ?? 'Không thể kiểm tra QA.');
     }
   }, [qaProgress?.status, qaProgress?.result]);
+
+  useEffect(() => {
+    if (cliProgress?.status === 'done') {
+      void refresh();
+      toast('Đã tái tạo xong bằng Claude CLI.');
+    } else if (cliProgress?.status === 'failed') {
+      void refresh();
+      toast(cliProgress.error ?? 'Không thể tái tạo bằng Claude CLI.');
+    } else if (cliProgress?.status === 'cancelled') {
+      void refresh();
+      toast('Đã huỷ tác vụ Claude CLI.');
+    }
+  }, [cliProgress?.status]);
   useEffect(() => {
     if (progress) setReviewJobLastEventAt(Date.now());
     if (qaProgress) setReviewJobLastEventAt(Date.now());
-  }, [progress, qaProgress]);
+    if (cliProgress) setCliJobLastEventAt(Date.now());
+  }, [progress, qaProgress, cliProgress]);
 
   useEffect(() => {
     if (!manualRegen) return;
@@ -504,7 +531,7 @@ export function ReviewScriptPage() {
       chapterId: chapter.id,
       issue,
       baseline: { ...chapter, paragraphs: [...chapter.paragraphs] },
-      mode: regenMode,
+      mode: qaRegenMode,
       initialInstruction: issue ? qaIssueInstruction(issue, qaTypeLabel[issue.type], qaActionLabel[issue.suggestedAction]) : '',
       initialLevel: issue ? qaLevelForAction(issue.suggestedAction) : 'medium',
       viewOnly,
@@ -905,11 +932,53 @@ export function ReviewScriptPage() {
     if (regenControllerRef.current) return;
     const lifecycle = lifecycleRef.current;
     const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));
+    if (regenMode === 'cli') {
+      const instruction = chapterIds.length === 1
+        ? instructionForChapter(instructionOrigin, regenInstruction, chapterIds[0]!)
+        : regenInstruction;
+      await enqueueClaudeCli(chapterIds, instruction);
+      return;
+    }
     await runRegenerationQueue(chapterIds, async (chapterId) => {
       if (lifecycleRef.current !== lifecycle) return true;
       const chapter = chapterById.get(chapterId);
       return chapter ? (await regenerate(chapter, instructionForChapter(instructionOrigin, regenInstruction, chapterId))) === 'aborted' : false;
     });
+  }
+
+  async function enqueueClaudeCli(chapterIds: readonly string[], instruction: string): Promise<void> {
+    const status = cliStatusQuery.data;
+    if (!status?.available) {
+      toast(status?.reason ?? 'Claude Code CLI chưa sẵn sàng trên máy này.');
+      return;
+    }
+    try {
+      const queued = await api.regenerateWithClaudeCli(projectId, {
+        chapterIds: [...chapterIds], instruction, level: regenLevel, model: cliModel,
+      });
+      const now = Date.now();
+      setCliJobStartedAt(now);
+      setCliJobLastEventAt(now);
+      setCliJobId(queued.jobId);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể xếp hàng tái tạo bằng Claude CLI.');
+    }
+  }
+
+  async function cancelClaudeCliJob(): Promise<void> {
+    if (!cliJobId) return;
+    try {
+      await cancelJob(cliJobId);
+      toast('Đã yêu cầu huỷ tác vụ Claude CLI.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể huỷ tác vụ Claude CLI.');
+    }
+  }
+
+  function closeClaudeCliJob(): void {
+    setCliJobId(null);
+    setCliJobStartedAt(null);
+    setCliJobLastEventAt(null);
   }
 
   async function regenerateSelected() { await regenerateChapterIds(selectedRegenIds); }
@@ -1109,7 +1178,7 @@ export function ReviewScriptPage() {
               <div className={styles.actions}>
                 {resumeChapterNo !== null && <Button variant="amber" disabled={controlsBusy} onClick={() => void resumeScriptGeneration()}>Viết tiếp từ chương {resumeChapterNo}</Button>}
                 <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
-                <Button variant="red" title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
+                <Button variant="red" title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || controlsBusy || (regenMode === 'cli' && !cliStatusQuery.data?.available) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>
             </div>
             <div className={styles.regenToolbar}>
@@ -1121,10 +1190,15 @@ export function ReviewScriptPage() {
                   <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
                 </select>
               </label>
-              <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy || regenMode === 'manual'} mode={regenMode === 'manual' ? 'manual' : 'automatic'} onChange={changeModel} />
+              {regenMode === 'cli' ? <label className={styles.modelSelect} htmlFor="claude-cli-model">Model Claude CLI
+                <select className={styles.input} id="claude-cli-model" value={cliModel} disabled={controlsBusy} onChange={(event) => setCliModel(event.target.value as ClaudeCliModelId)}>
+                  {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+              </label> : <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy || regenMode === 'manual'} mode={regenMode === 'manual' ? 'manual' : 'automatic'} onChange={changeModel} />}
               <span className={styles.toolbarDivider} aria-hidden="true" />
               <fieldset className={`${styles.segmented} ${styles.regenMode}`} aria-label="Chế độ tái tạo" disabled={controlsBusy}>
-                <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} /><span>Tự động</span></label>
+                <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} /><span>Tự động (API)</span></label>
+                <label title={cliStatusQuery.data?.available ? undefined : cliStatusQuery.data?.reason ?? 'Đang kiểm tra Claude CLI trên máy này.'}><input type="radio" name="regeneration-mode" value="cli" checked={regenMode === 'cli'} disabled={!cliStatusQuery.data?.available} onChange={() => setRegenMode('cli')} /><span>Claude CLI (máy này)</span></label>
                 <label><input type="radio" name="regeneration-mode" value="manual" checked={regenMode === 'manual'} onChange={() => setRegenMode('manual')} /><span>Thủ công (JSON)</span></label>
               </fieldset>
               <div className={styles.regenStatus} title={regenMode === 'manual' ? manualRegenHelp : undefined}>
@@ -1133,6 +1207,11 @@ export function ReviewScriptPage() {
               </div>
             </div>
             {regenMode === 'manual' && <p className={styles.regenManualHelp}>{manualRegenHelp}</p>}
+            {(regenMode === 'cli' || cliStatusQuery.isLoading || cliStatusQuery.isError || cliStatusQuery.data?.available === false) && <p className={styles.cliStatus} role="status" aria-live="polite">
+              {cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliStatusQuery.data?.available
+                ? `Claude Code ${cliStatusQuery.data.version ?? 'sẵn sàng'} · ${cliStatusQuery.data.authPathLikely === 'subscription' ? 'phiên đăng nhập CLI' : 'API key'}`
+                : cliStatusQuery.data?.reason ?? 'Không thể kiểm tra Claude Code CLI trên máy này.'}
+            </p>}
             {finalizeError && <div className={styles.errorAlert} role="alert">{finalizeError}</div>}
             {qaResult && <details className={styles.qaResultsPanel} open={qaResultsOpen} onToggle={(event) => setQaResultsOpen(event.currentTarget.open)}>
               <summary>
@@ -1148,7 +1227,7 @@ export function ReviewScriptPage() {
                 <QaApplyAllDialog
                   plans={qaBulkPlans}
                   providerLabel={aiProviderLabel[projectQuery.data?.aiProvider ?? 'deepseek']}
-                  regenMode={regenMode}
+                  regenMode={qaRegenMode}
                   qaStale={qaStale}
                   historyAtLimit={history.length >= 10}
                   disabled={bulkApplyDisabled}
@@ -1211,7 +1290,7 @@ export function ReviewScriptPage() {
                       {isCurrentRegen ? <Button size="sm" variant="red" onClick={() => regen.controller.abort()}>Hủy</Button> : <>
                         <Button size="icon" active={chapter.status === 'needs-fix'} aria-label={`Đánh dấu cần sửa chương ${chapter.no}`} aria-pressed={chapter.status === 'needs-fix'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleFlagStatus(chapter.status) })}><Icon name="flag" /></Button>
                         <Button disabled={busy} onClick={() => startEdit(chapter)}><Icon name="edit" />Sửa</Button>
-                        {regenMode === 'manual' ? <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void loadManualRegenPrompt(chapter)}>{manualRegenBusy ? 'Đang lấy prompt…' : <><Icon name="refresh" />Lấy prompt tái tạo</>}</Button> : <Button variant="indigoline" disabled={busy || manualRegenBusy} onClick={() => void regenerate(chapter)}><Icon name="refresh" />Tái tạo</Button>}
+                        {regenMode === 'manual' ? <Button variant="indigoline" disabled={busy || controlsBusy || manualRegenBusy} onClick={() => void loadManualRegenPrompt(chapter)}>{manualRegenBusy ? 'Đang lấy prompt…' : <><Icon name="refresh" />Lấy prompt tái tạo</>}</Button> : regenMode === 'cli' ? <Button variant="indigoline" disabled={busy || controlsBusy || !cliStatusQuery.data?.available} onClick={() => void enqueueClaudeCli([chapter.id], instructionForChapter(instructionOrigin, regenInstruction, chapter.id))}><Icon name="refresh" />Tái tạo bằng Claude CLI</Button> : <Button variant="indigoline" disabled={busy || controlsBusy} onClick={() => void regenerate(chapter)}><Icon name="refresh" />Tái tạo</Button>}
                         <Button variant={chapter.status === 'approved' ? 'green' : 'ghost'} aria-pressed={chapter.status === 'approved'} disabled={busy} onClick={() => void patch(chapter.id, { status: toggleApproveStatus(chapter.status) })}><Icon name="check" />{chapter.status === 'approved' ? 'Đã duyệt' : 'Duyệt'}</Button>
                       </>}
                     </div>
@@ -1250,7 +1329,7 @@ export function ReviewScriptPage() {
                 <legend>Mức thay đổi</legend>
                 {([['light', 'Nhẹ'], ['medium', 'Vừa'], ['rewrite', 'Viết lại']] as const).map(([value, label]) => <label key={value}><input type="radio" name="regen-level" value={value} checked={regenLevel === value} onChange={() => setRegenLevel(value)} /><span>{label}</span></label>)}
               </fieldset>
-               <Button variant="indigo" size="lg" className={styles.blockButton} title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />Tái tạo chương đã chọn</Button>
+               <Button variant="indigo" size="lg" className={styles.blockButton} title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || controlsBusy || (regenMode === 'cli' && !cliStatusQuery.data?.available) || selectedRegenIds.length === 0} onClick={() => void regenerateSelected()}><Icon name="refresh" />Tái tạo chương đã chọn</Button>
                {selectedRegenIds.length === 0 && <p className={styles.muted}>Chọn ít nhất một chương để tái tạo.</p>}
                {regenMode === 'manual' && <p className={styles.muted}>Chế độ thủ công: dùng “Lấy prompt tái tạo” trên từng chương.</p>}
             </section>
@@ -1292,7 +1371,7 @@ export function ReviewScriptPage() {
         </div>
       )}
 
-      <footer className={styles.footer}><Button variant="amber" disabled={!allApproved || hasGenerating || reviewJobLocked} onClick={() => void finalize()}>Chốt & chia cảnh</Button></footer>
+      <footer className={styles.footer}><Button variant="amber" disabled={!allApproved || hasGenerating || reviewJobLocked || cliJobLocked} onClick={() => void finalize()}>Chốt & chia cảnh</Button></footer>
       {qaDialog && qaDialogChapter && <QaFixDialog
         projectId={projectId}
         issue={qaDialog.issue}
@@ -1344,6 +1423,17 @@ export function ReviewScriptPage() {
         lastEventAt={qaBulkLastEventAt}
         onCancel={cancelQaBulkApply}
         onClose={() => undefined}
+      />}
+      {cliJobId && cliJobStartedAt !== null && <BlockingProgressDialog
+        visible
+        task={{ kind: 'claude-cli-regeneration', detail: cliProgress?.logs.at(-1), immediate: true }}
+        jobId={cliJobId}
+        progress={cliProgress}
+        uploadProgress={null}
+        startedAt={cliJobStartedAt}
+        lastEventAt={cliJobLastEventAt}
+        onCancel={() => void cancelClaudeCliJob()}
+        onClose={closeClaudeCliJob}
       />}
     </div>
   );

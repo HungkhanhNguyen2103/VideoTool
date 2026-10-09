@@ -7,10 +7,14 @@ export type JobProgressEvent = {
   result: unknown;
 };
 
-export type JobProgressState = JobProgressEvent & { logs: string[] };
+export type JobProgressState = JobProgressEvent & { logs: string[]; lastEventAt: number };
 
-export function applyJobEvent(previous: JobProgressState | null, event: JobProgressEvent): JobProgressState {
-  return { ...event, logs: previous?.logs ?? [] };
+export function applyJobEvent(previous: JobProgressState | null, event: JobProgressEvent, receivedAt = Date.now()): JobProgressState {
+  return { ...event, logs: previous?.logs ?? [], lastEventAt: receivedAt };
+}
+
+export function touchJobHeartbeat(previous: JobProgressState | null, receivedAt = Date.now()): JobProgressState | null {
+  return previous ? { ...previous, lastEventAt: receivedAt } : null;
 }
 
 export function useJobProgress(jobId: string | null, reconnectKey = 0): JobProgressState | null {
@@ -39,14 +43,19 @@ export function useJobProgress(jobId: string | null, reconnectKey = 0): JobProgr
     const onLog = (event: Event) => {
       try {
         const line = JSON.parse((event as MessageEvent<string>).data) as string;
-        setState((previous) => previous ? { ...previous, logs: [...previous.logs, line] } : { status: 'queued', progress: 0, error: null, result: null, logs: [line] });
+        setState((previous) => previous
+          ? { ...previous, logs: [...previous.logs, line], lastEventAt: Date.now() }
+          : { status: 'queued', progress: 0, error: null, result: null, logs: [line], lastEventAt: Date.now() });
       } catch {
         // Ignore malformed log events.
       }
     };
+    const onHeartbeat = () => setState((previous) => touchJobHeartbeat(previous));
     source.addEventListener('log', onLog);
+    source.addEventListener('heartbeat', onHeartbeat);
     return () => {
       source.removeEventListener('log', onLog);
+      source.removeEventListener('heartbeat', onHeartbeat);
       source.close();
     };
   }, [jobId, reconnectKey]);

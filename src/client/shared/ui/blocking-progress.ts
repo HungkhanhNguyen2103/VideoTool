@@ -17,6 +17,7 @@ export type BlockingTaskKind =
   | 'import-zip'
   | 'quick'
   | 'script-generation'
+  | 'claude-cli-regeneration'
   | 'final-qa'
   | 'name-keywords'
   | 'recompute-durations'
@@ -69,6 +70,7 @@ const TASK_TITLES: Record<BlockingTaskKind, string> = {
   'import-zip': 'Đang nhập ZIP',
   quick: 'Đang cập nhật',
   'script-generation': 'Đang tạo kịch bản',
+  'claude-cli-regeneration': 'Đang tái tạo bằng Claude CLI',
   'final-qa': 'Đang kiểm tra QA',
   'name-keywords': 'Đang phân tích tên popup',
   'recompute-durations': 'Đang tính lại thời lượng scene',
