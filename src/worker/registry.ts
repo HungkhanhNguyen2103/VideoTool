@@ -1,5 +1,5 @@
 import type { JobHandler } from '../server/modules/job';
-import { handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handleSplitScenes } from '../server/modules/script';
+import { handleCliRegeneration, handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handleSplitScenes } from '../server/modules/script';
 import { getProject } from '../server/modules/project';
 import { generateSeoPackage } from '../server/modules/seo';
 import { SEO_SECTIONS, type SeoSection } from '../contracts/seo';
@@ -82,6 +82,7 @@ export const jobHandlers: Record<string, JobHandler> = {
   'generate-visual-prompts': handleGenerateVisualPrompts,
   'split-scenes': handleSplitScenes,
   'final-qa': handleFinalQa,
+  'regenerate-chapters-claude-cli': handleCliRegeneration,
   'generate-voiceover': handleGenerateVoiceover,
   'align-word-timings': handleAlignWordTimings,
   'generate-all-sfx': handleGenerateAllSfx,

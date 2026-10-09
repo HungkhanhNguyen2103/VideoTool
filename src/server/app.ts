@@ -6,7 +6,7 @@ import { createProjectRouter } from './modules/project';
 import { jobRouter } from './modules/job';
 import { enqueueJob, getActiveJobByType } from './modules/job';
 import { configureFileStore, configureVisualStyleSamples, createFileStoreService, fileStoreRouter, visualStyleSamplesRouter } from './modules/file-store';
-import { createScriptRouter } from './modules/script';
+import { createScriptCliStatusRouter, createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
 import { configureVideoModule, createVideoRouter } from './modules/video';
 import { configureSeoModule, createSeoRouter } from './modules/seo';
@@ -46,6 +46,7 @@ export function createApp(options: AppOptions): Express {
     beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId, project.logoFileId, project.seo.thumbnail.fileId]),
   }));
   app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
+  app.use('/api/script', createScriptCliStatusRouter());
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);
   app.use('/api/project', createVideoRouter({ enqueueJob }));

@@ -58,6 +58,10 @@ describe('worker poll loop', () => {
 });
 
 describe('script job registration', () => {
+  it('registers the Claude CLI chapter-regeneration handler explicitly', () => {
+    expect(jobHandlers['regenerate-chapters-claude-cli']).toBeDefined();
+  });
+
   it('registers generate-script and maps payload/context to the service', async () => {
     mocks.generateScript.mockResolvedValue(undefined);
     const appendLog = vi.fn();

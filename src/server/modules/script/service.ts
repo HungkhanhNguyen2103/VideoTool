@@ -19,6 +19,7 @@ import { buildChapterExpansionPrompt, buildOutlinePrompt, buildRegenerationPromp
 import { parseChapterExpansion, parseRegeneratedParagraphs, parseScriptOutline, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { countNarrationWords } from '../../../contracts/script';
 import { getOutlineOutputBudgets, getShortReferenceWarning, recommendScriptChapterCount, validateScriptOutline } from './ai/outline-validation';
+import { summarizeManualScriptQuality } from './quality';
 
 export function snapshotOf(chapters: ChapterDoc[], historyBatchId?: string): ChapterSnapshot {
   return {
@@ -500,6 +501,10 @@ export function buildRegenerationPromptForChapter(
   return { prompt, chapter, nextChapter };
 }
 
+export function formatRegenerationPrompt(prompt: BuiltPrompt): string {
+  return `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`;
+}
+
 export async function applyRegeneratedChapter(
   projectId: string,
   chapter: ChapterDoc,
@@ -527,6 +532,26 @@ export async function applyRegeneratedChapter(
   }, snapshot);
   if (nextChapter) await patchProjectChapter(projectId, nextChapter.id, { reviewStatus: 'upstream-changed' }, null);
   return result.chapters.find((item) => item.id === chapter.id) ?? updated;
+}
+
+export async function importRegeneratedChapter(
+  projectId: string,
+  chapterId: string,
+  raw: string,
+  historyBatchId?: string,
+): Promise<{ chapter: ChapterDoc; quality: ReturnType<typeof summarizeManualScriptQuality> }> {
+  const regenerated = parseRegeneratedParagraphs(raw);
+  const project = await getProject(projectId);
+  const snapshot = snapshotOf(project.chapters, historyBatchId);
+  const { chapter, nextChapter } = buildRegenerationPromptForChapter(project, chapterId, { instruction: '', level: 'medium' });
+  const updatedChapter = await applyRegeneratedChapter(project.id, chapter, nextChapter, regenerated, snapshot);
+  const updatedProject = await getProject(projectId);
+  const quality = summarizeManualScriptQuality({
+    targetDurationSec: updatedProject.targetDurationSec,
+    scriptPresetId: updatedProject.scriptPresetId,
+    chapters: updatedProject.chapters,
+  });
+  return { chapter: updatedChapter, quality };
 }
 
 export async function regenerateChapter(

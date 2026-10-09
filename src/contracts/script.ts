@@ -1,7 +1,38 @@
 import { z } from 'zod';
+import { isAiModelForProvider } from './ai-models';
 
 export const CHAPTER_STATUSES = ['pending', 'generating', 'approved', 'needs-fix'] as const;
 export type ChapterStatus = (typeof CHAPTER_STATUSES)[number];
+
+export const RegenerationLevelSchema = z.enum(['light', 'medium', 'rewrite']);
+export const ManualRegeneratePromptSchema = z.object({
+  instruction: z.string(),
+  level: RegenerationLevelSchema,
+}).strict();
+export const RegenerateChapterRequestSchema = ManualRegeneratePromptSchema.extend({
+  historyBatchId: z.string().uuid().optional(),
+}).strict();
+
+const ClaudeModelIdSchema = z.string().refine((model) => isAiModelForProvider('claude', model), 'Choose a model from the Claude registry.');
+export const CliRegenerateRequestSchema = ManualRegeneratePromptSchema.extend({
+  chapterIds: z.array(z.string().min(1)).min(1).max(20).superRefine((ids, context) => {
+    const seen = new Set<string>();
+    ids.forEach((id, index) => {
+      if (seen.has(id)) context.addIssue({ code: 'custom', path: [index], message: 'Chapter IDs must be unique.' });
+      seen.add(id);
+    });
+  }),
+  model: ClaudeModelIdSchema.optional(),
+}).strict();
+export type CliRegenerateRequest = z.infer<typeof CliRegenerateRequestSchema>;
+
+export const ClaudeCliStatusSchema = z.object({
+  available: z.boolean(),
+  version: z.string().optional(),
+  reason: z.string().optional(),
+  authPathLikely: z.enum(['api-key', 'subscription']),
+}).strict();
+export type ClaudeCliStatus = z.infer<typeof ClaudeCliStatusSchema>;
 
 export const NARRATIVE_ROLES = ['hook', 'context', 'rising', 'climax', 'resolution'] as const;
 export type NarrativeRole = (typeof NARRATIVE_ROLES)[number];

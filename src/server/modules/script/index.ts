@@ -14,4 +14,7 @@ export { runFinalQa } from './qa';
 export type { FinalQaJobContext } from './qa';
 export { handleFinalQa } from './qa-handler';
 export type { FinalQaJobPayload } from './qa-handler';
+export { handleCliRegeneration } from './cli-regenerate-handler';
+export type { CliRegenerationJobPayload, CliRegenerationJobResult, ScriptCliJobContext } from './cli-regenerate-handler';
+export { createScriptCliStatusRouter } from './routes';
 export type { QAIssue, QAResult } from './ai/qa-schema';

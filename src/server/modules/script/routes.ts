@@ -1,16 +1,21 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { VISUAL_STYLE_IDS } from '../../../contracts/project';
+import { CliRegenerateRequestSchema, ManualRegeneratePromptSchema, RegenerateChapterRequestSchema } from '../../../contracts/script';
 import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
+import { loadConfig } from '../../config';
+import { getClaudeCliStatus as readClaudeCliStatus, type ClaudeCliStatus } from './cli-runner';
 import { buildManualScriptPrompt, buildQaPrompt } from './ai/build-prompt';
-import { parseManualScriptDocument, parseQaResult, parseRegeneratedParagraphs, translateManualParseError, validateScriptOutlineChapterCount } from './ai/parse-output';
-import { applyRegeneratedChapter, buildRegenerationPromptForChapter, finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
+import { parseManualScriptDocument, parseQaResult, translateManualParseError, validateScriptOutlineChapterCount } from './ai/parse-output';
+import { buildRegenerationPromptForChapter, finalizeScript, formatRegenerationPrompt, getChapterHistory, importRegeneratedChapter, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
 import { getManualOutlineWarnings, recommendScriptChapterCount } from './ai/outline-validation';
 import { summarizeManualScriptQuality } from './quality';
 
-type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
+type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<{ id: string }>;
 type GetActiveScriptJob = (projectId: string, type: string) => Promise<{ id: string } | null>;
+type ScriptCliStatusReader = () => Promise<ClaudeCliStatus>;
 
 const PatchChapterSchema = z.object({
   status: z.enum(['pending', 'approved', 'needs-fix']).optional(),
@@ -19,18 +24,22 @@ const PatchChapterSchema = z.object({
   historyBatchId: z.string().uuid().optional(),
 }).refine((value) => value.status !== undefined || value.paragraphs !== undefined || value.title !== undefined, 'At least one chapter field is required.');
 
-const RegenerateChapterSchema = z.object({
-  instruction: z.string(),
-  level: z.enum(['light', 'medium', 'rewrite']),
-  historyBatchId: z.string().uuid().optional(),
-});
-const ManualRegeneratePromptSchema = RegenerateChapterSchema.strict();
-
 const RestoreSchema = z.object({ index: z.number().int().nonnegative(), expectedVersion: z.number().int().nonnegative().optional() });
 const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']), aiModel: z.string().optional() }).strict();
 const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
 const GenerateScriptSchema = z.object({ resume: z.boolean().optional() }).strict();
+
+async function configuredClaudeCliStatus(): Promise<ClaudeCliStatus> {
+  const config = loadConfig();
+  return readClaudeCliStatus({ executablePath: config.CLAUDE_CLI_PATH, env: process.env });
+}
+
+export function createScriptCliStatusRouter(readStatus: ScriptCliStatusReader = configuredClaudeCliStatus): Router {
+  const router = Router();
+  router.get('/cli-status', async (_req, res) => { res.json(await readStatus()); });
+  return router;
+}
 
 function writeEvent(res: { write: (chunk: string) => boolean }, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -46,7 +55,11 @@ function assertVisualPromptSourceReady(project: Awaited<ReturnType<typeof getPro
   }
 }
 
-export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getActiveJob?: GetActiveScriptJob }): Router {
+export function createScriptRouter(options: {
+  enqueueJob: EnqueueScriptJob;
+  getActiveJob?: GetActiveScriptJob;
+  getClaudeCliStatus?: ScriptCliStatusReader;
+}): Router {
   const router = Router();
 
   router.post('/:id/generate-script', async (req, res) => {
@@ -157,7 +170,7 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
   });
 
   router.post('/:id/chapters/:chapterId/regenerate', async (req, res) => {
-    const body = RegenerateChapterSchema.parse(req.body);
+    const body = RegenerateChapterRequestSchema.parse(req.body);
     const controller = new AbortController();
     let closed = false;
     req.on('close', () => {
@@ -192,26 +205,54 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
     const project = await getProject(req.params.id);
     const { prompt } = buildRegenerationPromptForChapter(project, req.params.chapterId, body);
     res.json({
-      prompt: `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`,
+      prompt: formatRegenerationPrompt(prompt),
       promptVersion: prompt.promptVersion,
     });
   });
 
+  router.post('/:id/chapters/regenerate/cli', async (req, res) => {
+    const body = CliRegenerateRequestSchema.parse(req.body);
+    const project = await getProject(req.params.id);
+    const status = await (options.getClaudeCliStatus ?? configuredClaudeCliStatus)();
+    if (!status.available) {
+      throw new AppError(status.reason ?? 'Claude Code CLI hiện chưa sẵn sàng.', 503, 'CLAUDE_CLI_UNAVAILABLE');
+    }
+    const selected = new Set(body.chapterIds);
+    const availableIds = new Set(project.chapters.map((chapter) => chapter.id));
+    const unknownId = body.chapterIds.find((chapterId) => !availableIds.has(chapterId));
+    if (unknownId) throw new AppError('Có chương được chọn không còn trong dự án.', 422, 'CHAPTER_NOT_FOUND');
+    const orderedChapterIds = project.chapters
+      .filter((chapter) => selected.has(chapter.id))
+      .sort((left, right) => left.no - right.no)
+      .map((chapter) => chapter.id);
+    if (project.chapters.some((chapter) => selected.has(chapter.id) && chapter.status === 'generating')) {
+      throw new AppError('Một chương được chọn đang được tái tạo.', 409, 'CHAPTER_BUSY');
+    }
+    const job = await options.enqueueJob({
+      type: 'regenerate-chapters-claude-cli',
+      projectId: project.id,
+      maxAttempts: 1,
+      payload: {
+        projectId: project.id,
+        chapterIds: orderedChapterIds,
+        instruction: body.instruction,
+        level: body.level,
+        ...(body.model ? { model: body.model } : {}),
+        historyBatchId: randomUUID(),
+      },
+    });
+    res.status(201).json({ jobId: job.id });
+  });
+
   router.post('/:id/chapters/:chapterId/regenerate/manual-import', async (req, res) => {
     const body = ManualImportSchema.parse(req.body);
-    let regenerated: ReturnType<typeof parseRegeneratedParagraphs>;
+    let imported: Awaited<ReturnType<typeof importRegeneratedChapter>>;
     try {
-      regenerated = parseRegeneratedParagraphs(body.raw);
+      imported = await importRegeneratedChapter(req.params.id, req.params.chapterId, body.raw);
     } catch (error) {
       translateManualParseError(error, 'chapter');
     }
-    const project = await getProject(req.params.id);
-    const snapshot = snapshotOf(project.chapters);
-    const { chapter, nextChapter } = buildRegenerationPromptForChapter(project, req.params.chapterId, { instruction: '', level: 'medium' });
-    const updatedChapter = await applyRegeneratedChapter(project.id, chapter, nextChapter, regenerated, snapshot);
-    const updatedProject = await getProject(project.id);
-    const quality = summarizeManualScriptQuality({ targetDurationSec: updatedProject.targetDurationSec, scriptPresetId: updatedProject.scriptPresetId, chapters: updatedProject.chapters });
-    res.json({ chapter: updatedChapter, quality });
+    res.json(imported);
   });
 
   router.get('/:id/chapters/history', async (req, res) => {
