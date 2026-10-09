@@ -25,6 +25,18 @@ describe('reference imports', () => {
     });
   });
 
+  it('resets a model when an imported seed changes provider or names an unavailable model', () => {
+    const current = {
+      title: 'Current', language: 'vi' as const, brief: 'Current brief', referencesText: '', scriptPresetId: 'documentary' as const,
+      visualStylePresetId: 'cinematic' as const, targetDurationSec: 180, chapterCount: null, voiceId: null,
+      aiProvider: 'deepseek' as const, aiModel: 'deepseek-flash',
+      renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
+    };
+
+    expect(mergeProjectPrefill(current, { aiProvider: 'claude' })).toMatchObject({ aiProvider: 'claude', aiModel: 'claude-opus-4-5' });
+    expect(mergeProjectPrefill(current, { aiModel: 'deepseek-retired' })).toMatchObject({ aiProvider: 'deepseek', aiModel: 'deepseek-chat' });
+  });
+
   it('posts ZIP seeds as multipart and parses the response', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ title: 'Imported' }), { status: 200, headers: { 'content-type': 'application/json' } }));
     await expect(importProjectSeed(new File(['zip'], 'seed.zip', { type: 'application/zip' }))).resolves.toEqual({ title: 'Imported' });

@@ -15,7 +15,8 @@
     "lint": "eslint src",
     "test": "vitest run",
     "verify:keyword-font": "tsx scripts/verify-remotion-keyword-font.ts",
-    "verify:remotion-logo": "tsx scripts/verify-remotion-logo.ts"
+    "verify:remotion-logo": "tsx scripts/verify-remotion-logo.ts",
+    "analyze:script-quality": "tsx scripts/analyze-script-quality.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

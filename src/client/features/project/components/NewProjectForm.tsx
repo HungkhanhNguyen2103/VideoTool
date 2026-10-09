@@ -12,6 +12,7 @@ import {
   CreateProjectRequestSchema,
 } from '../../../../contracts/project';
 import { Button } from '../../../shared/ui/Button';
+import { AiModelSelect, aiModelForProviderChange } from '../../../shared/ai/AiModelSelect';
 import { Icon } from '../../../shared/ui/Icon';
 import { toast } from '../../../shared/ui/toast-store';
 import { formatDuration } from '../format';
@@ -32,6 +33,7 @@ const DEFAULT_VALUES: CreateProjectRequest = {
   chapterCount: null,
   voiceId: null,
   aiProvider: 'deepseek',
+  aiModel: 'deepseek-chat',
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 },
 };
 
@@ -78,6 +80,8 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   const brief = watch('brief');
   const targetDurationSec = watch('targetDurationSec');
   const visualStylePresetId = watch('visualStylePresetId') ?? 'cinematic';
+  const aiProvider = watch('aiProvider') ?? 'deepseek';
+  const aiModel = watch('aiModel');
   const aspect = watch('renderSettings.aspect');
   const width = watch('renderSettings.width');
   const height = watch('renderSettings.height');
@@ -256,7 +260,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
 
         <fieldset className={styles.section}>
           <legend className={`label ${styles.legend}`}>Cấu hình kịch bản</legend>
-          <div className={`${styles.grid} ${styles.grid3}`}>
+          <div className={`${styles.grid} ${styles.grid4}`}>
             <div className={styles.field}>
               <label htmlFor="preset">Preset kịch bản</label>
               <select className={styles.input} id="preset" {...register('scriptPresetId')}>
@@ -268,10 +272,16 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
             </div>
             <div className={styles.field}>
               <label htmlFor="ai-provider">Nhà cung cấp AI</label>
-              <select className={styles.input} id="ai-provider" {...register('aiProvider')}>
+              <select className={styles.input} id="ai-provider" {...register('aiProvider')} value={aiProvider} onChange={(event) => {
+                const nextProvider = event.target.value as 'deepseek' | 'claude';
+                setValue('aiProvider', nextProvider, { shouldDirty: true, shouldValidate: true });
+                setValue('aiModel', aiModelForProviderChange(nextProvider, aiProvider, aiModel), { shouldDirty: true, shouldValidate: true });
+              }}>
                 {AI_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider === 'deepseek' ? 'DeepSeek' : 'Claude'}</option>)}
               </select>
             </div>
+            <AiModelSelect className={`${styles.field} ${styles.modelField}`} selectClassName={styles.input} provider={aiProvider} value={aiModel} onChange={(model) => setValue('aiModel', model, { shouldDirty: true, shouldValidate: true })} />
+            <input type="hidden" {...register('aiModel')} value={aiModel ?? ''} />
             <div className={styles.field}>
               <label htmlFor="visual-style">Phong cách hình ảnh</label>
               <div className={styles.stylePicker}>

@@ -11,6 +11,7 @@ const ENDPOINT_BY_PROVIDER: Record<AiProviderName, string> = {
 export class AiRequestError extends AppError {
   constructor(
     readonly provider: AiProviderName,
+    readonly model: string,
     status: number,
     message: string,
   ) {
@@ -42,15 +43,17 @@ function isNetworkFailure(error: unknown): boolean {
   return [code, name, message].some((value) => typeof value === 'string' && /timeout|timed out|ETIMEDOUT|ECONN|ENOTFOUND|EAI_AGAIN|network|fetch failed|socket hang up/i.test(value));
 }
 
-export function normalizeAiError(provider: AiProviderName, error: unknown): AiRequestError {
+export function normalizeAiError(provider: AiProviderName, model: string, error: unknown): AiRequestError {
   if (error instanceof AiRequestError) return error;
   const status = statusOf(error);
   const suffix = status === undefined ? '' : ` (HTTP ${status})`;
-  if (status === 401) return new AiRequestError(provider, status, `${provider} API key invalid${suffix}.`);
-  if (status === 402) return new AiRequestError(provider, status, `${provider} balance insufficient${suffix}.`);
-  if (status === 429) return new AiRequestError(provider, status, `${provider} API rate limited${suffix}.`);
-  if (isNetworkFailure(error)) return new AiRequestError(provider, 502, `Cannot reach ${ENDPOINT_BY_PROVIDER[provider]} (timeout/network).`);
-  return new AiRequestError(provider, status ?? 502, `${provider} API request failed${suffix}.`);
+  const modelText = ` for model ${model}`;
+  if (status === 401) return new AiRequestError(provider, model, status, `${provider} API key invalid${modelText}${suffix}.`);
+  if (status === 402) return new AiRequestError(provider, model, status, `${provider} balance insufficient${modelText}${suffix}.`);
+  if (status === 429) return new AiRequestError(provider, model, status, `${provider} API rate limited${modelText}${suffix}.`);
+  if (status === 404) return new AiRequestError(provider, model, status, `Model ${model} không còn khả dụng; hãy chọn model khác${suffix}.`);
+  if (isNetworkFailure(error)) return new AiRequestError(provider, model, 502, `Cannot reach ${ENDPOINT_BY_PROVIDER[provider]} (timeout/network)${modelText}.`);
+  return new AiRequestError(provider, model, status ?? 502, `${provider} API request failed${modelText}${suffix}.`);
 }
 
 export function aiRequestTimeoutMs(): number {

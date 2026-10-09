@@ -7,6 +7,9 @@
 .saveState { min-height: 30px; color: var(--green); font-size: .8rem; }
 .toolbar { flex-wrap: wrap; padding: .75rem 1rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .7rem; }
 .field { display: inline-flex; align-items: center; gap: .45rem; color: var(--text-2); font-size: .8rem; font-weight: 700; }
+.modelSelect { display: grid; gap: .15rem; flex: 1 1 15rem; min-width: min(15rem, 100%); color: var(--text-2); font-size: .75rem; font-weight: 700; }
+.modelSelect select { width: 100%; min-width: 0; }
+.modelSelect small { color: var(--text-3); font-size: .65rem; font-weight: 400; white-space: nowrap; }
 .input { min-height: 36px; max-width: 100%; padding: 0 .65rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .5rem; color: var(--text); font: inherit; }
 .providerHint { margin-left: auto; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
@@ -60,4 +63,4 @@
 .checkPending > span:first-child { color: var(--text-3); }
 .publishLinks { display: flex; flex-wrap: wrap; gap: 1rem; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .ideaGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .header { align-items: flex-start; flex-direction: column; } .providerHint { width: 100%; margin-left: 0; } .ideaGrid { grid-template-columns: 1fr; } .toolbar .field { flex: 1 1 8rem; } }
+@media (max-width: 600px) { .header { align-items: flex-start; flex-direction: column; } .providerHint { width: 100%; margin-left: 0; } .ideaGrid { grid-template-columns: 1fr; } .toolbar .field { flex: 1 1 8rem; } .toolbar .modelSelect { flex-basis: 100%; } }

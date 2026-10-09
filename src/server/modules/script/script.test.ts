@@ -8,11 +8,12 @@ import { AppError } from '../../shared/errors';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
+import { getAiClient } from '../../shared/ai';
 import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider } from '../project';
-import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';
+import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
 import { runFinalQa } from './qa';
 
-const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), stream: vi.fn() }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), chatWithMetadata: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
 type JobRecord = { _id: string; type: string; payload: unknown };
 
@@ -35,7 +36,10 @@ beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   await getCollection('jobs').deleteMany({});
   aiMock.chat.mockReset();
+  aiMock.chatWithMetadata.mockReset();
+  aiMock.chatWithMetadata.mockImplementation(async (messages, options) => ({ text: await aiMock.chat(messages, options), truncated: false }));
   aiMock.stream.mockReset();
+  vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
 let server: Server | null = null;
@@ -230,6 +234,55 @@ describe('script contracts', () => {
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
   });
 
+  it('stores a valid model, resets it on provider change, and rejects a model for the wrong provider', async () => {
+    const baseUrl = await startScriptServer();
+    const createdResponse = await fetch(`${baseUrl}/api/project`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...projectInput, aiProvider: 'deepseek', aiModel: 'deepseek-flash' }),
+    });
+    const created = await createdResponse.json();
+    expect(createdResponse.status).toBe(201);
+    expect(created.aiModel).toBe('deepseek-flash');
+
+    const modelResponse = await fetch(`${baseUrl}/api/project/${created.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'deepseek', aiModel: 'deepseek-v4-pro' }),
+    });
+    expect(modelResponse.status).toBe(200);
+    expect(await modelResponse.json()).toMatchObject({ aiProvider: 'deepseek', aiModel: 'deepseek-v4-pro' });
+
+    const providerResponse = await fetch(`${baseUrl}/api/project/${created.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'claude' }),
+    });
+    const changed = await providerResponse.json();
+    expect(providerResponse.status).toBe(200);
+    expect(changed).toMatchObject({ aiProvider: 'claude', aiModel: 'claude-opus-4-5' });
+
+    const invalidResponse = await fetch(`${baseUrl}/api/project/${created.id}/ai-provider`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'claude', aiModel: 'deepseek-flash' }),
+    });
+    const invalid = await invalidResponse.json();
+    expect(invalidResponse.status).toBe(422);
+    expect(invalid.error.message).toContain('deepseek-flash');
+    expect((await getProject(created.id)).aiModel).toBe('claude-opus-4-5');
+  });
+
+  it('rejects an unknown model on project creation with an actionable 422 error', async () => {
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...projectInput, aiProvider: 'deepseek', aiModel: 'deepseek-retired' }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body.error).toMatchObject({ code: 'AI_MODEL_UNAVAILABLE' });
+    expect(body.error.message).toContain('deepseek-retired');
+    expect(body.error.message).toContain('hãy chọn model khác');
+    expect(await getCollection('projects').countDocuments({})).toBe(0);
+  });
+
   it('rejects an invalid provider before any project mutation', async () => {
     const project = await createProject(projectInput);
     const baseUrl = await startScriptServer();
@@ -269,17 +322,17 @@ describe('script contracts', () => {
     const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-prompt`);
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v3/documentary@3' });
+    expect(body).toMatchObject({ prompt: expect.any(String), promptVersion: 'script-prompt-v4/documentary@3' });
     expect(body.prompt).toContain('SYSTEM');
     expect(body.prompt).toContain('USER');
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
   });
 
   it('returns the same chapter regeneration prompt as the automatic path without changing state', async () => {
-    const project = await createProject(projectInput);
+    const project = await createProject({ ...projectInput, referencesText: '[1] Harbor log documents the departure.' });
     await replaceProjectChapters(project.id, [
-      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old opening'], status: 'pending', scenesCount: null, durationSec: null },
-      { id: 'chapter-2', no: 2, title: 'Close', paragraphs: ['Old close'], status: 'approved', scenesCount: null, durationSec: null },
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old opening'], status: 'pending', scenesCount: null, durationSec: null, role: 'hook', beat: 'Set the mystery.', targetWords: 100, sourceFacts: ['The departure was at dawn [1]'], holdBack: ['The reason appears later.'] },
+      { id: 'chapter-2', no: 2, title: 'Close', paragraphs: ['Old close'], status: 'approved', scenesCount: null, durationSec: null, role: 'resolution', beat: 'Answer the question.', targetWords: 100 },
     ], null, 'script');
     const current = await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [{ question: 'What changed?', plantedInChapter: 1, resolvedInChapter: 2 }], null, 'Why did it happen?', 'It began at dawn.', null, 'script');
     const expected = buildRegenerationPromptForChapter(current, 'chapter-1', { instruction: 'Make the hook sharper', level: 'light' });
@@ -292,6 +345,10 @@ describe('script contracts', () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ prompt: `SYSTEM\n${expected.prompt.system}\n\nUSER\n${expected.prompt.user}`, promptVersion: expected.prompt.promptVersion });
+    expect(body.prompt).toContain('References: [1] Harbor log documents the departure.');
+    expect(body.prompt).toContain('Chapter 2: Close; role=resolution; beat=Answer the question.; targetWords=100');
+    expect(body.prompt).toContain('The departure was at dawn [1]');
+    expect(body.prompt).toContain('The reason appears later.');
     expect(await getProject(project.id)).toEqual(current);
     expect(aiMock.chat).not.toHaveBeenCalled();
     expect(aiMock.stream).not.toHaveBeenCalled();
@@ -314,7 +371,8 @@ describe('script contracts', () => {
     const history = await getProjectHistory(project.id);
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ id: 'chapter-2', paragraphs: ['Manual middle'], status: 'pending', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'], reviewStatus: 'clean' });
+    expect(body.chapter).toMatchObject({ id: 'chapter-2', paragraphs: ['Manual middle'], status: 'pending', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'], reviewStatus: 'clean' });
+    expect(body.quality).toMatchObject({ totalWords: 6, targetWords: 150, outsideLengthRange: true, chapters: [{ chapterNo: 1 }, { chapterNo: 2 }, { chapterNo: 3 }] });
     expect(saved.chapters[1]).toMatchObject({ paragraphs: ['Manual middle'], status: 'pending', reviewStatus: 'clean' });
     expect(saved.chapters[2]).toMatchObject({ reviewStatus: 'upstream-changed' });
     expect(saved.chapters[0]).toMatchObject({ status: 'approved', reviewStatus: 'clean' });
@@ -323,6 +381,25 @@ describe('script contracts', () => {
 
     const restored = await restoreChapters(project.id, 0);
     expect(restored.find((chapter) => chapter.id === 'chapter-2')?.paragraphs).toEqual(['Old middle']);
+  });
+
+  it('accepts an overlong manual chapter and returns a nonblocking whole-script length warning', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'approved', scenesCount: null, durationSec: null, targetWords: 150,
+    }], null, 'script');
+    const longNarration = Array.from({ length: 180 }, () => 'word').join(' ');
+    const baseUrl = await startScriptServer();
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/chapters/chapter-1/regenerate/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: regeneratedResponse([longNarration]) }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.chapter.paragraphs).toEqual([longNarration]);
+    expect(body.quality).toMatchObject({ totalWords: 180, targetWords: 150, outsideLengthRange: true });
+    expect(body.quality.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+    expect(body.quality.chapters[0]).toMatchObject({ words: 180, targetWords: 150, outsideLengthRange: true });
   });
 
   it('rejects invalid regenerated JSON without changing the chapter', async () => {
@@ -406,9 +483,60 @@ describe('script contracts', () => {
     });
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body.chapters[0]).toMatchObject({ title: 'Opening', paragraphs: ['Manual paragraph'], status: 'pending' });
+    expect(body.project.chapters[0]).toMatchObject({ title: 'Opening', paragraphs: ['Manual paragraph'], status: 'pending' });
+    expect(body.quality).toMatchObject({ totalWords: 4, targetWords: 150, outsideLengthRange: true, plannedBudgetWarning: true });
     expect(aiMock.chat).not.toHaveBeenCalled();
     expect(await getCollection('jobs').countDocuments({})).toBe(0);
+  });
+
+  it('accepts short and long manual scripts and returns nonblocking total and chapter length warnings', async () => {
+    const project = await createProject(projectInput);
+    const baseUrl = await startScriptServer();
+    const makeDocument = (paragraph: string) => JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 75, endsOnTension: true, paragraphs: [paragraph] },
+        { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 75, endsOnTension: false, paragraphs: ['Two'] },
+      ],
+      openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
+    });
+
+    const shortResponse = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: makeDocument('One') }),
+    });
+    const shortBody = await shortResponse.json();
+    expect(shortResponse.status).toBe(200);
+    expect(shortBody.quality).toMatchObject({ totalWords: 2, outsideLengthRange: true });
+    expect(shortBody.quality.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+    expect(shortBody.quality.chapters[0]).toMatchObject({ words: 1, targetWords: 75, outsideLengthRange: true });
+
+    const longResponse = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: makeDocument(Array.from({ length: 182 }, () => 'word').join(' ')) }),
+    });
+    const longBody = await longResponse.json();
+    expect(longResponse.status).toBe(200);
+    expect(longBody.quality.totalWords).toBe(183);
+    expect(longBody.quality.outsideLengthRange).toBe(true);
+    expect(longBody.quality.warnings).toContain('Total narration is outside 85–115% of the target word budget.');
+  });
+
+  it('returns a nonblocking hubris act-share warning for manual imports', async () => {
+    const project = await createProject({ ...projectInput, scriptPresetId: 'hubris-trap' });
+    const raw = JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 140, endsOnTension: true, paragraphs: [Array.from({ length: 100 }, () => 'word').join(' ')] },
+        { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 10, endsOnTension: false, paragraphs: ['Done'] },
+      ],
+      openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
+      motif: { hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The scheme turns inward' },
+    });
+    const baseUrl = await startScriptServer();
+
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw }),
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.quality.warnings).toEqual(expect.arrayContaining([expect.stringContaining('Act 1 (hook)')]));
   });
 
   it('rejects a manual document missing outline continuity fields before any write', async () => {
@@ -501,6 +629,7 @@ describe('script contracts', () => {
     const updated = await saveGeneratedScript(project.id, [{
       no: 1, title: 'Opening', paragraphs: ['A mystery'], scenesCount: null, durationSec: null,
       role: 'hook', beat: 'Open with a mystery', targetWords: 3, endsOnTension: true,
+      sourceFacts: ['The river crossing is dated 1776 [1]'], holdBack: ['The ambush is revealed in chapter 4.'],
     }], [{ question: 'What happened?', plantedInChapter: 1, resolvedInChapter: 1 }], {
       hunter: 'A rival', perfectPlan: 'A flawless scheme', blindSpot: 'Arrogance', selfDestruction: 'The plan turns inward',
     }, 'The core question', 'The opening hook');
@@ -509,10 +638,31 @@ describe('script contracts', () => {
     expect(updated.chapters).toHaveLength(1);
     expect(updated.chapters[0]).toMatchObject({ no: 1, status: 'pending', role: 'hook', targetWords: 3, endsOnTension: true });
     expect(updated.chapters[0]!.id).not.toBe('');
+    expect(updated.chapters[0]).toMatchObject({ sourceFacts: ['The river crossing is dated 1776 [1]'], holdBack: ['The ambush is revealed in chapter 4.'] });
     expect(updated.openLoops[0]!.question).toBe('What happened?');
     expect(updated.motif?.hunter).toBe('A rival');
     expect(updated.coreQuestion).toBe('The core question');
     expect(updated.openingHook).toBe('The opening hook');
+
+    await patchChapter(project.id, updated.chapters[0]!.id, { paragraphs: ['Changed paragraph'] });
+    const restored = await restoreChapters(project.id, 0);
+    expect(restored[0]).toMatchObject({
+      paragraphs: ['A mystery'],
+      sourceFacts: ['The river crossing is dated 1776 [1]'],
+      holdBack: ['The ambush is revealed in chapter 4.'],
+    });
+  });
+
+  it('copies source facts and hold-backs into independent history arrays', () => {
+    const chapter = ChapterDocSchema.parse({
+      id: 'chapter-copy', no: 1, title: 'Opening', paragraphs: ['Before'], status: 'pending', scenesCount: null, durationSec: null,
+      sourceFacts: ['Fact [1]'], holdBack: ['Later reveal'],
+    });
+    const snapshot = snapshotOf([chapter]);
+    chapter.sourceFacts!.push('Mutated [2]');
+    chapter.holdBack!.push('Mutated reveal');
+
+    expect(snapshot.chapters[0]).toMatchObject({ sourceFacts: ['Fact [1]'], holdBack: ['Later reveal'] });
   });
 
   it('accepts chapters and snapshots with stable chapter metadata', () => {
@@ -537,7 +687,8 @@ describe('script contracts', () => {
     expect(chapter).toMatchObject({ chapterSummary: null, avoidRepeating: [], persistentFacts: [], reviewStatus: 'clean' });
     expect(ChapterDocSchema.safeParse({ ...chapter, avoidRepeating: Array.from({ length: 6 }, () => 'Avoid') }).success).toBe(false);
     expect(ChapterDocSchema.safeParse({ ...chapter, avoidRepeating: ['x'.repeat(81)] }).success).toBe(false);
-    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: Array.from({ length: 6 }, () => 'Fact') }).success).toBe(false);
+    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: Array.from({ length: 6 }, () => 'Fact') }).success).toBe(true);
+    expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: Array.from({ length: 11 }, () => 'Fact') }).success).toBe(false);
     expect(ChapterDocSchema.safeParse({ ...chapter, persistentFacts: ['x'.repeat(121)] }).success).toBe(false);
     expect(ChapterDocSchema.safeParse({ ...chapter, chapterSummary: 'x'.repeat(251) }).success).toBe(false);
   });
@@ -614,16 +765,18 @@ describe('script contracts', () => {
   });
 
   it('generates chapters, logs milestones, and sets project status to script', async () => {
+    const firstNarration = Array.from({ length: 32 }, (_, index) => `first${index}`).join(' ');
+    const secondNarration = Array.from({ length: 33 }, (_, index) => `second${index}`).join(' ');
     aiMock.chat
       .mockResolvedValueOnce(JSON.stringify({
         chapters: [
-      { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 1, endsOnTension: true },
-      { no: 2, title: 'Context', role: 'resolution', beat: 'Close', targetWords: 1, endsOnTension: false },
+      { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 37, endsOnTension: true },
+      { no: 2, title: 'Context', role: 'resolution', beat: 'Close', targetWords: 38, endsOnTension: false },
         ], openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
       }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['First'], styleNote: 'Style 1', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'] }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['Second'], styleNote: 'Style 2', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: ['Second fact'] }));
-    const project = await createProject(projectInput);
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [firstNarration], styleNote: 'Style 1', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['First fact'] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [secondNarration], styleNote: 'Style 2', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: ['Second fact'] }));
+    const project = await createProject({ ...projectInput, targetDurationSec: 30 });
     const logs: string[] = [];
 
     await generateScript(project.id, {
@@ -635,17 +788,69 @@ describe('script contracts', () => {
     const saved = await getProject(project.id);
     expect(saved.status).toBe('script');
     expect(saved.chapters).toHaveLength(2);
-    expect(saved.chapters[0]!).toMatchObject({ no: 1, status: 'pending', paragraphs: ['First'], scenesCount: null, durationSec: null });
+    expect(saved.chapters[0]!).toMatchObject({ no: 1, status: 'pending', paragraphs: [firstNarration], scenesCount: null, durationSec: null, sourceFacts: [], holdBack: [] });
     expect(saved.chapters[0]!.id).toHaveLength(26);
     expect(await getProjectHistory(project.id)).toEqual([]);
     expect(logs).toEqual([
       'Loading project and AI client…',
+      'References are short: 0 characters for 0.5 target minutes (0 characters/min; warning threshold 500). Generation will continue.',
       'Sending outline request to AI…',
       'Expanding chapter 1/2…',
       'Expanding chapter 2/2…',
+      'Final narration total: 65 words versus 75-word budget.',
       'Script saved — 2 chapters.',
     ]);
-    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]), expect.objectContaining({ json: true, maxTokens: 4000 }));
+    expect(aiMock.chat).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining(projectInput.brief) })]), expect.objectContaining({ json: true, maxTokens: 3100 }));
+  });
+
+  it('retries a truncated outline once with the larger model-bounded budget', async () => {
+    const project = await createProject({ ...projectInput, targetDurationSec: 30 });
+    const outline = JSON.stringify({
+      chapters: [
+        { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 37, endsOnTension: true },
+        { no: 2, title: 'Close', role: 'resolution', beat: 'Close', targetWords: 38, endsOnTension: false },
+      ], openLoops: [], coreQuestion: 'What is at stake?', openingHook: 'A compelling opening.',
+    });
+    aiMock.chatWithMetadata
+      .mockResolvedValueOnce({ text: '{"chapters":[', truncated: true })
+      .mockResolvedValueOnce({ text: outline, truncated: false });
+    aiMock.chat
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 32 }, () => 'first').join(' ')], styleNote: '', chapterSummary: 'First', avoidRepeating: [], persistentFactsNext: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: [Array.from({ length: 33 }, () => 'second').join(' ')], styleNote: '', chapterSummary: 'Second', avoidRepeating: [], persistentFactsNext: [] }));
+    const logs: string[] = [];
+
+    await generateScript(project.id, { appendLog: async (message) => { logs.push(message); }, isCancelled: async () => false, reportProgress: vi.fn() });
+
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(4);
+    expect(aiMock.chatWithMetadata.mock.calls[0]![1]).toMatchObject({ maxTokens: 3100, json: true });
+    expect(aiMock.chatWithMetadata.mock.calls[1]![1]).toMatchObject({ maxTokens: 4650, json: true });
+    expect(logs).toContain('AI response truncated at 3100 output tokens; retrying once with 4650.');
+  });
+
+  it('uses the recommended exact chapter count when none is configured', async () => {
+    const project = await createProject({ ...projectInput, targetDurationSec: 840, chapterCount: null });
+    aiMock.chat.mockResolvedValueOnce(JSON.stringify({
+      chapters: [
+        { no: 1, title: 'One', role: 'hook', beat: 'Open', targetWords: 350, endsOnTension: true },
+        { no: 2, title: 'Two', role: 'context', beat: 'Set context', targetWords: 350, endsOnTension: true },
+        { no: 3, title: 'Three', role: 'rising', beat: 'Raise stakes', targetWords: 350, endsOnTension: true },
+        { no: 4, title: 'Four', role: 'rising', beat: 'Escalate', targetWords: 350, endsOnTension: true },
+        { no: 5, title: 'Five', role: 'climax', beat: 'Decisive moment', targetWords: 350, endsOnTension: true },
+        { no: 6, title: 'Six', role: 'resolution', beat: 'Reflect', targetWords: 350, endsOnTension: false },
+      ],
+      openLoops: [
+        { question: 'What caused the turn?', plantedInChapter: 1, resolvedInChapter: 4 },
+        { question: 'Who bears the cost?', plantedInChapter: 2, resolvedInChapter: 5 },
+      ],
+      coreQuestion: 'What changed?', openingHook: 'At dawn, the river turned.',
+    }));
+    const isCancelled = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    await generateScript(project.id, { appendLog: vi.fn(), isCancelled, reportProgress: vi.fn() });
+
+    expect(aiMock.chat).toHaveBeenCalledTimes(1);
+    expect(aiMock.chat.mock.calls[0]![0][1].content).toContain('Create exactly 6 chapters; chapter count must be exact.');
+    expect((await getProject(project.id)).chapters).toEqual([]);
   });
 
   it('maps invalid AI JSON to SCRIPT_PARSE_ERROR without writing chapters', async () => {
@@ -667,8 +872,8 @@ describe('script contracts', () => {
         appendLog: async (message) => { logs.push(message); },
         isCancelled: async () => false,
         reportProgress: vi.fn(),
-      })).rejects.toMatchObject({ code: 'AI_REQUEST_FAILED', message: 'Cannot reach api.deepseek.com (timeout/network).' });
-      expect(logs).toContain('AI request failed: Cannot reach api.deepseek.com (timeout/network).');
+      })).rejects.toMatchObject({ code: 'AI_REQUEST_FAILED', message: 'Cannot reach api.deepseek.com (timeout/network) for model deepseek-chat.' });
+      expect(logs).toContain('AI request failed: Cannot reach api.deepseek.com (timeout/network) for model deepseek-chat.');
       expect((await getProject(project.id)).chapters).toEqual([]);
     } finally {
       if (previous === undefined) delete process.env.AI_REQUEST_TIMEOUT_MS;
@@ -752,12 +957,28 @@ describe('script contracts', () => {
     expect(aiMock.stream).toHaveBeenCalledTimes(1);
   });
 
-  it('passes regeneration narrative context and marks only the next chapter upstream-changed', async () => {
+  it('omits earlier empty outline chapters from story-so-far context', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [
-      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One'], status: 'pending', scenesCount: null, durationSec: null, chapterSummary: 'Previous summary', avoidRepeating: ['Previous avoidance'], persistentFacts: ['Previous fact'] },
-      { id: 'chapter-2', no: 2, title: 'Middle', paragraphs: ['Old middle'], status: 'pending', scenesCount: null, durationSec: null, role: 'rising', beat: 'Escalate', targetWords: 20, endsOnTension: true },
-      { id: 'chapter-3', no: 3, title: 'Ending', paragraphs: ['Old ending'], status: 'pending', scenesCount: null, durationSec: null },
+      { id: 'chapter-1', no: 1, title: 'Written', paragraphs: ['A prior chapter begins.', 'It ends here.'], status: 'pending', scenesCount: null, durationSec: null },
+      { id: 'chapter-2', no: 2, title: 'Empty outline placeholder', paragraphs: [], status: 'pending', scenesCount: null, durationSec: null },
+      { id: 'chapter-3', no: 3, title: 'Target', paragraphs: ['Existing target.'], status: 'pending', scenesCount: null, durationSec: null },
+    ], null, 'script');
+    const current = await getProject(project.id);
+    const { prompt } = buildRegenerationPromptForChapter(current, 'chapter-3', { instruction: 'Keep continuity', level: 'medium' });
+    const storySoFar = prompt.user.split('Story so far: ')[1]?.split('\n\n')[0] ?? '';
+
+    expect(storySoFar).toContain('Chapter 1 — A prior chapter begins. It ends here.');
+    expect(storySoFar).not.toContain('Empty outline placeholder');
+    expect(storySoFar).not.toContain('Chapter 2 —');
+  });
+
+  it('passes regeneration narrative context and marks only the next chapter upstream-changed', async () => {
+    const project = await createProject({ ...projectInput, referencesText: '[1] Harbor archive: the gate failed at dawn.' });
+    await replaceProjectChapters(project.id, [
+      { id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['One. Two.'], status: 'pending', scenesCount: null, durationSec: null, chapterSummary: 'Previous summary', avoidRepeating: ['Previous avoidance'], persistentFacts: ['Previous fact'] },
+      { id: 'chapter-2', no: 2, title: 'Middle', paragraphs: ['Old middle, first.', 'Old middle, last.'], status: 'pending', scenesCount: null, durationSec: null, role: 'rising', beat: 'Escalate', targetWords: 20, endsOnTension: true, sourceFacts: ['The gate failed [1]'], holdBack: ['The fleet turns later.'] },
+      { id: 'chapter-3', no: 3, title: 'Ending', paragraphs: ['Old ending'], status: 'pending', scenesCount: null, durationSec: null, role: 'resolution', beat: 'Reveal the cause.', targetWords: 10, sourceFacts: ['The tide changed [1]'], holdBack: [] },
     ], null, 'script');
     await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [{ question: 'What changed?', plantedInChapter: 2, resolvedInChapter: 3 }], null, 'Why did the river change?', 'At dawn, it reversed.', null, 'script');
     aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(['New middle']); })());
@@ -766,21 +987,29 @@ describe('script contracts', () => {
 
     const prompt = aiMock.stream.mock.calls[0]![0][1].content as string;
     expect(prompt).toContain('Core question:');
+    expect(prompt).toContain(`Project title: ${project.title}`);
+    expect(prompt).toContain(`Brief: ${project.brief}`);
+    expect(prompt).toContain('References: [1] Harbor archive: the gate failed at dawn.');
+    expect(prompt).toContain('Chapter 3: Ending; role=resolution; beat=Reveal the cause.; targetWords=10');
     expect(prompt).toContain('Role: rising');
     expect(prompt).toContain('Beat: Escalate');
     expect(prompt).toContain('Target words: 20');
-    expect(prompt).toContain('Open loops: What changed?');
+    expect(prompt).toContain('What changed? — plant');
+    expect(prompt).toContain('The gate failed [1]');
+    expect(prompt).toContain('The fleet turns later.');
+    expect(prompt).toContain('Next chapter preview');
+    expect(prompt).toContain('Old middle, first.\n\nOld middle, last.');
+    expect(prompt).toContain('Opening hook: At dawn, it reversed.');
     expect(prompt).toContain('Previous chapter summary: Previous summary');
-    expect(prompt).toContain('Avoid repeating: Previous avoidance');
+    expect(prompt).toContain('Avoid repeating (latest 30): Previous avoidance');
     expect(prompt).toContain('Persistent facts: Previous fact');
-    expect(prompt).not.toContain('Opening hook:');
 
     const saved = await getProject(project.id);
     expect(saved.chapters[1]).toMatchObject({ reviewStatus: 'clean', chapterSummary: 'New summary', avoidRepeating: ['New avoidance'], persistentFacts: ['New fact'] });
     expect(saved.chapters[2]).toMatchObject({ reviewStatus: 'upstream-changed' });
   });
 
-  it('passes opening hook only to chapter one with empty previous continuity', async () => {
+  it('passes the global opening hook and empty previous continuity to chapter one', async () => {
     const project = await createProject(projectInput);
     await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Opening', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
     await replaceProjectScript(project.id, (await getProject(project.id)).chapters, [], null, 'Why did it happen?', 'It began at dawn.', null, 'script');
@@ -791,7 +1020,7 @@ describe('script contracts', () => {
     const prompt = aiMock.stream.mock.calls[0]![0][1].content as string;
     expect(prompt).toContain('Opening hook: It began at dawn.');
     expect(prompt).toContain('Previous chapter summary: (none)');
-    expect(prompt).toContain('Avoid repeating: (none)');
+    expect(prompt).toContain('Avoid repeating (latest 30): (none)');
     expect(prompt).toContain('Persistent facts: (none)');
   });
 
@@ -802,6 +1031,16 @@ describe('script contracts', () => {
 
     await expect(regenerateChapter(project.id, 'chapter-1', { instruction: 'rewrite', level: 'light' }, vi.fn(), new AbortController().signal)).resolves.toMatchObject({ reviewStatus: 'clean' });
     expect(aiMock.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the project model to chapter regeneration', async () => {
+    const project = await createProject({ ...projectInput, aiProvider: 'claude', aiModel: 'claude-haiku-4-5-20251001' });
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Only', paragraphs: ['Old'], status: 'pending', scenesCount: null, durationSec: null }], null, 'script');
+    aiMock.stream.mockReturnValue((async function* () { yield regeneratedResponse(); })());
+
+    await regenerateChapter(project.id, 'chapter-1', { instruction: 'rewrite', level: 'light' }, vi.fn(), new AbortController().signal);
+
+    expect(getAiClient).toHaveBeenCalledWith('claude', 'claude-haiku-4-5-20251001');
   });
 
   it('marks an aborted regeneration needs-fix and leaves old paragraphs unchanged', async () => {
@@ -948,17 +1187,17 @@ describe('script contracts', () => {
   });
 
   it('traces generation retry, finalize, regeneration, manual edit/import, and final QA end to end', async () => {
-    const project = await createProject({ ...projectInput, targetDurationSec: 8 });
+    const project = await createProject({ ...projectInput, targetDurationSec: 2 });
     aiMock.chat
       .mockResolvedValueOnce(JSON.stringify({
         chapters: [
           { no: 1, title: 'Opening', role: 'hook', beat: 'Open', targetWords: 2, endsOnTension: true },
-          { no: 2, title: 'Close', role: 'resolution', beat: 'Resolve', targetWords: 2, endsOnTension: false },
+          { no: 2, title: 'Close', role: 'resolution', beat: 'Resolve', targetWords: 3, endsOnTension: false },
         ], openLoops: [], coreQuestion: 'What changed?', openingHook: 'At dawn, everything changed.',
       }))
       .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['short'], styleNote: 'First', chapterSummary: 'First summary', avoidRepeating: [], persistentFactsNext: ['Fact'] }))
       .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['first', 'chapter'], styleNote: 'First retry', chapterSummary: 'First summary', avoidRepeating: ['repeat'], persistentFactsNext: ['Fact'] }))
-      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['second', 'chapter'], styleNote: 'Second', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: [] }));
+      .mockResolvedValueOnce(JSON.stringify({ paragraphs: ['second', 'chapter now'], styleNote: 'Second', chapterSummary: 'Second summary', avoidRepeating: [], persistentFactsNext: [] }));
     await generateScript(project.id, { appendLog: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), reportProgress: vi.fn() });
 
     await patchChapter(project.id, 'chapter-missing', { status: 'approved' }).catch(() => undefined);
@@ -1014,6 +1253,20 @@ describe('script contracts', () => {
     const body = await response.json() as { jobId: string };
     expect(body.jobId).toEqual(expect.any(String));
     expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({ type: 'generate-script', payload: { projectId: project.id } });
+  });
+
+  it('enqueues a resumable generate-script job with the resume flag', async () => {
+    const project = await createProject(projectInput);
+    const base = await startScriptServer();
+
+    const response = await fetch(`${base}/api/project/${project.id}/generate-script`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ resume: true }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as { jobId: string };
+    expect(await getCollection<JobRecord>('jobs').findOne({ _id: body.jobId })).toMatchObject({
+      type: 'generate-script', payload: { projectId: project.id, resume: true },
+    });
   });
 
   it('reuses an active generate-script job instead of enqueuing a duplicate', async () => {

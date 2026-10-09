@@ -6,6 +6,8 @@ import { AppError } from '../../shared/errors';
 import { buildManualScriptPrompt, buildQaPrompt } from './ai/build-prompt';
 import { parseManualScriptDocument, parseQaResult, parseRegeneratedParagraphs, translateManualParseError, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { applyRegeneratedChapter, buildRegenerationPromptForChapter, finalizeScript, getChapterHistory, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
+import { getManualOutlineWarnings, recommendScriptChapterCount } from './ai/outline-validation';
+import { summarizeManualScriptQuality } from './quality';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 type GetActiveScriptJob = (projectId: string, type: string) => Promise<{ id: string } | null>;
@@ -25,9 +27,10 @@ const RegenerateChapterSchema = z.object({
 const ManualRegeneratePromptSchema = RegenerateChapterSchema.strict();
 
 const RestoreSchema = z.object({ index: z.number().int().nonnegative(), expectedVersion: z.number().int().nonnegative().optional() });
-const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']) }).strict();
+const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']), aiModel: z.string().optional() }).strict();
 const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
+const GenerateScriptSchema = z.object({ resume: z.boolean().optional() }).strict();
 
 function writeEvent(res: { write: (chunk: string) => boolean }, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -48,12 +51,13 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.post('/:id/generate-script', async (req, res) => {
     const project = await getProject(req.params.id);
+    const body = GenerateScriptSchema.parse(req.body ?? {});
     const activeJob = await options.getActiveJob?.(project.id, 'generate-script');
     if (activeJob) {
       res.status(200).json({ jobId: activeJob.id });
       return;
     }
-    const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id } });
+    const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id, ...(body.resume ? { resume: true } : {}) } });
     res.status(201).json({ jobId: job.id });
   });
 
@@ -91,7 +95,7 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
 
   router.patch('/:id/ai-provider', async (req, res) => {
     const body = ProviderSchema.parse(req.body);
-    res.json(await setProjectAiProvider(req.params.id, body.provider));
+    res.json(await setProjectAiProvider(req.params.id, body.provider, body.aiModel));
   });
 
   router.patch('/:id/visual-style', async (req, res) => {
@@ -114,12 +118,14 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
     let document: ReturnType<typeof parseManualScriptDocument>;
     try {
       document = parseManualScriptDocument(body.raw, project.scriptPresetId);
-      validateScriptOutlineChapterCount(document, project.chapterCount);
+      validateScriptOutlineChapterCount(document, project.chapterCount ?? recommendScriptChapterCount(project.targetDurationSec));
     } catch (error) {
       translateManualParseError(error, 'script');
     }
     const saved = await saveGeneratedScript(project.id, document.chapters, document.openLoops, 'motif' in document ? document.motif : null, document.coreQuestion, document.openingHook);
-    res.json(saved);
+    const quality = summarizeManualScriptQuality({ targetDurationSec: project.targetDurationSec, scriptPresetId: project.scriptPresetId, chapters: saved.chapters });
+    const plannedActWarnings = getManualOutlineWarnings(document, project).filter((warning) => warning.startsWith('Act '));
+    res.json({ project: saved, quality: { ...quality, warnings: [...new Set([...quality.warnings, ...plannedActWarnings])] } });
   });
 
   router.post('/:id/scenes/generate-visual-prompts', async (req, res) => {
@@ -202,7 +208,10 @@ export function createScriptRouter(options: { enqueueJob: EnqueueScriptJob; getA
     const project = await getProject(req.params.id);
     const snapshot = snapshotOf(project.chapters);
     const { chapter, nextChapter } = buildRegenerationPromptForChapter(project, req.params.chapterId, { instruction: '', level: 'medium' });
-    res.json(await applyRegeneratedChapter(project.id, chapter, nextChapter, regenerated, snapshot));
+    const updatedChapter = await applyRegeneratedChapter(project.id, chapter, nextChapter, regenerated, snapshot);
+    const updatedProject = await getProject(project.id);
+    const quality = summarizeManualScriptQuality({ targetDurationSec: updatedProject.targetDurationSec, scriptPresetId: updatedProject.scriptPresetId, chapters: updatedProject.chapters });
+    res.json({ chapter: updatedChapter, quality });
   });
 
   router.get('/:id/chapters/history', async (req, res) => {

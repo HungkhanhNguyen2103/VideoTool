@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { SEO_SECTIONS, SEO_THUMBNAIL_MAX_BYTES, type SeoSection } from '../../../contracts/seo';
+import { aiModelForProviderChange } from '../../shared/ai/AiModelSelect';
 import { buildPackageMarkdown, slugifyPackageTitle } from '../../../contracts/seo-format';
 import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
@@ -72,10 +73,17 @@ export function SeoPage() {
     }
   }
 
-  async function changeProvider(provider: 'deepseek' | 'claude') {
+  async function changeProvider(provider: 'deepseek' | 'claude', model?: string) {
     if (!project || provider === project.aiProvider) return;
-    try { setBusy('provider'); await api.setSeoAiProvider(project.id, provider); await projectQuery.refetch(); toast(`Đã chọn ${AI_PROVIDER_LABELS[provider]}.`); }
-    catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi nhà cung cấp AI.'); }
+    try { setBusy('provider'); await api.setSeoAiProvider(project.id, provider, model); await projectQuery.refetch(); toast(model ? 'Đã đổi model AI.' : `Đã chọn ${AI_PROVIDER_LABELS[provider]}.`); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi cấu hình AI.'); }
+    finally { setBusy(null); }
+  }
+
+  async function changeModel(model: string) {
+    if (!project || model === project.aiModel || controlsBusy) return;
+    try { setBusy('ai-model'); await api.setSeoAiProvider(project.id, project.aiProvider, model); await projectQuery.refetch(); toast('Đã chọn model AI.'); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi model AI.'); }
     finally { setBusy(null); }
   }
 
@@ -141,7 +149,7 @@ export function SeoPage() {
   const controlsBusy = Boolean(busy || activeJob);
   return <main className={styles.page}>
     <header className={styles.header}><div><p className={styles.eyebrow}>BƯỚC 4 · ĐÓNG GÓI VIDEO</p><h1>SEO &amp; Đóng Gói Kênh</h1><p className={styles.muted}>Tạo một gói đăng YouTube hấp dẫn nhưng trung thực với nội dung video.</p></div><span className={styles.saveState}>{saveStateLabel(saveState)}</span></header>
-    <Toolbar mode={mode} provider={project.aiProvider} busy={controlsBusy} sections={allSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider)} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
+    <Toolbar mode={mode} provider={project.aiProvider} model={project.aiModel} busy={controlsBusy} sections={allSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider, aiModelForProviderChange(provider, project.aiProvider, project.aiModel))} onModelChange={(model) => void changeModel(model)} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
     {activeJob && <div className={styles.jobProgress} role="status"><span>Đang tạo gói SEO…</span><progress value={progress?.progress ?? 0} max={100} /> <span>{progress?.progress ?? 0}%</span></div>}
     {readyDisplay.unsupportedFacts.length > 0 && <aside className={styles.factWarning}><strong>Kiểm tra số liệu</strong><ul>{readyDisplay.unsupportedFacts.map((fact) => <li key={fact}>Số liệu “{fact}” chưa thấy trong dữ liệu nguồn. Đây là cảnh báo, không chặn.</li>)}</ul></aside>}
     {mode === 'manual' && <ManualSeoPanel prompt={manualPrompt} raw={manualRaw} error={manualError} busy={controlsBusy} sections={allSections} onRawChange={setManualRaw} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />}

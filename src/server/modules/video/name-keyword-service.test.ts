@@ -9,6 +9,7 @@ const projectInput = {
   title: 'Name keyword test', brief: 'A test project brief long enough for validation.', language: 'vi' as const,
   referencesText: '', scriptPresetId: 'documentary' as const, targetDurationSec: 30, chapterCount: 1, voiceId: null,
   aiProvider: 'claude' as const, renderSettings: { aspect: '16:9' as const, width: 1280, height: 720, fps: 24 as const },
+  aiModel: 'claude-haiku-4-5-20251001',
 };
 
 function fakeClient(chat: AiClient['chat']) {
@@ -51,7 +52,7 @@ describe('analyzeProjectNameKeywords', () => {
     expect(summary).toMatchObject({ scenesAnalyzed: 1, scenesSkippedNoTimings: 1, scenesWithName: 1, rejectedCandidates: 0, provider: 'claude', model: 'fake-model' });
     expect(chat).toHaveBeenCalledTimes(1);
     expect(chat).toHaveBeenCalledWith(expect.any(Array), { json: true, maxTokens: 8000, temperature: 0 });
-    expect(resolver).toHaveBeenCalledWith('claude');
+    expect(resolver).toHaveBeenCalledWith('claude', 'claude-haiku-4-5-20251001');
     const refreshed = (await getProject(project.id)).scenes[0]!;
     expect(refreshed.nameCandidates).toMatchObject({
       audioFileId: 'audio-1', provider: 'claude', model: 'fake-model', candidates: [{ phrase: 'Sông Tiền', kind: 'place' }],

@@ -18,11 +18,58 @@ const chapter = ChapterDocSchema.parse({ id: 'chapter-1', no: 1, title: 'Origins
 const generated = [{ no: 1, title: 'Origins', paragraphs: ['First beat'], scenesCount: null, durationSec: null }];
 
 describe('script AI prompt boundary', () => {
+  it('accepts optional sourced facts and reveal holdbacks in generated and manual chapter documents', () => {
+    const outlineRaw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Set the question.', targetWords: 100, endsOnTension: true, sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] }],
+      openLoops: [], coreQuestion: 'Why did it fail?', openingHook: 'The river changes direction.',
+    });
+    const manualRaw = JSON.stringify({
+      chapters: [{ no: 1, title: 'Origins', role: 'hook', beat: 'Set the question.', targetWords: 100, endsOnTension: false, paragraphs: ['The river changed direction.'], sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] }],
+      openLoops: [], coreQuestion: 'Why did it fail?', openingHook: 'The river changes direction.',
+    });
+
+    expect(parseScriptOutline(outlineRaw, 'documentary').chapters[0]).toMatchObject({ sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] });
+    expect(parseManualScriptDocument(manualRaw, 'documentary').chapters[0]).toMatchObject({ sourceFacts: ['The archive records a crossing [1]'], holdBack: ['The fleet is trapped later.'] });
+    expect(parseScriptOutline(JSON.stringify({
+      chapters: [{ no: 1, title: 'Legacy', role: 'hook', beat: 'Old fields remain valid.', targetWords: 100, endsOnTension: false }],
+      openLoops: [], coreQuestion: 'Why?', openingHook: 'At dawn.',
+    }), 'documentary').chapters[0]).not.toHaveProperty('sourceFacts');
+  });
+
+  it('guides automatic outlines and manual documents to allocate cited facts and protect later reveals', () => {
+    const outline = buildOutlinePrompt({ ...project, referencesText: '[1] Archive source. [2] Oral history.' });
+    const manual = buildManualScriptPrompt({ ...project, referencesText: '[1] Archive source. [2] Oral history.' });
+
+    for (const prompt of [outline, manual]) {
+      expect(prompt.promptVersion).toBe('script-prompt-v4/documentary@3');
+      expect(prompt.system).toContain('sourceFacts');
+      expect(prompt.system).toContain('holdBack');
+      expect(prompt.system.toLowerCase()).toContain('never invent numbers, dates, names, or quotations');
+      expect(prompt.system).toContain('source tag');
+    }
+    expect(outline.system).toContain('source area is thin');
+    expect(manual.user).toContain('300 words');
+  });
+
+  it('lists only the exact numbered reference tags that may support source facts', () => {
+    const referencedProject = { ...project, referencesText: '[1] Primary archive. [3] Port log.' };
+
+    expect(buildOutlinePrompt(referencedProject).user).toContain('Available source tags for sourceFacts: [1], [3]');
+    expect(buildManualScriptPrompt(referencedProject).user).toContain('Available source tags for sourceFacts: [1], [3]');
+  });
+
+  it('uses the recommended exact chapter count when a project does not specify one', () => {
+    const longProject = { ...project, targetDurationSec: 840, chapterCount: null };
+
+    expect(buildOutlinePrompt(longProject).user).toContain('Create exactly 6 chapters; chapter count must be exact.');
+    expect(buildManualScriptPrompt(longProject).user).toContain('Use exactly 6 chapters; chapter count must be exact.');
+  });
+
   it.each(['documentary', 'explainer', 'strategist'] as const)('composes the %s preset into initial prompt with metadata and version', (id) => {
     const input = { ...project, scriptPresetId: id as never };
     const preset = loadScriptPreset(id as never);
     const result = buildScriptPrompt(input);
-    expect(result.promptVersion).toBe(`script-prompt-v3/${id}@${preset.version}`);
+    expect(result.promptVersion).toBe(`script-prompt-v4/${id}@${preset.version}`);
     expect(result.user).toContain(`Script preset: ${id}`);
     expect(result.system.indexOf('professional video script writer')).toBeLessThan(result.system.indexOf(preset.system));
     expect(result.system.indexOf(preset.system)).toBeLessThan(result.system.indexOf(preset.instructions));
@@ -42,18 +89,18 @@ describe('script AI prompt boundary', () => {
     expect(explainer.system).not.toContain('open a chapter with a hook');
   });
 
-  it('regenerates one chapter with preset guidance and no whole-project brief', () => {
+  it('regenerates one chapter with the selected level and grounded project context', () => {
     const result = buildRegenerationPrompt(project, chapter, 'Shorten this', 'light', {
       coreQuestion: 'Why did the river change?', openingHook: 'At dawn, it reversed.', openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v3/documentary@3');
+    expect(result.promptVersion).toBe('script-prompt-v6/documentary@3');
     expect(result.system).toContain(loadScriptPreset('documentary').instructions);
     expect(result.user).toContain('Origins');
     expect(result.user).toContain('First beat');
     expect(result.user).toContain('Shorten this');
     expect(result.user).toContain('light');
-    expect(result.user).not.toContain(project.brief);
+    expect(result.user).toContain(project.brief);
   });
 
   it('carries the selected explainer preset version into regeneration', () => {
@@ -61,8 +108,46 @@ describe('script AI prompt boundary', () => {
       coreQuestion: 'Why did the river change?', openingHook: null, openLoops: [],
       previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe('script-prompt-v3/explainer@2');
+    expect(result.promptVersion).toBe('script-prompt-v6/explainer@2');
     expect(result.system).toContain(loadScriptPreset('explainer').instructions);
+  });
+
+  it('shares the stable project and full-outline prefix with expansion and includes full chapter continuity for regeneration', () => {
+    const projectWithReferences = { ...project, referencesText: '[1] Naval archive. [2] Port log.' };
+    const outlineChapters = [
+      { no: 1, title: 'Opening', role: 'hook', beat: 'Set the mystery.', targetWords: 100 },
+      { no: 2, title: 'Middle', role: 'rising', beat: 'Trace the evidence.', targetWords: 120 },
+      { no: 3, title: 'Ending', role: 'resolution', beat: 'Reveal the cause.', targetWords: 80 },
+    ];
+    const currentChapter = {
+      ...chapter, no: 2, title: 'Middle', role: 'rising', beat: 'Trace the evidence.', targetWords: 120,
+      endsOnTension: true, paragraphs: ['Existing scene one.', 'Existing scene two.'],
+      sourceFacts: ['The harbor closed [1]'], holdBack: ['The fleet turns back later.'],
+    };
+    const prompt = buildRegenerationPrompt(projectWithReferences, currentChapter as never, 'Clarify the evidence', 'medium', {
+      coreQuestion: 'Why did the river change?', openingHook: 'At dawn, the river reversed.', openLoops: [],
+      previousChapterSummary: 'The flood isolated the port.', previousAvoidRepeating: ['Do not repeat the flood image.'],
+      previousPersistentFacts: ['The gate is still open.'], outlineChapters,
+      motif: { hunter: 'A commander', perfectPlan: 'One strike', blindSpot: 'The channel', selfDestruction: 'The tide' },
+      storySoFar: [{ chapterNo: 1, title: 'Opening', summary: 'The flood isolated the port.', fallback: false }],
+      persistentFacts: ['The gate is still open.'], avoidRepeating: ['Do not repeat the flood image.'],
+      loopStates: [{ question: 'Who opened the gate?', state: 'pending' }, { question: 'Where did the fleet go?', state: 'upcoming' }],
+      nextChapter: outlineChapters[2], previousTailParagraphs: ['Prior paragraph one.', 'Prior paragraph two.'],
+      previousOpeners: ['At first light, the harbor emptied'], voiceAnchorParagraphs: ['Anchor one.', 'Anchor two.'],
+    } as never);
+
+    expect(prompt.stablePrefix).toContain('Project title: River History');
+    expect(prompt.stablePrefix).toContain('References: [1] Naval archive. [2] Port log.');
+    expect(prompt.stablePrefix).toContain('Chapter 3: Ending; role=resolution; beat=Reveal the cause.; targetWords=80');
+    expect(prompt.user.startsWith(prompt.stablePrefix!)).toBe(true);
+    for (const value of [
+      'Source facts: The harbor closed [1]', 'Hold back: The fleet turns back later.',
+      'Story so far: Chapter 1 — The flood isolated the port.', 'Who opened the gate? — pending',
+      'Where did the fleet go? — upcoming', 'Next chapter preview',
+      'Existing scene one.\n\nExisting scene two.', 'Prior paragraph one.\nPrior paragraph two.',
+      'At first light, the harbor emptied', 'Voice anchor (tone only', 'Anchor one.\nAnchor two.',
+      'Clarify the evidence', 'medium',
+    ]) expect(prompt.user).toContain(value);
   });
 
   it('builds visual batch prompt with scene indexes but no internal IDs', () => {
@@ -216,7 +301,7 @@ describe('script AI parsers', () => {
       styleNote: `  ${'style '.repeat(100)}  `,
       chapterSummary: 'summary '.repeat(50),
       avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'also discarded'],
-      persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+      persistentFactsNext: Array.from({ length: 12 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
     }), (notice) => notices.push(notice));
 
     expect(result.paragraphs).toEqual(['Keep this narration exactly.', 'A second paragraph.']);
@@ -225,7 +310,7 @@ describe('script AI parsers', () => {
     expect(result.chapterSummary.length).toBeLessThanOrEqual(250);
     expect(result.avoidRepeating).toHaveLength(5);
     expect(result.avoidRepeating[0]!.length).toBeLessThanOrEqual(80);
-    expect(result.persistentFactsNext).toHaveLength(5);
+    expect(result.persistentFactsNext).toHaveLength(10);
     expect(result.persistentFactsNext.every((fact) => fact.length <= 120)).toBe(true);
     expect(notices).toEqual(expect.arrayContaining([
       expect.stringContaining('Truncated chapterSummary from'),
@@ -241,12 +326,12 @@ describe('script AI parsers', () => {
       paragraphs: ['Updated narration'],
       chapterSummary: 'summary '.repeat(50),
       avoidRepeating: ['avoid '.repeat(20), 'second', 'third', 'fourth', 'fifth', 'discarded', 'discarded'],
-      persistentFactsNext: Array.from({ length: 7 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
+      persistentFactsNext: Array.from({ length: 12 }, (_, index) => `fact ${index} ${'detail '.repeat(25)}`),
     }), (notice) => notices.push(notice));
     expect(result.paragraphs).toEqual(['Updated narration']);
     expect(result.chapterSummary.length).toBeLessThanOrEqual(250);
     expect(result.avoidRepeating).toHaveLength(5);
-    expect(result.persistentFactsNext).toHaveLength(5);
+    expect(result.persistentFactsNext).toHaveLength(10);
     expect(notices.length).toBeGreaterThan(0);
 
     expect(() => parseChapterExpansion(JSON.stringify({
@@ -271,18 +356,20 @@ describe('script AI parsers', () => {
 
   it('builds the three new prompt shapes with their required inputs', () => {
     const outline = buildOutlinePrompt(project);
-    expect(outline.user).toContain('Total narration word budget: 300 words');
+    expect(outline.user).toContain('Project narration budget: 300 words; acceptable sum of chapter targetWords is 294–306');
+    expect(outline.user).toContain('Aim for exactly 300 words total');
     expect(outline.user).toContain('exactly 2 chapters');
     expect(outline.system).toContain('five-act');
     for (const role of ['hook', 'context', 'rising', 'climax', 'resolution']) expect(outline.system).toContain(role);
     expect(outline.system).toContain('no extra keys');
-    expect(outline.system).toContain('targetWords must be an integer');
+    expect(outline.system).toContain('targetWords must be a positive integer, not a string');
     expect(outline.system).toContain('plantedInChapter and resolvedInChapter are positive integers, not strings');
     expect(outline.system).toContain('Example chapter:');
     expect(outline.system).toContain('Example openLoop:');
-    expect(outline.promptVersion).toBe('script-prompt-v3/documentary@3');
+    expect(outline.promptVersion).toBe('script-prompt-v4/documentary@3');
 
-    const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', previousChapterSummary: null, previousAvoidRepeating: [], previousPersistentFacts: [], openLoops: ['What happens next?'], styleNote: 'Muted palette' });
+    const expansion = buildChapterExpansionPrompt({ project, chapter: { ...chapter, role: 'hook', beat: 'Open a mystery', targetWords: 300, endsOnTension: true }, outlineChapters: [], motif: null, coreQuestion: 'Why did it happen?', openingHook: 'It began at dawn.', storySoFar: [], persistentFacts: [], avoidRepeating: [], loopStates: [{ question: 'What happens next?', state: 'plant' }], nextChapter: null, previousTailParagraphs: [], previousOpeners: [], voiceAnchorParagraphs: [], remainingBudgetWords: 300, generationTargetWords: 300, styleNote: 'Muted palette' });
+    expect(expansion.promptVersion).toBe('script-prompt-v5/documentary@3');
     expect(expansion.user).toContain('Target words: 300');
     expect(expansion.user).toContain('What happens next?');
     expect(expansion.user).toContain('Muted palette');
@@ -290,7 +377,7 @@ describe('script AI parsers', () => {
     expect(expansion.system).toContain('styleNote max 500 chars');
     expect(expansion.system).toContain('chapterSummary max 250 chars');
     expect(expansion.system).toContain('avoidRepeating max 5 items each max 80 chars');
-    expect(expansion.system).toContain('persistentFactsNext max 5 items each max 120 chars');
+    expect(expansion.system).toContain('persistentFactsNext max 10 items each max 120 chars');
 
     const manual = buildManualScriptPrompt(project);
     expect(manual.system).toContain('paragraphs');
@@ -299,7 +386,71 @@ describe('script AI parsers', () => {
     for (const role of ['hook', 'context', 'rising', 'climax', 'resolution']) expect(manual.system).toContain(role);
     expect(manual.system).toContain('Example chapter:');
     expect(manual.system).toContain('Example openLoop:');
-    expect(manual.promptVersion).toBe('script-prompt-v3/documentary@3');
+    expect(manual.promptVersion).toBe('script-prompt-v4/documentary@3');
+  });
+
+  it('keeps the project and complete outline as a byte-identical prefix and appends full continuity per chapter', () => {
+    const outlineChapters = [
+      { no: 1, title: 'First', role: 'hook', beat: 'Open with the flood.', targetWords: 150, endsOnTension: true, sourceFacts: ['Water rose at dawn [1]'], holdBack: ['The cause stays hidden.'] },
+      { no: 2, title: 'Answer', role: 'resolution', beat: 'Reveal the source.', targetWords: 150, endsOnTension: false, sourceFacts: ['The gate failed [2]'], holdBack: [] },
+    ];
+    const common = {
+      project,
+      outlineChapters,
+      motif: { hunter: 'A commander', perfectPlan: 'One strike', blindSpot: 'The channel', selfDestruction: 'The tide' },
+      coreQuestion: 'Why did the river change?',
+      openingHook: 'At dawn, the river reversed.',
+      openLoops: [
+        { question: 'Who opened the gate?', plantedInChapter: 1, resolvedInChapter: 2 },
+        { question: 'Where did the fleet go?', plantedInChapter: 1, resolvedInChapter: 2 },
+      ],
+      persistentFacts: ['The source is upstream.'],
+      avoidRepeating: Array.from({ length: 35 }, (_, index) => `Avoid item ${index + 1}`),
+      storySoFar: [{ chapterNo: 1, title: 'First', summary: 'The water rose.', fallback: false }],
+      loopStates: [
+        { question: 'Who opened the gate?', state: 'resolved' as const },
+        { question: 'Where did the fleet go?', state: 'pending' as const },
+      ],
+      nextChapter: outlineChapters[1],
+      previousTailParagraphs: ['Verbatim paragraph one.', 'Verbatim paragraph two.'],
+      previousOpeners: ['The first six words from the'],
+      voiceAnchorParagraphs: ['Anchor paragraph one.', 'Anchor paragraph two.'],
+      remainingBudgetWords: 150,
+      generationTargetWords: 150,
+      styleNote: 'Muted palette',
+    };
+    const first = buildChapterExpansionPrompt({ ...common, chapter: { ...chapter, no: 2, title: 'Answer', role: 'resolution', beat: 'Reveal the source.', targetWords: 150, endsOnTension: false, sourceFacts: ['The gate failed [2]'], holdBack: [] } } as never);
+    const later = buildChapterExpansionPrompt({ ...common, chapter: { ...chapter, no: 3, title: 'Aftermath', role: 'resolution', beat: 'Show the consequence.', targetWords: 150, endsOnTension: false, sourceFacts: [], holdBack: [] } } as never);
+    const prefixFor = (prompt: typeof first) => prompt.user.split('\n\n--- CHAPTER-SPECIFIC CONTEXT ---')[0] ?? '';
+
+    expect(prefixFor(first)).toBe(prefixFor(later));
+    expect(first.user.startsWith(prefixFor(first))).toBe(true);
+    for (const value of ['River History', 'Explain the history of the river.', 'Archive notes', 'Why did the river change?', 'At dawn, the river reversed.', 'perfectPlan', 'Chapter 1: First; role=hook; beat=Open with the flood.; targetWords=150', 'Chapter 2: Answer; role=resolution; beat=Reveal the source.; targetWords=150']) {
+      expect(prefixFor(first)).toContain(value);
+    }
+    for (const value of [
+      'Source facts: The gate failed [2]',
+      'Hold back: (none)',
+      'Story so far: Chapter 1 — The water rose.',
+      'Avoid repeating (latest 30): Avoid item 6 | Avoid item 7',
+      'Persistent facts (complete next state, max 10): The source is upstream.',
+      'Who opened the gate? — resolved',
+      'Where did the fleet go? — pending',
+      'Next chapter preview (do not reveal its events or holdbacks): Chapter 2: Answer — resolution — Reveal the source.',
+      'Verbatim continuity tail:\nVerbatim paragraph one.\nVerbatim paragraph two.',
+      'Prior chapter opening words (first six words each): The first six words from the',
+      'Voice anchor (tone only; never reuse its facts):\nAnchor paragraph one.\nAnchor paragraph two.',
+      'Remaining total budget is 150 words',
+      'about 25 words',
+      'Do not put parentheses, lists, headings, or stage directions inside narration',
+    ]) expect(first.user + first.system).toContain(value);
+    expect(first.system).toContain('persistentFactsNext max 10 items');
+  });
+
+  it('accepts a complete persistent-facts state up to ten items and normalizes overflow to ten', () => {
+    const facts = Array.from({ length: 11 }, (_, index) => `Fact ${index + 1}`);
+    const parsed = parseChapterExpansion(JSON.stringify({ paragraphs: ['A narrated paragraph.'], styleNote: 'Style', chapterSummary: 'Summary', avoidRepeating: [], persistentFactsNext: facts }));
+    expect(parsed.persistentFactsNext).toEqual(facts.slice(0, 10));
   });
 
   it('keeps hubris-trap outline guidance distinct from flatter explainer weighting', () => {
@@ -330,7 +481,19 @@ describe('script AI parsers', () => {
     const strategist = buildOutlinePrompt({ ...project, scriptPresetId: 'strategist' as never });
     expect(strategist.system).toContain('5% / 10% / 25% / 40% / 20%');
     expect(strategist.system).toContain('guideline');
-    expect(strategist.promptVersion).toMatch(/^script-prompt-v3\/strategist@/);
+    expect(strategist.promptVersion).toMatch(/^script-prompt-v4\/strategist@/);
+  });
+
+  it('shows strict hubris-trap role word totals and validator ranges for the selected budget', () => {
+    const outline = buildOutlinePrompt({ ...project, targetDurationSec: 840, chapterCount: 7, scriptPresetId: 'hubris-trap' });
+
+    expect(outline.user).toContain('Project narration budget: 2,100 words; acceptable sum of chapter targetWords is 2,058–2,142');
+    expect(buildManualScriptPrompt({ ...project, targetDurationSec: 840 }).user)
+      .toContain('Project narration budget: 2,100 words; acceptable sum of chapter targetWords is 2,058–2,142');
+    expect(outline.system).toContain('Act target totals for 2,100 words');
+    expect(outline.system).toContain('hook 168 words (acceptable total 63–273)');
+    expect(outline.system).toContain('rising 1,155 words (acceptable total 1,050–1,260)');
+    expect(outline.system).toContain('resolution 210 words (acceptable total 105–315)');
   });
 
   it.each(['coreQuestion', 'openingHook'] as const)('rejects an outline missing %s with SCRIPT_PARSE_ERROR', (field) => {

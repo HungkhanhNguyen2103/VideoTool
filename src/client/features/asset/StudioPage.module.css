@@ -33,6 +33,9 @@
 .sceneTailSettings .transitionField { width: min(100%, 18rem); }
 .sceneTailSettings p { margin: 0; }
 .styleSelector { display: flex; align-items: center; gap: .5rem; }
+.modelControl { display: grid; gap: .2rem; min-width: 14rem; max-width: 100%; color: var(--text-2); font-size: .72rem; font-weight: 700; }
+.modelControl small { color: var(--text-3); font-size: .62rem; font-weight: 400; white-space: nowrap; }
+.modelControl .audioInput { width: 100%; min-width: 0; }
 .audioInput { min-width: 12rem; padding: .5rem .65rem; color: var(--text); background: var(--input); border: 1px solid var(--border); border-radius: .45rem; font: inherit; }
 .videoDistribution { display: grid; gap: .45rem; padding-top: .35rem; border-top: 1px solid var(--border); }
 .videoDistributionControls { display: flex; align-items: end; gap: .6rem; flex-wrap: wrap; }

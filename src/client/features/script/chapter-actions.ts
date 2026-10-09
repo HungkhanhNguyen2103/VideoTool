@@ -534,7 +534,7 @@ export function chapterWordBudgetNote(chapter: Pick<ChapterDoc, 'paragraphs' | '
   const sign = currentWords >= chapter.targetWords ? '+' : '−';
   return {
     text: `mục tiêu ${chapter.targetWords} từ · hiện ${currentWords} (${sign}${difference}%)`,
-    tone: ratio < 0.8 || ratio > 1.2 ? 'amber' : 'muted',
+    tone: ratio < 0.85 || ratio > 1.15 ? 'amber' : 'muted',
   };
 }
 

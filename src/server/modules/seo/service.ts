@@ -25,7 +25,7 @@ export async function generateSeoPackage(
   if (await context.isCancelled()) return project;
 
   const prompt = buildSeoPrompt(project, requested);
-  const client = getAiClient(project.aiProvider);
+  const client = getAiClient(project.aiProvider, project.aiModel);
   let parsed: Omit<GeneratedSeoSections, 'generatedBy'> | undefined;
   let validationError = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {

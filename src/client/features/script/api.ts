@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AI_PROVIDERS } from '../../../contracts/project';
 import type { ProjectDetail } from '../../../contracts/project';
 import { ProjectDetailSchema } from '../../../contracts/project';
-import { ChapterDocSchema, ChapterSnapshotSchema, type ChapterDoc, type ChapterSnapshot } from '../../../contracts/script';
+import { ChapterDocSchema, ChapterSnapshotSchema, ScriptQualitySummarySchema, type ChapterDoc, type ChapterSnapshot, type ScriptQualitySummary } from '../../../contracts/script';
 import { apiRequest } from '../../shared/api-client';
 
 export type { ChapterSnapshot } from '../../../contracts/script';
@@ -27,6 +27,8 @@ export function parseSseFrames(input: string): { frames: SseFrame[]; remainder: 
 }
 
 const ChaptersResponseSchema = z.object({ chapters: z.array(ChapterDocSchema) });
+const ManualScriptImportResponseSchema = z.object({ project: ProjectDetailSchema, quality: ScriptQualitySummarySchema });
+const ManualChapterImportResponseSchema = z.object({ chapter: ChapterDocSchema, quality: ScriptQualitySummarySchema });
 const JobResponseSchema = z.object({ jobId: z.string() });
 const HistoryResponseSchema = z.array(ChapterSnapshotSchema.extend({ takenAt: z.coerce.date() }));
 const ManualPromptResponseSchema = z.object({ prompt: z.string(), promptVersion: z.string() });
@@ -51,6 +53,8 @@ export const QAResultSchema = z.object({
 }).strict();
 export type QAIssue = z.infer<typeof QAIssueSchema>;
 export type QAResult = z.infer<typeof QAResultSchema>;
+export type ManualScriptImportResult = { project: ProjectDetail; quality: ScriptQualitySummary };
+export type ManualChapterImportResult = { chapter: ChapterDoc; quality: ScriptQualitySummary };
 
 export class RegenerationStreamError extends Error {
   constructor(message: string, readonly code?: string, readonly status?: number) {
@@ -71,8 +75,8 @@ export function getProject(id: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(id)}`, ProjectDetailSchema);
 }
 
-export function generateScript(projectId: string): Promise<{ jobId: string }> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script`, JobResponseSchema, { method: 'POST' });
+export function generateScript(projectId: string, options: { resume?: boolean } = {}): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script`, JobResponseSchema, { method: 'POST', body: options });
 }
 
 export function runFinalQa(projectId: string): Promise<{ jobId: string }> {
@@ -87,16 +91,16 @@ export function importFinalQa(projectId: string, raw: string): Promise<QAResult>
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/qa/manual-import`, QAResultSchema, { method: 'POST', body: { raw } });
 }
 
-export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, { method: 'PATCH', body: { provider } });
+export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude', aiModel?: string): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, { method: 'PATCH', body: { provider, ...(aiModel === undefined ? {} : { aiModel }) } });
 }
 
 export function getManualScriptPrompt(projectId: string): Promise<{ prompt: string; promptVersion: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script/manual-prompt`, ManualPromptResponseSchema);
 }
 
-export function importManualScript(projectId: string, raw: string): Promise<ProjectDetail> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script/manual-import`, ProjectDetailSchema, { method: 'POST', body: { raw } });
+export function importManualScript(projectId: string, raw: string): Promise<ManualScriptImportResult> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script/manual-import`, ManualScriptImportResponseSchema, { method: 'POST', body: { raw } });
 }
 
 export function getRegenerationManualPrompt(
@@ -107,8 +111,8 @@ export function getRegenerationManualPrompt(
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/regenerate/manual-prompt`, ManualPromptResponseSchema, { method: 'POST', body });
 }
 
-export function importRegeneratedChapter(projectId: string, chapterId: string, raw: string): Promise<ChapterDoc> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/regenerate/manual-import`, ChapterDocSchema, { method: 'POST', body: { raw } });
+export function importRegeneratedChapter(projectId: string, chapterId: string, raw: string): Promise<ManualChapterImportResult> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/regenerate/manual-import`, ManualChapterImportResponseSchema, { method: 'POST', body: { raw } });
 }
 
 export async function patchChapter(

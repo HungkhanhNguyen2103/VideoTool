@@ -272,9 +272,9 @@ export function setParallax(projectId: string, style: ParallaxStyle): Promise<Pr
   });
 }
 
-export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
+export function setAiProvider(projectId: string, provider: 'deepseek' | 'claude', aiModel?: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, {
-    method: 'PATCH', body: { provider },
+    method: 'PATCH', body: { provider, ...(aiModel === undefined ? {} : { aiModel }) },
   });
 }
 

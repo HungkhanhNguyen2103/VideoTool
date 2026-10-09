@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Collection } from 'mongodb';
+import { getAiClient } from '../../shared/ai';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { applyEmptySceneVisualPromptsWithResult, createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript } from '../project';
@@ -12,6 +13,7 @@ const projectInput = {
   title: 'Visual scenes', brief: 'An illustrated account of three scenes.', language: 'en' as const,
   referencesText: '', scriptPresetId: 'documentary' as const, targetDurationSec: 60,
   chapterCount: 2, voiceId: null,
+  aiModel: 'deepseek-flash',
   renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
 };
 
@@ -19,6 +21,7 @@ beforeAll(() => startTestMongo());
 beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   aiMock.chat.mockReset();
+  vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
 
@@ -65,6 +68,7 @@ describe('generateVisualPrompts', () => {
     const result = await generateVisualPrompts(project.id, job);
 
     expect(result).toEqual({ updatedScenes: 2, skippedScenes: 1, failedChapters: [] });
+    expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Generated 1', 'Manual second', 'Generated 3']);
     expect((await getProject(project.id)).scenes.map((scene) => scene.sfxPrompt)).toEqual(['Generated SFX 1', 'Existing SFX', 'Generated SFX 3']);
     expect(job.progress).toEqual([50, 100]);

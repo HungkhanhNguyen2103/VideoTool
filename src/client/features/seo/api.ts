@@ -62,6 +62,6 @@ export function removeSeoThumbnail(projectId: string): Promise<ProjectDetail> {
   return thumbnailRequest(projectId, { method: 'DELETE' });
 }
 
-export function setSeoAiProvider(projectId: string, provider: 'deepseek' | 'claude'): Promise<ProjectDetail> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, { method: 'PATCH', body: { provider } });
+export function setSeoAiProvider(projectId: string, provider: 'deepseek' | 'claude', aiModel?: string): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/ai-provider`, ProjectDetailSchema, { method: 'PATCH', body: { provider, ...(aiModel === undefined ? {} : { aiModel }) } });
 }

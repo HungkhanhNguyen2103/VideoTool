@@ -9,15 +9,17 @@ import { createProject, getProject, replaceProjectChapters } from '../project';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
+import { getAiClient } from '../../shared/ai';
 
 type JobRecord = { _id: string; type: string; projectId: string; payload: unknown };
 
-const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn() }));
-vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
+const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), chatWithMetadata: vi.fn() }));
+vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn((_provider: string, model?: string) => ({ ...aiMock, model: model ?? aiMock.model })) }));
 
 const projectInput = {
   title: 'QA project', brief: 'A project for final quality assurance.', language: 'en' as const,
   referencesText: '', scriptPresetId: 'documentary' as const, targetDurationSec: 60,
+  aiModel: 'deepseek-flash',
   chapterCount: 1, voiceId: null,
   renderSettings: { aspect: '16:9' as const, width: 1920, height: 1080, fps: 30 as const },
 };
@@ -31,6 +33,9 @@ beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   await getCollection('jobs').deleteMany({});
   aiMock.chat.mockReset();
+  aiMock.chatWithMetadata.mockReset();
+  aiMock.chatWithMetadata.mockImplementation(async (messages, options) => ({ text: await aiMock.chat(messages, options), truncated: false }));
+  vi.mocked(getAiClient).mockClear();
 });
 afterAll(() => closeTestMongo());
 
@@ -40,7 +45,7 @@ function context() {
 
 describe('final QA contract', () => {
   it('requests issue reasons in the project language while keeping enum tokens in English', async () => {
-    const project = await createProject({ ...projectInput, language: 'vi' });
+    const project = await createProject({ ...projectInput, language: 'vi', referencesText: '[1] Harbor archive, page 8.' });
     const vietnamese = buildQaPrompt(await getProject(project.id));
     const english = buildQaPrompt({ ...(await getProject(project.id)), language: 'en' });
     const enumTokens = 'REPETITION, CONTRADICTION, DEAD_CHAPTER, POSSIBLE_FILLER, WEAK_HOOK, FLAT_PACING, PREMATURE_REVEAL, UNRESOLVED_LOOP, WEAK_PAYOFF, AWKWARD_TRANSITION, TONE_DRIFT, CREDIBILITY_RISK';
@@ -51,7 +56,8 @@ describe('final QA contract', () => {
     expect(vietnamese.system).toContain('REMOVE_DUPLICATION, REGENERATE, SHORTEN, MOVE_REVEAL, REVIEW_FACT');
     expect(vietnamese.system).toContain('optional paragraph (positive integer), quote (string, max 240 characters), fixInstruction');
     expect(vietnamese.system).toContain('For every issue, also include when you can: paragraph (the 1-based paragraph number inside that chapter)');
-    expect(vietnamese.promptVersion).toMatch(/^qa-prompt-v2\/documentary@/);
+    expect(vietnamese.user).toContain('References: [1] Harbor archive, page 8.');
+    expect(vietnamese.promptVersion).toMatch(/^qa-prompt-v3\/documentary@/);
   });
 
   it('parses a well-formed result with all supported issue types and actions', () => {
@@ -120,10 +126,12 @@ describe('runFinalQa', () => {
 
     const result = await runFinalQa(project.id, jobContext);
 
-    expect(result).toEqual({ ...JSON.parse(qaJson), reviewedBy: { provider: 'deepseek', model: 'deepseek-chat' } });
+    expect(result).toEqual({ ...JSON.parse(qaJson), reviewedBy: { provider: 'deepseek', model: 'deepseek-flash' } });
     expect(await getProject(project.id)).toEqual(before);
     expect(aiMock.chat).toHaveBeenCalledOnce();
-    expect(jobContext.appendLog).toHaveBeenCalledWith('Final QA finished by deepseek/deepseek-chat: 1 issue found.');
+    expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Final QA finished by deepseek/deepseek-flash: 1 issue found.');
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledWith(expect.any(Array), { maxTokens: 2800, json: true });
     const system = aiMock.chat.mock.calls[0]![0][0].content as string;
     const user = aiMock.chat.mock.calls[0]![0][1].content as string;
     expect(system).toContain('REPETITION, CONTRADICTION, DEAD_CHAPTER, POSSIBLE_FILLER, WEAK_HOOK, FLAT_PACING, PREMATURE_REVEAL, UNRESOLVED_LOOP, WEAK_PAYOFF, AWKWARD_TRANSITION, TONE_DRIFT, CREDIBILITY_RISK');
@@ -137,6 +145,44 @@ describe('runFinalQa', () => {
 
     await expect(runFinalQa(project.id, cancelled)).resolves.toEqual({ issues: [] });
     expect(aiMock.chat).not.toHaveBeenCalled();
+    expect(aiMock.chatWithMetadata).not.toHaveBeenCalled();
+  });
+
+  it('retries QA once with a larger model-bounded output cap only after truncation metadata', async () => {
+    const project = await createProject({ ...projectInput, chapterCount: 3 });
+    aiMock.chatWithMetadata.mockResolvedValueOnce({ text: '{"issues":[', truncated: true })
+      .mockResolvedValueOnce({ text: qaJson, truncated: false });
+    const jobContext = context();
+
+    await expect(runFinalQa(project.id, jobContext)).resolves.toMatchObject({ issues: [{ chapter: 1, type: 'POSSIBLE_FILLER' }] });
+
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(2);
+    expect(aiMock.chatWithMetadata.mock.calls[0]![1]).toMatchObject({ maxTokens: 4400, json: true });
+    expect(aiMock.chatWithMetadata.mock.calls[1]![1]).toMatchObject({ maxTokens: 6600, json: true });
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('Final QA response truncated'));
+  });
+
+  it('fails after the one truncation retry and never retries invalid but complete JSON', async () => {
+    const project = await createProject(projectInput);
+    aiMock.chatWithMetadata.mockResolvedValueOnce({ text: '{"issues":[', truncated: true })
+      .mockResolvedValueOnce({ text: '{"issues":[', truncated: true });
+    await expect(runFinalQa(project.id, context())).rejects.toMatchObject({ status: 503, code: 'AI_RESPONSE_TRUNCATED' });
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(2);
+
+    aiMock.chatWithMetadata.mockReset().mockResolvedValueOnce({ text: 'not json', truncated: false });
+    await expect(runFinalQa(project.id, context())).rejects.toThrow();
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not make a larger QA request when cancellation arrives after the first response', async () => {
+    const project = await createProject(projectInput);
+    aiMock.chatWithMetadata.mockResolvedValueOnce({ text: '{"issues":[', truncated: true });
+    const cancelled = context();
+    cancelled.isCancelled.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    await expect(runFinalQa(project.id, cancelled)).resolves.toEqual({ issues: [] });
+    expect(aiMock.chatWithMetadata).toHaveBeenCalledOnce();
+    expect(cancelled.reportProgress).not.toHaveBeenCalled();
   });
 });
 

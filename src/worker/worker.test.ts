@@ -72,6 +72,17 @@ describe('script job registration', () => {
     expect(mocks.generateScript).toHaveBeenCalledWith('project-2', expect.objectContaining({ reportProgress: expect.any(Function), isCancelled, appendLog }));
   });
 
+  it('forwards the optional resume flag to script generation', async () => {
+    mocks.generateScript.mockReset().mockResolvedValue(undefined);
+    const handler = jobHandlers['generate-script']!;
+    await handler({
+      _id: 'job-resume', schemaVersion: 1, type: 'generate-script', projectId: 'project-1', payload: { projectId: 'project-1', resume: true },
+      status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
+      progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() });
+    expect(mocks.generateScript).toHaveBeenCalledWith('project-1', expect.objectContaining({ reportProgress: expect.any(Function) }), { resume: true });
+  });
+
   it('does not start generation when the job is already cancelled', async () => {
     mocks.generateScript.mockReset();
     const handler = jobHandlers['generate-script']!;
@@ -84,7 +95,7 @@ describe('script job registration', () => {
   });
 
   it('logs provider, status, and readable message when script AI fails', async () => {
-    mocks.generateScript.mockRejectedValueOnce(new AiRequestError('DeepSeek', 502, 'Cannot reach api.deepseek.com (timeout/network).'));
+    mocks.generateScript.mockRejectedValueOnce(new AiRequestError('DeepSeek', 'deepseek-chat', 502, 'Cannot reach api.deepseek.com (timeout/network) for model deepseek-chat.'));
     const handler = jobHandlers['generate-script']!;
 
     await expect(handler({
@@ -92,7 +103,7 @@ describe('script job registration', () => {
       status: 'running', attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
       progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() })).rejects.toBeInstanceOf(AiRequestError);
-    expect(mocks.loggerError).toHaveBeenCalledWith('AI request failed.', { provider: 'DeepSeek', status: 502, message: 'Cannot reach api.deepseek.com (timeout/network).' });
+    expect(mocks.loggerError).toHaveBeenCalledWith('AI request failed.', { provider: 'DeepSeek', status: 502, message: 'Cannot reach api.deepseek.com (timeout/network) for model deepseek-chat.' });
   });
 
   it('registers visual-prompt generation and maps its payload/context', async () => {

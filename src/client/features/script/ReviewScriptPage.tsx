@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { AiProvider } from '../../../contracts/project';
-import type { ChapterDoc } from '../../../contracts/script';
-import type { QAIssue, QAResult } from './api';
+import { getReferenceCoverage, type ChapterDoc, type ScriptQualitySummary } from '../../../contracts/script';
+import type { ManualScriptImportResult, QAIssue, QAResult } from './api';
 import { isHardStopRegenerationError } from './api';
 import { QaApplyAllDialog, type QaApplyAllResult } from './components/QaApplyAllDialog';
 import { QaIssueCard } from './components/QaIssueCard';
@@ -16,6 +16,7 @@ import { useJobProgress } from '../../shared/hooks/use-job-progress';
 import { BlockingProgressDialog } from '../../shared/ui/BlockingProgressDialog';
 import { isStudioLocked, type BlockingProgressInput, type BlockingTask } from '../../shared/ui/blocking-progress';
 import { cancelJob } from '../../shared/job-api';
+import { AiModelSelect, aiModelForProviderChange } from '../../shared/ai/AiModelSelect';
 import * as api from './api';
 import {
   approveAllTargets,
@@ -69,6 +70,10 @@ const qaActionLabel: Record<QAResult['issues'][number]['suggestedAction'], strin
 };
 const aiProviderLabel: Record<AiProvider, string> = { deepseek: 'DeepSeek', claude: 'Claude' };
 const manualRegenHelp = 'lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào';
+
+function manualQualitySignature(chapters: readonly ChapterDoc[]): string {
+  return JSON.stringify(chapters.map(({ no, title, role, targetWords, paragraphs }) => ({ no, title, role, targetWords, paragraphs })));
+}
 
 export function regenerationStatusLabel(mode: 'automatic' | 'manual', provider: AiProvider): string {
   return mode === 'automatic' ? `Tự động bằng ${aiProviderLabel[provider]}` : 'Thủ công: tự dán JSON';
@@ -135,6 +140,11 @@ export function shouldOfferOpeningHook(chapter: Pick<ChapterDoc, 'no' | 'paragra
   return chapter.no === 1 && hook.length > 0 && chapter.paragraphs[0]?.trim() !== hook;
 }
 
+export function getResumableChapterNo(chapters: readonly Pick<ChapterDoc, 'no' | 'paragraphs'>[], generationJobId: string | null): number | null {
+  if (generationJobId) return null;
+  return chapters.find((chapter) => chapter.paragraphs.length === 0)?.no ?? null;
+}
+
 export function ReviewScriptPage() {
   const { projectId = '' } = useParams();
   const navigate = useNavigate();
@@ -176,6 +186,7 @@ export function ReviewScriptPage() {
   const [generationMode, setGenerationMode] = useState<'automatic' | 'manual'>('automatic');
   const [manualRaw, setManualRaw] = useState('');
   const [manualPrompt, setManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
+  const [manualQuality, setManualQuality] = useState<{ projectId: string; signature: string; summary: ScriptQualitySummary } | null>(null);
   const [manualBusy, setManualBusy] = useState(false);
   const [providerBusy, setProviderBusy] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
@@ -196,6 +207,9 @@ export function ReviewScriptPage() {
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const historyQuery = useQuery({ queryKey: ['projects', 'chapters', 'history', projectId], queryFn: () => api.getChapterHistory(projectId), enabled: Boolean(projectId) });
   const chapters = projectQuery.data?.chapters ?? [];
+  const resumeChapterNo = getResumableChapterNo(chapters, jobId);
+  const visibleManualQuality = manualQuality?.projectId === projectId && manualQuality.signature === manualQualitySignature(chapters) ? manualQuality.summary : null;
+  const referenceCoverage = projectQuery.data ? getReferenceCoverage(projectQuery.data.referencesText, projectQuery.data.targetDurationSec) : null;
   const approvedCount = chapters.filter((chapter) => chapter.status === 'approved').length;
   const allApproved = chapters.length > 0 && approvedCount === chapters.length;
   const { steps } = getReviewStepperState(chapters.length, approvedCount, jobId);
@@ -329,7 +343,10 @@ export function ReviewScriptPage() {
       setReviewJobTask(null);
       toast('Đã tạo xong bản nháp kịch bản.');
     } else if (progress?.status === 'failed' || progress?.status === 'cancelled') {
-      toast(progress.error ?? 'Không thể tạo kịch bản.');
+      void refresh();
+      setJobId(null);
+      setReviewJobTask(null);
+      toast(progress.error ?? (progress.status === 'cancelled' ? 'Đã hủy; bạn có thể viết tiếp từ chương còn trống.' : 'Không thể tạo kịch bản.'));
     }
   }, [progress?.status]);
 
@@ -385,8 +402,16 @@ export function ReviewScriptPage() {
   }, [editing, editParagraphs]);
 
   async function generate() {
+    await enqueueScriptGeneration(false);
+  }
+
+  async function resumeScriptGeneration() {
+    await enqueueScriptGeneration(true);
+  }
+
+  async function enqueueScriptGeneration(resume: boolean) {
     try {
-      const result = await api.generateScript(projectId);
+      const result = await api.generateScript(projectId, resume ? { resume: true } : {});
       setReviewJobTask({ kind: 'script-generation' });
       setReviewJobStartedAt(Date.now());
       setReviewJobLastEventAt(Date.now());
@@ -546,9 +571,15 @@ export function ReviewScriptPage() {
     startEdit(match.chapter);
   }
 
-  async function changeProvider(provider: 'deepseek' | 'claude') {
+  async function changeProvider(provider: 'deepseek' | 'claude', model?: string) {
     setProviderBusy(true);
-    try { await api.setAiProvider(projectId, provider); await projectQuery.refetch(); toast('Đã đổi nhà cung cấp AI.'); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi nhà cung cấp AI.'); } finally { setProviderBusy(false); }
+    try { await api.setAiProvider(projectId, provider, model); await projectQuery.refetch(); toast(model ? 'Đã đổi model AI.' : 'Đã đổi nhà cung cấp AI.'); } catch (error) { toast(error instanceof Error ? error.message : 'Không thể đổi cấu hình AI.'); } finally { setProviderBusy(false); }
+  }
+
+  function changeModel(model: string) {
+    const provider = projectQuery.data?.aiProvider ?? 'deepseek';
+    if (model === projectQuery.data?.aiModel || controlsBusy) return;
+    void changeProvider(provider, model);
   }
 
   async function loadManualPrompt() {
@@ -564,10 +595,11 @@ export function ReviewScriptPage() {
   async function importManual() {
     setManualBusy(true);
     try {
-      await api.importManualScript(projectId, manualRaw);
+      const result: ManualScriptImportResult = await api.importManualScript(projectId, manualRaw);
       setManualRaw(manualTextAfterImport(manualRaw, true));
       setManualPrompt(null);
-      await refresh();
+      const updatedProject = await refresh();
+      setManualQuality({ projectId, signature: manualQualitySignature(updatedProject?.chapters ?? result.project.chapters), summary: result.quality });
       setQaStale(true);
       toast('Đã nhập bản thảo thủ công.');
     } catch (error) {
@@ -596,8 +628,9 @@ export function ReviewScriptPage() {
     if (!manualRegen || manualRegen.chapterId !== chapter.id) return;
     setManualRegenBusy(true);
     try {
-      await api.importRegeneratedChapter(projectId, chapter.id, manualRegen.raw);
-      await refresh();
+      const result = await api.importRegeneratedChapter(projectId, chapter.id, manualRegen.raw);
+      const updatedProject = await refresh();
+      if (updatedProject) setManualQuality({ projectId, signature: manualQualitySignature(updatedProject.chapters), summary: result.quality });
       setManualRegen(null);
       setQaStale(true);
       toast(`Đã nhập chương ${chapter.no}.`);
@@ -607,7 +640,10 @@ export function ReviewScriptPage() {
     } finally { setManualRegenBusy(false); }
   }
 
-  async function refresh() { await Promise.all([projectQuery.refetch(), historyQuery.refetch()]); }
+  async function refresh() {
+    const [projectResult] = await Promise.all([projectQuery.refetch(), historyQuery.refetch()]);
+    return projectResult.data;
+  }
 
   function recordQaBulkProgress(detail: string, completed: number, total: number): void {
     const now = Date.now();
@@ -1040,8 +1076,12 @@ export function ReviewScriptPage() {
         <section className={styles.panel} aria-labelledby="generate-title">
           <h2 id="generate-title">Nháp kịch bản</h2>
           <p className={styles.muted}>AI sẽ viết kịch bản theo brief và preset của dự án.</p>
+          {referenceCoverage?.shouldWarn && <p className={styles.qualityWarning} role="status">Nguồn tham khảo ngắn: {referenceCoverage.referenceCharacters} ký tự cho {referenceCoverage.targetMinutes} phút ({referenceCoverage.charactersPerMinute} ký tự/phút; ngưỡng cảnh báo 500). Bạn vẫn có thể tiếp tục tạo kịch bản.</p>}
           <label className={styles.inlineField} htmlFor="review-provider">Nhà cung cấp AI
-            <select className={styles.input} id="review-provider" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+            <select className={styles.input} id="review-provider" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
+              const provider = event.target.value as 'deepseek' | 'claude';
+              void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
+            }}>
               <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
             </select>
           </label>
@@ -1050,6 +1090,7 @@ export function ReviewScriptPage() {
             <label><input type="radio" name="generation-mode" value="automatic" checked={effectiveGenerationMode === 'automatic'} disabled={controlsBusy} onChange={() => setGenerationMode('automatic')} />Tự động</label>
             <label><input type="radio" name="generation-mode" value="manual" checked={effectiveGenerationMode === 'manual'} disabled={controlsBusy} onChange={() => setGenerationMode('manual')} />Thủ công</label>
           </fieldset>
+          {effectiveGenerationMode === 'automatic' && <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy} onChange={changeModel} />}
           {effectiveGenerationMode === 'automatic' ? <Button variant="amber" disabled={controlsBusy} onClick={() => void generate()}>Tạo kịch bản</Button> : <div className={styles.manualBox}>
             <div className={styles.actions}><Button variant="indigoline" disabled={manualBusy || controlsBusy} onClick={() => void loadManualPrompt()}>Lấy prompt</Button>{manualPrompt && <Button disabled={manualBusy || controlsBusy} onClick={() => void copyManualPrompt()}>Sao chép</Button>}</div>
             {manualPrompt && <p className={styles.muted}>Prompt {manualPrompt.promptVersion}</p>}
@@ -1066,16 +1107,21 @@ export function ReviewScriptPage() {
                 <div className={styles.summary}>{chaptersSummaryText(chapters)}</div>
               </div>
               <div className={styles.actions}>
+                {resumeChapterNo !== null && <Button variant="amber" disabled={controlsBusy} onClick={() => void resumeScriptGeneration()}>Viết tiếp từ chương {resumeChapterNo}</Button>}
                 <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
                 <Button variant="red" title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || Boolean(regen) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>
             </div>
             <div className={styles.regenToolbar}>
               <label className={styles.compactField} htmlFor="review-provider-existing">AI
-                <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => void changeProvider(event.target.value as 'deepseek' | 'claude')}>
+                <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
+                  const provider = event.target.value as 'deepseek' | 'claude';
+                  void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
+                }}>
                   <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
                 </select>
               </label>
+              <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy || regenMode === 'manual'} mode={regenMode === 'manual' ? 'manual' : 'automatic'} onChange={changeModel} />
               <span className={styles.toolbarDivider} aria-hidden="true" />
               <fieldset className={`${styles.segmented} ${styles.regenMode}`} aria-label="Chế độ tái tạo" disabled={controlsBusy}>
                 <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} /><span>Tự động</span></label>
@@ -1129,6 +1175,14 @@ export function ReviewScriptPage() {
               <p className={styles.qaResultsMuted}>Kết quả QA không được lưu; chạy lại sau khi chỉnh kịch bản để cập nhật.</p>
             </details>}
             <label className={styles.selectAll}><input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={(event) => setSelected(event.target.checked ? new Set(chapters.map((chapter) => chapter.id)) : new Set())} />Chọn tất cả chương</label>
+            {visibleManualQuality && <section className={styles.manualQuality} aria-live="polite" aria-labelledby="manual-quality-title">
+              <h3 id="manual-quality-title">Độ dài bản thảo vừa nhập</h3>
+              <p>{visibleManualQuality.totalWords} / {visibleManualQuality.targetWords} từ ({visibleManualQuality.targetPercent}%)</p>
+              {visibleManualQuality.outsideLengthRange && <p className={styles.qualityWarning}>Cảnh báo: tổng độ dài nằm ngoài ngưỡng 85–115%. Bản thảo vẫn được nhập.</p>}
+              {visibleManualQuality.plannedBudgetWarning && <p className={styles.qualityWarning}>Tổng targetWords dự kiến lệch {visibleManualQuality.plannedDeviationPct > 0 ? '+' : ''}{visibleManualQuality.plannedDeviationPct}% so với ngân sách dự án.</p>}
+              {visibleManualQuality.warnings.filter((warning) => warning.startsWith('Act ')).map((warning) => <p className={styles.qualityWarning} key={warning}>{warning}</p>)}
+              <ul>{visibleManualQuality.chapters.map((chapter) => <li key={chapter.chapterNo}>Chương {chapter.chapterNo}: {chapter.words} / {chapter.targetWords} từ ({chapter.deviationPct > 0 ? '+' : ''}{chapter.deviationPct}%) {chapter.outsideLengthRange ? '· ngoài ngưỡng 85–115%' : ''}</li>)}</ul>
+            </section>}
             <div className={styles.chapterList}>
               {chapters.map((chapter) => {
                 const isCurrentRegen = regen?.id === chapter.id;
@@ -1149,6 +1203,7 @@ export function ReviewScriptPage() {
                     </button>
                     <Badge tone={statusTone[chapter.status]}>{statusLabel[chapter.status]}</Badge>
                     {chapter.reviewStatus === 'upstream-changed' && <span title="Chương trước đã thay đổi; hãy xem lại chương này trước khi chốt."><Badge tone="amber">Cần xem lại: chương trước đã đổi</Badge></span>}
+                    {chapter.sourceFacts !== undefined && chapter.sourceFacts.length < 2 && (chapter.targetWords ?? 0) > 150 && <span className={styles.thinSourceNote}>Nguồn mỏng — chương này dễ bị kéo dài</span>}
                     {budgetNote && <Badge tone={budgetNote.tone}>{budgetNote.text}</Badge>}
                     {chapterQaSummary && <Button size="sm" variant={qaChipVariant} onClick={() => focusQaChapter(chapter.id)} aria-label={`Mở QA chương ${chapter.no}`}>QA {chapterQaSummary.total}</Button>}
                     <span className={styles.spacer} />
