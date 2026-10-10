@@ -84,8 +84,24 @@ describe('ReviewScriptPage resume action', () => {
   it('labels the action with the first incomplete chapter and sends resume mode', async () => {
     const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
     expect(page).toContain('Viết tiếp từ chương {resumeChapterNo}');
-    expect(page).toContain('api.generateScript(projectId, resume ? { resume: true } : {})');
+    expect(page).toContain('api.generateScript(projectId, buildScriptGenerationRequest({ backend, cliModel, resume }))');
     expect(page).toContain("progress.status === 'cancelled' ? 'Đã hủy; bạn có thể viết tiếp từ chương còn trống.'");
+  });
+
+  it('offers API, local Claude CLI, and manual modes with availability, model, estimate, and shared progress labels', async () => {
+    const source = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const progress = await readFile('src/client/shared/ui/blocking-progress.ts', 'utf8');
+    const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
+
+    expect(source).toContain('Tự động (API)');
+    expect(source).toContain('Claude CLI (máy này)');
+    expect(source).toContain('Thủ công');
+    expect(source).toContain('Mặc định của Claude CLI');
+    expect(source).toContain('cliStatusQuery.data?.available');
+    expect(source).toContain('cliGenerationEstimate');
+    expect(source).toContain('kind: backend === \'cli\' ? \'cli-script-generation\' : \'script-generation\'');
+    expect(progress).toContain("'cli-script-generation': 'Đang viết kịch bản bằng Claude CLI'");
+    expect(css).toContain('.generationEstimate');
   });
 });
 

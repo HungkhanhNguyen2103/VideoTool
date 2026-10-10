@@ -4,7 +4,7 @@ import { getDb } from './db/client';
 import { errorHandler } from './error-handler';
 import { createProjectRouter } from './modules/project';
 import { jobRouter } from './modules/job';
-import { enqueueJob, getActiveJobByType } from './modules/job';
+import { enqueueJob, getActiveJobByType, getActiveJobDetailsByType } from './modules/job';
 import { configureFileStore, configureVisualStyleSamples, createFileStoreService, fileStoreRouter, visualStyleSamplesRouter } from './modules/file-store';
 import { createScriptCliStatusRouter, createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
@@ -45,7 +45,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api/project', createProjectRouter({
     beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId, project.logoFileId, project.seo.thumbnail.fileId]),
   }));
-  app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
+  app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobDetailsByType }));
   app.use('/api/script', createScriptCliStatusRouter());
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);

@@ -195,9 +195,11 @@ describe('Claude CLI script generation backend', () => {
   });
 
   it.each([
-    ['rate limit', '429 rate limit exceeded', 'CLAUDE_CLI_RATE_LIMITED'],
-    ['authentication', 'Please run /login', 'CLAUDE_CLI_AUTH_FAILED'],
-  ])('does not retry a CLI %s failure as a transient chapter error', async (_label, stderr, code) => {
+    ['rate limit on stderr', 'stderr', '429 rate limit exceeded', 'CLAUDE_CLI_RATE_LIMITED'],
+    ['authentication on stderr', 'stderr', 'Please run /login', 'CLAUDE_CLI_AUTH_FAILED'],
+    ['rate limit on stdout', 'stdout', '429 rate limit exceeded', 'CLAUDE_CLI_RATE_LIMITED'],
+    ['authentication on stdout', 'stdout', 'Please run /login', 'CLAUDE_CLI_AUTH_FAILED'],
+  ])('does not retry a CLI %s failure as a transient chapter error', async (_label, stream, failureText, code) => {
     const root = await makeRoot();
     const project = await createProject(projectInput);
     const ctx = context();
@@ -210,7 +212,8 @@ describe('Claude CLI script generation backend', () => {
         durationMs: 1, outputBytes: Buffer.byteLength(outline), cancelled: false, timedOut: false, outputTooLarge: false, spawnError: null,
       };
       return {
-        runId: 'failure-run', runDirectory: root, displayPath: 'audit/chapter', output: '', stderr, exitCode: 1,
+        runId: 'failure-run', runDirectory: root, displayPath: 'audit/chapter',
+        output: stream === 'stdout' ? failureText : '', stderr: stream === 'stderr' ? failureText : '', exitCode: 1,
         durationMs: 1, outputBytes: 0, cancelled: false, timedOut: false, outputTooLarge: false, spawnError: null,
       };
     });

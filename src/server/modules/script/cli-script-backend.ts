@@ -26,11 +26,11 @@ function cliFailure(result: ClaudeCliRunResult, stepLabel: string): AppError | n
   if (result.outputTooLarge) return new AppError(`Claude CLI trả về quá nhiều dữ liệu ở bước ${stepLabel}.`, 413, 'CLAUDE_CLI_OUTPUT_TOO_LARGE');
   if (result.spawnError) return new AppError(`Không thể khởi chạy Claude Code CLI ở bước ${stepLabel}. Kiểm tra cài đặt CLI trên máy chủ.`, 503, 'CLAUDE_CLI_UNAVAILABLE');
   if (result.exitCode === 0) return null;
-  const stderr = result.stderr.toLowerCase();
-  if (/\b429\b|rate.?limit|too many requests/u.test(stderr)) {
+  const output = `${result.stderr}\n${result.output}`.toLowerCase();
+  if (/\b429\b|rate.?limit|too many requests/u.test(output)) {
     return new AppError(`Claude CLI bị giới hạn lượt gọi ở bước ${stepLabel}. Hãy thử tiếp tục sau.`, 429, 'CLAUDE_CLI_RATE_LIMITED');
   }
-  if (/\blogin\b|unauthori[sz]ed|not authenticated|authentication|invalid api key/u.test(stderr)) {
+  if (/\blogin\b|unauthori[sz]ed|not authenticated|authentication|invalid api key/u.test(output)) {
     return new AppError(`Claude CLI chưa đăng nhập hoặc xác thực thất bại ở bước ${stepLabel}.`, 401, 'CLAUDE_CLI_AUTH_FAILED');
   }
   return new AppError(`Claude CLI thất bại ở bước ${stepLabel} (mã thoát ${result.exitCode ?? 'không rõ'}).`, 503, 'CLAUDE_CLI_FAILED');
@@ -44,7 +44,7 @@ export async function createClaudeCliScriptBackend(options: ClaudeCliScriptBacke
   const model = options.model ?? 'default';
   const modelCap = options.model ? getAiModelDefinition('claude', options.model)?.capabilities.maxOutputTokens : undefined;
   const runCli = options.runCli ?? runClaudeCli;
-  const pollIntervalMs = options.pollIntervalMs ?? 50;
+  const pollIntervalMs = options.pollIntervalMs ?? 250;
   let callCount = 0;
 
   return {

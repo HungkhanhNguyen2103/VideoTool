@@ -14,7 +14,7 @@ import { getManualOutlineWarnings, recommendScriptChapterCount } from './ai/outl
 import { summarizeManualScriptQuality } from './quality';
 
 type EnqueueScriptJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<{ id: string }>;
-type GetActiveScriptJob = (projectId: string, type: string) => Promise<{ id: string } | null>;
+type GetActiveScriptJob = (projectId: string, type: string) => Promise<{ id: string; payload: unknown } | null>;
 type ScriptCliStatusReader = () => Promise<ClaudeCliStatus>;
 
 const PatchChapterSchema = z.object({
@@ -72,6 +72,22 @@ export function createScriptRouter(options: {
     }
     const activeJob = await options.getActiveJob?.(project.id, 'generate-script');
     if (activeJob) {
+      const activePayload = z.object({
+        resume: z.boolean().optional(),
+        backend: z.enum(['api', 'cli']).optional(),
+        cliModel: z.string().nullable().optional(),
+      }).passthrough().safeParse(activeJob.payload);
+      const activeResume = activePayload.success ? activePayload.data.resume ?? false : false;
+      const activeBackend = activePayload.success ? activePayload.data.backend ?? 'api' : 'api';
+      const activeCliModel = activePayload.success ? activePayload.data.cliModel ?? null : null;
+      if (activeResume !== (body.resume ?? false)
+        || activeBackend !== backend
+        || (backend === 'cli' && activeCliModel !== (body.cliModel ?? null))) {
+        const activeLabel = activeBackend === 'cli'
+          ? `Claude CLI${activeCliModel ? ` (${activeCliModel})` : ''}`
+          : 'API';
+        throw new AppError(`Đang có job tạo kịch bản bằng ${activeLabel} với chế độ ${activeResume ? 'tiếp tục' : 'viết mới'}. Hãy chờ job hoàn tất hoặc hủy trước khi chọn backend, model hay chế độ khác.`, 409, 'SCRIPT_GENERATION_BACKEND_MISMATCH');
+      }
       res.status(200).json({ jobId: activeJob.id });
       return;
     }

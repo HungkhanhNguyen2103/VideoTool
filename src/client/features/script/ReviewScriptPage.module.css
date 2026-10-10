@@ -38,9 +38,17 @@
 .modelSelect { display: grid; gap: .2rem; min-width: min(15rem, 100%); color: var(--text-2); font-size: .75rem; font-weight: 600; }
 .modelSelect small { color: var(--text-3); font-size: .65rem; font-weight: 400; white-space: nowrap; }
 .input { min-height: 36px; padding: 0 .625rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .5rem; color: var(--text); }
-.modeControls { display: flex; gap: .75rem; margin: 0; padding: 0; border: 0; color: var(--text-2); font-size: .8125rem; }
-.modeControls legend { width: 100%; margin-bottom: .35rem; color: var(--text-3); font-size: .6875rem; font-weight: 600; text-transform: uppercase; }
+.modeControls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin: 0; padding: 0; border: 0; color: var(--text-2); font-size: .8125rem; }
+.modeControls legend { grid-column: 1 / -1; width: 100%; margin-bottom: .35rem; color: var(--text-3); font-size: .6875rem; font-weight: 600; text-transform: uppercase; }
+.modeControls label { display: flex; align-items: flex-start; gap: .4rem; min-width: 0; line-height: 1.4; }
+.modeControls input { flex: none; margin: .12rem 0 0; accent-color: var(--amber); }
 .manualBox { display: grid; gap: .75rem; }
+.generationEstimate { width: fit-content; max-width: 100%; margin: 0; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--panel-2); color: var(--text-2); font-size: .78rem; line-height: 1.45; }
+.resumeGeneration { display: grid; gap: .55rem; padding: .8rem; border: 1px solid var(--border); border-radius: .625rem; background: var(--panel-2); }
+.resumeGenerationControls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .75rem; }
+.resumeGenerationControls .inlineField { display: grid; align-items: stretch; }
+.resumeGenerationControls .modelSelect { min-width: min(15rem, 100%); }
+.resumeGenerationControls > button { margin-left: auto; }
 .chapterManualBox { padding: .75rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .625rem; }
 .manualBoxHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
 .manualBoxHeader p { margin: .25rem 0 0; }
@@ -184,6 +192,9 @@
 @media (max-width: 600px) {
   .panelHead { align-items: flex-start; }
   .panelHead .actions { width: 100%; margin-left: 0; justify-content: flex-start; }
+  .modeControls { grid-template-columns: 1fr; gap: .45rem; }
+  .resumeGenerationControls { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .resumeGenerationControls > button { width: 100%; margin-left: 0; }
   .regenToolbar { gap: 0; padding-inline: .25rem; }
   .regenToolbar .compactField { gap: .25rem; }
   .regenToolbar .compactField .input { width: 64px; padding-inline: .25rem; font-size: .6875rem; }

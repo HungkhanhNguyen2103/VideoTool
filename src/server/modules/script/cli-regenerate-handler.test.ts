@@ -93,12 +93,14 @@ async function startRouterServer(
   projectId: string,
   enqueueJob = vi.fn(async () => ({ id: 'job-1' })),
   getClaudeCliStatus: () => Promise<ClaudeCliStatus> = async () => ({ available: true, version: 'Claude Code 2.1.294', authPathLikely: 'subscription' }),
+  getActiveJob: () => Promise<{ id: string; payload: unknown } | null> = async () => null,
 ) {
   const app = express();
   app.use(express.json());
   app.use('/api/project', createScriptRouter({
     enqueueJob,
     getClaudeCliStatus,
+    getActiveJob,
   }));
   app.use('/api/script', createScriptCliStatusRouter(async () => ({ available: true, version: 'Claude Code 2.1.294', authPathLikely: 'subscription' })));
   app.use(errorHandler);
@@ -148,6 +150,53 @@ describe('Claude CLI regeneration request contract and route', () => {
       type: 'generate-script', projectId: project.id, maxAttempts: 1,
       payload: { projectId: project.id, resume: true, backend: 'cli', cliModel: 'claude-sonnet-5-5' },
     });
+  });
+
+  it('rejects an active API job when a client asks for CLI generation', async () => {
+    const project = await makeProject();
+    const enqueueJob = vi.fn(async () => ({ id: 'job-new' }));
+    const { baseUrl } = await startRouterServer(project.id, enqueueJob, undefined, async () => ({
+      id: 'active-api-job', payload: { projectId: project.id },
+    }));
+
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'cli' }),
+    });
+    const body = await response.json() as { error?: { code?: string; message?: string } };
+
+    expect(response.status).toBe(409);
+    expect(body.error).toMatchObject({ code: 'SCRIPT_GENERATION_BACKEND_MISMATCH' });
+    expect(body.error?.message).toContain('job tạo kịch bản bằng API');
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects reuse of a CLI job when a different CLI model was selected', async () => {
+    const project = await makeProject();
+    const enqueueJob = vi.fn(async () => ({ id: 'job-new' }));
+    const { baseUrl } = await startRouterServer(project.id, enqueueJob, undefined, async () => ({
+      id: 'active-cli-job', payload: { projectId: project.id, backend: 'cli', cliModel: 'claude-haiku-4-5-20251001' },
+    }));
+
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ backend: 'cli', cliModel: 'claude-sonnet-5-5' }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects reuse of a resume job when a client asks to start a new script', async () => {
+    const project = await makeProject();
+    const enqueueJob = vi.fn(async () => ({ id: 'job-new' }));
+    const { baseUrl } = await startRouterServer(project.id, enqueueJob, undefined, async () => ({
+      id: 'active-resume-job', payload: { projectId: project.id, resume: true },
+    }));
+
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script`, { method: 'POST' });
+
+    expect(response.status).toBe(409);
+    expect(enqueueJob).not.toHaveBeenCalled();
   });
 
   it('returns CLI availability and queues selected chapters in script order with one job attempt', async () => {
@@ -277,7 +326,13 @@ describe('handleCliRegeneration', () => {
       config: { ...baseCliConfig, FILES_DIR: root }, env: { ...process.env }, spawnProcess: cli.spawnProcess,
       killProcessTree: (child) => child.kill('SIGKILL'), cancellationPollMs: 10,
     });
-    await waitForFile(started);
+    try {
+      await waitForFile(started, 10_000);
+    } catch (error) {
+      cancelled = true;
+      await promise.catch(() => undefined);
+      throw error;
+    }
     cancelled = true;
     const result = await promise;
     expect(result).toMatchObject({ cancelled: true, updatedChapterIds: [] });
@@ -286,8 +341,8 @@ describe('handleCliRegeneration', () => {
   });
 });
 
-async function waitForFile(filePath: string): Promise<void> {
-  const deadline = Date.now() + 2_000;
+async function waitForFile(filePath: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try { await readFile(filePath); return; } catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
   }

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AI_PROVIDERS } from '../../../contracts/project';
 import type { ProjectDetail } from '../../../contracts/project';
 import { ProjectDetailSchema } from '../../../contracts/project';
-import { ChapterDocSchema, ChapterSnapshotSchema, ScriptQualitySummarySchema, type ChapterDoc, type ChapterSnapshot, type ScriptQualitySummary } from '../../../contracts/script';
+import { ChapterDocSchema, ChapterSnapshotSchema, ScriptQualitySummarySchema, type ChapterDoc, type ChapterSnapshot, type GenerateScriptRequest, type ScriptQualitySummary } from '../../../contracts/script';
 import { ClaudeCliStatusSchema, type CliRegenerateRequest, type ClaudeCliStatus } from '../../../contracts/script';
 import { apiRequest } from '../../shared/api-client';
 
@@ -76,7 +76,7 @@ export function getProject(id: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(id)}`, ProjectDetailSchema);
 }
 
-export function generateScript(projectId: string, options: { resume?: boolean } = {}): Promise<{ jobId: string }> {
+export function generateScript(projectId: string, options: GenerateScriptRequest = {}): Promise<{ jobId: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/generate-script`, JobResponseSchema, { method: 'POST', body: options });
 }
 

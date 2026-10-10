@@ -19,6 +19,7 @@ import { isStudioLocked, type BlockingProgressInput, type BlockingTask } from '.
 import { cancelJob } from '../../shared/job-api';
 import { AiModelSelect, aiModelForProviderChange } from '../../shared/ai/AiModelSelect';
 import * as api from './api';
+import { buildScriptGenerationRequest, cliGenerationEstimate, type ClaudeCliModelId, type ScriptGenerationBackend } from './generation-mode';
 import {
   approveAllTargets,
   chapterWordBudgetNote,
@@ -31,7 +32,6 @@ import {
   findChapterIdByNumber,
   findQuoteTarget,
   findUndoSnapshotIndex,
-  generationModeForChapters,
   historyVersionLabel,
   instructionForChapter,
   manualTextAfterImport,
@@ -70,7 +70,6 @@ const qaActionLabel: Record<QAResult['issues'][number]['suggestedAction'], strin
   REMOVE_DUPLICATION: 'Loại bỏ trùng lặp', REGENERATE: 'Tái tạo', SHORTEN: 'Rút gọn', MOVE_REVEAL: 'Dời tiết lộ', REVIEW_FACT: 'Kiểm tra dữ kiện',
 };
 const aiProviderLabel: Record<AiProvider, string> = { deepseek: 'DeepSeek', claude: 'Claude' };
-type ClaudeCliModelId = (typeof AI_MODEL_REGISTRY.claude.models)[number]['id'];
 const manualRegenHelp = 'lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào';
 
 function manualQualitySignature(chapters: readonly ChapterDoc[]): string {
@@ -189,7 +188,9 @@ export function ReviewScriptPage() {
   const [cliJobLastEventAt, setCliJobLastEventAt] = useState<number | null>(null);
   const [manualRegen, setManualRegen] = useState<{ chapterId: string; prompt: string; promptVersion: string; raw: string; error: string | null } | null>(null);
   const [manualRegenBusy, setManualRegenBusy] = useState(false);
-  const [generationMode, setGenerationMode] = useState<'automatic' | 'manual'>('automatic');
+  const [generationMode, setGenerationMode] = useState<'automatic' | 'cli' | 'manual'>('automatic');
+  const [resumeBackend, setResumeBackend] = useState<ScriptGenerationBackend>('api');
+  const [cliGenerationModel, setCliGenerationModel] = useState<ClaudeCliModelId | null>(null);
   const [manualRaw, setManualRaw] = useState('');
   const [manualPrompt, setManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
   const [manualQuality, setManualQuality] = useState<{ projectId: string; signature: string; summary: ScriptQualitySummary } | null>(null);
@@ -228,7 +229,7 @@ export function ReviewScriptPage() {
   const hasGenerating = Boolean(regen) || chapters.some((chapter) => chapter.status === 'generating');
   const hasApprovableChapters = chapters.some((chapter) => chapter.status !== 'generating' && chapter.status !== 'approved');
   const history = historyQuery.data ?? [];
-  const effectiveGenerationMode = generationModeForChapters(chapters.length, generationMode);
+  const effectiveGenerationMode = chapters.length > 0 ? 'automatic' : generationMode;
   const activeReviewJobId = jobId ?? qaJobId;
   const activeReviewProgress = jobId ? progress : qaProgress;
   const reviewJobLocked = !reviewJobLocallyUnlocked && isStudioLocked(null, activeReviewJobId, activeReviewProgress);
@@ -429,17 +430,18 @@ export function ReviewScriptPage() {
   }, [editing, editParagraphs]);
 
   async function generate() {
-    await enqueueScriptGeneration(false);
+    const backend: ScriptGenerationBackend = generationMode === 'cli' ? 'cli' : 'api';
+    await enqueueScriptGeneration(false, backend, cliGenerationModel);
   }
 
   async function resumeScriptGeneration() {
-    await enqueueScriptGeneration(true);
+    await enqueueScriptGeneration(true, resumeBackend, cliGenerationModel);
   }
 
-  async function enqueueScriptGeneration(resume: boolean) {
+  async function enqueueScriptGeneration(resume: boolean, backend: ScriptGenerationBackend, cliModel: ClaudeCliModelId | null) {
     try {
-      const result = await api.generateScript(projectId, resume ? { resume: true } : {});
-      setReviewJobTask({ kind: 'script-generation' });
+      const result = await api.generateScript(projectId, buildScriptGenerationRequest({ backend, cliModel, resume }));
+      setReviewJobTask({ kind: backend === 'cli' ? 'cli-script-generation' : 'script-generation' });
       setReviewJobStartedAt(Date.now());
       setReviewJobLastEventAt(Date.now());
       setReviewJobLocallyUnlocked(false);
@@ -1146,21 +1148,40 @@ export function ReviewScriptPage() {
           <h2 id="generate-title">Nháp kịch bản</h2>
           <p className={styles.muted}>AI sẽ viết kịch bản theo brief và preset của dự án.</p>
           {referenceCoverage?.shouldWarn && <p className={styles.qualityWarning} role="status">Nguồn tham khảo ngắn: {referenceCoverage.referenceCharacters} ký tự cho {referenceCoverage.targetMinutes} phút ({referenceCoverage.charactersPerMinute} ký tự/phút; ngưỡng cảnh báo 500). Bạn vẫn có thể tiếp tục tạo kịch bản.</p>}
-          <label className={styles.inlineField} htmlFor="review-provider">Nhà cung cấp AI
-            <select className={styles.input} id="review-provider" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
-              const provider = event.target.value as 'deepseek' | 'claude';
-              void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
-            }}>
-              <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
-            </select>
-          </label>
           <fieldset className={styles.modeControls}>
             <legend>Phương thức tạo</legend>
-            <label><input type="radio" name="generation-mode" value="automatic" checked={effectiveGenerationMode === 'automatic'} disabled={controlsBusy} onChange={() => setGenerationMode('automatic')} />Tự động</label>
-            <label><input type="radio" name="generation-mode" value="manual" checked={effectiveGenerationMode === 'manual'} disabled={controlsBusy} onChange={() => setGenerationMode('manual')} />Thủ công</label>
+            <label><input type="radio" name="generation-mode" value="automatic" checked={effectiveGenerationMode === 'automatic'} disabled={controlsBusy} onChange={() => setGenerationMode('automatic')} />Tự động (API)</label>
+            <label title={cliStatusQuery.data?.available ? undefined : cliStatusQuery.data?.reason ?? 'Đang kiểm tra Claude CLI trên máy này.'}><input type="radio" name="generation-mode" value="cli" checked={effectiveGenerationMode === 'cli'} disabled={controlsBusy || !cliStatusQuery.data?.available} onChange={() => setGenerationMode('cli')} />Claude CLI (máy này)</label>
+            <label><input type="radio" name="generation-mode" value="manual" checked={effectiveGenerationMode === 'manual'} disabled={controlsBusy} onChange={() => setGenerationMode('manual')} />Thủ công (JSON)</label>
           </fieldset>
-          {effectiveGenerationMode === 'automatic' && <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy} onChange={changeModel} />}
-          {effectiveGenerationMode === 'automatic' ? <Button variant="amber" disabled={controlsBusy} onClick={() => void generate()}>Tạo kịch bản</Button> : <div className={styles.manualBox}>
+          {(effectiveGenerationMode === 'cli' || cliStatusQuery.isLoading || cliStatusQuery.isError || cliStatusQuery.data?.available === false) && <p className={styles.cliStatus} role="status" aria-live="polite">
+            {cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliStatusQuery.data?.available
+              ? `Claude Code ${cliStatusQuery.data.version ?? 'sẵn sàng'} · ${cliStatusQuery.data.authPathLikely === 'subscription' ? 'phiên đăng nhập CLI' : 'API key'}`
+              : cliStatusQuery.data?.reason ?? 'Không thể kiểm tra Claude Code CLI trên máy này.'}
+          </p>}
+          {effectiveGenerationMode === 'automatic' && <>
+            <label className={styles.inlineField} htmlFor="review-provider">Nhà cung cấp AI
+              <select className={styles.input} id="review-provider" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
+                const provider = event.target.value as 'deepseek' | 'claude';
+                void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
+              }}>
+                <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
+              </select>
+            </label>
+            <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy} onChange={changeModel} />
+            <Button variant="amber" disabled={controlsBusy} onClick={() => void generate()}>Tạo kịch bản</Button>
+          </>}
+          {effectiveGenerationMode === 'cli' && <>
+            <label className={styles.modelSelect} htmlFor="script-cli-model">Model Claude CLI
+              <select className={styles.input} id="script-cli-model" value={cliGenerationModel ?? ''} disabled={controlsBusy} onChange={(event) => setCliGenerationModel(event.target.value ? event.target.value as ClaudeCliModelId : null)}>
+                <option value="">Mặc định của Claude CLI</option>
+                {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+              </select>
+            </label>
+            <p className={styles.generationEstimate}>{cliGenerationEstimate(projectQuery.data?.chapterCount ?? 1).label}</p>
+            <Button variant="amber" disabled={controlsBusy || !cliStatusQuery.data?.available} onClick={() => void generate()}>Tạo kịch bản bằng Claude CLI</Button>
+          </>}
+          {effectiveGenerationMode === 'manual' && <div className={styles.manualBox}>
             <div className={styles.actions}><Button variant="indigoline" disabled={manualBusy || controlsBusy} onClick={() => void loadManualPrompt()}>Lấy prompt</Button>{manualPrompt && <Button disabled={manualBusy || controlsBusy} onClick={() => void copyManualPrompt()}>Sao chép</Button>}</div>
             {manualPrompt && <p className={styles.muted}>Prompt {manualPrompt.promptVersion}</p>}
             <textarea className={styles.textarea} value={manualRaw} onChange={(event) => setManualRaw(event.target.value)} placeholder="Dán JSON bản thảo hoàn chỉnh vào đây…" aria-label="Bản thảo thủ công" />
@@ -1176,11 +1197,35 @@ export function ReviewScriptPage() {
                 <div className={styles.summary}>{chaptersSummaryText(chapters)}</div>
               </div>
               <div className={styles.actions}>
-                {resumeChapterNo !== null && <Button variant="amber" disabled={controlsBusy} onClick={() => void resumeScriptGeneration()}>Viết tiếp từ chương {resumeChapterNo}</Button>}
                 <Button disabled={!hasApprovableChapters} onClick={() => void approveAll()}><Icon name="check" />Duyệt tất cả</Button>
                 <Button variant="red" title={regenMode === 'manual' ? 'Chế độ thủ công chỉ tái tạo từng chương' : undefined} disabled={regenMode === 'manual' || controlsBusy || (regenMode === 'cli' && !cliStatusQuery.data?.available) || regenerateAllIds.length === 0} onClick={() => void regenerateAll()}><Icon name="refresh" />Tái tạo toàn bộ</Button>
               </div>
             </div>
+            {resumeChapterNo !== null && <div className={styles.resumeGeneration}>
+              <div className={styles.resumeGenerationControls}>
+                <label className={styles.inlineField} htmlFor="script-resume-backend">Viết tiếp bằng
+                  <select className={styles.input} id="script-resume-backend" value={resumeBackend} disabled={controlsBusy} onChange={(event) => setResumeBackend(event.target.value as ScriptGenerationBackend)}>
+                    <option value="api">API theo model dự án</option>
+                    <option value="cli" disabled={!cliStatusQuery.data?.available}>Claude CLI trên máy này</option>
+                  </select>
+                </label>
+                {resumeBackend === 'cli' && <label className={styles.modelSelect} htmlFor="script-resume-cli-model">Model Claude CLI
+                  <select className={styles.input} id="script-resume-cli-model" value={cliGenerationModel ?? ''} disabled={controlsBusy} onChange={(event) => setCliGenerationModel(event.target.value ? event.target.value as ClaudeCliModelId : null)}>
+                    <option value="">Mặc định của Claude CLI</option>
+                    {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                  </select>
+                </label>}
+                <Button variant="amber" disabled={controlsBusy || (resumeBackend === 'cli' && !cliStatusQuery.data?.available)} onClick={() => void resumeScriptGeneration()}>Viết tiếp từ chương {resumeChapterNo}</Button>
+              </div>
+              {resumeBackend === 'cli' && <>
+                <p className={styles.generationEstimate}>{cliGenerationEstimate(chapters.filter((chapter) => chapter.paragraphs.length === 0).length, false).label}</p>
+                <p className={styles.cliStatus} role="status" aria-live="polite">
+                  {cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliStatusQuery.data?.available
+                    ? `Claude Code ${cliStatusQuery.data.version ?? 'sẵn sàng'} · ${cliStatusQuery.data.authPathLikely === 'subscription' ? 'phiên đăng nhập CLI' : 'API key'}`
+                    : cliStatusQuery.data?.reason ?? 'Không thể kiểm tra Claude Code CLI trên máy này.'}
+                </p>
+              </>}
+            </div>}
             <div className={styles.regenToolbar}>
               <label className={styles.compactField} htmlFor="review-provider-existing">AI
                 <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {

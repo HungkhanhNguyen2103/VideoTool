@@ -59,6 +59,16 @@ describe('script generation API', () => {
     fetchMock.mockRestore();
   });
 
+  it('posts the local Claude CLI backend and selected model to the shared script-generation route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ jobId: 'job-script-cli' }), { status: 201 }));
+
+    await expect(generateScript('project/1', { backend: 'cli', cliModel: null })).resolves.toEqual({ jobId: 'job-script-cli' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/generate-script', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ backend: 'cli', cliModel: null }),
+    }));
+    fetchMock.mockRestore();
+  });
+
   it('uses the provider PATCH route and manual prompt/import contracts', async () => {
     const project = { id: 'project-1', title: 'Project', status: 'draft', language: 'vi', brief: 'A sufficiently long brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null, aiProvider: 'claude', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, bgmMood: '', bgmFileId: null, renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: [], chapters: [], openLoops: [], motif: null, version: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     const quality = { totalWords: 70, targetWords: 150, differenceWords: -80, targetPercent: 46.7, outsideLengthRange: true, plannedWords: 150, plannedDifferenceWords: 0, plannedDeviationPct: 0, plannedBudgetWarning: false, actShares: [], chapters: [], warnings: ['Total narration is outside 85–115% of the target word budget.'] };

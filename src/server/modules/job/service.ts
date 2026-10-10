@@ -84,6 +84,12 @@ export async function getActiveJobByType(projectId: string, type: string, sceneI
   return job ? toSummary(job) : null;
 }
 
+/** Internal route support for deduplication decisions that depend on the queued request payload. */
+export async function getActiveJobDetailsByType(projectId: string, type: string): Promise<{ id: string; payload: unknown } | null> {
+  const job = await findActiveJobByType(projectId, type);
+  return job ? { id: job._id, payload: job.payload } : null;
+}
+
 export async function getJobWithLogs(id: string): Promise<{ summary: JobSummary; logs: string[] }> {
   const job = await findJobById(id);
   if (!job) throw new NotFound('Không tìm thấy job.');

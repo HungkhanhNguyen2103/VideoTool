@@ -3,7 +3,7 @@ import { createProject, getProject, getProjectHistory } from '../project';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { getCollection } from '../../db/client';
 import { getAiClient } from '../../shared/ai';
-import { generateScript } from './service';
+import { generateScript, type ScriptChatBackend } from './service';
 
 const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn(), chatWithMetadata: vi.fn(), stream: vi.fn() }));
 vi.mock('../../shared/ai', () => ({ getAiClient: vi.fn(() => aiMock) }));
@@ -57,13 +57,14 @@ describe('sequential script generation', () => {
       .mockResolvedValueOnce({ text: outline, truncated: false })
       .mockResolvedValueOnce({ text: expansion([words(9)], 'CLI chapter one'), truncated: false })
       .mockResolvedValueOnce({ text: expansion([words(9)], 'CLI chapter two'), truncated: false });
+    const backend: ScriptChatBackend = { label: 'claude-cli:default', model: 'default', chat: backendChat };
     aiMock.chat
       .mockResolvedValueOnce(outline)
       .mockResolvedValueOnce(expansion([words(9)], 'API chapter one'))
       .mockResolvedValueOnce(expansion([words(9)], 'API chapter two'));
     const project = await createProject(projectInput);
 
-    await generateScript(project.id, context(), { backend: { label: 'claude-cli:default', chat: backendChat } } as never);
+    await generateScript(project.id, context(), { backend });
 
     expect(backendChat).toHaveBeenCalledTimes(3);
     expect(aiMock.chat).not.toHaveBeenCalled();

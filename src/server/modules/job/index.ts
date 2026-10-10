@@ -5,6 +5,7 @@ export {
   claimAndRun,
   computeBackoffMs,
   enqueueJob,
+  getActiveJobDetailsByType,
   getActiveJobByType,
   getJob,
   getJobWithLogs,
