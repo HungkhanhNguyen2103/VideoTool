@@ -79,6 +79,20 @@ export type ScriptGenerationJobContext = {
   appendLog: (message: string) => Promise<void>;
 };
 
+export type ScriptChatCallContext = {
+  stepLabel: string;
+  signal?: AbortSignal;
+  appendLog: (message: string) => Promise<void>;
+};
+
+export type ScriptChatBackend = {
+  label: string;
+  model: string;
+  outputTokenCap?: number;
+  logRawParseFailures?: boolean;
+  chat: (messages: ChatMessage[], options: Parameters<AiClient['chat']>[1], context: ScriptChatCallContext) => Promise<AiChatMetadata>;
+};
+
 type JsonChatOptions = { maxTokens: number; json: true; truncationRetryMaxTokens?: number };
 
 function aiProviderName(provider: ProjectDetail['aiProvider']): AiProviderName {
@@ -91,24 +105,35 @@ async function logScriptParseFailure(context: ScriptGenerationJobContext, error:
   }
 }
 
+function apiScriptChatBackend(provider: ProjectDetail['aiProvider'], aiClient: AiClient): ScriptChatBackend {
+  return {
+    label: `${provider}/${aiClient.model}`,
+    model: aiClient.model,
+    outputTokenCap: getAiModelDefinition(provider, aiClient.model)?.capabilities.maxOutputTokens ?? 32_000,
+    chat: async (messages, opts, callContext) => {
+      try {
+        const response = await withAiRequestTimeout(() => opts !== undefined && aiClient.chatWithMetadata
+          ? aiClient.chatWithMetadata(messages, opts)
+          : aiClient.chat(messages, opts).then((text) => ({ text, truncated: false })), aiRequestTimeoutMs());
+        return response;
+      } catch (error) {
+        const normalized = normalizeAiError(aiProviderName(provider), aiClient.model, error);
+        await callContext.appendLog(`AI request failed: ${normalized.message}`);
+        throw normalized;
+      }
+    },
+  };
+}
+
 async function chatWithFailureLog(
-  provider: ProjectDetail['aiProvider'],
-  aiClient: AiClient,
+  backend: ScriptChatBackend,
   messages: ChatMessage[],
   context: ScriptGenerationJobContext,
   opts?: JsonChatOptions,
+  stepLabel = 'script',
 ): Promise<AiChatMetadata> {
-  try {
-    const chatOptions = opts ? { maxTokens: opts.maxTokens, json: opts.json } : undefined;
-    const response = await withAiRequestTimeout(() => opts !== undefined && aiClient.chatWithMetadata
-      ? aiClient.chatWithMetadata(messages, chatOptions)
-      : aiClient.chat(messages, chatOptions).then((text) => ({ text, truncated: false })), aiRequestTimeoutMs());
-    return response;
-  } catch (error) {
-    const normalized = normalizeAiError(aiProviderName(provider), aiClient.model, error);
-    await context.appendLog(`AI request failed: ${normalized.message}`);
-    throw normalized;
-  }
+  const chatOptions = opts ? { maxTokens: opts.maxTokens, json: opts.json } : undefined;
+  return backend.chat(messages, chatOptions, { stepLabel, appendLog: context.appendLog });
 }
 
 function isScriptParseFailure(error: unknown): error is AppError {
@@ -122,22 +147,22 @@ function scriptParseIssue(error: unknown): string {
 type ParseTruncationNotice = (message: string) => void;
 
 async function requestJsonWithRepair<T>(
-  provider: ProjectDetail['aiProvider'],
-  aiClient: AiClient,
+  backend: ScriptChatBackend,
   messages: ChatMessage[],
   parse: (raw: string, onTruncate: ParseTruncationNotice) => T,
   context: ScriptGenerationJobContext,
   opts: JsonChatOptions,
+  stepLabel: string,
 ): Promise<T> {
   let truncationRetryUsed = false;
-  const requestText = async (requestMessages: ChatMessage[]): Promise<string> => {
-    let response = await chatWithFailureLog(provider, aiClient, requestMessages, context, opts);
+  const requestText = async (requestMessages: ChatMessage[], requestStepLabel: string): Promise<string> => {
+    let response = await chatWithFailureLog(backend, requestMessages, context, opts, requestStepLabel);
     if (response.truncated) {
       const retryMaxTokens = opts.truncationRetryMaxTokens;
       if (!truncationRetryUsed && retryMaxTokens !== undefined && retryMaxTokens > opts.maxTokens) {
         truncationRetryUsed = true;
         await context.appendLog(`AI response truncated at ${opts.maxTokens} output tokens; retrying once with ${retryMaxTokens}.`);
-        response = await chatWithFailureLog(provider, aiClient, requestMessages, context, { ...opts, maxTokens: retryMaxTokens });
+        response = await chatWithFailureLog(backend, requestMessages, context, { ...opts, maxTokens: retryMaxTokens }, `${requestStepLabel}-truncation-retry-1`);
       }
       if (response.truncated) {
         const message = retryMaxTokens && retryMaxTokens > opts.maxTokens
@@ -155,7 +180,7 @@ async function requestJsonWithRepair<T>(
     for (const notice of notices) await context.appendLog(notice);
     return result;
   };
-  const raw = await requestText(messages);
+  const raw = await requestText(messages, stepLabel);
   try {
     return await parseResponse(raw);
   } catch (error) {
@@ -170,11 +195,11 @@ async function requestJsonWithRepair<T>(
         content: `${lastMessage?.content ?? ''}\n\nFailed response:\n${raw}\n\nYour JSON was invalid: ${issue}. Return the corrected JSON only.`,
       },
     ];
-    const repairedRaw = await requestText(repairMessages);
+    const repairedRaw = await requestText(repairMessages, `${stepLabel}-repair`);
     try {
       return await parseResponse(repairedRaw);
     } catch (repairError) {
-      await logScriptParseFailure(context, repairError, repairedRaw);
+      if (backend.logRawParseFailures !== false) await logScriptParseFailure(context, repairError, repairedRaw);
       throw repairError;
     }
   }
@@ -217,7 +242,7 @@ export async function restoreChapters(projectId: string, index: number, expected
   return updated.chapters;
 }
 
-export type GenerateScriptOptions = { resume?: boolean };
+export type GenerateScriptOptions = { resume?: boolean; backend?: ScriptChatBackend };
 
 function getChapterOutputBudgets(targetWords: number, modelOutputCap: number): JsonChatOptions {
   const initial = Math.min(modelOutputCap, Math.max(3_000, Math.ceil(targetWords * 8 + 1_000)));
@@ -267,8 +292,9 @@ export async function generateScript(
   options: GenerateScriptOptions = {},
 ): Promise<void> {
   const project = await getProject(projectId);
-  await context.appendLog('Loading project and AI client…');
-  const aiClient = getAiClient(project.aiProvider, project.aiModel);
+  await context.appendLog(options.backend ? `Loading project and ${options.backend.label} backend…` : 'Loading project and AI client…');
+  const aiClient = options.backend ? null : getAiClient(project.aiProvider, project.aiModel);
+  const backend = options.backend ?? apiScriptChatBackend(project.aiProvider, aiClient!);
   if (await context.isCancelled()) return;
 
   let openLoops: OpenLoop[];
@@ -276,7 +302,7 @@ export async function generateScript(
   let coreQuestion = project.coreQuestion;
   let openingHook = project.openingHook;
   let saved = project;
-  const modelOutputCap = getAiModelDefinition(project.aiProvider, aiClient.model)?.capabilities.maxOutputTokens ?? 32_000;
+  const modelOutputCap = backend.outputTokenCap ?? getAiModelDefinition(project.aiProvider, backend.model)?.capabilities.maxOutputTokens ?? 32_000;
 
   if (options.resume) {
     if (project.chapters.length === 0) throw new AppError('There is no saved outline to resume.', 422, 'SCRIPT_NOT_RESUMABLE');
@@ -301,8 +327,7 @@ export async function generateScript(
     const outlineBudgets = getOutlineOutputBudgets(chapterCount, project.referencesText.trim().length, modelOutputCap);
     let outlineWarnings: string[] = [];
     const outline = await requestJsonWithRepair(
-      project.aiProvider,
-      aiClient,
+      backend,
       outlineMessages,
       (raw) => {
         const parsed = validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId), chapterCount);
@@ -311,6 +336,7 @@ export async function generateScript(
       },
       context,
       { json: true, maxTokens: outlineBudgets.initial, truncationRetryMaxTokens: outlineBudgets.retry },
+      'outline',
     );
     for (const warning of outlineWarnings) await context.appendLog(warning);
     if (await context.isCancelled()) return;
@@ -403,12 +429,12 @@ export async function generateScript(
               },
             ];
             expansion = await requestJsonWithRepair(
-              project.aiProvider,
-              aiClient,
+              backend,
               requestMessages,
               parseChapterExpansion,
               context,
               budgets,
+              `chapter-${chapter.no}${lengthAttempt > 0 ? `-length-retry-${lengthAttempt}` : ''}`,
             );
             break;
           } catch (error) {

@@ -52,6 +52,29 @@ function context(overrides: Partial<{ isCancelled: () => Promise<boolean> }> = {
 }
 
 describe('sequential script generation', () => {
+  it('uses an injected chat backend for outline and chapter generation with the existing saved structure', async () => {
+    const backendChat = vi.fn()
+      .mockResolvedValueOnce({ text: outline, truncated: false })
+      .mockResolvedValueOnce({ text: expansion([words(9)], 'CLI chapter one'), truncated: false })
+      .mockResolvedValueOnce({ text: expansion([words(9)], 'CLI chapter two'), truncated: false });
+    aiMock.chat
+      .mockResolvedValueOnce(outline)
+      .mockResolvedValueOnce(expansion([words(9)], 'API chapter one'))
+      .mockResolvedValueOnce(expansion([words(9)], 'API chapter two'));
+    const project = await createProject(projectInput);
+
+    await generateScript(project.id, context(), { backend: { label: 'claude-cli:default', chat: backendChat } } as never);
+
+    expect(backendChat).toHaveBeenCalledTimes(3);
+    expect(aiMock.chat).not.toHaveBeenCalled();
+    const saved = await getProject(project.id);
+    expect(saved.chapters.map((chapter) => chapter.paragraphs)).toEqual([[words(9)], [words(9)]]);
+    expect(saved.chapters.map(({ no, title, role, targetWords, status }) => ({ no, title, role, targetWords, status }))).toEqual([
+      { no: 1, title: 'Opening', role: 'hook', targetWords: 10, status: 'pending' },
+      { no: 2, title: 'Answer', role: 'resolution', targetWords: 10, status: 'pending' },
+    ]);
+  });
+
   it('expands chapters in order, retries short responses once, carries style and open loops, and reports progress', async () => {
     aiMock.chat
       .mockResolvedValueOnce(outline)
