@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { VISUAL_STYLE_IDS } from '../../../contracts/project';
-import { CliRegenerateRequestSchema, ManualRegeneratePromptSchema, RegenerateChapterRequestSchema } from '../../../contracts/script';
+import { CliRegenerateRequestSchema, GenerateScriptRequestSchema, ManualRegeneratePromptSchema, RegenerateChapterRequestSchema } from '../../../contracts/script';
 import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
 import { loadConfig } from '../../config';
@@ -28,8 +28,6 @@ const RestoreSchema = z.object({ index: z.number().int().nonnegative(), expected
 const ProviderSchema = z.object({ provider: z.enum(['deepseek', 'claude']), aiModel: z.string().optional() }).strict();
 const VisualStyleSchema = z.object({ visualStylePresetId: z.enum(VISUAL_STYLE_IDS) }).strict();
 const ManualImportSchema = z.object({ raw: z.string() }).strict();
-const GenerateScriptSchema = z.object({ resume: z.boolean().optional() }).strict();
-
 async function configuredClaudeCliStatus(): Promise<ClaudeCliStatus> {
   const config = loadConfig();
   return readClaudeCliStatus({ executablePath: config.CLAUDE_CLI_PATH, env: process.env });
@@ -64,13 +62,30 @@ export function createScriptRouter(options: {
 
   router.post('/:id/generate-script', async (req, res) => {
     const project = await getProject(req.params.id);
-    const body = GenerateScriptSchema.parse(req.body ?? {});
+    const body = GenerateScriptRequestSchema.parse(req.body ?? {});
+    const backend = body.backend ?? 'api';
+    if (backend === 'cli') {
+      const status = await (options.getClaudeCliStatus ?? configuredClaudeCliStatus)();
+      if (!status.available) {
+        throw new AppError('Claude Code CLI chưa khả dụng trên máy chủ này. Hãy kiểm tra cài đặt và đăng nhập rồi thử lại.', 503, 'CLAUDE_CLI_UNAVAILABLE');
+      }
+    }
     const activeJob = await options.getActiveJob?.(project.id, 'generate-script');
     if (activeJob) {
       res.status(200).json({ jobId: activeJob.id });
       return;
     }
-    const job = await options.enqueueJob({ type: 'generate-script', projectId: project.id, payload: { projectId: project.id, ...(body.resume ? { resume: true } : {}) } });
+    const job = await options.enqueueJob({
+      type: 'generate-script',
+      projectId: project.id,
+      ...(backend === 'cli' ? { maxAttempts: 1 } : {}),
+      payload: {
+        projectId: project.id,
+        ...(body.resume ? { resume: true } : {}),
+        ...(body.backend ? { backend: body.backend } : {}),
+        ...(body.cliModel !== undefined ? { cliModel: body.cliModel } : {}),
+      },
+    });
     res.status(201).json({ jobId: job.id });
   });
 

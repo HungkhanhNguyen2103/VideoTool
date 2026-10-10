@@ -12,6 +12,15 @@ describe('outline boundary', () => {
     expect(validateScriptOutlineChapterCount(outline, null)).toBe(outline);
   });
 
+  it('parses JSON after explanatory preamble and reports the skipped text', () => {
+    const skipped: string[] = [];
+    const raw = `The requested outline is below:\n${JSON.stringify({ chapters: [chapter], openLoops: [], coreQuestion: 'Question', openingHook: 'Hook' })}`;
+    const outline = parseScriptOutline(raw, 'documentary', (preamble) => skipped.push(preamble));
+
+    expect(outline.chapters).toHaveLength(1);
+    expect(skipped).toEqual(['The requested outline is below:']);
+  });
+
   it.each([0, 21])('rejects AI-selected chapter counts outside the allowed 1–20 range: %s', (count) => {
     const outline = count === 0
       ? { chapters: [] }

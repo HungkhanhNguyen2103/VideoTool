@@ -13,7 +13,7 @@ export const RegenerateChapterRequestSchema = ManualRegeneratePromptSchema.exten
   historyBatchId: z.string().uuid().optional(),
 }).strict();
 
-const ClaudeModelIdSchema = z.string().refine((model) => isAiModelForProvider('claude', model), 'Choose a model from the Claude registry.');
+export const ClaudeCliModelIdSchema = z.string().refine((model) => isAiModelForProvider('claude', model), 'Choose a model from the Claude registry.');
 export const CliRegenerateRequestSchema = ManualRegeneratePromptSchema.extend({
   chapterIds: z.array(z.string().min(1)).min(1).max(20).superRefine((ids, context) => {
     const seen = new Set<string>();
@@ -22,9 +22,16 @@ export const CliRegenerateRequestSchema = ManualRegeneratePromptSchema.extend({
       seen.add(id);
     });
   }),
-  model: ClaudeModelIdSchema.optional(),
+  model: ClaudeCliModelIdSchema.optional(),
 }).strict();
 export type CliRegenerateRequest = z.infer<typeof CliRegenerateRequestSchema>;
+
+export const GenerateScriptRequestSchema = z.object({
+  resume: z.boolean().optional(),
+  backend: z.enum(['api', 'cli']).optional(),
+  cliModel: ClaudeCliModelIdSchema.nullable().optional(),
+}).strict();
+export type GenerateScriptRequest = z.infer<typeof GenerateScriptRequestSchema>;
 
 export const ClaudeCliStatusSchema = z.object({
   available: z.boolean(),

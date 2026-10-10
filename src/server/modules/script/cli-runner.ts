@@ -8,7 +8,7 @@ import { newId } from '../../shared/ids';
 
 const require = createRequire(import.meta.url);
 const spawnWithWindowsShimSupport = require('cross-spawn') as typeof nodeSpawn;
-const RUN_RETENTION_COUNT = 20;
+const RUN_RETENTION_COUNT = 100;
 const STDERR_CAPTURE_LIMIT = 64_000;
 
 export type ClaudeCliSpawn = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -33,6 +33,7 @@ export type ClaudeCliRunOptions = Pick<Config,
 > & {
   projectId: string;
   chapterId: string;
+  stepLabel?: string;
   promptText: string;
   model?: string;
   cliVersion?: string;
@@ -285,6 +286,7 @@ export async function getClaudeCliStatus(options: ClaudeCliStatusOptions): Promi
 export async function runClaudeCli(options: ClaudeCliRunOptions): Promise<ClaudeCliRunResult> {
   if (!safePathPart(options.projectId)) throw new Error('Mã dự án không hợp lệ cho thư mục Claude CLI.');
   if (!safePathPart(options.chapterId)) throw new Error('Mã chương không hợp lệ cho thư mục Claude CLI.');
+  if (options.stepLabel !== undefined && !safePathPart(options.stepLabel)) throw new Error('Nhãn bước không hợp lệ cho thư mục Claude CLI.');
   const runsDirectory = path.resolve(options.FILES_DIR, options.projectId, 'cli-runs');
   const runId = newId();
   const runDirectory = path.join(runsDirectory, runId);
@@ -336,6 +338,7 @@ export async function runClaudeCli(options: ClaudeCliRunOptions): Promise<Claude
     outputBytes: captured.outputBytes,
     stderrBytes: captured.stderrBytes,
     chapterId: options.chapterId,
+    stepLabel: options.stepLabel ?? options.chapterId,
     timedOut: captured.timedOut,
     cancelled: captured.cancelled,
     outputTooLarge: captured.outputTooLarge,

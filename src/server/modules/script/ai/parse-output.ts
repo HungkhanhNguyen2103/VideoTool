@@ -4,12 +4,47 @@ import { ChapterExpansionSchema, GeneratedChapterSchema, manualSchemaForScriptPr
 import { QAIssueOptionalFieldSchemas, QAResultSchema, type QAResult } from './qa-schema';
 import type { ScriptPresetId } from '../../../../contracts/project';
 
-function parseJson(raw: string): unknown {
+type LeadingTextNotice = (text: string) => void;
+
+function findFirstJsonValue(raw: string): { value: unknown; start: number } | null {
+  const start = raw.search(/[\[{]/u);
+  if (start < 0) return null;
+  const expectedClosers: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < raw.length; index += 1) {
+    const character = raw[index]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') { inString = true; continue; }
+    if (character === '{') expectedClosers.push('}');
+    else if (character === '[') expectedClosers.push(']');
+    else if (character === '}' || character === ']') {
+      if (expectedClosers.pop() !== character) return null;
+      if (expectedClosers.length === 0) {
+        try { return { value: JSON.parse(raw.slice(start, index + 1)) as unknown, start }; } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+function parseJson(raw: string, onLeadingText?: LeadingTextNotice): unknown {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   try {
     return JSON.parse(fenced?.[1] ?? trimmed);
   } catch {
+    const first = findFirstJsonValue(trimmed);
+    if (first && onLeadingText) {
+      const leading = trimmed.slice(0, first.start).trim();
+      if (leading) onLeadingText(leading);
+      return first.value;
+    }
     throw new AppError('AI returned invalid script structure: root: invalid JSON', 422, 'SCRIPT_PARSE_ERROR');
   }
 }
@@ -139,8 +174,8 @@ export function parseGeneratedChapters(raw: string): z.infer<typeof GeneratedCha
   return validate(raw, z.array(GeneratedChapterSchema).min(1));
 }
 
-export function parseScriptOutline(raw: string, presetId: ScriptPresetId): ScriptOutline {
-  return validateValue(dropStrayOutlineKeys(parseJson(raw), presetId), schemaForScriptPreset(presetId));
+export function parseScriptOutline(raw: string, presetId: ScriptPresetId, onLeadingText?: LeadingTextNotice): ScriptOutline {
+  return validateValue(dropStrayOutlineKeys(parseJson(raw, onLeadingText), presetId), schemaForScriptPreset(presetId));
 }
 
 export function validateScriptOutlineChapterCount<T extends { chapters: readonly unknown[] }>(
@@ -153,8 +188,8 @@ export function validateScriptOutlineChapterCount<T extends { chapters: readonly
   return outline;
 }
 
-export function parseChapterExpansion(raw: string, onTruncate?: TruncationNotice): ChapterExpansion {
-  return validateValue(normalizeMemoryFields(parseJson(raw), onTruncate), ChapterExpansionSchema);
+export function parseChapterExpansion(raw: string, onTruncate?: TruncationNotice, onLeadingText?: LeadingTextNotice): ChapterExpansion {
+  return validateValue(normalizeMemoryFields(parseJson(raw, onLeadingText), onTruncate), ChapterExpansionSchema);
 }
 
 export function parseManualScriptDocument(raw: string, presetId: ScriptPresetId): ManualScriptDocument {

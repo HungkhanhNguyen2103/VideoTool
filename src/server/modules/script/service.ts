@@ -77,6 +77,7 @@ export type ScriptGenerationJobContext = {
   reportProgress: (pct: number, result?: unknown) => Promise<void>;
   isCancelled: () => Promise<boolean>;
   appendLog: (message: string) => Promise<void>;
+  signal?: AbortSignal;
 };
 
 export type ScriptChatCallContext = {
@@ -133,7 +134,7 @@ async function chatWithFailureLog(
   stepLabel = 'script',
 ): Promise<AiChatMetadata> {
   const chatOptions = opts ? { maxTokens: opts.maxTokens, json: opts.json } : undefined;
-  return backend.chat(messages, chatOptions, { stepLabel, appendLog: context.appendLog });
+  return backend.chat(messages, chatOptions, { stepLabel, signal: context.signal, appendLog: context.appendLog });
 }
 
 function isScriptParseFailure(error: unknown): error is AppError {
@@ -145,14 +146,16 @@ function scriptParseIssue(error: unknown): string {
 }
 
 type ParseTruncationNotice = (message: string) => void;
+type ParseLeadingTextNotice = (text: string) => void;
 
 async function requestJsonWithRepair<T>(
   backend: ScriptChatBackend,
   messages: ChatMessage[],
-  parse: (raw: string, onTruncate: ParseTruncationNotice) => T,
+  parse: (raw: string, onTruncate: ParseTruncationNotice, onLeadingText: ParseLeadingTextNotice) => T,
   context: ScriptGenerationJobContext,
   opts: JsonChatOptions,
   stepLabel: string,
+  preambleCounter: { count: number },
 ): Promise<T> {
   let truncationRetryUsed = false;
   const requestText = async (requestMessages: ChatMessage[], requestStepLabel: string): Promise<string> => {
@@ -176,8 +179,17 @@ async function requestJsonWithRepair<T>(
   };
   const parseResponse = async (raw: string): Promise<T> => {
     const notices: string[] = [];
-    const result = parse(raw, (notice) => notices.push(notice));
-    for (const notice of notices) await context.appendLog(notice);
+    const preambles: string[] = [];
+    let result: T;
+    try {
+      result = parse(raw, (notice) => notices.push(notice), (text) => preambles.push(text));
+    } finally {
+      for (const notice of notices) await context.appendLog(notice);
+      for (const preamble of preambles) {
+        preambleCounter.count += 1;
+        await context.appendLog(`${backend.label} response had leading text before JSON at ${stepLabel} (occurrence ${preambleCounter.count}; ${Buffer.byteLength(preamble)} preamble bytes).`);
+      }
+    }
     return result;
   };
   const raw = await requestText(messages, stepLabel);
@@ -277,6 +289,7 @@ function loopStateForChapter(loop: OpenLoop, chapterNo: number): 'upcoming' | 'p
 
 function isTransientChapterFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
+  if ('code' in error && typeof (error as { code?: unknown }).code === 'string' && (error as { code: string }).code.startsWith('CLAUDE_CLI_')) return false;
   if ('code' in error && (error as { code?: unknown }).code === 'AI_RESPONSE_TRUNCATED') return true;
   const status = 'status' in error ? (error as { status?: unknown }).status : undefined;
   return typeof status === 'number' && (status === 408 || status === 425 || status === 429 || status >= 500);
@@ -303,6 +316,7 @@ export async function generateScript(
   let openingHook = project.openingHook;
   let saved = project;
   const modelOutputCap = backend.outputTokenCap ?? getAiModelDefinition(project.aiProvider, backend.model)?.capabilities.maxOutputTokens ?? 32_000;
+  const preambleCounter = { count: 0 };
 
   if (options.resume) {
     if (project.chapters.length === 0) throw new AppError('There is no saved outline to resume.', 422, 'SCRIPT_NOT_RESUMABLE');
@@ -329,14 +343,15 @@ export async function generateScript(
     const outline = await requestJsonWithRepair(
       backend,
       outlineMessages,
-      (raw) => {
-        const parsed = validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId), chapterCount);
+      (raw, _onTruncate, onLeadingText) => {
+        const parsed = validateScriptOutlineChapterCount(parseScriptOutline(raw, project.scriptPresetId, onLeadingText), chapterCount);
         outlineWarnings = validateScriptOutline(parsed, outlineProject);
         return parsed;
       },
       context,
       { json: true, maxTokens: outlineBudgets.initial, truncationRetryMaxTokens: outlineBudgets.retry },
       'outline',
+      preambleCounter,
     );
     for (const warning of outlineWarnings) await context.appendLog(warning);
     if (await context.isCancelled()) return;
@@ -435,6 +450,7 @@ export async function generateScript(
               context,
               budgets,
               `chapter-${chapter.no}${lengthAttempt > 0 ? `-length-retry-${lengthAttempt}` : ''}`,
+              preambleCounter,
             );
             break;
           } catch (error) {
@@ -472,6 +488,7 @@ export async function generateScript(
       saved.chapters = updated.chapters;
       styleNote = selected.expansion.styleNote;
     } catch (error) {
+      if (await context.isCancelled()) return;
       await patchProjectChapter(projectId, chapter.id, { status: 'needs-fix' });
       await context.appendLog(`Chapter ${chapter.no} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       await context.appendLog(`Generation stopped at chapter ${chapter.no}; earlier chapters are saved. Resume with “Viết tiếp từ chương ${chapter.no}”.`);
@@ -482,6 +499,9 @@ export async function generateScript(
   const finalTotalWords = saved.chapters.reduce((sum, chapter) => sum + wordsInChapter(chapter), 0);
   await context.appendLog(`Final narration total: ${finalTotalWords} words versus ${totalBudgetWords}-word budget.`);
   await context.appendLog(`Script saved — ${saved.chapters.length} chapters.`);
+  if (backend.label.startsWith('claude-cli:')) {
+    await context.appendLog(`Claude CLI preamble-before-JSON occurrences: ${preambleCounter.count}.`);
+  }
 }
 
 export type RegenerationOptions = { instruction: string; level: 'light' | 'medium' | 'rewrite'; historyBatchId?: string };
@@ -527,8 +547,17 @@ export function buildRegenerationPromptForChapter(
   return { prompt, chapter, nextChapter };
 }
 
+export function formatChatMessages(messages: readonly ChatMessage[]): string {
+  const system = messages.find((message) => message.role === 'system')?.content ?? '';
+  const user = messages.filter((message) => message.role === 'user').map((message) => message.content).join('\n\n');
+  return `SYSTEM\n${system}\n\nUSER\n${user}`;
+}
+
 export function formatRegenerationPrompt(prompt: BuiltPrompt): string {
-  return `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`;
+  return formatChatMessages([
+    { role: 'system', content: prompt.system },
+    { role: 'user', content: prompt.user },
+  ]);
 }
 
 export async function applyRegeneratedChapter(

@@ -380,6 +380,46 @@ describe('sequential script generation', () => {
     expect(await getProjectHistory(project.id)).toEqual(earlierHistory);
   });
 
+  it('resumes an API outline with the CLI backend without rewriting completed chapters', async () => {
+    const project = await createProject(projectInput);
+    aiMock.chat.mockResolvedValueOnce(outline)
+      .mockResolvedValueOnce(expansion([words(9)], 'API first'))
+      .mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { status: 401 }));
+    await expect(generateScript(project.id, context())).rejects.toMatchObject({ status: 401 });
+    const firstChapter = (await getProject(project.id)).chapters[0]!.paragraphs;
+    const backendChat = vi.fn().mockResolvedValueOnce({ text: expansion([words(9)], 'CLI second'), truncated: false });
+
+    await generateScript(project.id, context(), {
+      resume: true,
+      backend: { label: 'claude-cli:claude-sonnet-5-5', model: 'claude-sonnet-5-5', chat: backendChat },
+    });
+
+    expect(backendChat).toHaveBeenCalledTimes(1);
+    expect(backendChat.mock.calls[0]![0][1].content).toContain('Chapter 2: Answer');
+    expect(aiMock.chat).toHaveBeenCalledTimes(3);
+    expect((await getProject(project.id)).chapters.map((chapter) => chapter.paragraphs)).toEqual([firstChapter, [words(9)]]);
+  });
+
+  it('resumes a partial CLI run with the API backend without making another outline call', async () => {
+    const project = await createProject(projectInput);
+    const backendChat = vi.fn()
+      .mockResolvedValueOnce({ text: outline, truncated: false })
+      .mockResolvedValueOnce({ text: expansion([words(9)], 'CLI first'), truncated: false })
+      .mockRejectedValueOnce(Object.assign(new Error('CLI authentication failed'), { status: 401, code: 'CLAUDE_CLI_AUTH_FAILED' }));
+    await expect(generateScript(project.id, context(), {
+      backend: { label: 'claude-cli:default', model: 'default', chat: backendChat },
+    })).rejects.toMatchObject({ code: 'CLAUDE_CLI_AUTH_FAILED' });
+    const firstChapter = (await getProject(project.id)).chapters[0]!.paragraphs;
+    aiMock.chat.mockResolvedValueOnce(expansion([words(9)], 'API second'));
+
+    await generateScript(project.id, context(), { resume: true });
+
+    expect(backendChat).toHaveBeenCalledTimes(3);
+    expect(aiMock.chat).toHaveBeenCalledTimes(1);
+    expect(aiMock.chat.mock.calls[0]![0][1].content).toContain('Chapter 2: Answer');
+    expect((await getProject(project.id)).chapters.map((chapter) => chapter.paragraphs)).toEqual([firstChapter, [words(9)]]);
+  });
+
   it('runs a synthetic 20-minute, 10-chapter script through truncation and transient recovery', async () => {
     const chapters = Array.from({ length: 10 }, (_, index) => ({
       no: index + 1, title: `Chapter ${index + 1}`, role: index === 0 ? 'hook' : index === 9 ? 'resolution' : 'rising',

@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CliRegenerateRequestSchema } from '../../../contracts/script';
+import { CliRegenerateRequestSchema, type ClaudeCliStatus } from '../../../contracts/script';
 import { getCollection } from '../../db/client';
 import { errorHandler } from '../../error-handler';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
@@ -89,12 +89,16 @@ async function scriptedCli(root: string, modes: string[], extraEnv: NodeJS.Proce
   return { spawnProcess, captures, callCount: () => calls };
 }
 
-async function startRouterServer(projectId: string, enqueueJob = vi.fn(async () => ({ id: 'job-1' }))) {
+async function startRouterServer(
+  projectId: string,
+  enqueueJob = vi.fn(async () => ({ id: 'job-1' })),
+  getClaudeCliStatus: () => Promise<ClaudeCliStatus> = async () => ({ available: true, version: 'Claude Code 2.1.294', authPathLikely: 'subscription' }),
+) {
   const app = express();
   app.use(express.json());
   app.use('/api/project', createScriptRouter({
     enqueueJob,
-    getClaudeCliStatus: async () => ({ available: true, version: 'Claude Code 2.1.294', authPathLikely: 'subscription' }),
+    getClaudeCliStatus,
   }));
   app.use('/api/script', createScriptCliStatusRouter(async () => ({ available: true, version: 'Claude Code 2.1.294', authPathLikely: 'subscription' })));
   app.use(errorHandler);
@@ -107,6 +111,43 @@ describe('Claude CLI regeneration request contract and route', () => {
     expect(CliRegenerateRequestSchema.safeParse({ chapterIds: ['c1', 'c2'], instruction: 'Tighten it', level: 'light', model: 'claude-sonnet-5-5' }).success).toBe(true);
     expect(CliRegenerateRequestSchema.safeParse({ chapterIds: ['c1', 'c1'], instruction: '', level: 'medium' }).success).toBe(false);
     expect(CliRegenerateRequestSchema.safeParse({ chapterIds: ['c1'], instruction: '', level: 'medium', model: 'deepseek-chat' }).success).toBe(false);
+  });
+
+  it('rejects script generation in CLI mode before enqueue when the CLI is unavailable', async () => {
+    const project = await makeProject();
+    const enqueueJob = vi.fn(async () => ({ id: 'job-1' }));
+    const { baseUrl } = await startRouterServer(project.id, enqueueJob, async () => ({
+      available: false,
+      reason: 'not installed',
+      authPathLikely: 'subscription',
+    }));
+
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'cli' }),
+    });
+    const body = await response.json() as { error?: { code?: string; message?: string } };
+
+    expect(response.status).toBe(503);
+    expect(body.error).toMatchObject({ code: 'CLAUDE_CLI_UNAVAILABLE' });
+    expect(body.error?.message).toContain('Claude Code CLI');
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('queues CLI script generation with the local model and a single job attempt', async () => {
+    const project = await makeProject();
+    const enqueueJob = vi.fn(async () => ({ id: 'job-1' }));
+    const { baseUrl } = await startRouterServer(project.id, enqueueJob);
+
+    const response = await fetch(`${baseUrl}/api/project/${project.id}/generate-script`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ resume: true, backend: 'cli', cliModel: 'claude-sonnet-5-5' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(enqueueJob).toHaveBeenCalledWith({
+      type: 'generate-script', projectId: project.id, maxAttempts: 1,
+      payload: { projectId: project.id, resume: true, backend: 'cli', cliModel: 'claude-sonnet-5-5' },
+    });
   });
 
   it('returns CLI availability and queues selected chapters in script order with one job attempt', async () => {

@@ -90,6 +90,28 @@ describe('runClaudeCli', () => {
     expect(await readFile(path.join(result.runDirectory, 'output.txt'), 'utf8')).toBe(fenced);
   });
 
+  it('records a stable pipeline step and omits --model when using the CLI default', async () => {
+    const filesDir = await makeRoot();
+    const calls: Array<{ command: string; args: string[]; options: SpawnOptions }> = [];
+    const runOptions = {
+      CLAUDE_CLI_PATH: process.execPath,
+      FILES_DIR: filesDir,
+      projectId: 'project-1',
+      chapterId: 'script-generation',
+      stepLabel: 'outline',
+      promptText: 'outline prompt',
+      CLAUDE_CLI_TIMEOUT_MS: 2_000,
+      CLAUDE_CLI_MAX_OUTPUT_BYTES: 2_000,
+      env: { ...process.env, FAKE_CLAUDE_MODE: 'valid' },
+      spawnProcess: fakeSpawn(calls),
+    };
+    const result = await runClaudeCli(runOptions);
+    const metadata = JSON.parse(await readFile(path.join(result.runDirectory, 'meta.json'), 'utf8')) as Record<string, unknown>;
+
+    expect(metadata.stepLabel).toBe('outline');
+    expect(calls[0]?.args).not.toContain('--model');
+  });
+
   it.skipIf(process.platform !== 'win32')('runs a Windows .cmd shim with argv flags while keeping shell text in stdin', async () => {
     const filesDir = await makeRoot();
     const capture = path.join(filesDir, 'stdin.txt');
@@ -175,11 +197,11 @@ describe('runClaudeCli', () => {
     expect(result.cancelled).toBe(false);
   });
 
-  it('prunes completed runs to the newest twenty for a project', async () => {
+  it('prunes completed runs to the newest one hundred for a project', async () => {
     const filesDir = await makeRoot();
     const runsDir = path.join(filesDir, 'project-1', 'cli-runs');
     await import('node:fs/promises').then(({ mkdir }) => mkdir(runsDir, { recursive: true }));
-    for (let index = 0; index < 20; index += 1) {
+    for (let index = 0; index < 100; index += 1) {
       const dir = path.join(runsDir, `old-${index}`);
       await import('node:fs/promises').then(({ mkdir }) => mkdir(dir));
       await writeFile(path.join(dir, 'meta.json'), JSON.stringify({ exitCode: 0 }));
@@ -198,7 +220,7 @@ describe('runClaudeCli', () => {
       spawnProcess: fakeSpawn(),
     });
     const dirs = await readdir(runsDir);
-    expect(dirs).toHaveLength(20);
+    expect(dirs).toHaveLength(100);
     expect(dirs).toContain(path.basename(result.runDirectory));
   });
 });
