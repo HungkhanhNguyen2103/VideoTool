@@ -76,3 +76,21 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('formatDurationSeconds(expandedScene.durationSec)');
   });
 });
+
+describe('Studio control grid layout', () => {
+  it('uses balanced columns for the four configuration cards', async () => {
+    const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.controlGrid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+  });
+});
+
+describe('Studio configuration card structure', () => {
+  it('keeps all four labeled cards and the render-engine group in the control grid', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('aria-labelledby="scene-controls-title"');
+    expect(source).toContain('aria-labelledby="audio-controls-title"');
+    expect(source).toContain('aria-labelledby="video-controls-title"');
+    expect(source).toContain('aria-labelledby="render-controls-title"');
+    expect(source).toContain('aria-label="Render engine"');
+  });
+});
