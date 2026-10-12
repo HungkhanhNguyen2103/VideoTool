@@ -6,6 +6,8 @@ import type { SceneDoc } from '../project';
 import { logger } from '../../shared/logger';
 import { AppError, NotFound } from '../../shared/errors';
 import { durationWithTail } from '../../../contracts/scene-duration';
+import { hashNarration } from '../../../contracts/name-keywords';
+import { DEFAULT_VOICE_SPEED } from '../../../contracts/voiceover';
 import { alignSceneWordTimings } from './word-timing-service';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
@@ -23,11 +25,14 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
     throw new AppError(`Scene ${sceneNumber} has no narration text, so no voiceover can be generated.`, 422, 'EMPTY_NARRATION');
   }
 
+  const speed = options.speed ?? project.voiceSpeed ?? DEFAULT_VOICE_SPEED;
+  const voice = options.voice ?? project.voiceoverVoice;
   const raw = await getTtsClient().synthesize(scene.narration, {
     ...options,
-    voice: options.voice ?? project.voiceoverVoice,
+    voice,
+    speed,
   });
-  const mastered = await masterAudio(raw);
+  const mastered = await masterAudio(raw, speed);
   const voiceoverDurationSec = await probeAudioDuration(mastered);
   const durationSec = durationWithTail(voiceoverDurationSec, project.sceneTailSec);
   const stored = await storeFile({
@@ -37,7 +42,12 @@ export async function generateSceneVoiceover(projectId: string, sceneId: string,
     buffer: mastered,
     purpose: 'voiceover',
   });
-  const updated = await patchProjectScene(projectId, sceneId, { audioFileId: stored.id, voiceoverDurationSec, durationSec });
+  const updated = await patchProjectScene(projectId, sceneId, {
+    audioFileId: stored.id,
+    voiceoverDurationSec,
+    durationSec,
+    voiceoverInput: { voice, speed, narrationHash: hashNarration(scene.narration) },
+  }, project.version);
   const updatedScene = updated.scenes.find((candidate) => candidate.id === sceneId)!;
   await alignSceneWordTimings(projectId, updatedScene, mastered);
   return updatedScene;
@@ -49,12 +59,26 @@ export type VoiceoverBatchResult = {
   failedSceneNumbers: number[];
 };
 
-export async function generateProjectVoiceovers(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>): Promise<VoiceoverBatchResult> {
+export type VoiceoverBatchOptions = {
+  startSceneId?: string;
+  isCancelled?: () => Promise<boolean>;
+};
+
+export async function generateProjectVoiceovers(
+  projectId: string,
+  appendLog: (message: string) => Promise<void>,
+  reportProgress: (percent: number) => Promise<void>,
+  options: VoiceoverBatchOptions = {},
+): Promise<VoiceoverBatchResult> {
   const project = await getProject(projectId);
   const failed: number[] = [];
   const skipped: number[] = [];
   let generated = 0;
-  for (const [index, scene] of project.scenes.entries()) {
+  const startIndex = options.startSceneId === undefined ? 0 : project.scenes.findIndex((scene) => scene.id === options.startSceneId);
+  if (startIndex < 0) throw new AppError('Không tìm thấy scene bắt đầu voiceover.', 400, 'VOICEOVER_START_SCENE_NOT_FOUND');
+  for (let index = startIndex; index < project.scenes.length; index += 1) {
+    if (options.isCancelled && await options.isCancelled()) return { generated, skippedSceneNumbers: skipped, failedSceneNumbers: failed };
+    const scene = project.scenes[index]!;
     const sceneNumber = index + 1;
     if (!scene.narration.trim()) {
       skipped.push(sceneNumber);

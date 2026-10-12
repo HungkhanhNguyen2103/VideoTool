@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectSceneTailSec, setProjectSfxVolume, setProjectTransitionStyle } from '../project';
+import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectRenderEngine, setProjectSceneTailSec, setProjectSfxVolume, setProjectTransitionStyle, setProjectVoiceSpeed } from '../project';
 import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, SfxVolumeSchema, TRANSITION_STYLES } from '../../../contracts/project';
 import { SceneTailSecSchema } from '../../../contracts/scene-duration';
+import { VoiceSpeedSchema } from '../../../contracts/voiceover';
 import { getActiveJobByType } from '../job';
 import { AppError } from '../../shared/errors';
 import { uploadLogo } from '../../shared/upload';
@@ -37,6 +38,8 @@ const FilmLookSchema = z.object({ style: z.enum(FILM_LOOK_STYLES) }).strict();
 const ParallaxSchema = z.object({ style: z.enum(PARALLAX_STYLES) }).strict();
 const SceneTailSchema = z.object({ sceneTailSec: SceneTailSecSchema }).strict();
 const SfxVolumeSettingSchema = z.object({ sfxVolume: SfxVolumeSchema }).strict();
+const VoiceSpeedSettingSchema = z.object({ voiceSpeed: VoiceSpeedSchema }).strict();
+const GenerateVoiceoverSchema = z.object({ startSceneId: z.string().trim().min(1).optional() }).strict();
 const GenerateSfxSchema = z.object({ onlyMissing: z.boolean().optional().default(false) }).strict();
 const RenderSchema = z.object({ draft: z.boolean().optional().default(false) }).strict();
 
@@ -44,8 +47,13 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyz
   const router = Router();
 
   router.post('/:id/scenes/generate-voiceover', async (req, res) => {
+    const { startSceneId } = GenerateVoiceoverSchema.parse(req.body ?? {});
     const project = await getProject(req.params.id);
-    const job = await options.enqueueJob({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } });
+    if (startSceneId !== undefined && !project.scenes.some((scene) => scene.id === startSceneId)) {
+      throw new AppError('Không tìm thấy scene bắt đầu voiceover.', 400, 'VOICEOVER_START_SCENE_NOT_FOUND');
+    }
+    const payload = startSceneId === undefined ? { projectId: project.id } : { projectId: project.id, startSceneId };
+    const job = await options.enqueueJob({ type: 'generate-voiceover', projectId: project.id, payload });
     res.status(201).json({ jobId: job.id });
   });
 
@@ -159,6 +167,11 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyz
   router.patch('/:id/sfx-volume', async (req, res) => {
     const { sfxVolume } = SfxVolumeSettingSchema.parse(req.body);
     res.json(await setProjectSfxVolume(req.params.id, sfxVolume));
+  });
+
+  router.patch('/:id/voice-speed', async (req, res) => {
+    const { voiceSpeed } = VoiceSpeedSettingSchema.parse(req.body);
+    res.json(await setProjectVoiceSpeed(req.params.id, voiceSpeed));
   });
 
   router.post('/:id/scenes/recompute-durations', async (req, res) => {

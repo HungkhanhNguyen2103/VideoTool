@@ -22,6 +22,7 @@ import {
   setProjectDraftRenderFile,
   setProjectSceneTailSec,
   setProjectSfxVolume,
+  setProjectVoiceSpeed,
   setProjectSceneDurations,
   setProjectRenderFile,
   setProjectLogo,
@@ -450,6 +451,54 @@ describe('video orchestration services', () => {
     expect(files[0]).toMatchObject({ purpose: 'voiceover', mimeType: 'audio/wav' });
   });
 
+  it('passes the project voice speed to TTS and mastering and stores the effective input', async () => {
+    const project = await seedVoiceProject();
+    await setProjectVoiceSpeed(project.id, 1.2);
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(2.2);
+
+    const updated = await generateSceneVoiceover(project.id, 'scene-1');
+
+    expect(mocks.synthesize).toHaveBeenCalledWith('First narration', expect.objectContaining({ voice: 'Truc Ly', speed: 1.2 }));
+    expect(mocks.masterAudio).toHaveBeenCalledWith(Buffer.from('voice'), 1.2);
+    expect(updated.voiceoverInput).toEqual({ voice: 'Truc Ly', speed: 1.2, narrationHash: hashNarration('First narration') });
+    expect(updated).toMatchObject({ durationSec: 2.4, voiceoverDurationSec: 2.2 });
+  });
+
+  it('marks a voiceover stale after changing the project speed', async () => {
+    const project = await seedVoiceProject();
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(2);
+
+    const generated = await generateSceneVoiceover(project.id, 'scene-1');
+    expect(generated.voiceoverInput).toEqual({ voice: 'Truc Ly', speed: 1, narrationHash: hashNarration('First narration') });
+    expect((await getProject(project.id)).scenes[0]!.voiceoverInput).toEqual({ voice: 'Truc Ly', speed: 1, narrationHash: hashNarration('First narration') });
+
+    await setProjectVoiceSpeed(project.id, 1.2);
+    const changed = await getProject(project.id);
+    expect(changed.voiceSpeed).toBe(1.2);
+    expect(changed.scenes[0]!.audioFileId).toBe(generated.audioFileId);
+    expect(changed.scenes[0]!.voiceoverInput).not.toEqual({ voice: changed.voiceoverVoice, speed: changed.voiceSpeed });
+  });
+
+  it('does not attach audio synthesized from narration that changed in flight', async () => {
+    const project = await seedVoiceProject();
+    mocks.synthesize.mockImplementation(async () => {
+      await patchProjectScene(project.id, 'scene-1', { narration: 'Edited while TTS was running' });
+      return Buffer.from('voice');
+    });
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(2);
+
+    await expect(generateSceneVoiceover(project.id, 'scene-1')).rejects.toMatchObject({ status: 409, code: 'PROJECT_CHANGED' });
+    const changed = (await getProject(project.id)).scenes[0]!;
+    expect(changed.narration).toBe('Edited while TTS was running');
+    expect(changed.audioFileId).toBeNull();
+    expect(changed.voiceoverInput).toBeNull();
+  });
+
   it('recomputes durations from stored voiceovers, skips missing audio, and leaves failed probes unchanged', async () => {
     const project = await createProject(projectInput);
     await replaceProjectScenes(project.id, [
@@ -549,6 +598,34 @@ describe('video orchestration services', () => {
     expect(logs.some((line) => line.includes('scene 1'))).toBe(true);
     expect(logs.some((line) => line.includes('failed'))).toBe(true);
     expect(progress).toEqual([50, 100]);
+  });
+
+  it('starts batch voiceover generation at a requested scene and skips earlier scenes', async () => {
+    const project = await seedVoiceProject();
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(1.1);
+
+    const result = await generateProjectVoiceovers(project.id, async () => {}, async () => {}, { startSceneId: 'scene-2' });
+
+    expect(result).toEqual({ generated: 1, skippedSceneNumbers: [], failedSceneNumbers: [] });
+    expect(mocks.synthesize).toHaveBeenCalledTimes(1);
+    expect(mocks.synthesize).toHaveBeenCalledWith('Second narration', expect.anything());
+    expect((await getProject(project.id)).scenes.map((scene) => scene.audioFileId)).toEqual([null, expect.any(String)]);
+  });
+
+  it('stops starting later voiceover scenes after cooperative cancellation', async () => {
+    const project = await seedVoiceProject();
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(1.1);
+    const isCancelled = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    const result = await generateProjectVoiceovers(project.id, async () => {}, async () => {}, { isCancelled });
+
+    expect(result.generated).toBe(1);
+    expect(mocks.synthesize).toHaveBeenCalledTimes(1);
+    expect((await getProject(project.id)).scenes[1]!.audioFileId).toBeNull();
   });
 
   it('skips empty scenes in the batch and reports their scene numbers', async () => {
@@ -705,6 +782,45 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue, analyzeNameKeywo
 }
 
 describe('video routes and worker handlers', () => {
+  it('validates and enqueues an optional voiceover start scene while preserving the default payload', async () => {
+    const project = await seedVoiceProject();
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' });
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+
+    const valid = await fetch(`${base}/api/project/${project.id}/scenes/generate-voiceover`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ startSceneId: 'scene-2' }),
+    });
+    expect(valid.status).toBe(201);
+    expect(enqueueJob).toHaveBeenCalledWith({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id, startSceneId: 'scene-2' } });
+
+    enqueueJob.mockClear();
+    const defaultResponse = await fetch(`${base}/api/project/${project.id}/scenes/generate-voiceover`, { method: 'POST' });
+    expect(defaultResponse.status).toBe(201);
+    expect(enqueueJob).toHaveBeenCalledWith({ type: 'generate-voiceover', projectId: project.id, payload: { projectId: project.id } });
+
+    enqueueJob.mockClear();
+    const invalid = await fetch(`${base}/api/project/${project.id}/scenes/generate-voiceover`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ startSceneId: 'unknown' }),
+    });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: { message: expect.stringContaining('scene') } });
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('persists the validated voice speed through its setting route', async () => {
+    const project = await seedProject();
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    const response = await fetch(`${base}/api/project/${project.id}/voice-speed`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voiceSpeed: 1.2 }),
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).voiceSpeed).toBe(1.2);
+
+    const invalid = await fetch(`${base}/api/project/${project.id}/voice-speed`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ voiceSpeed: 1.11 }),
+    });
+    expect(invalid.status).toBe(400);
+  });
   it('serves project scene popup previews from the same selector used by Remotion', async () => {
     const project = await seedProject();
     const narration = 'Trên sông Tiền hôm nay.';

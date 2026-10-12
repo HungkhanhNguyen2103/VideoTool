@@ -15,7 +15,11 @@ function projectIdFrom(job: { payload: unknown }): string {
 
 const handleGenerateVoiceover: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  return generateProjectVoiceovers(projectIdFrom(job), context.appendLog, context.reportProgress);
+  const payload = job.payload as { startSceneId?: unknown };
+  return generateProjectVoiceovers(projectIdFrom(job), context.appendLog, context.reportProgress, {
+    startSceneId: typeof payload.startSceneId === 'string' ? payload.startSceneId : undefined,
+    isCancelled: context.isCancelled,
+  });
 };
 
 const handleAlignWordTimings: JobHandler = async (job, context) => {
