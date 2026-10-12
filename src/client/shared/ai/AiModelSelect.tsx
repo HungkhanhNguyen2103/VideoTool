@@ -7,6 +7,7 @@ type AiModelSelectProps = {
   onChange: (model: string) => void;
   disabled?: boolean;
   mode?: 'automatic' | 'manual';
+  showCostNote?: boolean;
   className?: string;
   selectClassName?: string;
 };
@@ -18,7 +19,7 @@ export function aiModelForProviderChange(nextProvider: AiProvider, currentProvid
   return getDefaultAiModelId(nextProvider);
 }
 
-export function AiModelSelect({ provider, value, onChange, disabled = false, mode = 'automatic', className, selectClassName }: AiModelSelectProps) {
+export function AiModelSelect({ provider, value, onChange, disabled = false, mode = 'automatic', showCostNote = true, className, selectClassName }: AiModelSelectProps) {
   if (mode === 'manual') return null;
   const models = AI_MODEL_REGISTRY[provider].models;
   const selected = models.some((model) => model.id === value) ? value! : getDefaultAiModelId(provider);
@@ -27,6 +28,6 @@ export function AiModelSelect({ provider, value, onChange, disabled = false, mod
     <select id="ai-model-select" className={selectClassName} aria-label="Model AI" value={selected} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
       {models.map((model) => <option key={model.id} value={model.id}>{model.label} — {model.hint}</option>)}
     </select>
-    <small>Chi phí xem trên dashboard của Claude/DeepSeek.</small>
+    {showCostNote && <small>Chi phí xem trên dashboard của Claude/DeepSeek.</small>}
   </div>;
 }

@@ -78,10 +78,10 @@ describe('Studio scene readiness presentation', () => {
 });
 
 describe('Studio control grid layout', () => {
-  it('uses balanced columns for the four configuration cards', async () => {
+  it('uses independent columns without forcing card heights to match', async () => {
     const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
-    expect(css).toMatch(/\.controlGrid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
-    expect(css).toMatch(/\.controlGrid\s*\{[^}]*align-items:\s*start/s);
+    expect(css).toMatch(/\.controlGrid\s*\{[^}]*columns:\s*2/s);
+    expect(css).toContain('break-inside: avoid;');
   });
 });
 
@@ -118,5 +118,23 @@ describe('Studio verified control explanations', () => {
       'Bản nháp chỉ có trên Remotion và lưu riêng, không ghi đè bản render chính.',
     ]) expect(source).toContain(explanation);
     expect(css).toContain('.controlHelp {');
+  });
+});
+describe('Studio compact control columns', () => {
+  it('keeps the original scene, audio, video, render DOM order in independent CSS columns', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
+    const cardOrder = [
+      'aria-labelledby="scene-controls-title"',
+      'aria-labelledby="audio-controls-title"',
+      'aria-labelledby="video-controls-title"',
+      'aria-labelledby="render-controls-title"',
+    ].map((selector) => source.indexOf(selector));
+
+    expect(cardOrder.every((position) => position >= 0)).toBe(true);
+    expect(cardOrder).toEqual([...cardOrder].sort((a, b) => a - b));
+    expect(css).toMatch(/\.controlGrid\s*\{[^}]*columns:\s*2/s);
+    expect(css).toContain('break-inside: avoid;');
+    expect(css).toMatch(/@media\s*\(max-width:\s*1099px\)\s*\{[^}]*\.controlGrid\s*\{[^}]*columns:\s*1/s);
   });
 });

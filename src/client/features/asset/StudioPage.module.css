@@ -4,8 +4,8 @@
 .title { margin: 0; }
 .muted { color: var(--text-3); font-size: .85rem; }
 .controlArea { display: grid; gap: 1rem; }
-.controlGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1rem; }
-.controlCard { display: grid; align-content: start; gap: .8rem; min-width: 0; padding: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
+.controlGrid { columns: 2; column-gap: 1rem; }
+.controlCard { display: grid; align-content: start; gap: .8rem; min-width: 0; margin: 0 0 1rem; padding: 1rem; break-inside: avoid; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
 .controlHelp { margin: 0; color: var(--text-3); font-size: .72rem; line-height: 1.45; }
 .header > .controlHelp { flex: 1 1 100%; }
 .controlCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-bottom: .65rem; border-bottom: 1px solid var(--border); }
@@ -125,14 +125,8 @@
 .hiddenInput { display: none; }
 .error { color: var(--red); }
 .mismatch { color: var(--amber-text); font-size: .8rem; padding: .4rem .6rem; }
-@media (min-width: 1100px) {
-  .sceneControls { grid-column: 1; }
-  .audioControlsCard { grid-column: 2; }
-  .videoControlsCard { grid-column: 1; }
-  .renderControlsCard { grid-column: 2; }
-}
 @media (max-width: 1099px) {
-  .controlGrid { grid-template-columns: minmax(0, 1fr); }
+  .controlGrid { columns: 1; }
 }
 @media (max-width: 760px) { .detailHeader { flex-direction: column; } }
 @media (max-width: 560px) {

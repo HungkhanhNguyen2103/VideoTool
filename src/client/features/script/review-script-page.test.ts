@@ -249,7 +249,8 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(source).toContain('regenerationStatusLabel');
     expect(source).toContain('Thủ công: tự dán JSON');
     expect(source).toContain('title={regenMode === \'manual\' ? manualRegenHelp : undefined}');
-    expect(source).toContain('{regenMode === \'manual\' && <p className={styles.regenManualHelp}>{manualRegenHelp}</p>}');
+    expect(source).toContain('className={styles.regenModelHelp}');
+    expect(source).toContain('{regenMode === \'manual\' ? manualRegenHelp');
     expect(source).not.toContain('Tái tạo tự động bằng');
     expect(source).not.toContain('Tái tạo thủ công: lấy prompt, dán vào AI bất kỳ, rồi dán JSON kết quả vào');
     expect(source).toContain('Lấy prompt tái tạo');

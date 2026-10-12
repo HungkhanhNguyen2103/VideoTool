@@ -18,6 +18,7 @@ import { BlockingProgressDialog } from '../../shared/ui/BlockingProgressDialog';
 import { isStudioLocked, type BlockingProgressInput, type BlockingTask } from '../../shared/ui/blocking-progress';
 import { cancelJob } from '../../shared/job-api';
 import { AiModelSelect, aiModelForProviderChange } from '../../shared/ai/AiModelSelect';
+import { ChapterRegenModelHelp, ChapterRegenModelSelect } from './ChapterRegenModelSelect';
 import * as api from './api';
 import { buildScriptGenerationRequest, cliGenerationEstimate, type ClaudeCliModelId, type ScriptGenerationBackend } from './generation-mode';
 import {
@@ -1130,6 +1131,14 @@ export function ReviewScriptPage() {
     />;
   };
 
+  const regenModelHelpIsStatus = regenMode === 'cli' || cliStatusQuery.isLoading || cliStatusQuery.isError || cliStatusQuery.data?.available === false;
+  const regenModelHelp = regenMode === 'manual' ? manualRegenHelp
+    : regenModelHelpIsStatus
+      ? cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliStatusQuery.data?.available
+        ? `Claude Code ${formatCliStatusVersion(cliStatusQuery.data.version)} · ${cliStatusQuery.data.authPathLikely === 'subscription' ? 'phiên đăng nhập CLI' : 'API key'}`
+        : cliStatusQuery.data?.reason ?? 'Không thể kiểm tra Claude Code CLI trên máy này.'
+      : 'Chi phí xem trên dashboard của Claude/DeepSeek.';
+
   if (projectQuery.isLoading) return <section className={styles.panel}><p>Đang tải kịch bản…</p></section>;
   if (projectQuery.error) return <section className={styles.panel}><p className={styles.error}>Không thể tải dự án.</p></section>;
 
@@ -1251,37 +1260,42 @@ export function ReviewScriptPage() {
                 </p>
               </>}
             </div>}
-            <div className={styles.regenToolbar}>
-              <label className={styles.compactField} htmlFor="review-provider-existing">AI
-                <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
-                  const provider = event.target.value as 'deepseek' | 'claude';
-                  void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
-                }}>
-                  <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
-                </select>
-              </label>
-              {regenMode === 'cli' ? <label className={styles.modelSelect} htmlFor="claude-cli-model">Model Claude CLI
-                <select className={styles.input} id="claude-cli-model" value={cliModel} disabled={controlsBusy} onChange={(event) => setCliModel(event.target.value as ClaudeCliModelId)}>
-                  {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-                </select>
-              </label> : <AiModelSelect className={styles.modelSelect} selectClassName={styles.input} provider={projectQuery.data?.aiProvider ?? 'deepseek'} value={projectQuery.data?.aiModel} disabled={controlsBusy || regenMode === 'manual'} mode={regenMode === 'manual' ? 'manual' : 'automatic'} onChange={changeModel} />}
-              <span className={styles.toolbarDivider} aria-hidden="true" />
-              <fieldset className={`${styles.segmented} ${styles.regenMode}`} aria-label="Chế độ tái tạo" disabled={controlsBusy}>
-                <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} /><span>Tự động (API)</span></label>
-                <label title={cliStatusQuery.data?.available ? undefined : cliStatusQuery.data?.reason ?? 'Đang kiểm tra Claude CLI trên máy này.'}><input type="radio" name="regeneration-mode" value="cli" checked={regenMode === 'cli'} disabled={!cliStatusQuery.data?.available} onChange={() => setRegenMode('cli')} /><span>Claude CLI (máy này)</span></label>
-                <label><input type="radio" name="regeneration-mode" value="manual" checked={regenMode === 'manual'} onChange={() => setRegenMode('manual')} /><span>Thủ công (JSON)</span></label>
-              </fieldset>
-              <div className={styles.regenStatus} title={regenMode === 'manual' ? manualRegenHelp : undefined}>
-                {regenMode === 'automatic' && <span className={styles.statusDot} aria-hidden="true" />}
-                <span className={styles.regenStatusText}>{regenerationStatusLabel(regenMode, projectQuery.data?.aiProvider ?? 'deepseek')}</span>
+            <div className={styles.regenConfig}>
+              <div className={styles.regenConfigOptions}>
+                <label className={styles.compactField} htmlFor="review-provider-existing">AI
+                  <select className={styles.input} id="review-provider-existing" value={projectQuery.data?.aiProvider ?? 'deepseek'} disabled={controlsBusy} onChange={(event) => {
+                    const provider = event.target.value as 'deepseek' | 'claude';
+                    void changeProvider(provider, aiModelForProviderChange(provider, projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel));
+                  }}>
+                    <option value="deepseek">DeepSeek</option><option value="claude">Claude</option>
+                  </select>
+                </label>
+                <ChapterRegenModelSelect
+                  className={styles.regenModelSlot}
+                  fieldClassName={styles.modelSelect}
+                  selectClassName={styles.input}
+                  mode={regenMode}
+                  provider={projectQuery.data?.aiProvider ?? 'deepseek'}
+                  model={aiModelForProviderChange(projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiProvider ?? 'deepseek', projectQuery.data?.aiModel)}
+                  cliModel={cliModel}
+                  disabled={controlsBusy}
+                  onModelChange={(model) => void changeModel(model)}
+                  onCliModelChange={setCliModel}
+                />
+                <ChapterRegenModelHelp className={styles.regenModelHelp} text={regenModelHelp} isStatus={regenModelHelpIsStatus} />
+              </div>
+              <div className={styles.regenModeRow}>
+                <fieldset className={`${styles.segmented} ${styles.regenMode}`} aria-label="Chế độ tái tạo" disabled={controlsBusy}>
+                  <label><input type="radio" name="regeneration-mode" value="automatic" checked={regenMode === 'automatic'} onChange={() => setRegenMode('automatic')} /><span>Tự động (API)</span></label>
+                  <label title={cliStatusQuery.data?.available ? undefined : cliStatusQuery.data?.reason ?? 'Đang kiểm tra Claude CLI trên máy này.'}><input type="radio" name="regeneration-mode" value="cli" checked={regenMode === 'cli'} disabled={!cliStatusQuery.data?.available} onChange={() => setRegenMode('cli')} /><span>Claude CLI (máy này)</span></label>
+                  <label><input type="radio" name="regeneration-mode" value="manual" checked={regenMode === 'manual'} onChange={() => setRegenMode('manual')} /><span>Thủ công (JSON)</span></label>
+                </fieldset>
+                <div className={styles.regenStatus} title={regenMode === 'manual' ? manualRegenHelp : undefined}>
+                  {regenMode === 'automatic' && <span className={styles.statusDot} aria-hidden="true" />}
+                  <span className={styles.regenStatusText}>{regenerationStatusLabel(regenMode, projectQuery.data?.aiProvider ?? 'deepseek')}</span>
+                </div>
               </div>
             </div>
-            {regenMode === 'manual' && <p className={styles.regenManualHelp}>{manualRegenHelp}</p>}
-            {(regenMode === 'cli' || cliStatusQuery.isLoading || cliStatusQuery.isError || cliStatusQuery.data?.available === false) && <p className={styles.cliStatus} role="status" aria-live="polite">
-              {cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliStatusQuery.data?.available
-                ? `Claude Code ${formatCliStatusVersion(cliStatusQuery.data.version)} · ${cliStatusQuery.data.authPathLikely === 'subscription' ? 'phiên đăng nhập CLI' : 'API key'}`
-                : cliStatusQuery.data?.reason ?? 'Không thể kiểm tra Claude Code CLI trên máy này.'}
-            </p>}
             {finalizeError && <div className={styles.errorAlert} role="alert">{finalizeError}</div>}
             {qaResult && <details className={styles.qaResultsPanel} open={qaResultsOpen} onToggle={(event) => setQaResultsOpen(event.currentTarget.open)}>
               <summary>

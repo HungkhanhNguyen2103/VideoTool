@@ -11,7 +11,10 @@ describe('AI model selector', () => {
       onChange: vi.fn(),
     }));
 
+    expect(markup).toContain('for="ai-model-select"');
+    expect(markup).toContain('id="ai-model-select"');
     expect(markup).toContain('aria-label="Model AI"');
+    expect(markup).toMatch(/<option value="claude-sonnet-5-5"(?: selected="")?>Claude Sonnet 5\.5 — cân bằng<\/option>/);
     expect(markup).toContain('Claude Sonnet 5.5 — cân bằng');
     expect(markup).toContain('claude-opus-4-5');
     expect(markup).not.toContain('deepseek-flash');
