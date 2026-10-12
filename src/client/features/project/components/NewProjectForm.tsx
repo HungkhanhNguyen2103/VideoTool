@@ -260,7 +260,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
 
         <fieldset className={styles.section}>
           <legend className={`label ${styles.legend}`}>Cấu hình kịch bản</legend>
-          <div className={`${styles.grid} ${styles.grid4}`}>
+          <div className={`${styles.grid} ${styles.grid4} ${styles.scriptConfigGrid}`}>
             <div className={styles.field}>
               <label htmlFor="preset">Preset kịch bản</label>
               <select className={styles.input} id="preset" {...register('scriptPresetId')}>
@@ -308,7 +308,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
                 </div>
               </div>
             </div>
-            <div className={styles.field}>
+            <div className={`${styles.field} ${styles.numericConfigField}`}>
               <label htmlFor="duration">Thời lượng mục tiêu (giây)</label>
               <input
                 className={`${styles.input} mono ${errors.targetDurationSec ? styles.invalid : ''}`}
@@ -328,7 +328,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
                 {errors.targetDurationSec?.message}
               </p>
             </div>
-            <div className={styles.field}>
+            <div className={`${styles.field} ${styles.numericConfigField}`}>
               <label htmlFor="chapters">
                 Số chương dự kiến <span className={styles.optional}>(tùy chọn)</span>
               </label>

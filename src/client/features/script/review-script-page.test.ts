@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { getResumableChapterNo, getReviewStepperState, qaReviewerDisplay, regenerationStatusLabel, shouldOfferOpeningHook } from './ReviewScriptPage';
+import { getResumableChapterNo, getReviewStepperState, formatCliStatusVersion, qaReviewerDisplay, regenerationStatusLabel, shouldOfferOpeningHook } from './ReviewScriptPage';
 
 describe('ReviewScriptPage stepper', () => {
   it('marks script generation as not started when there are no chapters or job', () => {
@@ -391,5 +391,30 @@ describe('ReviewScriptPage theme tokens', () => {
     expect(css).toContain('.thinSourceNote');
     expect(css).toContain('.manualQuality');
     expect(css).toContain('.qualityWarning');
+  });
+});
+
+describe('first-time generation mode layout', () => {
+  it('uses the shared mode panel and stable row structure for API, CLI, and manual modes', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+    const css = await readFile('src/client/features/script/ReviewScriptPage.module.css', 'utf8');
+
+    expect(page).toContain('className={styles.generationModes}');
+    expect(page).toContain('className={styles.generationPanel}');
+    expect(page).toContain('generationModeExplanation');
+    expect(css).toContain('.generationPanel {');
+    expect(css).toContain('.generationOptions {');
+    expect(css).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(css).toContain('.generationOptions { grid-template-columns: minmax(0, 1fr); }');
+    expect(css).toContain('.generationInfo { min-height: 6.25rem; }');
+    expect(css).toContain('.generationOptions { min-height: 9.2rem; }');
+  });
+});
+
+describe('Claude CLI status version label', () => {
+  it('removes redundant CLI product text from the version while keeping the status label readable', () => {
+    expect(formatCliStatusVersion('2.1.294 (Claude Code)')).toBe('2.1.294');
+    expect(formatCliStatusVersion('Claude Code 2.1.294 (Claude Code)')).toBe('2.1.294');
+    expect(formatCliStatusVersion(null)).toBe('sẵn sàng');
   });
 });

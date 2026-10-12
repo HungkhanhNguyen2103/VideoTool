@@ -208,3 +208,28 @@
 @media (prefers-reduced-motion: reduce) {
   .chapterChevron { transition: none; }
 }
+
+.generationModes { display: grid; gap: .75rem; }
+.generationPanel { display: grid; gap: .85rem; min-width: 0; padding: 1rem; border: 1px solid var(--border); border-radius: .7rem; background: var(--panel-2); }
+.generationInfo { display: grid; align-content: start; gap: .35rem; min-height: 4rem; }
+.generationModeExplanation { min-height: 2.4em; margin: 0; color: var(--text-2); font-size: .8rem; line-height: 1.45; }
+.generationStatusSlot { min-height: 1.1rem; }
+.generationStatusSlot .cliStatus { margin: 0; }
+.generationStatusPlaceholder { display: block; min-height: 1.1rem; }
+.generationOptions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: .75rem; min-height: 4.75rem; }
+.generationOptions > * { min-width: 0; }
+.generationOptions .inlineField { display: grid; align-items: stretch; gap: .2rem; }
+.generationOptions .inlineField .input { width: 100%; min-width: 0; }
+.generationOptions .generationEstimate { display: flex; align-items: center; width: 100%; min-height: 36px; }
+.manualActions { display: grid; align-content: center; gap: .35rem; min-height: 2.6rem; }
+.manualActions .actions { justify-content: flex-start; }
+.manualActions p { margin: 0; }
+.generationManualTextarea { width: 100%; }
+.generationAction { display: flex; justify-content: flex-end; padding-top: .75rem; border-top: 1px solid var(--border); }
+.generationAction > button { min-width: min(15rem, 100%); }
+@media (max-width: 600px) {
+  .generationInfo { min-height: 6.25rem; }
+  .generationOptions { grid-template-columns: minmax(0, 1fr); }
+  .generationOptions { min-height: 9.2rem; }
+  .generationAction > button { width: 100%; min-width: 0; }
+}

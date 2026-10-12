@@ -277,3 +277,13 @@
   padding-top: 18px;
   border-top: 1px solid var(--border);
 }
+
+.scriptConfigGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+.scriptConfigGrid .modelField { grid-column: auto; }
+.scriptConfigGrid > .field > label { min-height: 2.7em; line-height: 1.35; }
+.numericConfigField { align-content: start; }
+.numericConfigField > label { display: block; }
+@media (max-width: 900px) {
+  .scriptConfigGrid { grid-template-columns: minmax(0, 1fr); }
+  .scriptConfigGrid > .field > label { min-height: 0; }
+}
