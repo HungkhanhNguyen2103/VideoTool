@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 import { spawn } from 'node:child_process';
 import { createVieneuClient } from './vieneu';
-import { masterAudio, probeAudioDuration } from './mastering';
+import { atempoFilterChain, audioMasteringFilter, masterAudio, probeAudioDuration } from './mastering';
 
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -94,15 +94,32 @@ describe('VieNeu TTS client', () => {
 });
 
 describe('audio mastering and probing', () => {
-  it('falls back to the unmastered buffer when ffmpeg mastering fails', async () => {
+  it('applies pitch-preserving tempo and chains filters outside FFmpeg limits', () => {
+    expect(audioMasteringFilter(1)).toContain('loudnorm=');
+    expect(audioMasteringFilter(1.2)).toContain('atempo=1.2');
+    expect(atempoFilterChain(3)).toBe('atempo=2,atempo=1.5');
+    expect(atempoFilterChain(0.25)).toBe('atempo=0.5,atempo=0.5');
+  });
+
+  it('falls back to the unmastered buffer only when no tempo change is requested', async () => {
     const spawnMock = vi.mocked(spawn).mockImplementation(() => {
       const process = new EventEmitter();
       queueMicrotask(() => process.emit('error', new Error('ffmpeg missing')));
       return process as never;
     });
 
-    await expect(masterAudio(Buffer.from('raw-wav'))).resolves.toEqual(Buffer.from('raw-wav'));
+    await expect(masterAudio(Buffer.from('raw-wav'), 1)).resolves.toEqual(Buffer.from('raw-wav'));
     expect(spawnMock).toHaveBeenCalled();
+  });
+
+  it('fails rather than claiming an unsped buffer is fresh when tempo mastering fails', async () => {
+    vi.mocked(spawn).mockImplementation(() => {
+      const process = new EventEmitter();
+      queueMicrotask(() => process.emit('error', new Error('ffmpeg missing')));
+      return process as never;
+    });
+
+    await expect(masterAudio(Buffer.from('raw-wav'), 1.2)).rejects.toThrow('ffmpeg missing');
   });
 
   it('reads duration from ffprobe output', async () => {
