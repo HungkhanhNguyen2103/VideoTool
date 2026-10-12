@@ -81,6 +81,7 @@ describe('Studio control grid layout', () => {
   it('uses balanced columns for the four configuration cards', async () => {
     const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
     expect(css).toMatch(/\.controlGrid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+    expect(css).toMatch(/\.controlGrid\s*\{[^}]*align-items:\s*start/s);
   });
 });
 
@@ -92,5 +93,30 @@ describe('Studio configuration card structure', () => {
     expect(source).toContain('aria-labelledby="video-controls-title"');
     expect(source).toContain('aria-labelledby="render-controls-title"');
     expect(source).toContain('aria-label="Render engine"');
+  });
+});
+
+describe('Studio verified control explanations', () => {
+  it('explains the behavior and limits confirmed by the existing handlers', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
+    for (const explanation of [
+      'Model AI dùng cho các tác vụ AI; phong cách chỉ áp dụng khi tạo visual prompt.',
+      'JSON chứa số scene, visual/motion prompt và loại asset; ZIP ghép file theo số scene trong tên SCENE_###_....',
+      'Đổi loại áp dụng cho tất cả scene; metadata riêng của loại cũ sẽ được làm mới.',
+      'Xem trước trước khi áp dụng; scene đã có asset hoặc keyframe sẽ được giữ nguyên.',
+      'Tách nhỏ dùng AI và bỏ qua chương đã có asset, voiceover, SFX hoặc visual prompt.',
+      'Visual prompt bổ sung trường còn thiếu như visual và SFX; motion prompt chỉ tạo cho scene video.',
+      'Tạo voiceover cho scene có lời dẫn; scene lỗi được ghi riêng.',
+      'Căn thời gian chỉ cập nhật word timings cho voiceover WAV hiện có.',
+      'SFX tìm trên Freesound theo prompt; scene không có prompt sẽ được bỏ qua.',
+      'Tìm bản nhạc nền trên Freesound theo mood bạn nhập.',
+      'FFmpeg bỏ qua hiệu ứng Remotion và logo; render nháp chỉ dùng được với Remotion.',
+      'Các tùy chọn pop-up, chuyển cảnh, phim cũ và chiều sâu chỉ áp dụng với Remotion.',
+      'Tạo depth map cho scene ảnh có asset; map cùng ảnh sẽ được giữ lại.',
+      'Phân tích lời dẫn để gợi ý tên riêng và địa danh cho chữ pop-up.',
+      'Bản nháp chỉ có trên Remotion và lưu riêng, không ghi đè bản render chính.',
+    ]) expect(source).toContain(explanation);
+    expect(css).toContain('.controlHelp {');
   });
 });

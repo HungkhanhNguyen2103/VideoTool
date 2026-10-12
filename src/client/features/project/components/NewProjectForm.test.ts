@@ -8,8 +8,12 @@ describe('NewProjectForm script configuration layout', () => {
 
     expect(source).toContain('styles.scriptConfigGrid');
     expect(source).toContain('Số chương dự kiến');
+    expect(source).toContain('htmlFor="duration">Thời lượng mục tiêu (giây)</label>');
+    expect(source).toContain('id="duration"');
+    expect(source).toContain('aria-describedby="duration-err duration-hint"');
     expect(source).toContain('htmlFor="chapters"');
     expect(source).toContain('id="chapters"');
+    expect(source).toContain('aria-describedby="chapters-err"');
     expect(css).toContain('.scriptConfigGrid {');
     expect(css).toContain('.numericConfigField > label {');
     expect(css).toContain('.scriptConfigGrid { grid-template-columns: minmax(0, 1fr); }');

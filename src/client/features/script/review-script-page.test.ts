@@ -409,6 +409,19 @@ describe('first-time generation mode layout', () => {
     expect(css).toContain('.generationInfo { min-height: 6.25rem; }');
     expect(css).toContain('.generationOptions { min-height: 9.2rem; }');
   });
+
+  it('keeps the selected-mode explanations and generation accessibility identifiers', async () => {
+    const page = await readFile('src/client/features/script/ReviewScriptPage.tsx', 'utf8');
+
+    expect(page).toContain('Gửi yêu cầu đến nhà cung cấp và model AI đã chọn cho dự án.');
+    expect(page).toContain('Dùng Claude Code CLI trên máy này; model CLI độc lập với cấu hình AI của dự án.');
+    expect(page).toContain('Dán JSON bản thảo từ AI bất kỳ; ứng dụng sẽ kiểm tra trước khi nhập.');
+    expect(page).toContain('name="generation-mode"');
+    expect(page).toContain('id="review-provider"');
+    expect(page).toContain('htmlFor="script-cli-model"');
+    expect(page).toContain('id="script-cli-model"');
+    expect(page).toContain('aria-label="Bản thảo thủ công"');
+  });
 });
 
 describe('Claude CLI status version label', () => {

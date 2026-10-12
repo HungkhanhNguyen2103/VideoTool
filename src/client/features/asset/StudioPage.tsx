@@ -548,6 +548,7 @@ export function StudioPage() {
           <input ref={fileInputRef} className={styles.hiddenInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importZip(file); }} />
           <Button size="sm" variant="amber" disabled={studioLocked} onClick={() => fileInputRef.current?.click()}>Import ZIP</Button>
         </div>
+        <p className={styles.controlHelp}>Model AI dùng cho các tác vụ AI; phong cách chỉ áp dụng khi tạo visual prompt. JSON chứa số scene, visual/motion prompt và loại asset; ZIP ghép file theo số scene trong tên SCENE_###_....</p>
       </header>
 
       <section className={styles.controlArea} aria-label="Âm thanh và render">
@@ -558,12 +559,14 @@ export function StudioPage() {
               <div className={styles.sceneAssetSummary}><strong>{filled} / {scenes.length} scenes have assets</strong>{uploadProgress !== null && <span className={styles.muted}>Đang upload {uploadProgress}%</span>}</div>
             </div>
             <div className={styles.controlRow}><span className={styles.controlLabel}>Loại asset</span><div className={styles.actions}><Button size="sm" disabled={studioLocked} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={studioLocked} onClick={() => void setAllAssetType('video')}>All videos</Button></div></div>
+            <p className={styles.controlHelp}>Đổi loại áp dụng cho tất cả scene; metadata riêng của loại cũ sẽ được làm mới.</p>
             <div className={styles.videoDistribution}>
               <div className={styles.videoDistributionControls}>
                 <label className={styles.videoDistributionInput} htmlFor="video-distribution-percent"><span className={styles.label}>% scene video</span><input id="video-distribution-percent" className={styles.audioInput} type="number" min="0" max="100" step="5" value={videoDistributionPercent} disabled={studioLocked} onChange={(event) => { setVideoDistributionPercent(Number(event.target.value)); setVideoDistributionPreview(null); }} /></label>
                 <Button size="sm" disabled={studioLocked || scenes.length === 0} onClick={() => void previewVideoDistribution()}>Xem trước</Button>
               </div>
               <p className={styles.videoDistributionHint}>Sau khi áp dụng, bấm 'Tạo visual prompt' để AI điền motion prompt cho scene video mới.</p>
+              <p className={styles.controlHelp}>Xem trước trước khi áp dụng; scene đã có asset hoặc keyframe sẽ được giữ nguyên.</p>
               {videoDistributionPreview && <div className={styles.videoDistributionPreview}>
                 <p>{videoDistributionPreview.videoCount} scene video / {videoDistributionPreview.imageCount} ảnh · {videoDistributionPreview.lockedCount} scene đã có asset (giữ nguyên)</p>
                 <p className={styles.videoDistributionNumbers}>{videoDistributionPreview.videoSceneNumbers.length > 0 ? `Scene ${videoDistributionPreview.videoSceneNumbers.join(', ')}` : 'Không có scene video.'}</p>
@@ -572,6 +575,8 @@ export function StudioPage() {
               </div>}
             </div>
             <div className={styles.controlRow}><span className={styles.controlLabel}>AI</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button></div></div>
+            <p className={styles.controlHelp}>Tách nhỏ dùng AI và bỏ qua chương đã có asset, voiceover, SFX hoặc visual prompt.</p>
+            <p className={styles.controlHelp}>Visual prompt bổ sung trường còn thiếu như visual và SFX; motion prompt chỉ tạo cho scene video.</p>
           </section>
 
           <section className={`${styles.controlCard} ${styles.audioControlsCard}`} aria-labelledby="audio-controls-title">
@@ -585,9 +590,13 @@ export function StudioPage() {
               <Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void recomputeSceneDurations()}>Tính lại thời lượng theo voiceover</Button>
             </div>
             <div className={styles.controlRow}><span className={styles.controlLabel}>Voiceover</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void alignWordTimings()}>Căn thời gian từ</Button></div></div>
+            <p className={styles.controlHelp}>Tạo voiceover cho scene có lời dẫn; scene lỗi được ghi riêng.</p>
+            <p className={styles.controlHelp}>Căn thời gian chỉ cập nhật word timings cho voiceover WAV hiện có.</p>
             <div className={styles.controlRow}><span className={styles.controlLabel}>SFX</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button></div></div>
             <div className={styles.sfxBatchSummary} aria-live="polite"><span>SFX: {scenes.filter((scene) => scene.sfxFileId !== null).length}/{scenes.filter((scene) => scene.sfxPrompt.trim().length > 0).length} scene có SFX{lastSfxBatchSummary ? ` · ${lastSfxBatchSummary.failed} lỗi` : ''}</span>{lastSfxBatchSummary && lastSfxBatchSummary.failed > 0 && <Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)} onClick={() => void regenerateMissingSfx()}>Tạo lại SFX còn thiếu</Button>}</div>
+            <p className={styles.controlHelp}>SFX tìm trên Freesound theo prompt; scene không có prompt sẽ được bỏ qua.</p>
             <div className={styles.controlRow}><span className={styles.controlLabel}>BGM</span><div className={styles.audioActionRow}><input className={styles.audioInput} disabled={studioLocked} value={bgmMood} onChange={(event) => setBgmMood(event.target.value)} placeholder="Ví dụ: calm cinematic" /><Button size="sm" disabled={studioLocked || !bgmMood.trim()} onClick={() => void generateBgm()}>Tạo BGM</Button>{(() => { const file = project.bgmFileId ? filesById.get(project.bgmFileId) : undefined; return file && file.purpose === 'bgm' && file.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(file)} /> : null; })()}</div></div>
+            <p className={styles.controlHelp}>Tìm bản nhạc nền trên Freesound theo mood bạn nhập.</p>
           </section>
 
           <section className={`${styles.controlCard} ${styles.videoControlsCard}`} aria-labelledby="video-controls-title">
@@ -602,8 +611,11 @@ export function StudioPage() {
                 <label className={styles.transitionField}>Hiệu ứng chiều sâu<select aria-label="Hiệu ứng chiều sâu" className={styles.audioInput} value={project.parallax} disabled={studioLocked || project.renderEngine === 'ffmpeg'} onChange={(event) => void setParallax(event.target.value as 'auto' | 'off')}>{api.PARALLAX_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                 <Button size="sm" variant="indigoline" disabled={studioLocked || project.renderEngine === 'ffmpeg' || scenes.length === 0} onClick={() => void generateDepthMaps()}>Tạo depth map</Button>
               </div>
+              <p className={styles.controlHelp}>Các tùy chọn pop-up, chuyển cảnh, phim cũ và chiều sâu chỉ áp dụng với Remotion.</p>
+              <p className={styles.controlHelp}>Tạo depth map cho scene ảnh có asset; map cùng ảnh sẽ được giữ lại.</p>
               {project.renderEngine === 'ffmpeg' && <span className={styles.renderHint}>Chỉ có ở engine Remotion</span>}
             </fieldset>
+            <p className={styles.controlHelp}>FFmpeg bỏ qua hiệu ứng Remotion và logo; render nháp chỉ dùng được với Remotion.</p>
             <ProjectLogoControl project={project} logoFile={project.logoFileId ? filesById.get(project.logoFileId) : undefined} busy={busy} setBusy={setBusy} refresh={refresh} />
           </section>
 
@@ -614,8 +626,10 @@ export function StudioPage() {
               <p className={styles.nameKeywordStatus}>{nameKeywordStatusText(scenes)}</p>
               <Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void analyzeNameKeywords()}>{scenes.some((scene) => scene.nameCandidates !== null) ? 'Phân tích lại' : 'Phân tích tên popup'}</Button>
             </div>
+            <p className={styles.controlHelp}>Phân tích lời dẫn để gợi ý tên riêng và địa danh cho chữ pop-up.</p>
             {missingScenes.length > 0 && <p className={styles.warning}>Chưa sẵn sàng render: scene {missingScenes.join(', ')} thiếu asset.</p>}
             <div className={styles.renderActions}><Button size="sm" variant="amber" disabled={studioLocked || missingScenes.length > 0} onClick={() => requestRender()}>Render video</Button><Button size="sm" variant="indigoline" title="Chi co o engine Remotion" disabled={studioLocked || missingScenes.length > 0 || project.renderEngine === 'ffmpeg'} onClick={() => requestRender(true)}>Render nháp (nhanh)</Button></div>
+            <p className={styles.controlHelp}>Bản nháp chỉ có trên Remotion và lưu riêng, không ghi đè bản render chính.</p>
             {progress && !jobTask && <div className={styles.progress}><strong>Job {progress.status}</strong><progress max="100" value={progress.progress}>{progress.progress}%</progress><span>{progress.progress}%</span>{progress.logs.length > 0 && <ul>{progress.logs.map((line, index) => <li key={`${line}-${index}`}>{line}</li>)}</ul>}</div>}
             {(() => { const file = project.renderFileId ? filesById.get(project.renderFileId) : undefined; return file && file.purpose === 'render' && file.mimeType.startsWith('video/') ? <video className={styles.renderPlayer} controls src={api.fileUrlForSummary(file)} /> : null; })()}
             {(() => { const file = project.draftRenderFileId ? filesById.get(project.draftRenderFileId) : undefined; return file && file.purpose === 'render-draft' && file.mimeType.startsWith('video/') ? <div className={styles.draftPlayer}><strong>Bản nháp</strong><video className={styles.renderPlayer} controls src={api.fileUrlForSummary(file)} /><a href={api.fileUrlForSummary(file)} download="render-draft.mp4">Tải bản nháp</a></div> : null; })()}
