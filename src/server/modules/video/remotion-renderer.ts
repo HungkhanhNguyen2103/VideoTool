@@ -2,6 +2,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { cpus, freemem } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
+import { sceneFrameTimings, sceneVisualTimings } from '../../../remotion/frame-math';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../shared/logger';
 import { createFileStoreService } from '../file-store';
@@ -42,6 +43,40 @@ function seconds(milliseconds: number): string {
 
 function megabytes(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(2);
+}
+
+type SceneFrameTiming = ReturnType<typeof sceneFrameTimings>[number];
+type SceneVisualTiming = ReturnType<typeof sceneVisualTimings>[number];
+type SceneRenderMetrics = { frames: number; elapsedMs: number };
+
+function sceneIndexForFrame(frame: number, timings: readonly SceneFrameTiming[]): number {
+  for (let index = timings.length - 1; index >= 0; index -= 1) {
+    const timing = timings[index]!;
+    if (timing.durationInFrames > 0 && frame >= timing.from && frame < timing.from + timing.durationInFrames) return index;
+  }
+  return -1;
+}
+
+function sceneIndexesForVisualFrame(frame: number, timings: readonly SceneVisualTiming[]): number[] {
+  return timings.flatMap((timing, index) => frame >= timing.from && frame < timing.from + timing.durationInFrames ? [index] : []);
+}
+
+function accumulateSceneProgress(
+  metrics: SceneRenderMetrics[],
+  timings: readonly SceneFrameTiming[],
+  fromFrame: number,
+  toFrame: number,
+  elapsedMs: number,
+): void {
+  const frameCount = toFrame - fromFrame;
+  if (frameCount <= 0) return;
+  const elapsedPerFrame = elapsedMs / frameCount;
+  for (let frame = fromFrame; frame < toFrame; frame += 1) {
+    const sceneIndex = sceneIndexForFrame(frame, timings);
+    if (sceneIndex < 0) continue;
+    metrics[sceneIndex]!.frames += 1;
+    metrics[sceneIndex]!.elapsedMs += elapsedPerFrame;
+  }
 }
 
 export class RemotionRenderer implements VideoRenderer {
@@ -113,6 +148,13 @@ export class RemotionRenderer implements VideoRenderer {
       let lastBucket = -1;
       let lastProgress = 15;
       let lastRenderedFrames = 0;
+      const sceneTimings = sceneFrameTimings(scenes, project.renderSettings.fps);
+      const visualTimings = sceneVisualTimings(scenes, project.renderSettings.fps, renderProject.transitionStyle ?? 'varied');
+      const sceneMetrics = sceneTimings.map(() => ({ frames: 0, elapsedMs: 0 }));
+      let lastMeasuredFrameCount = 0;
+      let lastMeasuredAt = 0;
+      let renderedDoneIn: number | null = null;
+      let encodedDoneIn: number | null = null;
       let progressLogChain = Promise.resolve();
       let progressLogError: unknown;
       let progressReportChain = Promise.resolve();
@@ -139,10 +181,18 @@ export class RemotionRenderer implements VideoRenderer {
           }
         });
       };
-      const onProgress = (progress: { progress: number; renderedFrames?: number }) => {
+      const onProgress = (progress: Parameters<NonNullable<RenderMediaOptions['onProgress']>>[0]) => {
         const fraction = Math.max(0, Math.min(1, progress.progress));
         const renderedFrames = typeof progress.renderedFrames === 'number' ? progress.renderedFrames : 0;
         lastRenderedFrames = Math.max(lastRenderedFrames, renderedFrames);
+        if (typeof progress.renderedDoneIn === 'number' && Number.isFinite(progress.renderedDoneIn) && progress.renderedDoneIn >= 0) renderedDoneIn = progress.renderedDoneIn;
+        if (typeof progress.encodedDoneIn === 'number' && Number.isFinite(progress.encodedDoneIn) && progress.encodedDoneIn >= 0) encodedDoneIn = progress.encodedDoneIn;
+        const measuredAt = performance.now();
+        if (lastRenderedFrames > lastMeasuredFrameCount) {
+          accumulateSceneProgress(sceneMetrics, sceneTimings, lastMeasuredFrameCount, lastRenderedFrames, measuredAt - lastMeasuredAt);
+          lastMeasuredFrameCount = lastRenderedFrames;
+          lastMeasuredAt = measuredAt;
+        }
         peakRss = Math.max(peakRss, process.memoryUsage().rss);
         const elapsedSeconds = (performance.now() - totalStartedAt) / 1000;
         const currentFps = elapsedSeconds > 0 ? renderedFrames / elapsedSeconds : 0;
@@ -169,9 +219,28 @@ export class RemotionRenderer implements VideoRenderer {
         ...(draft ? { scale: 0.5 } : {}),
       };
       const renderStartedAt = performance.now();
-      await this.renderMedia(renderOptions);
+      lastMeasuredAt = renderStartedAt;
+      const renderResult = await this.renderMedia(renderOptions);
       const renderMilliseconds = performance.now() - renderStartedAt;
       await this.logMessage(`Remotion renderMedia time: ${seconds(renderMilliseconds)}s.`, appendLog);
+      await this.logMessage(renderedDoneIn === null ? 'Remotion frame rendering: not reported by @remotion/renderer.' : `Remotion frame rendering: ${seconds(renderedDoneIn)}s.`, appendLog);
+      await this.logMessage(encodedDoneIn === null ? 'Remotion encoding/stitching: not reported by @remotion/renderer.' : `Remotion encoding/stitching: ${seconds(encodedDoneIn)}s.`, appendLog);
+      await this.logMessage('Remotion audio mixing: not separately exposed by @remotion/renderer.', appendLog);
+      const stagedScenes = staged.inputProps.scenes;
+      for (const [index, metrics] of sceneMetrics.entries()) {
+        if (metrics.frames === 0) continue;
+        const scene = stagedScenes[index]!;
+        const throughput = metrics.elapsedMs > 0 ? `${(metrics.frames / (metrics.elapsedMs / 1000)).toFixed(2)} frames/s` : 'not measurable';
+        await this.logMessage(`Remotion scene throughput ${index + 1} ${scene.id}: ${metrics.frames} frames in ${seconds(metrics.elapsedMs)}s (${throughput}, estimated from progress intervals; ${scene.assetType}, filmLook ${scene.filmLook ? 'on' : 'off'}, popups ${scene.keywords.length}, transition ${renderProject.transitionStyle ?? 'varied'}).`, appendLog);
+      }
+      for (const slowFrame of renderResult.slowestFrames) {
+        const sceneIndexes = sceneIndexesForVisualFrame(slowFrame.frame, visualTimings);
+        const sceneDetails = sceneIndexes.map((index) => {
+          const scene = stagedScenes[index]!;
+          return `scene ${index + 1} ${scene.id} (${scene.assetType}, filmLook ${scene.filmLook ? 'on' : 'off'}, popups ${scene.keywords.length}, transition ${renderProject.transitionStyle ?? 'varied'})`;
+        });
+        if (sceneDetails.length > 0) await this.logMessage(`Remotion slow frame ${slowFrame.frame}: ${slowFrame.time}ms, ${sceneDetails.join('; ')}.`, appendLog);
+      }
       await progressLogChain;
       await progressReportChain;
       if (progressLogError) throw progressLogError;

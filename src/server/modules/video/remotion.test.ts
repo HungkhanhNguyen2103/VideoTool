@@ -640,6 +640,64 @@ describe('Remotion renderer orchestration', () => {
     }
   });
 
+  it('logs render subphase timings, per-scene throughput, and slow frames with scene features', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-diagnostics-source-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-diagnostics-bundle-'));
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      await writeFile(path.join(sourceDir, 'video.mp4'), 'video');
+      const resolver = async (_projectId: string, fileId: string) => ({
+        absolutePath: path.join(sourceDir, fileId === 'video-asset' ? 'video.mp4' : 'image.png'),
+        mimeType: fileId === 'video-asset' ? 'video/mp4' : 'image/png',
+        purpose: 'reference' as const,
+      });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
+        for (const renderedFrames of [15, 30, 45, 60]) {
+          options.onProgress?.({ renderedFrames, encodedFrames: renderedFrames, encodedDoneIn: 4200, renderedDoneIn: 2400, renderEstimatedTime: 0, progress: renderedFrames / 60, stitchStage: 'encoding' });
+        }
+        return {
+          buffer: null,
+          slowestFrames: [{ frame: 59, time: 812 }, { frame: 2, time: 740 }],
+          contentType: 'video/mp4',
+        };
+      });
+      const renderer = new RemotionRenderer({
+        resolver,
+        bundle: vi.fn().mockResolvedValue(bundleDir),
+        selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 60 }),
+        renderMedia,
+        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
+      });
+      const project = {
+        id: 'project-1',
+        renderSettings: { fps: 30, width: 1920, height: 1080 },
+        bgmFileId: null,
+        keywordPopupsEnabled: true,
+        parallax: 'off',
+        filmLook: 'always',
+        transitionStyle: 'crossfade',
+        scenes: [
+          { id: 'still-scene', assetType: 'image', assetFileId: 'image-asset', audioFileId: null, sfxFileId: null, durationSec: 1 },
+          { id: 'clip-scene', assetType: 'video', assetFileId: 'video-asset', audioFileId: null, sfxFileId: null, durationSec: 1, videoDurationSec: 1 },
+        ],
+      } as never;
+      const logs: string[] = [];
+
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined);
+
+      expect(logs).toContain('Remotion frame rendering: 2.40s.');
+      expect(logs).toContain('Remotion encoding/stitching: 4.20s.');
+      expect(logs).toContain('Remotion audio mixing: not separately exposed by @remotion/renderer.');
+      expect(logs.some((message) => message.startsWith('Remotion scene throughput 1 still-scene:'))).toBe(true);
+      expect(logs.some((message) => message.startsWith('Remotion scene throughput 2 clip-scene:'))).toBe(true);
+      expect(logs).toContain('Remotion slow frame 59: 812ms, scene 2 clip-scene (video, filmLook on, popups 0, transition crossfade).');
+      expect(logs).toContain('Remotion slow frame 2: 740ms, scene 1 still-scene (image, filmLook on, popups 0, transition crossfade).');
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
   it('does not force concurrency for auto parallax without an eligible depth scene', async () => {
     const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-image-'));
     const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-concurrency-bundle-'));
