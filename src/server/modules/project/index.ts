@@ -31,6 +31,7 @@ export {
   setProjectParallax,
   setProjectSceneTailSec,
   setProjectSfxVolume,
+  setProjectVoiceSpeed,
   setProjectRenderEngine,
   setProjectAiProvider,
   setProjectVisualStylePreset,

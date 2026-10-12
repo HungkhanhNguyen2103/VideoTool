@@ -3,6 +3,7 @@ import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, NameCandidatesSchema, PA
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 import { SeoPackageSchema } from '../../../contracts/seo';
 import { DEFAULT_SCENE_TAIL_SEC, SceneDurationSecSchema, SceneTailSecSchema } from '../../../contracts/scene-duration';
+import { DEFAULT_VOICE_SPEED, VoiceSpeedSchema, VoiceoverInputSchema } from '../../../contracts/voiceover';
 
 export const SceneDocSchema = z.object({
   id: z.string(),
@@ -13,6 +14,7 @@ export const SceneDocSchema = z.object({
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),
   voiceoverDurationSec: z.number().finite().nonnegative().nullable().default(null),
+  voiceoverInput: VoiceoverInputSchema.nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
   nameCandidates: NameCandidatesSchema.nullable().default(null),
   sfxPrompt: z.string().default(''),
@@ -48,6 +50,7 @@ export const ProjectDocSchema = z.object({
   filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
   parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
+  voiceSpeed: VoiceSpeedSchema.default(DEFAULT_VOICE_SPEED),
   sceneTailSec: SceneTailSecSchema.default(DEFAULT_SCENE_TAIL_SEC),
   sfxVolume: SfxVolumeSchema.default(0.5),
   renderFileId: z.string().nullable().default(null),

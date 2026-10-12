@@ -120,8 +120,11 @@ export function setAllAssetType(projectId: string, assetType: 'image' | 'video')
   });
 }
 
-export function generateAllVoiceovers(projectId: string): Promise<{ jobId: string }> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-voiceover`, JobResponseSchema, { method: 'POST' });
+export function generateAllVoiceovers(projectId: string, options: { startSceneId?: string } = {}): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/generate-voiceover`, JobResponseSchema, {
+    method: 'POST',
+    ...(options.startSceneId === undefined ? {} : { body: options }),
+  });
 }
 
 export function fitSceneToClip(projectId: string, sceneId: string, expectedVersion: number): Promise<ProjectDetail> {
@@ -139,6 +142,12 @@ export function setSceneTail(projectId: string, sceneTailSec: number): Promise<P
 export function setSfxVolume(projectId: string, sfxVolume: number): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/sfx-volume`, ProjectDetailSchema, {
     method: 'PATCH', body: { sfxVolume },
+  });
+}
+
+export function setVoiceSpeed(projectId: string, voiceSpeed: number): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/voice-speed`, ProjectDetailSchema, {
+    method: 'PATCH', body: { voiceSpeed },
   });
 }
 

@@ -9,6 +9,7 @@ import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
 import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
 import { DEFAULT_SCENE_TAIL_SEC, roundDurationSeconds } from '../../../contracts/scene-duration';
+import { DEFAULT_VOICE_SPEED, VoiceSpeedSchema } from '../../../contracts/voiceover';
 import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
 
 function toSummary(row: ProjectSummaryRow): ProjectSummary {
@@ -43,6 +44,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     filmLook: doc.filmLook,
     parallax: doc.parallax,
     voiceoverVoice: doc.voiceoverVoice,
+    voiceSpeed: doc.voiceSpeed,
     sceneTailSec: doc.sceneTailSec,
     sfxVolume: doc.sfxVolume,
     renderFileId: doc.renderFileId,
@@ -92,6 +94,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     filmLook: 'auto',
     parallax: 'off',
     voiceoverVoice: input.voiceoverVoice ?? 'Truc Ly',
+    voiceSpeed: input.voiceSpeed ?? DEFAULT_VOICE_SPEED,
     sceneTailSec: DEFAULT_SCENE_TAIL_SEC,
     sfxVolume: 0.5,
     renderFileId: input.renderFileId ?? null,
@@ -143,7 +146,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
-    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, voiceoverDurationSec: null, wordTimings: null, nameCandidates: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
+    scenes: src.scenes.map((scene) => ({ ...scene, assetFileId: null, audioFileId: null, voiceoverDurationSec: null, voiceoverInput: null, wordTimings: null, nameCandidates: null, sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null })),
     renderFileId: null,
     draftRenderFileId: null,
     bgmFileId: null,
@@ -173,6 +176,7 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
     const parsed = SceneDocSchema.parse({
       ...scene,
       voiceoverDurationSec: scene.audioFileId !== null && sameVoice ? old?.voiceoverDurationSec ?? scene.voiceoverDurationSec ?? null : scene.audioFileId !== null ? scene.voiceoverDurationSec ?? null : null,
+      voiceoverInput: scene.audioFileId !== null && sameVoice ? old?.voiceoverInput ?? scene.voiceoverInput ?? null : scene.audioFileId !== null ? scene.voiceoverInput ?? null : null,
       wordTimings: sameVoice && old.wordTimings?.audioFileId === scene.audioFileId ? old.wordTimings : null,
       // Preserve analyzed names as stale history while audio still exists; a bulk reset to no audio clears them.
       nameCandidates: scene.audioFileId !== null ? old?.nameCandidates ?? null : null,
@@ -191,7 +195,7 @@ export async function replaceProjectScenes(id: string, scenes: z.input<typeof Sc
 export async function patchProjectScene(
   id: string,
   sceneId: string,
-  patch: Partial<Pick<SceneDoc, 'narration' | 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'voiceoverDurationSec' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
+  patch: Partial<Pick<SceneDoc, 'narration' | 'visualPrompt' | 'assetType' | 'assetFileId' | 'audioFileId' | 'voiceoverDurationSec' | 'voiceoverInput' | 'durationSec' | 'sfxPrompt' | 'motionPrompt' | 'sfxFileId' | 'videoKeyframeFileId' | 'videoTailFileId' | 'videoDurationSec'>>,
   expectedVersion?: number,
 ): Promise<ProjectDetail> {
   const current = patch.narration !== undefined || patch.durationSec !== undefined || patch.audioFileId !== undefined ? await getProject(id) : null;
@@ -204,10 +208,13 @@ export async function patchProjectScene(
     scenePatch.durationSec = estimateNarrationDurationSec(normalizedNarration!);
     scenePatch.audioFileId = null;
     scenePatch.voiceoverDurationSec = null;
+    scenePatch.voiceoverInput = null;
   } else if (patch.audioFileId !== undefined && currentScene && patch.audioFileId !== currentScene.audioFileId && patch.voiceoverDurationSec === undefined) {
     scenePatch.voiceoverDurationSec = null;
+    if (patch.voiceoverInput === undefined) scenePatch.voiceoverInput = null;
   } else if (patch.audioFileId === null) {
     scenePatch.voiceoverDurationSec = null;
+    scenePatch.voiceoverInput = null;
   }
   const set: Record<string, unknown> = { updatedAt: new Date() };
   for (const [field, value] of Object.entries(scenePatch)) set[`scenes.$[scene].${field}`] = value;
@@ -533,6 +540,11 @@ export async function setProjectSceneTailSec(id: string, sceneTailSec: number): 
 
 export async function setProjectSfxVolume(id: string, sfxVolume: number): Promise<ProjectDetail> {
   await updateProject(id, { sfxVolume });
+  return getProject(id);
+}
+
+export async function setProjectVoiceSpeed(id: string, voiceSpeed: number): Promise<ProjectDetail> {
+  await updateProject(id, { voiceSpeed: VoiceSpeedSchema.parse(voiceSpeed) });
   return getProject(id);
 }
 

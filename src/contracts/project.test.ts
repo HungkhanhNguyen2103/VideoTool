@@ -28,3 +28,16 @@ describe('script preset project field', () => {
     expect(CreateProjectRequestSchema.parse({ ...validCreateInput, scriptPresetId: 'strategist' as never }).scriptPresetId).toBe('strategist');
   });
 });
+
+describe('voice speed project field', () => {
+  it('defaults new project requests to normal narration speed and preserves valid steps', () => {
+    expect(CreateProjectRequestSchema.parse(validCreateInput).voiceSpeed).toBe(1);
+    expect(CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 1.2 }).voiceSpeed).toBe(1.2);
+  });
+
+  it('rejects speeds outside 0.8–1.3 or off the 0.05 step', () => {
+    expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 0.75 })).toThrow();
+    expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 1.31 })).toThrow();
+    expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 1.11 })).toThrow();
+  });
+});

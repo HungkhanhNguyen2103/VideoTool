@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
 import { SfxVolumeSchema, type Scene, type VisualStyleId } from '../../../contracts/project';
+import { isVoiceoverFresh, VoiceSpeedSchema } from '../../../contracts/voiceover';
 import { SfxBatchSummarySchema } from '../../../contracts/video';
 import { analyzeScene } from '../../../contracts/scene-readiness';
 import { SceneTailSecSchema, formatDurationSeconds, hasUnappliedSceneTail } from '../../../contracts/scene-duration';
@@ -23,6 +24,7 @@ import { ProjectLogoControl } from './ProjectLogoControl';
 import { ScenePreviewSection, type ScenePreviewState } from './ScenePreviewSection';
 import { createScenePreviewFingerprint } from './scene-preview';
 import { nameKeywordPopupLine, nameKeywordStatusText } from './name-keyword-ui';
+import { VoiceoverListenPanel } from './VoiceoverListenPanel';
 import styles from './StudioPage.module.css';
 
 const statusTone = { draft: 'muted', script: 'indigo', assets: 'green', rendered: 'green' } as const;
@@ -43,6 +45,7 @@ export function StudioPage() {
   const [bgmMood, setBgmMood] = useState('');
   const [sceneTailDraft, setSceneTailDraft] = useState('0.2');
   const [sfxVolumeDraft, setSfxVolumeDraft] = useState('0.5');
+  const [voiceSpeedDraft, setVoiceSpeedDraft] = useState('1');
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobTask, setJobTask] = useState<BlockingTask | null>(null);
   const [jobStartedAt, setJobStartedAt] = useState<number | null>(null);
@@ -60,11 +63,15 @@ export function StudioPage() {
   const [videoDistributionTarget, setVideoDistributionTarget] = useState(20);
   const [videoDistributionPreview, setVideoDistributionPreview] = useState<VideoDistributionPreview | null>(null);
   const [renderConfirmationDraft, setRenderConfirmationDraft] = useState<boolean | null>(null);
+  const [listenMode, setListenMode] = useState(false);
+  const [voiceoverReloadVersions, setVoiceoverReloadVersions] = useState<Record<string, number>>({});
+  const [voiceoverConfirmSceneId, setVoiceoverConfirmSceneId] = useState<string | null>(null);
   const scenePreviewsRef = useRef<Record<string, ScenePreviewState>>({});
   const refreshedJobRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const detailDialogRef = useRef<HTMLDialogElement>(null);
   const renderConfirmDialogRef = useRef<HTMLDialogElement>(null);
+  const voiceoverConfirmDialogRef = useRef<HTMLDialogElement>(null);
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const filesQuery = useQuery({ queryKey: ['project-files', projectId], queryFn: () => api.listProjectFiles(projectId), enabled: Boolean(projectId) });
   const project = projectQuery.data;
@@ -76,6 +83,10 @@ export function StudioPage() {
   const scenes = project?.scenes ?? [];
   const files = filesQuery.data ?? [];
   const filesById = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);
+  const voiceoverAudioUrls = useMemo(() => Object.fromEntries(scenes.flatMap((scene) => {
+    const file = scene.audioFileId ? filesById.get(scene.audioFileId) : undefined;
+    return file?.mimeType.startsWith('audio/') ? [[scene.id, api.fileUrlForSummary(file)] as const] : [];
+  })), [filesById, scenes]);
   const filled = scenes.filter((scene) => scene.assetFileId !== null).length;
   const missingScenes = project ? api.missingSceneNumbers(project) : [];
   const readinessBySceneId = useMemo(() => new Map(scenes.map((scene) => [scene.id, analyzeScene(scene)])), [scenes]);
@@ -103,10 +114,14 @@ export function StudioPage() {
   const activeBlockingTask = jobTask ?? busyTask;
   const activeBlockingStartedAt = jobTask ? jobStartedAt : busyStartedAt;
   const studioLocked = !jobLocallyUnlocked && isStudioLocked(busy, jobId, progress);
+  const voiceoverConfirmStartIndex = voiceoverConfirmSceneId ? scenes.findIndex((scene) => scene.id === voiceoverConfirmSceneId) : -1;
+  const voiceoverConfirmCount = voiceoverConfirmStartIndex >= 0 ? scenes.slice(voiceoverConfirmStartIndex).filter((scene) => scene.narration.trim()).length : 0;
+  const voiceoverConfirmStartNumber = voiceoverConfirmStartIndex >= 0 ? voiceoverConfirmStartIndex + 1 : 0;
 
   useEffect(() => { if (project) setBgmMood(project.bgmMood); }, [project?.id, project?.bgmMood]);
   useEffect(() => { if (project) setSceneTailDraft(String(project.sceneTailSec)); }, [project?.id, project?.sceneTailSec]);
   useEffect(() => { if (project) setSfxVolumeDraft(String(project.sfxVolume)); }, [project?.id, project?.sfxVolume]);
+  useEffect(() => { if (project) setVoiceSpeedDraft(String(project.voiceSpeed)); }, [project?.id, project?.voiceSpeed]);
   useEffect(() => () => { Object.values(scenePreviewsRef.current).forEach(({ url }) => URL.revokeObjectURL(url)); }, []);
   useEffect(() => {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;
@@ -151,6 +166,12 @@ export function StudioPage() {
     if (renderConfirmationDraft !== null && !dialog.open) dialog.showModal();
     if (renderConfirmationDraft === null && dialog.open) dialog.close();
   }, [renderConfirmationDraft]);
+  useEffect(() => {
+    const dialog = voiceoverConfirmDialogRef.current;
+    if (!dialog) return;
+    if (voiceoverConfirmSceneId && !dialog.open) dialog.showModal();
+    if (!voiceoverConfirmSceneId && dialog.open) dialog.close();
+  }, [voiceoverConfirmSceneId]);
 
   function setBusy(value: string | null): void {
     setBusyState(value);
@@ -252,10 +273,16 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
-  async function generateAllVoiceovers() {
-    try { setBusy('voiceover-all'); const result = await api.generateAllVoiceovers(projectId); setVoiceoverJobId(result.jobId); startJob({ kind: 'voiceover-all' }, result.jobId); toast('Đã xếp hàng tạo voiceover.'); }
+  async function generateAllVoiceovers(startSceneId?: string) {
+    try { setBusy('voiceover-all'); const result = await api.generateAllVoiceovers(projectId, startSceneId ? { startSceneId } : {}); setVoiceoverJobId(result.jobId); startJob({ kind: 'voiceover-all' }, result.jobId); toast('Đã xếp hàng tạo voiceover.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo voiceover.'); }
     finally { setBusy(null); }
+  }
+
+  async function continueVoiceoverFromScene(): Promise<void> {
+    const startSceneId = voiceoverConfirmSceneId;
+    setVoiceoverConfirmSceneId(null);
+    if (startSceneId) await generateAllVoiceovers(startSceneId);
   }
 
   async function fitSceneToClip(scene: Scene) {
@@ -304,6 +331,24 @@ export function StudioPage() {
       await refresh();
       toast('Đã cập nhật âm lượng SFX.');
     } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật âm lượng SFX.'); }
+    finally { setBusy(null); }
+  }
+
+  async function saveVoiceSpeed(): Promise<void> {
+    if (!project) return;
+    const parsed = VoiceSpeedSchema.safeParse(Number(voiceSpeedDraft));
+    if (!parsed.success) {
+      toast('Tốc độ đọc phải từ 0.8 đến 1.3, theo bước 0.05.');
+      setVoiceSpeedDraft(String(project.voiceSpeed));
+      return;
+    }
+    if (parsed.data === project.voiceSpeed) return;
+    try {
+      setBusy('voice-speed');
+      await api.setVoiceSpeed(projectId, parsed.data);
+      await refresh();
+      toast('Đã cập nhật tốc độ đọc.');
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật tốc độ đọc.'); }
     finally { setBusy(null); }
   }
 
@@ -374,9 +419,16 @@ export function StudioPage() {
     finally { setBusy(null); }
   }
 
-  async function regenerateVoiceover(sceneId: string) {
-    try { setBusy(`voice:${sceneId}`); await api.regenerateVoiceover(projectId, sceneId); await refresh(); setVoiceoverResetSceneIds((current) => { const next = new Set(current); next.delete(sceneId); return next; }); toast('Đã tạo lại voiceover.'); }
-    catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo lại voiceover.'); }
+  async function regenerateVoiceover(sceneId: string): Promise<boolean> {
+    try {
+      setBusy(`voice:${sceneId}`);
+      await api.regenerateVoiceover(projectId, sceneId);
+      await refresh();
+      setVoiceoverReloadVersions((current) => ({ ...current, [sceneId]: (current[sceneId] ?? 0) + 1 }));
+      setVoiceoverResetSceneIds((current) => { const next = new Set(current); next.delete(sceneId); return next; });
+      toast('Đã tạo lại voiceover.');
+      return true;
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tạo lại voiceover.'); return false; }
     finally { setBusy(null); }
   }
 
@@ -586,12 +638,15 @@ export function StudioPage() {
               <p className={styles.muted}>SFX được cân bằng về cùng mức voiceover trước khi áp dụng tỷ lệ này.</p>
               <label className={styles.transitionField} htmlFor="scene-tail-sec">Khoảng nghỉ cuối scene (giây)<input id="scene-tail-sec" className={styles.audioInput} type="number" min="0" max="2" step="0.05" value={sceneTailDraft} disabled={studioLocked} onChange={(event) => setSceneTailDraft(event.currentTarget.value)} onBlur={() => void saveSceneTail()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} /></label>
               <p className={styles.muted}>Cộng thêm vào cuối mỗi voiceover. Áp dụng khi tạo voiceover mới hoặc bấm Tính lại thời lượng.</p>
+              <label className={styles.transitionField} htmlFor="voice-speed">Tốc độ đọc<input id="voice-speed" className={styles.audioInput} type="number" min="0.8" max="1.3" step="0.05" value={voiceSpeedDraft} disabled={studioLocked} onChange={(event) => setVoiceSpeedDraft(event.currentTarget.value)} onBlur={() => void saveVoiceSpeed()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} /></label>
+              <p className={styles.muted}>Tốc độ đọc; 1.0 là bình thường. Đổi xong cần tạo lại voice.</p>
               {hasUnappliedTail && <p className={styles.muted}>Chưa áp dụng cho scene đã có voiceover — bấm Tính lại thời lượng</p>}
               <Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void recomputeSceneDurations()}>Tính lại thời lượng theo voiceover</Button>
             </div>
-            <div className={styles.controlRow}><span className={styles.controlLabel}>Voiceover</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void alignWordTimings()}>Căn thời gian từ</Button></div></div>
+            <div className={styles.controlRow}><span className={styles.controlLabel}>Voiceover</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void alignWordTimings()}>Căn thời gian từ</Button><Button size="sm" variant="ghost" disabled={scenes.length === 0} onClick={() => setListenMode((current) => !current)}>{listenMode ? 'Đóng nghe voiceover' : 'Nghe voiceover'}</Button></div></div>
             <p className={styles.controlHelp}>Tạo voiceover cho scene có lời dẫn; scene lỗi được ghi riêng.</p>
             <p className={styles.controlHelp}>Căn thời gian chỉ cập nhật word timings cho voiceover WAV hiện có.</p>
+            {listenMode && <VoiceoverListenPanel scenes={scenes} project={project} audioUrls={voiceoverAudioUrls} reloadVersions={voiceoverReloadVersions} onRegenerate={regenerateVoiceover} regeneratingSceneId={busy?.startsWith('voice:') ? busy.slice('voice:'.length) : null} />}
             <div className={styles.controlRow}><span className={styles.controlLabel}>SFX</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button></div></div>
             <div className={styles.sfxBatchSummary} aria-live="polite"><span>SFX: {scenes.filter((scene) => scene.sfxFileId !== null).length}/{scenes.filter((scene) => scene.sfxPrompt.trim().length > 0).length} scene có SFX{lastSfxBatchSummary ? ` · ${lastSfxBatchSummary.failed} lỗi` : ''}</span>{lastSfxBatchSummary && lastSfxBatchSummary.failed > 0 && <Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)} onClick={() => void regenerateMissingSfx()}>Tạo lại SFX còn thiếu</Button>}</div>
             <p className={styles.controlHelp}>SFX tìm trên Freesound theo prompt; scene không có prompt sẽ được bỏ qua.</p>
@@ -666,13 +721,14 @@ export function StudioPage() {
           const actualType = file ? api.mediaTypeForMime(file.mimeType) : null;
           const previewType = actualType ?? scene.assetType;
           const typeMismatch = actualType !== null && actualType !== scene.assetType;
-          const scenePreview = scenePreviews[scene.id];
-          const readiness = readinessBySceneId.get(scene.id)!;
-          const readinessBadge = readinessBadgeForStatus(readiness.status);
+           const scenePreview = scenePreviews[scene.id];
+           const readiness = readinessBySceneId.get(scene.id)!;
+           const readinessBadge = readinessBadgeForStatus(readiness.status);
+           const voiceoverIsFresh = scene.audioFileId !== null && scene.voiceoverInput != null && isVoiceoverFresh(scene, project);
           return <article className={styles.card} key={scene.id}>
             <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><span className={styles.muted}>{formatDurationSeconds(scene.durationSec)}s{scene.assetType === 'video' && scene.videoDurationSec !== null ? ` · clip ${scene.videoDurationSec.toFixed(1)}s` : ''}</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={studioLocked} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
             <div className={`${styles.preview} ${styles.cardPreview}`}>{scenePreview ? <><video controls src={scenePreview.url} aria-label={`Preview render scene ${index + 1}`} /><div className={styles.cardPreviewLabel}><Badge tone="amber">Preview render</Badge><Button size="sm" variant="ghost" disabled={studioLocked} onClick={() => clearScenePreview(scene.id)}>Xem asset gốc</Button></div></> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
-            <div className={styles.cardFooter}><div className={styles.statusBadges}>{readinessBadge && <span title={readiness.messages.join(' · ')}><Badge tone={readinessBadge.tone}>{readinessBadge.label}</Badge></span>}{!scene.narration.trim() && <Badge tone="amber">Không có lời dẫn</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? 'green' : 'muted'}>{scene.audioFileId ? 'Đã có voiceover' : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
+             <div className={styles.cardFooter}><div className={styles.statusBadges}>{readinessBadge && <span title={readiness.messages.join(' · ')}><Badge tone={readinessBadge.tone}>{readinessBadge.label}</Badge></span>}{!scene.narration.trim() && <Badge tone="amber">Không có lời dẫn</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? (voiceoverIsFresh ? 'green' : 'amber') : 'muted'}>{scene.audioFileId ? (voiceoverIsFresh ? 'Đã có voiceover' : 'Voiceover đã cũ') : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
           </article>;
         })}
       </section>
@@ -716,8 +772,9 @@ export function StudioPage() {
               <section className={styles.prompt}>
                 <span className={styles.label}>Voiceover</span>
                 {expandedVoiceoverFile?.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(expandedVoiceoverFile)} /> : <span className={styles.placeholder}>Chưa có voiceover.</span>}
+                {expandedScene.audioFileId && !isVoiceoverFresh(expandedScene, project) && <span className={styles.warning}>Voiceover đã cũ — cần tạo lại theo tốc độ/giọng hiện tại.</span>}
                 {voiceoverResetSceneIds.has(expandedScene.id) && <span className={styles.warning}>Tao lai voiceover</span>}
-                <div className={styles.actions}><Button size="sm" disabled={studioLocked || !expandedScene.narration.trim()} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button></div>
+                <div className={styles.actions}><Button size="sm" disabled={studioLocked || !expandedScene.narration.trim()} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => { setExpandedSceneId(null); setVoiceoverConfirmSceneId(expandedScene.id); }}>Chạy voiceover từ scene này</Button></div>
               </section>
               <section className={styles.prompt}>
                 <label className={styles.label} htmlFor={`sfx-${expandedScene.id}`}>SFX prompt</label>
@@ -728,6 +785,13 @@ export function StudioPage() {
             </div>
           </div>
         </div> : null}
+      </dialog>
+      <dialog ref={voiceoverConfirmDialogRef} className={styles.detailDialog} aria-labelledby="voiceover-confirm-title" onClose={() => setVoiceoverConfirmSceneId(null)}>
+        <div className={styles.detailContent}>
+          <div className={styles.detailHeader}><div><h2 id="voiceover-confirm-title" className={styles.detailTitle}>Chạy voiceover từ đây</h2><p className={styles.detailNarration}>{voiceoverConfirmCount} scene sẽ được tạo lại, từ scene {voiceoverConfirmStartNumber} đến scene {scenes.length}</p></div><Button size="sm" onClick={() => setVoiceoverConfirmSceneId(null)}>Huỷ</Button></div>
+          <p className={styles.muted}>Batch sẽ tiếp tục qua các scene phía sau; scene không có lời dẫn sẽ được bỏ qua.</p>
+          <div className={styles.actions}><Button size="sm" onClick={() => setVoiceoverConfirmSceneId(null)}>Huỷ</Button><Button size="sm" variant="amber" disabled={voiceoverConfirmStartIndex < 0 || voiceoverConfirmCount === 0} onClick={() => void continueVoiceoverFromScene()}>Chạy voiceover</Button></div>
+        </div>
       </dialog>
       <dialog ref={renderConfirmDialogRef} className={styles.detailDialog} aria-labelledby="render-confirm-title" onClose={() => setRenderConfirmationDraft(null)}>
         <div className={styles.detailContent}>

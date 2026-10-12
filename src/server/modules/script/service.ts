@@ -687,6 +687,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       assetFileId: null,
       audioFileId: null,
       voiceoverDurationSec: null,
+      voiceoverInput: null,
       wordTimings: null,
       sfxPrompt: '',
       motionPrompt: '',

@@ -6,6 +6,7 @@ function scene(overrides: Partial<Scene>): Scene {
   return {
     id: 'scene-1', narration: 'Scene', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: 'image-1', audioFileId: null, voiceoverDurationSec: null,
     sfxPrompt: '', motionPrompt: '', sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null,
+    voiceoverInput: null,
     wordTimings: null, depthMap: null, nameCandidates: null,
     ...overrides,
   };

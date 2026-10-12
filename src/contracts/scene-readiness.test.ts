@@ -12,6 +12,7 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     assetFileId: 'asset-1',
     audioFileId: 'audio-1',
     voiceoverDurationSec: null,
+    voiceoverInput: null,
     wordTimings: null,
     sfxPrompt: '',
     motionPrompt: '',

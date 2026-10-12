@@ -27,6 +27,7 @@ function projectWithScenes(durations: number[], sceneCounts: number[], fps = 24)
       assetFileId: `asset-${index + 1}`,
       audioFileId: null,
       voiceoverDurationSec: null,
+      voiceoverInput: null,
       wordTimings: null,
       sfxPrompt: '',
       motionPrompt: '',

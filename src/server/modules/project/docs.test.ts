@@ -51,6 +51,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).sfxVolume).toBe(0.5);
   });
 
+  it('defaults legacy project documents to normal voice speed', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).voiceSpeed).toBe(1);
+  });
+
   it('accepts hundredth-precision SFX volume values including the Studio 0.05 steps', () => {
     for (const value of [0.1, 0.15, 0.2, 0.35, 0.55, 0.95, 1]) expect(SfxVolumeSchema.parse(value)).toBe(value);
   });
@@ -83,6 +87,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
 
   it('defaults legacy scene documents to no analyzed name candidates', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).nameCandidates).toBeNull();
+  });
+
+  it('defaults legacy scene documents to no voiceover input record', () => {
+    expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).voiceoverInput).toBeNull();
   });
 
   it('accepts fractional scene durations and defaults legacy voiceover measurements to null', () => {

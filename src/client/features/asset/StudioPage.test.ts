@@ -52,6 +52,14 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('api.recomputeSceneDurations(projectId)');
   });
 
+  it('shows the project voice speed control and stale voiceover guidance', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('Tốc độ đọc; 1.0 là bình thường. Đổi xong cần tạo lại voice.');
+    expect(source).toContain('VoiceSpeedSchema.safeParse');
+    expect(source).toContain('api.setVoiceSpeed(projectId, parsed.data)');
+    expect(source).toContain('voiceoverInput');
+  });
+
   it('shows SFX asset counts and exposes missing-only retry after a failed batch result', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
     expect(source).toContain('SfxBatchSummarySchema.safeParse(progress.result)');

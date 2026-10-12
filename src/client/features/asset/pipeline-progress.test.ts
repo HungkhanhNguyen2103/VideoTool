@@ -12,6 +12,7 @@ function scene(id: string, overrides: Partial<Scene> = {}): Scene {
     assetFileId: null,
     audioFileId: null,
     voiceoverDurationSec: null,
+    voiceoverInput: null,
     wordTimings: null,
     sfxPrompt: '',
     motionPrompt: '',

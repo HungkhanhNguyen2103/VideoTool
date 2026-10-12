@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, setVoiceSpeed, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -20,6 +20,12 @@ const projectPayload = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('asset API helpers', () => {
+  it('sends the project voice speed to the setting route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ...projectPayload, voiceSpeed: 1.2 }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(setVoiceSpeed('project/1', 1.2)).resolves.toMatchObject({ voiceSpeed: 1.2 });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/voice-speed', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ voiceSpeed: 1.2 }) }));
+  });
   it('previews and applies video distribution through the exact routes and bodies', async () => {
     const preview = { total: 2, videoCount: 1, imageCount: 1, lockedCount: 0, changes: [], videoSceneNumbers: [1], projectVersion: 7 };
     const fetchMock = vi.spyOn(globalThis, 'fetch')
