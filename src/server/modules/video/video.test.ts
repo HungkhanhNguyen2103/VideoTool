@@ -36,6 +36,7 @@ import {
   setSceneWordTimings,
   setSceneDepthMap,
 } from '../project';
+import * as projectIndex from '../project';
 import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
@@ -1010,6 +1011,7 @@ describe('video orchestration services', () => {
     ]);
     const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('mp4')) };
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+    const setFinalRender = vi.spyOn(projectIndex, 'setProjectRenderFile');
 
     await renderFullProject(project.id, async () => undefined, async () => undefined);
 
@@ -1018,22 +1020,47 @@ describe('video orchestration services', () => {
     expect(renderedScenes.map((scene) => scene.id)).toEqual(['scene-1', 'scene-3']);
     expect(renderedScenes.reduce((sum, scene) => sum + scene.durationSec, 0)).toBe(3);
     expect(renderOptions).toEqual({ originalSceneNumbers: [1, 3], originalSceneCount: 3 });
+    expect(setFinalRender).toHaveBeenCalledWith(project.id, expect.any(String), ['scene-1', 'scene-3']);
     expect((await getProject(project.id)).renderedActiveSceneIds).toEqual(['scene-1', 'scene-3']);
   });
 
+  it('reports readiness failures with original scene numbers around inactive scenes', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [
+      { id: 'scene-1', narration: 'Ready', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+      { id: 'scene-2', narration: 'Inactive', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, active: false },
+      { id: 'scene-3', narration: 'Missing asset', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    ]);
+    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('mp4')) };
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+
+    await expect(renderFullProject(project.id, async () => undefined, async () => undefined))
+      .rejects.toMatchObject({ code: 'SCENES_NOT_READY', message: 'Scenes are not ready: 3.' });
+    expect(renderer.renderFullVideo).not.toHaveBeenCalled();
+  });
+
   it('stores draft output separately without changing final render metadata or status', async () => {
-    const project = await seedProject();
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [
+      { id: 'scene-1', narration: 'First', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+      { id: 'scene-2', narration: 'Inactive middle', visualPrompt: '', durationSec: 9, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, active: false },
+      { id: 'scene-3', narration: 'Last', visualPrompt: '', durationSec: 2, assetType: 'image', assetFileId: 'asset-3', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    ]);
     await setProjectRenderFile(project.id, 'existing-final-render', ['scene-1']);
     await setProjectRenderEngine(project.id, 'remotion');
     const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('draft-mp4')) };
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+    const setFinalRender = vi.spyOn(projectIndex, 'setProjectRenderFile');
 
     await renderFullProject(project.id, async () => undefined, async () => undefined, { draft: true });
 
     const updated = await getProject(project.id);
     expect(updated).toMatchObject({ status: 'rendered', renderFileId: 'existing-final-render', renderedActiveSceneIds: ['scene-1'], draftRenderFileId: expect.any(String) });
     expect(await createFileStoreService(filesDir).listProjectFiles(project.id)).toContainEqual(expect.objectContaining({ purpose: 'render-draft', originalName: 'render-draft.mp4' }));
-    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), expect.any(Function), { draft: true, originalSceneNumbers: [1], originalSceneCount: 1 });
+    const [renderProject, , , renderOptions] = renderer.renderFullVideo.mock.calls[0]!;
+    expect((renderProject.scenes as Scene[]).map((scene) => scene.id)).toEqual(['scene-1', 'scene-3']);
+    expect(renderOptions).toEqual({ draft: true, originalSceneNumbers: [1, 3], originalSceneCount: 3 });
+    expect(setFinalRender).not.toHaveBeenCalled();
   });
 });
 

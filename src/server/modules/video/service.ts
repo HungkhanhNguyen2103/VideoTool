@@ -199,11 +199,11 @@ export async function generateProjectBgm(projectId: string, mood: string): Promi
 
 export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<void> {
   const project = await getProject(projectId);
+  assertProjectRenderReady(project);
   const renderEntries = activeScenes(project.scenes.map((scene, originalIndex) => ({ scene, originalIndex, active: scene.active })));
   const renderScenes = renderEntries.map(({ scene }) => scene);
   const originalSceneNumbers = renderEntries.map(({ originalIndex }) => originalIndex + 1);
   const renderProject = { ...project, scenes: renderScenes };
-  assertProjectRenderReady(renderProject);
   const draft = options?.draft === true;
   if (draft && renderProject.renderEngine === 'ffmpeg') throw new AppError('Draft render is available only with Remotion.', 422, 'DRAFT_REQUIRES_REMOTION');
   const renderer = getVideoRenderer(renderProject.renderEngine);
