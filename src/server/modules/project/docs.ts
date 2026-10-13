@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, NameCandidatesSchema, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, SfxVolumeSchema, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
+import { PopupDensitySchema, PopupPlanSchema } from '../../../contracts/popup-analysis';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 import { SeoPackageSchema } from '../../../contracts/seo';
 import { DEFAULT_SCENE_TAIL_SEC, SceneDurationSecSchema, SceneTailSecSchema } from '../../../contracts/scene-duration';
@@ -17,6 +18,7 @@ export const SceneDocSchema = z.object({
   voiceoverInput: VoiceoverInputSchema.nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
   nameCandidates: NameCandidatesSchema.nullable().default(null),
+  popupPlan: PopupPlanSchema.default(null),
   sfxPrompt: z.string().default(''),
   motionPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
@@ -25,7 +27,8 @@ export const SceneDocSchema = z.object({
   videoDurationSec: z.number().positive().nullable().default(null),
   depthMap: z.object({ assetFileId: z.string(), fileId: z.string(), score: z.number().finite() }).nullable().default(null),
 });
-export type SceneDoc = z.infer<typeof SceneDocSchema>;
+/** Mongo reads are normalized by the schema, while legacy-shaped write fixtures may omit this additive field. */
+export type SceneDoc = Omit<z.infer<typeof SceneDocSchema>, 'popupPlan'> & { popupPlan?: z.infer<typeof PopupPlanSchema> };
 
 /** The `projects` collection. `docs.ts` is the single source of truth for its shape. */
 export const ProjectDocSchema = z.object({
@@ -46,6 +49,7 @@ export const ProjectDocSchema = z.object({
   aiModel: z.string().optional(),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   keywordPopupsEnabled: z.boolean().default(true),
+  popupDensity: PopupDensitySchema,
   transitionStyle: z.enum(TRANSITION_STYLES).default('varied'),
   filmLook: z.enum(FILM_LOOK_STYLES).default('auto'),
   parallax: z.enum(PARALLAX_STYLES).default('off'),

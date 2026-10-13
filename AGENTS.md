@@ -10,7 +10,9 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-13 · Task 96 Parts A-C and Part A listen follow-up complete; real verification and all gates pass_
+_Last updated: 2026-10-13 · Task 97 Part A review round 1 complete; Part B pending_
+
+- Task 97 Part A review round 1 adds whole-digit and Vietnamese number tracing (`3000` ↔ `3.000`, dates, years, decimal millions), legacy popup hold/fade windowing with visible insufficient-time drops, and the pure project-wide `assemblePopupPlans` step. Assembly stores every eligible scene verdict, validates/windowed candidates, applies the safety net once across the merged project, records validation/safety drops, and carries pin/suppress flags by scene and normalized anchor. Focused popup-plan coverage is 19/19; the full suite is 989 passed across 84 files with 1 skipped file; typecheck, lint, and build pass. The existing Vite chunk-size warning remains informational. Commit `bd30aa0` contains Part A baseline; the review corrections are in the next commit.
 
 - Task 96 Parts A-C add audio-only sequential voiceover listening with pause/resume, stale/missing auto-pause, regeneration cache busting, autoplay-policy messaging, guarded Space-key playback, scene-start batch generation with Vietnamese validation, progress reuse, per-scene continuation, cooperative cancellation, and project voice speed 0.8-1.3 in 0.05 steps. The selected VieNeu Turbo backend accepts but ignores speed, so FFmpeg atempo is applied before mastering, probing, and word alignment. The Part A follow-up now auto-advances through ready scenes, treats Task 84's `voiceoverDurationSec` as the raw WAV duration (the configured tail is render-time `apad`, so known in-file tail is zero), waits the live scene-tail input, rechecks the next scene when the gap ends, supports pause/resume/cancel during that gap, persists the auto-advance preference, and shows the completed-list state. Real evidence is saved under `data/files/.verification/task-96/`; prior Task 96 focused coverage is 84/84, follow-up focused coverage is 17/17 including mounted fake-DOM interaction tests, and the latest full suite is 984 passed across 79 files with 1 skipped; typecheck, lint, and build pass. The Vite chunk-size warning above 500 kB remains informational.
 
@@ -290,6 +292,7 @@ video-tool/
     │   │   ├── project/  script/  asset/  video/  job/
     │   └── shared/                no business logic, never imports modules/
     │       ├── ai-clients/        generate-json.ts generate-image.ts tts.ts providers/
+    │       ├── claude-cli/        bounded Claude Code CLI runner + fixture
     │       ├── file-store/        write/read asset files, path-traversal safe
     │       └── errors.ts logger.ts ids.ts
     ├── worker/                    main.ts (claim loop), registry.ts (job type -> handler, explicit map)
@@ -335,6 +338,8 @@ Extra files per module:
 | asset | per-scene assets via jobs, stale detection, retry | `assets` | project, job |
 | video | timeline from scenes + assets, render via jobs | `renders` | project, asset, job |
 | seo | YouTube packaging generation and section orchestration | none; embedded in `projects` | project |
+
+`src/server/shared/claude-cli/` is shared process infrastructure for bounded Claude Code CLI execution and audit retention. It imports no business module; script and future consumers provide prompts and interpret output.
 
 ```
 script -> project <- asset -> job

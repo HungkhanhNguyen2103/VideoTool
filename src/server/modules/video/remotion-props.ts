@@ -3,7 +3,7 @@ import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { RemotionInputPropsSchema, type RemotionInputProps, type RemotionSceneProps } from '../../../contracts/video';
 import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
-import { annotateNameKeywords, annotateYearKeywords, resolveFilmLookByScene, selectProjectSceneKeywords } from './keywords';
+import { annotateYearKeywords, resolveFilmLookByTimedWords, selectProjectSceneKeywords } from './keywords';
 import { isDepthSceneEligible } from './depth-eligibility';
 
 export type ResolvedRenderFile = {
@@ -86,9 +86,9 @@ export async function resolveRemotionAssets(
   const sceneProps: RemotionSceneProps[] = [];
   const keywordContextScenes = options.keywordContextScenes ?? scenes;
   const contextKeywords = selectProjectSceneKeywords(keywordContextScenes).map((selection) => selection.keywords);
-  const annotatedContextKeywords = annotateNameKeywords(annotateYearKeywords(contextKeywords));
+  const annotatedContextKeywords = annotateYearKeywords(contextKeywords);
   const keywordsBySceneId = new Map(keywordContextScenes.map((scene, index) => [scene.id, annotatedContextKeywords[index]!]));
-  const filmLookByScene = resolveFilmLookByScene(annotatedContextKeywords, project.filmLook ?? 'auto');
+  const filmLookByScene = resolveFilmLookByTimedWords(keywordContextScenes.map((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId ? scene.wordTimings.words : []), project.filmLook ?? 'auto');
   const filmLookBySceneId = new Map(keywordContextScenes.map((scene, index) => [scene.id, filmLookByScene[index] ?? false]));
 
   for (const [index, scene] of scenes.entries()) {

@@ -27,6 +27,7 @@ import {
   setProjectRenderFile,
   setProjectLogo,
   setProjectSceneNameCandidates,
+  setProjectScenePopupPlans,
   setSceneWordTimings,
   setSceneDepthMap,
 } from '../project';
@@ -181,7 +182,7 @@ describe('video project mutations', () => {
     expect(duplicate.draftRenderFileId).toBeNull();
     expect(duplicate.bgmFileId).toBeNull();
     expect(duplicate.logoFileId).toBeNull();
-    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, voiceoverDurationSec: null, sfxFileId: null, nameCandidates: null });
+    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, voiceoverDurationSec: null, sfxFileId: null, nameCandidates: null, popupPlan: null });
   });
 
   it('retains stale name candidates through narration edits and voiceover regeneration, then clears them on bulk reset', async () => {
@@ -218,6 +219,23 @@ describe('video project mutations', () => {
 
     expect(applied).toBe(0);
     expect((await getProject(project.id)).scenes[0]!.nameCandidates).toEqual(candidateRecord());
+  });
+
+  it('stores a popup plan atomically and keeps it stale-safe across scene edits', async () => {
+    const project = await seedProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1' });
+    const plan = {
+      narrationHash: hashNarration('Narration'), audioFileId: 'voice-1', provider: 'deepseek' as const, model: 'deepseek-chat', backend: 'api' as const,
+      density: 'low' as const, generatedAt: '2026-10-13T00:00:00.000Z', needed: true, reason: 'Cần hiển thị mốc chính.',
+      popups: [{ kind: 'number' as const, anchor: 'Narration', display: '1', importance: 5, reason: 'Mốc chính.', startSec: 0, endSec: 1, status: 'kept' as const, dropReason: null, pinned: false, suppressed: false }], dropped: [],
+    };
+    const beforeVersion = (await getProject(project.id)).version;
+    expect(await setProjectScenePopupPlans(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', popupPlan: plan }])).toBe(1);
+    const stored = (await getProject(project.id)).scenes[0]!;
+    expect(stored.popupPlan).toEqual(plan);
+    expect((await getProject(project.id)).version).toBe(beforeVersion + 1);
+    await patchProjectScene(project.id, 'scene-1', { narration: 'Changed narration' });
+    expect((await getProject(project.id)).scenes[0]!.popupPlan).toEqual(plan);
   });
 
   it('patches scene audio, duration, and SFX fields with one version increment', async () => {
@@ -841,7 +859,17 @@ describe('video routes and worker handlers', () => {
     const response = await fetch(`${base}/api/project/${project.id}/name-keywords/previews`);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual([{ sceneId: 'scene-1', popup: { text: 'Sông Tiền', type: 'place', source: 'ai' } }]);
+    expect(await response.json()).toEqual([{ sceneId: 'scene-1', popup: null }]);
+
+    await setProjectScenePopupPlans(project.id, [{
+      sceneId: 'scene-1', expectedNarration: narration, expectedAudioFileId: 'voice-1',
+      popupPlan: {
+        narrationHash: hashNarration(narration), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', backend: 'api', density: 'low', generatedAt: '2026-10-13T00:00:00.000Z', needed: true, reason: 'Cần hiển thị địa danh chính.',
+        popups: [{ kind: 'place', anchor: words.slice(1, 3).map((word) => word.text).join(' '), display: 'Sông Tiền', importance: 4, reason: 'Địa danh chính.', startSec: .3, endSec: 3.8, status: 'kept', dropReason: null, pinned: false, suppressed: false }], dropped: [],
+      },
+    }]);
+    const freshResponse = await fetch(`${base}/api/project/${project.id}/name-keywords/previews`);
+    expect(await freshResponse.json()).toEqual([{ sceneId: 'scene-1', popup: { text: 'Sông Tiền', type: 'place', source: 'ai' } }]);
   });
 
   it('returns the manual name-popup analysis summary', async () => {

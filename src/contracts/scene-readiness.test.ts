@@ -22,6 +22,7 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     videoDurationSec: null,
     depthMap: null,
     nameCandidates: null,
+    popupPlan: null,
     ...overrides,
   };
 }

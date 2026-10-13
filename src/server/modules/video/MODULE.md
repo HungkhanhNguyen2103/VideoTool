@@ -49,6 +49,14 @@ The video module analyzes eligible project scenes in one JSON-mode request and v
 
 Re-analysis can select differently in an ambiguous/tied scene. The accepted tie-break is first appearance for equal-importance names; on the 2026-10-07 Rạch Gầm smoke pair, renderer keyword arrays matched across all scenes. Two candidate records differed only in the category assigned to the same phrase `Xiêm` (scene 32: `place`/`group`; scene 38: `place`/`group`); neither category variant changed the selected popup or Remotion props. Because render-time input comes from persisted candidates, it remains stable between analyses. This is not a claim that future analyses always return identical candidate records.
 
+## Project-wide popup analysis (Task 97)
+
+The active popup authority is the validated per-scene `popupPlan`, not legacy `nameCandidates` or narration heuristics. The AI boundary in `ai/` loads the versioned `popup-analysis.md` preset, parses strict scene verdicts, validates every anchor/display/evidence relationship against narration and word timings, and records a plan only through the project module's guarded writer. A valid `needed: false` verdict is retained with its reason and produces no popup. A valid empty result is therefore different from a failed run, which leaves the previous plan untouched.
+
+`popup-safety-net.ts` applies only the named minimal constraints after project-wide merge: pinned entries win conflicts, overlapping or closer-than-three-second entries are resolved by importance then time, each scene keeps at most two, and repeated person/place/event mentions after their first project mention are recorded as `đã hiện ở cảnh trước`. Every removed entry remains in the plan's dropped list with its reason. `keywords.ts` converts only fresh, validated kept plan entries into the existing Remotion keyword shape. Film-look detection independently reads timed narration years, so disabling all displayed popups cannot disable the automatic film look.
+
+Digit tracing accepts whole digit runs, Vietnamese number phrases, and verified evidence quotes. A single Vietnamese number word such as `năm`, `một`, or `hai` is intentionally lenient because it may be a quantity or ordinary narration; the AI kind/anchor verdict remains authoritative and validation still rejects fabricated numeric values.
+
 ## Prerequisites and known gaps
 
 - FFmpeg and ffprobe are external prerequisites selected by `FFMPEG_PATH`/`FFPROBE_PATH`, falling back to binaries on `PATH`.

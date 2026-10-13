@@ -37,6 +37,7 @@ function projectWithScenes(durations: number[], sceneCounts: number[], fps = 24)
       videoDurationSec: null,
       depthMap: null,
       nameCandidates: null,
+      popupPlan: null,
     })),
     chapters: sceneCounts.map((scenesCount, index) => ({
       id: `chapter-${index + 1}`,

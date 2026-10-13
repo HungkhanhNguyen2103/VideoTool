@@ -6,7 +6,7 @@ import { CliRegenerateRequestSchema, GenerateScriptRequestSchema, ManualRegenera
 import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
 import { AppError } from '../../shared/errors';
 import { loadConfig } from '../../config';
-import { getClaudeCliStatus as readClaudeCliStatus, type ClaudeCliStatus } from './cli-runner';
+import { getClaudeCliStatus as readClaudeCliStatus, type ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { buildManualScriptPrompt, buildQaPrompt } from './ai/build-prompt';
 import { parseManualScriptDocument, parseQaResult, translateManualParseError, validateScriptOutlineChapterCount } from './ai/parse-output';
 import { buildRegenerationPromptForChapter, finalizeScript, formatRegenerationPrompt, getChapterHistory, importRegeneratedChapter, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript } from './service';

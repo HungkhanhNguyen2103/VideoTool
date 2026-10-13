@@ -54,6 +54,14 @@ describe('scene preview helpers', () => {
     expect(scenePreviewStaleReason(fingerprint, changed)).toBe('cấu hình video đã thay đổi sau lần render');
   });
 
+  it('marks a preview stale when the stored popup plan changes', () => {
+    const fingerprint = createScenePreviewFingerprint({ ...scene, popupPlan: null } as Scene, project);
+    const changed = createScenePreviewFingerprint({ ...scene, popupPlan: { needed: true } } as Scene, project);
+
+    expect(firstChangedScenePreviewField(fingerprint, changed)).toBe('popupPlan');
+    expect(scenePreviewStaleReason(fingerprint, changed)).toContain('popup');
+  });
+
   it('does not stale a preview when only the retained tail reference changes', () => {
     const fingerprint = createScenePreviewFingerprint(scene, project);
     const changed = { ...scene, videoTailFileId: 'new-tail' };

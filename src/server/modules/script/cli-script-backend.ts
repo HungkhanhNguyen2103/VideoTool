@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Config } from '../../config';
 import { getAiModelDefinition } from '../../../contracts/ai-models';
 import { AppError } from '../../shared/errors';
-import { getClaudeCliStatus, runClaudeCli, type ClaudeCliRunOptions, type ClaudeCliRunResult, type ClaudeCliStatus } from './cli-runner';
+import { getClaudeCliStatus, runClaudeCli, type ClaudeCliRunOptions, type ClaudeCliRunResult, type ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { formatChatMessages, type ScriptChatBackend, type ScriptGenerationJobContext } from './service';
 
 type ScriptCliJobContext = Pick<ScriptGenerationJobContext, 'isCancelled' | 'appendLog'>;

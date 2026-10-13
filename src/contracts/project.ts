@@ -3,6 +3,7 @@ import { ChapterDocSchema, HubrisMotifSchema, OpenLoopSchema } from './script';
 import { SeoPackageSchema } from './seo';
 import { DEFAULT_SCENE_TAIL_SEC, SceneDurationSecSchema, SceneTailSecSchema } from './scene-duration';
 import { DEFAULT_VOICE_SPEED, VoiceSpeedSchema, VoiceoverInputSchema } from './voiceover';
+import { PopupDensitySchema, PopupPlanSchema } from './popup-analysis';
 
 export const PROJECT_STATUSES = ['draft', 'script', 'assets', 'rendered'] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -73,6 +74,7 @@ export const CreateProjectRequestBase = z.object({
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
   voiceoverVoice: z.string().default('Truc Ly'),
   voiceSpeed: VoiceSpeedSchema.default(DEFAULT_VOICE_SPEED),
+  popupDensity: PopupDensitySchema,
   renderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),
   bgmFileId: z.string().nullable().default(null),
@@ -190,6 +192,7 @@ export const SceneSchema = z.object({
   voiceoverInput: VoiceoverInputSchema.nullable().default(null),
   wordTimings: WordTimingsSchema.nullable().default(null),
   nameCandidates: NameCandidatesSchema.nullable().default(null),
+  popupPlan: PopupPlanSchema.default(null),
   sfxPrompt: z.string().default(''),
   motionPrompt: z.string().default(''),
   sfxFileId: z.string().nullable().default(null),
@@ -202,7 +205,8 @@ export const SceneSchema = z.object({
     score: z.number().finite(),
   }).nullable().default(null),
 });
-export type Scene = z.infer<typeof SceneSchema>;
+/** The parser supplies the additive popup-plan default; callers may omit it when constructing legacy-shaped scenes. */
+export type Scene = Omit<z.infer<typeof SceneSchema>, 'popupPlan'> & { popupPlan?: z.infer<typeof PopupPlanSchema> };
 
 export const ProjectSummarySchema = z.object({
   id: z.string(),
@@ -235,6 +239,7 @@ export const ProjectDetailSchema = z.object({
   parallax: z.enum(PARALLAX_STYLES).default('off'),
   voiceoverVoice: z.string().default('Truc Ly'),
   voiceSpeed: VoiceSpeedSchema.default(DEFAULT_VOICE_SPEED),
+  popupDensity: PopupDensitySchema,
   sceneTailSec: SceneTailSecSchema.default(DEFAULT_SCENE_TAIL_SEC),
   sfxVolume: SfxVolumeSchema.default(0.5),
   renderFileId: z.string().nullable().default(null),

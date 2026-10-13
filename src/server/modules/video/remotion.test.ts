@@ -131,7 +131,7 @@ describe('Remotion build isolation', () => {
 });
 
 describe('Remotion props and public-dir staging', () => {
-  it('uses only fresh AI name candidates and revalidates them against the current narration and timed words', async () => {
+  it('does not read legacy name candidates when no popup plan exists', async () => {
     const resolver = async (_projectId: string, fileId: string) => ({
       absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
       mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
@@ -148,16 +148,16 @@ describe('Remotion props and public-dir staging', () => {
     ];
     const narration = 'quân Xiêm rồi tiến lên.';
     const fresh = await buildRemotionInputProps(project, [makeScene('fresh', narration, words, 'Quân Xiêm')], 'fresh-name', resolver);
-    expect(fresh.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Quân Xiêm', kind: 'name' }));
+    expect(fresh.scenes[0]?.keywords).toEqual([]);
 
     const stale = await buildRemotionInputProps(project, [makeScene('stale', narration, words, 'Quân Xiêm', 'old-narration-hash')], 'stale-name', resolver);
-    expect(stale.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Xiêm', kind: 'name' }));
+    expect(stale.scenes[0]?.keywords).toEqual([]);
 
     const invalidFresh = await buildRemotionInputProps(project, [makeScene('invalid', narration, words, 'Quân Nhật')], 'invalid-name', resolver);
-    expect(invalidFresh.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Xiêm', kind: 'name' }));
+    expect(invalidFresh.scenes[0]?.keywords).toEqual([]);
   });
 
-  it('skips a duplicate rule-selected name before choosing the next ranked AI candidate in the next scene', async () => {
+  it('does not select rule or legacy AI names before project popup analysis', async () => {
     const resolver = async (_projectId: string, fileId: string) => ({
       absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
       mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
@@ -178,8 +178,7 @@ describe('Remotion props and public-dir staging', () => {
 
     const props = await buildRemotionInputProps(project, [first, second], 'name-dedup', resolver);
 
-    expect(props.scenes[0]?.keywords).toContainEqual(expect.objectContaining({ text: 'Sông Tiền', kind: 'name' }));
-    expect(props.scenes[1]?.keywords).toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', kind: 'name' }));
+    expect(props.scenes.map((scene) => scene.keywords)).toEqual([[], []]);
   });
 
   it('stages a valid project logo and rejects invalid logo references', async () => {
@@ -225,7 +224,7 @@ describe('Remotion props and public-dir staging', () => {
     } as unknown as Scene;
     const current = await buildRemotionInputProps(project, [scene], 'render-current', resolver);
     expect(current.transitionStyle).toBe('varied');
-    expect(current.scenes[0]?.keywords).toMatchObject([{ text: '30 tỷ', startSec: 1, endSec: 2.5 }]);
+    expect(current.scenes[0]?.keywords).toEqual([]);
     const stale = await buildRemotionInputProps(project, [{ ...scene, audioFileId: 'voice-2' }], 'render-stale', resolver);
     expect(stale.scenes[0]?.keywords).toEqual([]);
   });
@@ -273,7 +272,7 @@ describe('Remotion props and public-dir staging', () => {
     expect(props.scenes.map((scene) => scene.filmLook)).toEqual([true, false]);
   });
 
-  it('keeps legacy projects with no toggle field enabled', async () => {
+  it('keeps legacy projects with no toggle field free of rule-selected popups', async () => {
     const resolver = async (_projectId: string, fileId: string) => ({
       absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
       mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
@@ -287,7 +286,7 @@ describe('Remotion props and public-dir staging', () => {
 
     const props = await buildRemotionInputProps(project, [timedScene], 'render-legacy-toggle', resolver);
 
-    expect(props.scenes[0]?.keywords).toMatchObject([{ text: '30 tỷ', kind: 'number', value: 30 }]);
+    expect(props.scenes[0]?.keywords).toEqual([]);
     expect(props.scenes[0]?.filmLook).toBe(false);
   });
 
@@ -399,7 +398,8 @@ describe('Remotion props and public-dir staging', () => {
 
     const props = await buildRemotionInputProps(project, [target], 'render-preview-years', resolver, { keywordContextScenes: [earlier, target] });
 
-    expect(props.scenes[0]?.keywords[0]).toMatchObject({ kind: 'year', year: 1975, fromYear: 1965 });
+    expect(props.scenes[0]?.keywords).toEqual([]);
+    expect(props.scenes[0]?.filmLook).toBe(true);
   });
 
   it('resolves owned media and produces generated forward-slash paths', async () => {

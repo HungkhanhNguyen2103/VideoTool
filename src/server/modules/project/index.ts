@@ -16,6 +16,7 @@ export {
   setSceneWordTimings,
   setSceneDepthMap,
   setProjectSceneNameCandidates,
+  setProjectScenePopupPlans,
   setProjectSceneDurations,
   patchProjectChapter,
   replaceProjectChapters,

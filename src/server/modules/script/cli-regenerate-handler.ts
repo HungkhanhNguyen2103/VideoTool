@@ -12,7 +12,7 @@ import {
   type ClaudeCliRunOptions,
   type ClaudeCliRunResult,
   type ClaudeCliSpawn,
-} from './cli-runner';
+} from '../../shared/claude-cli/cli-runner';
 import { buildRegenerationPromptForChapter, formatRegenerationPrompt, importRegeneratedChapter, patchChapter } from './service';
 
 export const CliRegenerationJobPayloadSchema = CliRegenerateRequestSchema.extend({

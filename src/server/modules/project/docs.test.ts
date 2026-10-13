@@ -31,6 +31,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).keywordPopupsEnabled).toBe(true);
   });
 
+  it('defaults legacy projects to low popup density', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).popupDensity).toBe('low');
+  });
+
   it('keeps varied transitions enabled for legacy project documents', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).transitionStyle).toBe('varied');
   });
@@ -87,6 +91,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
 
   it('defaults legacy scene documents to no analyzed name candidates', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).nameCandidates).toBeNull();
+  });
+
+  it('defaults legacy scene documents to no popup plan', () => {
+    expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).popupPlan).toBeNull();
   });
 
   it('defaults legacy scene documents to no voiceover input record', () => {

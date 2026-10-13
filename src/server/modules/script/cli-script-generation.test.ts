@@ -10,7 +10,7 @@ import { createProject, getProject } from '../project';
 import { generateScript, type ScriptGenerationJobContext } from './service';
 import { createClaudeCliScriptBackend } from './cli-script-backend';
 import { ScriptJobPayloadSchema } from './handler';
-import type { ClaudeCliRunResult, ClaudeCliSpawn } from './cli-runner';
+import type { ClaudeCliRunResult, ClaudeCliSpawn } from '../../shared/claude-cli/cli-runner';
 
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-cli.mjs', import.meta.url));
 const projectInput = {
