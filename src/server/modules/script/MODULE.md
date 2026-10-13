@@ -67,14 +67,14 @@ needs-fix ──edit/regen──> pending or generating
 ## Finalization
 - Every chapter must be `approved`.
 - Paragraphs become ordered scenes with fresh ULIDs, empty `visualPrompt`, per-paragraph word-based duration estimates with a one-second minimum, and at least one scene per chapter; the target duration is not forced onto the finalized estimate.
-- Finalized scenes explicitly start with `assetType: 'image'` and `assetFileId: null` for the Phase 4 Studio workflow.
+- Finalized scenes explicitly start with `active: true`, `assetType: 'image'`, and `assetFileId: null` for the Studio workflow.
 - Chapter metadata/history is persisted before the final scene write; `replaceProjectScenes(projectId, scenes, 'assets')` atomically updates scenes and project status.
 
 ## AI abstraction
 - `src/server/shared/ai/` owns the `AiClient` interface, DeepSeek/OpenAI-compatible adapter, Claude adapter, and provider factory.
 - `src/contracts/ai-models.ts` is the shared model registry for provider IDs, defaults, user-facing labels/hints, and adapter capabilities. `getAiClient(provider, model)` validates the pair and caches clients by both values. Script generation, regeneration, Final QA, visual prompts, scene splitting, SEO generation, and video name/place analysis all pass the project's selected model.
 - Provider keys remain server/worker-only; the client receives only project/provider metadata and job/SSE results.
-- `generateVisualPrompts(projectId, context)` returns `{ updatedScenes, skippedScenes, failedChapters }`; `handleGenerateVisualPrompts(job, context)` is the public job handler for later worker registration.
+- `generateVisualPrompts(projectId, context)` returns `{ updatedScenes, skippedScenes, failedChapters, skippedInactive }`; `handleGenerateVisualPrompts(job, context)` is the public worker job handler.
 
 ## Known pitfalls
 - Keep the shared chapter schema in `contracts/script.ts` to avoid a project-to-script import cycle.
@@ -87,6 +87,10 @@ needs-fix ──edit/regen──> pending or generating
 - Regeneration transitions update only the target chapter, preserving unrelated concurrent edits; the client serializes bulk regeneration and aborts its active stream on unmount or project change.
 - Edge coverage verifies ten-snapshot pruning, restore bounds, duration rounding, malformed-stream errors, and the absence of a false successful `done` event.
 - The client parser buffers split SSE frames and uses fetch/ReadableStream plus AbortController for regeneration; ReviewScriptPage's stepper state and shared theme-token usage are covered by pure Node tests, while full page rendering remains untested without a DOM dependency.
+
+## Inactive scenes — Task 98 Part A
+
+Visual-prompt readiness requires at least one active scene. The job sends only active scenes to AI while keeping original project-global scene indexes, ignores returned entries for inactive scenes, and reports `skippedInactive`. The project-owned empty-only prompt writer also guards active state so a late response cannot fill an inactive scene.
 
 ## Acceptance
 - Task 91 Phase 1: focused outline validation 14/14, provider adapter 18/18, script integration 87/87, Review/API/quality coverage passed; full suite 856 passed with 1 skipped file; typecheck, lint, and production build pass. Build retains the existing non-blocking Vite chunk-size warning.

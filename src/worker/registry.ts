@@ -6,6 +6,7 @@ import { SEO_SECTIONS, type SeoSection } from '../contracts/seo';
 import { alignProjectWordTimings, analyzeProjectPopups, autoAnalyzeProjectPopupsIfStale, generateProjectDepthMaps, generateSceneDepthMap, generateProjectSfx, generateProjectVoiceovers, PopupAnalysisRequestSchema, renderFullProject } from '../server/modules/video';
 import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
+import { isSceneActive } from '../contracts/scene-active';
 
 function projectIdFrom(job: { payload: unknown }): string {
   const projectId = (job.payload as { projectId?: unknown } | null)?.projectId;
@@ -25,9 +26,10 @@ const handleGenerateVoiceover: JobHandler = async (job, context) => {
 const handleAlignWordTimings: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
   const projectId = projectIdFrom(job);
-  await alignProjectWordTimings(projectId, context.appendLog, context.reportProgress, context.isCancelled);
+  const result = await alignProjectWordTimings(projectId, context.appendLog, context.reportProgress, context.isCancelled);
   if (await context.isCancelled()) return;
   await autoAnalyzeProjectPopupsIfStale(projectId, context.appendLog);
+  return result;
 };
 
 const handleAnalyzePopups: JobHandler = async (job, context) => {
@@ -48,7 +50,7 @@ const handleGenerateAllSfx: JobHandler = async (job, context) => {
 
 const handleGenerateDepthMaps: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  await generateProjectDepthMaps(projectIdFrom(job), context.appendLog, context.reportProgress, context.isCancelled);
+  return generateProjectDepthMaps(projectIdFrom(job), context.appendLog, context.reportProgress, context.isCancelled);
 };
 
 const handleGenerateDepthMap: JobHandler = async (job, context) => {
@@ -58,13 +60,18 @@ const handleGenerateDepthMap: JobHandler = async (job, context) => {
   const loaded = await getProject(projectIdFrom(job));
   const scene = loaded.scenes.find((candidate) => candidate.id === payload.sceneId);
   if (!scene) return;
-  await generateSceneDepthMap(projectIdFrom(job), scene);
+  if (!isSceneActive(scene)) {
+    await context.appendLog(`Scene ${loaded.scenes.findIndex((candidate) => candidate.id === scene.id) + 1}: đang tắt, bỏ qua tạo depth map; skippedInactive: 1.`);
+    await context.reportProgress(100);
+    return { skipped: 1, skippedInactive: 1 };
+  }
+  return { outcome: await generateSceneDepthMap(projectIdFrom(job), scene), skippedInactive: 0 };
 };
 
 const handleRenderFullVideo: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
   const payload = job.payload as { draft?: unknown };
-  await renderFullProject(projectIdFrom(job), context.appendLog, context.reportProgress, payload.draft === true ? { draft: true } : undefined);
+  return renderFullProject(projectIdFrom(job), context.appendLog, context.reportProgress, payload.draft === true ? { draft: true } : undefined);
 };
 
 const handleGenerateSeo: JobHandler = async (job, context) => {

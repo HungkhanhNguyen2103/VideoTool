@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { PopupKindSchema, type PopupPlan, type PopupPlanDrop, type PopupPlanPopup } from '../../../contracts/popup-analysis';
 import { hashNarration } from '../../../contracts/name-keywords';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
+import { activeScenes } from '../../../contracts/scene-active';
 import { AppError } from '../../shared/errors';
-import { getProject, setProjectScenePopupPlans, type ProjectScenePopupPlanUpdate } from '../project';
+import { assertSceneActive, getProject, setProjectScenePopupPlans, type ProjectScenePopupPlanUpdate } from '../project';
 import { applyPopupSafetyNet, type PopupSafetyCandidate } from './popup-safety-net';
 import { normalisePopupAnchor } from './popup-plan';
 import { validatePopupCandidate, type PopupCandidateInput } from './popup-validation';
@@ -61,7 +62,7 @@ function freshPlan(scene: Scene): PopupPlan | null {
 function planEntries(project: ProjectDetail): PopupPlanEntry[] {
   const entries: PopupPlanEntry[] = [];
   let sceneStartSec = 0;
-  for (const scene of project.scenes) {
+  for (const scene of activeScenes(project.scenes)) {
     const plan = freshPlan(scene);
     if (plan) {
       for (const popup of [...plan.popups, ...plan.dropped]) {
@@ -90,7 +91,7 @@ function assembleUpdatedPlans(project: ProjectDetail, entries: readonly PopupPla
   for (const entry of safety.kept) keptByScene.set(entry.sceneId, [...(keptByScene.get(entry.sceneId) ?? []), entry.popup]);
   for (const entry of safety.dropped) droppedByScene.set(entry.sceneId, [...(droppedByScene.get(entry.sceneId) ?? []), entry.popup]);
   const updates: ProjectScenePopupPlanUpdate[] = [];
-  for (const scene of project.scenes) {
+  for (const scene of activeScenes(project.scenes)) {
     const plan = freshPlan(scene);
     if (!plan || !scene.audioFileId) continue;
     updates.push({
@@ -142,6 +143,8 @@ export async function updateProjectPopupPlanFlags(
   dependencies: PopupPlanMutationDependencies = {},
 ): Promise<PopupPlanMutationResult> {
   const project = await (dependencies.getProject ?? getProject)(projectId);
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId);
+  if (scene) assertSceneActive(scene);
   const entries = planEntries(project);
   const target = targetEntry(entries, sceneId, input.anchor);
   const targetAnchor = normalisePopupAnchor(target.popup.anchor);
@@ -157,6 +160,8 @@ export async function editProjectPopupPlan(
   dependencies: PopupPlanMutationDependencies = {},
 ): Promise<PopupPlanMutationResult> {
   const project = await (dependencies.getProject ?? getProject)(projectId);
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId);
+  if (scene) assertSceneActive(scene);
   const entries = planEntries(project);
   const target = targetEntry(entries, sceneId, input.anchor);
   const words = target.scene.wordTimings?.words ?? [];

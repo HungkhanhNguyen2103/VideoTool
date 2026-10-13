@@ -2,6 +2,7 @@ import type { KeywordKind, RemotionKeyword } from '../../../contracts/video';
 import type { FilmLookStyle, Scene } from '../../../contracts/project';
 import type { PopupPlanPopup } from '../../../contracts/popup-analysis';
 import { hashNarration } from '../../../contracts/name-keywords';
+import { isSceneActive } from '../../../contracts/scene-active';
 
 export type TimedWord = { text: string; startSec: number; endSec: number };
 export type Keyword = RemotionKeyword & { kind: KeywordKind };
@@ -79,6 +80,7 @@ function sentenceCase(value: string): string {
  */
 export function selectProjectSceneKeywords(scenes: readonly Scene[]): ProjectSceneKeywordSelection[] {
   return scenes.map((scene) => {
+    if (!isSceneActive(scene)) return { sceneId: scene.id, keywords: [], popup: null };
     if (!popupPlanFresh(scene)) return { sceneId: scene.id, keywords: [], popup: null };
     const keywords = scene.popupPlan.popups
       .filter((popup) => popup.status === 'kept' && !popup.suppressed)

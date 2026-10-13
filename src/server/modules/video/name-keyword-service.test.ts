@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AiClient } from '../../shared/ai';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { createProject, getProject, patchProjectScene, replaceProjectScenes, setSceneWordTimings } from '../project';
+import { createProject, getProject, patchProjectScene, replaceProjectScenes, setProjectSceneActive, setSceneWordTimings } from '../project';
 import { analyzeProjectNameKeywords, NAME_KEYWORD_SYSTEM_PROMPT } from './name-keyword-service';
 import { selectProjectSceneKeywords } from './keywords';
 
@@ -40,7 +40,9 @@ afterAll(async () => { await closeTestMongo(); });
 
 describe('analyzeProjectNameKeywords', () => {
   it('requests eligible scenes once and persists validated candidates with provider and model', async () => {
-    const project = await seedProject();
+    const seeded = await seedProject();
+    await setProjectSceneActive(seeded.id, 'scene-2', false);
+    const project = await getProject(seeded.id);
     const chat = vi.fn().mockResolvedValue(JSON.stringify({ scenes: [
       { scene: 1, candidates: [{ phrase: 'Sông Tiền', kind: 'place' }] },
     ] }));
@@ -49,9 +51,10 @@ describe('analyzeProjectNameKeywords', () => {
 
     const summary = await analyzeProjectNameKeywords(project.id, resolver);
 
-    expect(summary).toMatchObject({ scenesAnalyzed: 1, scenesSkippedNoTimings: 1, scenesWithName: 1, rejectedCandidates: 0, provider: 'claude', model: 'fake-model' });
+    expect(summary).toMatchObject({ scenesAnalyzed: 1, scenesSkippedNoTimings: 0, scenesWithName: 1, rejectedCandidates: 0, provider: 'claude', model: 'fake-model', skippedInactive: 1 });
     expect(chat).toHaveBeenCalledTimes(1);
     expect(chat).toHaveBeenCalledWith(expect.any(Array), { json: true, maxTokens: 8000, temperature: 0 });
+    expect(chat.mock.calls[0]![0][1]!.content).not.toContain('Scene 2');
     expect(resolver).toHaveBeenCalledWith('claude', 'claude-haiku-4-5-20251001');
     const refreshed = (await getProject(project.id)).scenes[0]!;
     expect(refreshed.nameCandidates).toMatchObject({

@@ -3,7 +3,7 @@ import { Collection } from 'mongodb';
 import { getAiClient } from '../../shared/ai';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { applyEmptySceneVisualPromptsWithResult, createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript } from '../project';
+import { applyEmptySceneVisualPromptsWithResult, createProject, getProject, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectSceneActive } from '../project';
 import { generateVisualPrompts } from './visual-prompts';
 
 const aiMock = vi.hoisted(() => ({ model: 'deepseek-chat', chat: vi.fn() }));
@@ -60,6 +60,39 @@ function batch(indexes: number[], styleNote: string, sfxPrompts: Partial<Record<
 }
 
 describe('generateVisualPrompts', () => {
+  it('omits inactive scenes from the prompt and ignores a returned inactive index', async () => {
+    const project = await projectWithScenes(['', '', ''], [2, 1]);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    aiMock.chat.mockResolvedValueOnce(batch([1, 2], 'First style')).mockResolvedValueOnce(batch([3], 'Second style'));
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+
+    expect(result).toMatchObject({ updatedScenes: 2, skippedInactive: 1, failedChapters: [] });
+    expect(aiMock.chat).toHaveBeenCalledTimes(2);
+    const first = aiMock.chat.mock.calls[0]![0][1].content as string;
+    expect(first).toContain('This chapter contains exactly 1 scenes.');
+    expect(first).toContain('Scene 1\nNarration: One');
+    expect(first).not.toContain('Scene 2');
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({ active: false, visualPrompt: '', sfxPrompt: '' });
+    expect(job.logs.at(-1)).toContain('skippedInactive: 1');
+  });
+
+  it('completes when every scene is inactive without calling AI', async () => {
+    const project = await projectWithScenes(['', '', ''], [2, 1]);
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    await setProjectSceneActive(project.id, 'scene-3', false);
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+
+    expect(result).toMatchObject({ updatedScenes: 0, skippedInactive: 3 });
+    expect(aiMock.chat).not.toHaveBeenCalled();
+    expect(job.progress).toEqual([100]);
+    expect(job.logs.join('\n').toLocaleLowerCase('vi')).toContain('không có scene nào đang bật');
+  });
+
   it('sends complete global-index chapters, preserves manual prompts, and carries the prior style note', async () => {
     const project = await projectWithScenes();
     aiMock.chat.mockResolvedValueOnce(batch([1, 2], 'Muted archival palette')).mockResolvedValueOnce(batch([3], 'Final style'));
@@ -67,7 +100,7 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, job);
 
-    expect(result).toEqual({ updatedScenes: 2, skippedScenes: 1, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 2, skippedScenes: 1, failedChapters: [], skippedInactive: 0 });
     expect(getAiClient).toHaveBeenCalledWith('deepseek', 'deepseek-flash');
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Generated 1', 'Manual second', 'Generated 3']);
     expect((await getProject(project.id)).scenes.map((scene) => scene.sfxPrompt)).toEqual(['Generated SFX 1', 'Existing SFX', 'Generated SFX 3']);
@@ -98,7 +131,7 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, context());
 
-    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(2);
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Visual 1', 'Visual 2', 'Visual 3']);
     expect((await getProject(project.id)).scenes.map((scene) => scene.sfxPrompt)).toEqual(['Generated SFX 1', 'Generated SFX 2', 'Generated SFX 3']);
@@ -110,12 +143,12 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, job);
 
-    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [], skippedInactive: 0 });
     expect(aiMock.chat).not.toHaveBeenCalled();
     expect(job.logs).toEqual([
       'Chapter 1: all visual and SFX prompts already filled; skipped.',
       'Chapter 2: all visual and SFX prompts already filled; skipped.',
-      'Visual prompts finished: 0 updated, 0 SFX prompts added, 0 motion prompts added, 3 skipped, 0 failed chapters.',
+      'Visual prompts finished: 0 updated, 0 SFX prompts added, 0 motion prompts added, 3 skipped, skippedInactive: 0, 0 failed chapters.',
     ]);
   });
 
@@ -128,7 +161,7 @@ describe('generateVisualPrompts', () => {
     const job = context();
     const result = await generateVisualPrompts(project.id, job);
 
-    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 3, failedChapters: [], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(1);
     expect(job.logs).toContain('Chapter 1: 0 visual prompts added; 0 SFX prompts added; 1 motion prompts added; 2 already filled.');
     expect(job.logs.at(-1)).toContain('1 motion prompts added');
@@ -155,11 +188,11 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, job);
 
-    expect(result).toEqual({ updatedScenes: 3, skippedScenes: 0, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 3, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes.every((scene) => scene.sfxPrompt === '')).toBe(true);
     expect(job.logs).toContain('Chapter 1: 2 visual prompts added; 0 SFX prompts added; 0 motion prompts added; 0 already filled.');
     expect(job.logs).toContain('Chapter 2: 1 visual prompts added; 0 SFX prompts added; 0 motion prompts added; 0 already filled.');
-    expect(job.logs.at(-1)).toBe('Visual prompts finished: 3 updated, 0 SFX prompts added, 0 motion prompts added, 0 skipped, 0 failed chapters.');
+    expect(job.logs.at(-1)).toBe('Visual prompts finished: 3 updated, 0 SFX prompts added, 0 motion prompts added, 0 skipped, skippedInactive: 0, 0 failed chapters.');
   });
 
   it('forwards the selected style and script continuity, using only the previous chapter for later context', async () => {
@@ -200,7 +233,7 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, job);
 
-    expect(result).toEqual({ updatedScenes: 1, skippedScenes: 0, failedChapters: [1] });
+    expect(result).toEqual({ updatedScenes: 1, skippedScenes: 0, failedChapters: [1], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['', '', 'Generated 3']);
     expect(aiMock.chat).toHaveBeenCalledTimes(3);
     expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Validation error:');
@@ -215,7 +248,7 @@ describe('generateVisualPrompts', () => {
       .mockResolvedValueOnce(batch([3], 'Last style'));
     const job = context();
 
-    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 3, skippedScenes: 0, failedChapters: [] });
+    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 3, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(3);
     expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Validation error:');
     expect(aiMock.chat.mock.calls[2]![0][1].content).toContain('Previous style note: Corrected style');
@@ -229,7 +262,7 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, job);
 
-    expect(result).toEqual({ updatedScenes: 1, skippedScenes: 2, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 1, skippedScenes: 2, failedChapters: [], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(1);
     const user = aiMock.chat.mock.calls[0]![0][1].content as string;
     const seed = user.match(/Previous style note: ([^\n]*)/)?.[1] ?? '';
@@ -243,7 +276,7 @@ describe('generateVisualPrompts', () => {
     aiMock.chat.mockRejectedValueOnce(new Error('provider down'));
     const job = context();
 
-    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 0, skippedScenes: 1, failedChapters: [1] });
+    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 0, skippedScenes: 1, failedChapters: [1], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(1);
     expect(aiMock.chat.mock.calls[0]![0][1].content).toContain('Previous style note: Later chapter reference');
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['', '', 'Later chapter reference']);
@@ -256,7 +289,7 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, context(() => cancelled));
 
-    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 0, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 0, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['', '', '']);
     expect(aiMock.chat).toHaveBeenCalledTimes(1);
   });
@@ -269,7 +302,7 @@ describe('generateVisualPrompts', () => {
     const appendLog = job.appendLog;
     job.appendLog = async (message) => { await appendLog(message); if (message.includes('retrying once')) cancelled = true; };
 
-    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 0, skippedScenes: 0, failedChapters: [] });
+    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 0, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(1);
     expect((await getProject(project.id)).scenes.every((scene) => scene.visualPrompt === '')).toBe(true);
   });
@@ -281,7 +314,7 @@ describe('generateVisualPrompts', () => {
     const job = context(() => cancelled);
     job.reportProgress = async (percent) => { job.progress.push(percent); cancelled = true; };
 
-    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 2, skippedScenes: 0, failedChapters: [] });
+    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 2, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(1);
     expect(job.progress).toEqual([50]);
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Generated 1', 'Generated 2', '']);
@@ -293,7 +326,7 @@ describe('generateVisualPrompts', () => {
     let checks = 0;
     const job = context(() => ++checks === 4);
 
-    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 0, skippedScenes: 0, failedChapters: [] });
+    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 0, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
     expect(checks).toBe(4);
     expect((await getProject(project.id)).scenes.every((scene) => scene.visualPrompt === '')).toBe(true);
   });
@@ -303,7 +336,7 @@ describe('generateVisualPrompts', () => {
     aiMock.chat.mockRejectedValueOnce(new Error('provider down')).mockResolvedValueOnce(batch([3], 'later'));
     const job = context();
 
-    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 1, skippedScenes: 0, failedChapters: [1] });
+    expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 1, skippedScenes: 0, failedChapters: [1], skippedInactive: 0 });
     expect(aiMock.chat).toHaveBeenCalledTimes(2);
     expect(job.logs.some((line) => line.includes('provider down'))).toBe(true);
   });
@@ -314,7 +347,7 @@ describe('generateVisualPrompts', () => {
     const spy = vi.spyOn(Collection.prototype, 'findOneAndUpdate').mockRejectedValueOnce(new Error('write rejected'));
     const job = context();
     try {
-      expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 1, skippedScenes: 1, failedChapters: [1] });
+      expect(await generateVisualPrompts(project.id, job)).toEqual({ updatedScenes: 1, skippedScenes: 1, failedChapters: [1], skippedInactive: 0 });
     } finally {
       spy.mockRestore();
     }
@@ -334,7 +367,7 @@ describe('generateVisualPrompts', () => {
 
     const result = await generateVisualPrompts(project.id, context());
 
-    expect(result).toEqual({ updatedScenes: 1, skippedScenes: 2, failedChapters: [] });
+    expect(result).toEqual({ updatedScenes: 1, skippedScenes: 2, failedChapters: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Manual during AI', 'Generated 2', 'Generated 3']);
   });
 
@@ -354,7 +387,7 @@ describe('generateVisualPrompts', () => {
     });
     try {
       const result = await generateVisualPrompts(project.id, context());
-      expect(result).toEqual({ updatedScenes: 1, skippedScenes: 2, failedChapters: [] });
+      expect(result).toEqual({ updatedScenes: 1, skippedScenes: 2, failedChapters: [], skippedInactive: 0 });
     } finally {
       spy.mockRestore();
     }

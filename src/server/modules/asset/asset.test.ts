@@ -19,9 +19,10 @@ import {
   replaceProjectScenes,
   setSceneWordTimings,
   setProjectScenesAssetType,
+  setProjectSceneActive,
   type ProjectDoc,
 } from '../project';
-import { applyVideoDistribution, configureAssetModule, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution } from './index';
+import { applyVideoDistribution, configureAssetModule, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './index';
 
 const projectInput = {
   title: 'Asset contract project',
@@ -135,6 +136,19 @@ describe('asset contracts', () => {
       projectVersion: before.version,
     });
     expect((await getProject(project.id)).version).toBe(before.version);
+  });
+
+  it('distributes only active scenes while retaining original scene numbers', async () => {
+    const project = await seedProjectWithScenes();
+    await setChapterSceneCounts(project.id, [2, 1]);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+
+    const preview = await previewVideoDistribution(project.id, 100);
+
+    expect(preview.total).toBe(2);
+    expect(preview.videoCount).toBe(2);
+    expect(preview.videoSceneNumbers).toEqual([1, 3]);
+    expect(preview.changes.map((change) => change.sceneNumber)).toEqual([1, 3]);
   });
 
   it('applies only unlocked distribution changes and clears depth metadata for new videos', async () => {
@@ -351,6 +365,14 @@ describe('asset contracts', () => {
     await expect(fitSceneToClip(project.id, 'scene-1', before.version)).rejects.toMatchObject({ status: 422, code: 'VIDEO_DURATION_UNAVAILABLE' });
   });
 
+  it('rejects fit-to-clip for an inactive scene', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video', assetFileId: 'clip-2', videoDurationSec: 9 });
+    await setProjectSceneActive(project.id, 'scene-2', false);
+
+    await expect(fitSceneToClip(project.id, 'scene-2', project.version)).rejects.toMatchObject({ status: 409, code: 'SCENE_INACTIVE' });
+  });
+
   it('rejects fit-to-clip from a stale project version without changing the scene', async () => {
     const project = await seedProjectWithScenes();
     await patchProjectScene(project.id, 'scene-1', { assetType: 'video', assetFileId: 'clip-1', videoDurationSec: 5.2 });
@@ -374,6 +396,16 @@ describe('asset contracts', () => {
 
     expect(updated.scenes.every((scene) => scene.assetType === 'video')).toBe(true);
     expect(updated.version).toBe(project.version + 1);
+  });
+
+  it('changes asset type only for active scenes', async () => {
+    const project = await seedProjectWithScenes();
+    await setProjectSceneActive(project.id, 'scene-2', false);
+
+    const updated = await setProjectScenesAssetType(project.id, 'video');
+
+    expect(updated.scenes.map((scene) => scene.assetType)).toEqual(['video', 'image', 'video']);
+    expect(updated.scenes[1]!.active).toBe(false);
   });
 
   it('applies multiple scene assets with one version increment and last-value-wins duplicates', async () => {
@@ -433,6 +465,29 @@ describe('asset contracts', () => {
     ]);
   });
 
+  it('omits inactive scenes from Flow export without renumbering active scenes', async () => {
+    const project = await seedProjectWithScenes();
+    await setProjectSceneActive(project.id, 'scene-2', false);
+
+    const exported = exportScenesJson(await getProject(project.id));
+
+    expect(exported.map((scene) => scene.sceneNumber)).toEqual([1, 3]);
+    expect(exported.map((scene) => scene.sceneId)).toEqual([1, 3]);
+  });
+
+  it('skips ZIP assets for inactive scenes and reports the skipped count', async () => {
+    const project = await seedProjectWithScenes();
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const zip = new AdmZip();
+    zip.addFile('SCENE_002_Context.png', Buffer.from('inactive asset'));
+
+    const result = await importAssetsFromZip(project.id, zip.toBuffer());
+
+    expect(result).toEqual({ updated: 0, skipped: ['SCENE_002_Context.png: Scene đang tắt.'], skippedInactive: 1 });
+    expect((await getProject(project.id)).scenes[1]!.assetFileId).toBeNull();
+    expect(await getCollection<{ _id: string }>('files').countDocuments({ projectId: project.id })).toBe(0);
+  });
+
   it('exports the stored motion prompt for a video scene', async () => {
     const project = await seedProjectWithScenes();
     await patchProjectScene(project.id, 'scene-2', { assetType: 'video', motionPrompt: 'Slow dolly toward the subject.' });
@@ -447,7 +502,7 @@ describe('asset contracts', () => {
 
     const result = await importAssetsFromZip(project.id, validZip());
 
-    expect(result).toEqual({ updated: 1, skipped: [] });
+    expect(result).toEqual({ updated: 1, skipped: [], skippedInactive: 0 });
     const updated = await getProject(project.id);
     expect(updated.scenes[0]!.assetFileId).toEqual(expect.any(String));
     expect(await getCollection<{ projectId: string; originalName: string }>('files').findOne({ projectId: project.id })).toMatchObject({ originalName: 'SCENE_001_Opening.png' });
@@ -463,7 +518,7 @@ describe('asset contracts', () => {
 
     const result = await importAssetsFromZip(project.id, zip.toBuffer());
 
-    expect(result).toEqual({ updated: 1, skipped: [] });
+    expect(result).toEqual({ updated: 1, skipped: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes[1]).toMatchObject({
       assetType: 'video',
       assetFileId: expect.any(String),
@@ -490,7 +545,7 @@ describe('asset contracts', () => {
 
     const result = await importAssetsFromZip(project.id, zip.toBuffer());
 
-    expect(result).toEqual({ updated: 1, skipped: [] });
+    expect(result).toEqual({ updated: 1, skipped: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes[1]).toMatchObject({ assetFileId: expect.any(String), videoDurationSec: 1.25, videoTailFileId: null });
     expect(result.skipped).not.toContain('SCENE_002_Context.mp4');
   });
@@ -508,7 +563,7 @@ describe('asset contracts', () => {
     const secondZip = new AdmZip();
     secondZip.addFile('SCENE_002_Replacement.mp4', Buffer.from('video'));
 
-    await expect(importAssetsFromZip(project.id, secondZip.toBuffer())).resolves.toEqual({ updated: 1, skipped: [] });
+    await expect(importAssetsFromZip(project.id, secondZip.toBuffer())).resolves.toEqual({ updated: 1, skipped: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes[1]).toMatchObject({ videoDurationSec: 2, videoTailFileId: null });
   });
 
@@ -518,7 +573,7 @@ describe('asset contracts', () => {
     const zip = new AdmZip();
     zip.addFile('SCENE_002_Context.png', Buffer.from('keyframe'));
 
-    await expect(importAssetsFromZip(project.id, zip.toBuffer())).resolves.toEqual({ updated: 1, skipped: [] });
+    await expect(importAssetsFromZip(project.id, zip.toBuffer())).resolves.toEqual({ updated: 1, skipped: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes[1]).toMatchObject({ videoKeyframeFileId: expect.any(String), videoTailFileId: 'existing-tail', videoDurationSec: 1.25 });
   });
 
@@ -544,6 +599,7 @@ describe('asset contracts', () => {
     await expect(importAssetsFromZip(project.id, zip.toBuffer())).resolves.toEqual({
       updated: 1,
       skipped: ['SCENE_002_Context.mp4'],
+      skippedInactive: 0,
     });
     expect((await getProject(project.id)).scenes[1]).toMatchObject({
       assetFileId: null,
@@ -560,7 +616,7 @@ describe('asset contracts', () => {
 
     const result = await importAssetsFromZip(project.id, zip.toBuffer());
 
-    expect(result).toEqual({ updated: 1, skipped: ['SCENE_001_Opening.mp4'] });
+    expect(result).toEqual({ updated: 1, skipped: ['SCENE_001_Opening.mp4'], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes[0]).toMatchObject({ assetType: 'image', assetFileId: expect.any(String) });
   });
 
@@ -575,6 +631,19 @@ describe('asset contracts', () => {
     zip.addFile('SCENE_002_Context.png', Buffer.from('keyframe'));
 
     await importAssetsFromZip(project.id, zip.toBuffer());
+
+    expect(requested).toEqual(['scene-1']);
+  });
+
+  it('does not enqueue depth maps for inactive image scenes', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-1', { assetFileId: 'image-1' });
+    await patchProjectScene(project.id, 'scene-2', { assetFileId: 'image-2' });
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const requested: string[] = [];
+    configureAssetModule(filesDir, async (_projectId, sceneId) => { requested.push(sceneId); });
+
+    await requestDepthMapsForImageScenes(project.id);
 
     expect(requested).toEqual(['scene-1']);
   });
@@ -598,7 +667,7 @@ describe('asset contracts', () => {
 
     const imported = await fetch(`${base}/api/project/${project.id}/scenes/import-assets`, { method: 'POST', body: form });
     expect(imported.status).toBe(200);
-    expect(await imported.json()).toEqual({ updated: 1, skipped: [] });
+    expect(await imported.json()).toEqual({ updated: 1, skipped: [], skippedInactive: 0 });
 
     const invalidForm = new FormData();
     invalidForm.append('file', new Blob(['not a zip'], { type: 'text/plain' }), 'assets.txt');
@@ -649,7 +718,7 @@ describe('asset contracts', () => {
     replacementZip.addFile('SCENE_001_Replacement.png', Buffer.from('replacement'));
     const secondImport = await importAssetsFromZip(project.id, replacementZip.toBuffer());
     const second = await getProject(project.id);
-    expect(secondImport).toEqual({ updated: 1, skipped: [] });
+    expect(secondImport).toEqual({ updated: 1, skipped: [], skippedInactive: 0 });
     expect(second.scenes[0]!.assetFileId).not.toBe(firstId);
   });
 
@@ -684,9 +753,11 @@ describe('asset contracts', () => {
   it('clears asset references when duplicating a project', async () => {
     const project = await seedProjectWithScenes();
     await applySceneAssets(project.id, [{ sceneId: 'scene-1', assetFileId: 'file-1', videoTailFileId: 'tail-1' }]);
+    await setProjectSceneActive(project.id, 'scene-2', false);
 
     const duplicate = await duplicateProject(project.id);
 
+    expect(duplicate.scenes.map((scene) => scene.active)).toEqual([true, false, true]);
     expect(duplicate.scenes.map((scene) => scene.assetFileId)).toEqual([null, null, null]);
     expect(duplicate.scenes.map((scene) => scene.videoTailFileId)).toEqual([null, null, null]);
   });
@@ -696,7 +767,7 @@ describe('asset contracts', () => {
     const emptyZip = new AdmZip().toBuffer();
     const before = await getProject(project.id);
 
-    await expect(importAssetsFromZip(project.id, emptyZip)).resolves.toEqual({ updated: 0, skipped: [] });
+    await expect(importAssetsFromZip(project.id, emptyZip)).resolves.toEqual({ updated: 0, skipped: [], skippedInactive: 0 });
     expect((await getProject(project.id)).version).toBe(before.version);
     await expect(importAssetsFromZip(project.id, Buffer.from('not a zip'))).rejects.toMatchObject({ code: 'INVALID_ZIP', status: 422 });
   });

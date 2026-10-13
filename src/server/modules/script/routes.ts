@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { activeScenes } from '../../../contracts/scene-active';
 import { VISUAL_STYLE_IDS } from '../../../contracts/project';
 import { CliRegenerateRequestSchema, GenerateScriptRequestSchema, ManualRegeneratePromptSchema, RegenerateChapterRequestSchema } from '../../../contracts/script';
 import { getProject, setProjectAiProvider, setProjectVisualStylePreset } from '../project';
@@ -48,7 +49,7 @@ function assertVisualPromptSourceReady(project: Awaited<ReturnType<typeof getPro
     (chapter) => Number.isInteger(chapter.scenesCount) && (chapter.scenesCount ?? 0) > 0,
   );
   const sceneCount = project.chapters.reduce((sum, chapter) => sum + (chapter.scenesCount ?? 0), 0);
-  if (project.scenes.length === 0 || !hasValidChapterCounts || sceneCount !== project.scenes.length) {
+  if (activeScenes(project.scenes).length === 0 || !hasValidChapterCounts || sceneCount !== project.scenes.length) {
     throw new AppError('Finalized scenes are required before generating visual prompts.', 422, 'SCENES_NOT_READY');
   }
 }

@@ -12,6 +12,7 @@ import { normalizeTitle } from './title-search';
 import { DEFAULT_SCENE_TAIL_SEC, roundDurationSeconds } from '../../../contracts/scene-duration';
 import { DEFAULT_VOICE_SPEED, VoiceSpeedSchema } from '../../../contracts/voiceover';
 import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
+import { activeScenes, isSceneActive } from '../../../contracts/scene-active';
 
 function toSummary(row: ProjectSummaryRow): ProjectSummary {
   return {
@@ -67,6 +68,28 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
+}
+
+export function assertSceneActive(scene: { active?: boolean }): void {
+  if (!isSceneActive(scene)) throw new AppError('Scene này đang tắt. Bật scene trước khi thực hiện.', 409, 'SCENE_INACTIVE');
+}
+
+function chapterDurationFields(
+  scenes: readonly SceneDoc[],
+  chapters: ProjectDetail['chapters'],
+  durationOverrides: ReadonlyMap<string, number> = new Map(),
+): Record<string, number> {
+  const fields: Record<string, number> = {};
+  let sceneOffset = 0;
+  for (const [chapterIndex, chapter] of chapters.entries()) {
+    const count = chapter.scenesCount ?? chapter.paragraphs.length;
+    const chapterScenes = activeScenes(scenes.slice(sceneOffset, sceneOffset + count));
+    fields[`chapters.${chapterIndex}.durationSec`] = roundDurationSeconds(
+      chapterScenes.reduce((sum, scene) => sum + (durationOverrides.get(scene.id) ?? scene.durationSec), 0),
+    );
+    sceneOffset += count;
+  }
+  return fields;
 }
 
 export async function createProject(input: CreateProjectRequest): Promise<ProjectDetail> {
@@ -239,8 +262,12 @@ export async function patchProjectScene(
       const chapter = current.chapters[chapterIndex]!;
       const sceneCount = chapter.scenesCount ?? chapter.paragraphs.length;
       if (sceneIndex >= start && sceneIndex < start + sceneCount) {
-        const chapterSceneDurations = current.scenes.slice(start, start + sceneCount).map((scene, index) => index === sceneIndex - start ? scenePatch.durationSec ?? scene.durationSec : scene.durationSec);
-        set[`chapters.${chapterIndex}.durationSec`] = chapterSceneDurations.reduce((sum, duration) => sum + duration, 0);
+        const changedDuration = scenePatch.durationSec ?? currentScene.durationSec;
+        const chapterScenes = current.scenes.slice(start, start + sceneCount)
+          .map((scene) => scene.id === sceneId ? { ...scene, durationSec: changedDuration } : scene);
+        set[`chapters.${chapterIndex}.durationSec`] = roundDurationSeconds(
+          activeScenes(chapterScenes).reduce((sum, scene) => sum + scene.durationSec, 0),
+        );
         // Finalized chapters have a one-to-one paragraph/scene mapping. A scene-split chapter intentionally does not;
         // in that case the scene duration remains authoritative while the original chapter paragraphs stay intact.
         if (narrationChanged && chapter.paragraphs.length === sceneCount) set[`chapters.${chapterIndex}.paragraphs.${sceneIndex - start}`] = normalizedNarration;
@@ -263,6 +290,32 @@ export async function patchProjectScene(
   return getProject(id);
 }
 
+/** Toggle a scene without touching its stored media or analysis data. */
+export async function setProjectSceneActive(id: string, sceneId: string, active: boolean, expectedVersion?: number): Promise<ProjectDetail> {
+  const project = await getProject(id);
+  if (expectedVersion !== undefined && project.version !== expectedVersion) {
+    throw new AppError('Project changed, preview again.', 409, 'PROJECT_CHANGED');
+  }
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId);
+  if (!scene) throw new NotFound('Không tìm thấy cảnh.');
+  if (isSceneActive(scene) === active) return project;
+
+  const nextScenes = project.scenes.map((candidate) => candidate.id === sceneId ? { ...candidate, active } : candidate);
+  const set: Record<string, unknown> = { 'scenes.$[scene].active': active, updatedAt: new Date() };
+  Object.assign(set, chapterDurationFields(nextScenes, project.chapters));
+
+  const result = await getCollection<ProjectDoc>('projects').updateOne(
+    { _id: id, version: project.version, scenes: { $elemMatch: { id: sceneId } } },
+    { $set: set, $inc: { version: 1 } },
+    { arrayFilters: [{ 'scene.id': sceneId }] },
+  );
+  if (result.matchedCount === 0) {
+    if (await findProjectById(id)) throw new AppError('Project changed, preview again.', 409, 'PROJECT_CHANGED');
+    throw new NotFound('Không tìm thấy dự án.');
+  }
+  return getProject(id);
+}
+
 export type ProjectSceneDurationUpdate = {
   sceneId: string;
   audioFileId: string;
@@ -281,10 +334,17 @@ export async function setProjectSceneDurations(
   const uniqueUpdates = [...new Map(updates.map((update) => [update.sceneId, update])).values()];
   if (uniqueUpdates.length === 0) return project;
 
+  const updatesToApply = uniqueUpdates.filter((update) => {
+    const scene = project.scenes.find((candidate) => candidate.id === update.sceneId);
+    if (!scene || scene.audioFileId !== update.audioFileId) throw new AppError('Project changed, preview again.', 409, 'PROJECT_CHANGED');
+    return isSceneActive(scene);
+  });
+  if (updatesToApply.length === 0) return project;
+
   const set: Record<string, unknown> = { updatedAt: new Date() };
   const arrayFilters: Record<string, unknown>[] = [];
   const durationsBySceneId = new Map(project.scenes.map((scene) => [scene.id, scene.durationSec]));
-  uniqueUpdates.forEach((update, index) => {
+  updatesToApply.forEach((update, index) => {
     const scene = project.scenes.find((candidate) => candidate.id === update.sceneId);
     if (!scene || scene.audioFileId !== update.audioFileId) {
       throw new AppError('Dự án vừa thay đổi, vui lòng tính lại thời lượng.', 409, 'PROJECT_CHANGED');
@@ -296,15 +356,7 @@ export async function setProjectSceneDurations(
     durationsBySceneId.set(update.sceneId, update.durationSec);
   });
 
-  let sceneOffset = 0;
-  for (const [chapterIndex, chapter] of project.chapters.entries()) {
-    const count = chapter.scenesCount ?? chapter.paragraphs.length;
-    const durationSec = roundDurationSeconds(project.scenes
-      .slice(sceneOffset, sceneOffset + count)
-      .reduce((sum, scene) => sum + (durationsBySceneId.get(scene.id) ?? scene.durationSec), 0));
-    set[`chapters.${chapterIndex}.durationSec`] = durationSec;
-    sceneOffset += count;
-  }
+  Object.assign(set, chapterDurationFields(project.scenes, project.chapters, durationsBySceneId));
 
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id, version: expectedVersion },
@@ -409,16 +461,19 @@ export async function setProjectPopupDensity(id: string, density: PopupDensity):
 }
 
 export async function setProjectScenesAssetType(id: string, assetType: 'image' | 'video'): Promise<ProjectDetail> {
-  const set: Record<string, unknown> = { 'scenes.$[].assetType': assetType, updatedAt: new Date() };
-  if (assetType === 'video') set['scenes.$[].depthMap'] = null;
+  const project = await getProject(id);
+  if (activeScenes(project.scenes).length === 0) return project;
+  const set: Record<string, unknown> = { 'scenes.$[scene].assetType': assetType, updatedAt: new Date() };
+  if (assetType === 'video') set['scenes.$[scene].depthMap'] = null;
   if (assetType === 'image') {
-    set['scenes.$[].videoKeyframeFileId'] = null;
-    set['scenes.$[].videoTailFileId'] = null;
-    set['scenes.$[].videoDurationSec'] = null;
+    set['scenes.$[scene].videoKeyframeFileId'] = null;
+    set['scenes.$[scene].videoTailFileId'] = null;
+    set['scenes.$[scene].videoDurationSec'] = null;
   }
   const result = await getCollection<ProjectDoc>('projects').updateOne(
     { _id: id },
     { $set: set, $inc: { version: 1 } },
+    { arrayFilters: [{ 'scene.active': { $ne: false } }] },
   );
   if (result.matchedCount === 0) throw new NotFound('Không tìm thấy dự án.');
   return getProject(id);
@@ -708,23 +763,24 @@ export async function applyEmptySceneVisualPromptsWithResult(
     if (hasPromptValue(update.visualPrompt)) {
       const identifier = `visual${index}`;
       set[`scenes.$[${identifier}].visualPrompt`] = update.visualPrompt;
-      arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.visualPrompt`]: '' });
-      eligibleClauses.push({ id: sceneId, visualPrompt: '' });
+      arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.active`]: { $ne: false }, [`${identifier}.visualPrompt`]: '' });
+      eligibleClauses.push({ id: sceneId, active: { $ne: false }, visualPrompt: '' });
     }
     if (hasPromptValue(update.sfxPrompt)) {
       const identifier = `sfx${index}`;
       set[`scenes.$[${identifier}].sfxPrompt`] = update.sfxPrompt;
-      arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.sfxPrompt`]: '' });
-      eligibleClauses.push({ id: sceneId, sfxPrompt: '' });
+      arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.active`]: { $ne: false }, [`${identifier}.sfxPrompt`]: '' });
+      eligibleClauses.push({ id: sceneId, active: { $ne: false }, sfxPrompt: '' });
     }
     if (hasPromptValue(update.motionPrompt)) {
       const identifier = `motion${index}`;
       set[`scenes.$[${identifier}].motionPrompt`] = update.motionPrompt;
       arrayFilters.push({
         [`${identifier}.id`]: sceneId,
+        [`${identifier}.active`]: { $ne: false },
         $or: [{ [`${identifier}.motionPrompt`]: '' }, { [`${identifier}.motionPrompt`]: { $exists: false } }],
       });
-      eligibleClauses.push({ id: sceneId, $or: [{ motionPrompt: '' }, { motionPrompt: { $exists: false } }] });
+      eligibleClauses.push({ id: sceneId, active: { $ne: false }, $or: [{ motionPrompt: '' }, { motionPrompt: { $exists: false } }] });
     }
   }
   if (eligibleClauses.length === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [], updatedMotionPromptSceneIds: [] };
@@ -735,13 +791,13 @@ export async function applyEmptySceneVisualPromptsWithResult(
     { arrayFilters, returnDocument: 'before' },
   );
   const updatedSceneIds = previous
-    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.visualPrompt) && previous.scenes.some((scene) => scene.id === sceneId && scene.visualPrompt === '')).map(([sceneId]) => sceneId)
+    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.visualPrompt) && previous.scenes.some((scene) => scene.id === sceneId && isSceneActive(scene) && scene.visualPrompt === '')).map(([sceneId]) => sceneId)
     : [];
   const updatedSfxPromptSceneIds = previous
-    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.sfxPrompt) && previous.scenes.some((scene) => scene.id === sceneId && scene.sfxPrompt === '')).map(([sceneId]) => sceneId)
+    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.sfxPrompt) && previous.scenes.some((scene) => scene.id === sceneId && isSceneActive(scene) && scene.sfxPrompt === '')).map(([sceneId]) => sceneId)
     : [];
   const updatedMotionPromptSceneIds = previous
-    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.motionPrompt) && previous.scenes.some((scene) => scene.id === sceneId && isEmptyMotionPrompt(scene.motionPrompt))).map(([sceneId]) => sceneId)
+    ? [...latest].filter(([sceneId, update]) => hasPromptValue(update.motionPrompt) && previous.scenes.some((scene) => scene.id === sceneId && isSceneActive(scene) && isEmptyMotionPrompt(scene.motionPrompt))).map(([sceneId]) => sceneId)
     : [];
   return { project: await getProject(projectId), updatedSceneIds, updatedSfxPromptSceneIds, updatedMotionPromptSceneIds };
 }

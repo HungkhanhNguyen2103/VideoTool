@@ -9,7 +9,7 @@ import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
 import { getAiClient } from '../../shared/ai';
-import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider } from '../project';
+import { applyEmptySceneVisualPrompts, applyEmptySceneVisualPromptsWithResult, createProject, getProject, getProjectHistory, patchProjectScene, replaceProjectChapters, replaceProjectScenes, replaceProjectScript, setProjectAiProvider, setProjectSceneActive } from '../project';
 import { buildRegenerationPromptForChapter, finalizeScript, generateScript, patchChapter, regenerateChapter, restoreChapters, saveGeneratedScript, snapshotOf } from './service';
 import { runFinalQa } from './qa';
 
@@ -66,6 +66,19 @@ async function projectWithFinalizedScenes() {
 }
 
 describe('empty scene visual prompts', () => {
+  it('does not apply AI visual prompt updates to inactive scenes', async () => {
+    const project = await projectWithFinalizedScenes();
+    await setProjectSceneActive(project.id, 'scene-2', false);
+
+    const result = await applyEmptySceneVisualPromptsWithResult(project.id, [
+      { sceneId: 'scene-1', visualPrompt: 'Generated 1' },
+      { sceneId: 'scene-2', visualPrompt: 'Must stay inactive' },
+    ]);
+
+    expect(result.updatedSceneIds).toEqual(['scene-1']);
+    expect(result.project.scenes[1]).toMatchObject({ active: false, visualPrompt: '' });
+  });
+
   it('returns exact changed IDs from the atomic pre-image while preserving the wrapper contract', async () => {
     const project = await projectWithFinalizedScenes();
     const result = await applyEmptySceneVisualPromptsWithResult(project.id, [

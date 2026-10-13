@@ -6,6 +6,7 @@ import { probeAudioDuration } from '../../shared/tts';
 import { requestWhisperAlignment } from '../../shared/tts/align';
 import { logger } from '../../shared/logger';
 import { alignNarrationWords } from './word-alignment';
+import { activeScenes, countInactiveScenes } from '../../../contracts/scene-active';
 
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
 
@@ -45,10 +46,16 @@ export async function alignProjectWordTimings(
   appendLog: (message: string) => Promise<void>,
   reportProgress: (percent: number) => Promise<void>,
   isCancelled: () => Promise<boolean>,
-): Promise<{ aligned: number; rejected: number; failed: number; stale: number; skipped: number }> {
+): Promise<{ aligned: number; rejected: number; failed: number; stale: number; skipped: number; skippedInactive: number }> {
   const project = await getProject(projectId);
-  const totals = { aligned: 0, rejected: 0, failed: 0, stale: 0, skipped: 0 };
-  for (const [index, snapshot] of project.scenes.entries()) {
+  const sceneSnapshots = project.scenes.map((scene, index) => ({ scene, index, active: scene.active }));
+  const scenesToProcess = activeScenes(sceneSnapshots);
+  const totals = { aligned: 0, rejected: 0, failed: 0, stale: 0, skipped: 0, skippedInactive: countInactiveScenes(sceneSnapshots) };
+  if (scenesToProcess.length === 0) {
+    await appendLog(`Không có scene nào đang bật để căn chỉnh lời thoại; skippedInactive: ${totals.skippedInactive}.`);
+    await reportProgress(100);
+  }
+  for (const [activeIndex, { scene: snapshot, index }] of scenesToProcess.entries()) {
     if (await isCancelled()) break;
     const current = (await getProject(projectId)).scenes.find((scene) => scene.id === snapshot.id);
     if (!current?.audioFileId || current.wordTimings?.audioFileId === current.audioFileId) {
@@ -59,7 +66,7 @@ export async function alignProjectWordTimings(
       totals[status] += 1;
       await appendLog(`Word alignment scene ${index + 1}/${project.scenes.length}: ${status}${failureMessage ? ` — ${failureMessage}` : ''}`);
     }
-    await reportProgress(Math.round((index + 1) / project.scenes.length * 100));
+    await reportProgress(Math.round((activeIndex + 1) / scenesToProcess.length * 100));
   }
   await appendLog(`Word alignment totals: ${JSON.stringify(totals)}`);
   return totals;

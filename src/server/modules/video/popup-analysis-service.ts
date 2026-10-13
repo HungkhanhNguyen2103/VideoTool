@@ -3,6 +3,7 @@ import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai
 import { PopupBackendSchema, POPUP_DENSITIES, type PopupBackend, type PopupDensity } from '../../../contracts/popup-analysis';
 import { hashNarration } from '../../../contracts/name-keywords';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
+import { activeScenes, countInactiveScenes } from '../../../contracts/scene-active';
 import type { Config } from '../../config';
 import { loadConfig } from '../../config';
 import { AppError } from '../../shared/errors';
@@ -69,12 +70,14 @@ export type PopupAnalysisResult = {
   summary: PopupPlanAssemblyResult['summary'];
   runDirectories: string[];
   cancelled: boolean;
+  skippedInactive: number;
 };
 
 function eligibleScenes(project: ProjectDetail): PopupAnalysisScene[] {
   let sceneStartSec = 0;
   const eligible: PopupAnalysisScene[] = [];
-  for (const [index, scene] of project.scenes.entries()) {
+  const timeline = activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active })));
+  for (const { scene, index } of timeline) {
     if (scene.narration.trim() && scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId && scene.wordTimings.words.length > 0) {
       eligible.push({
         sceneNo: index + 1,
@@ -285,9 +288,20 @@ export async function analyzeProjectPopups(
     summary: { scenesNeeded: 0, scenesNotNeeded: 0, keptPopups: 0, droppedPopups: 0, rejectedByValidation: 0 },
     runDirectories: [] as string[],
     cancelled: false,
+    skippedInactive: countInactiveScenes(project.scenes),
   } satisfies PopupAnalysisResult;
-  if (await context.isCancelled()) return { ...resultBase, cancelled: true };
+  const cancelledResult = async (patch: Partial<PopupAnalysisResult> = {}): Promise<PopupAnalysisResult> => {
+    const result: PopupAnalysisResult = { ...resultBase, ...patch, cancelled: true };
+    await context.appendLog(`Popup analysis cancelled; skippedInactive: ${result.skippedInactive}.`);
+    return result;
+  };
+  if (await context.isCancelled()) return cancelledResult();
   if (scenes.length === 0) {
+    if (resultBase.skippedInactive === project.scenes.length && project.scenes.length > 0) {
+      await context.appendLog(`Không có scene nào đang bật để phân tích popup; skippedInactive: ${resultBase.skippedInactive}.`);
+    } else {
+      await context.appendLog(`Không có scene nào đủ điều kiện phân tích popup; skippedInactive: ${resultBase.skippedInactive}.`);
+    }
     await context.reportProgress(100, resultBase);
     return resultBase;
   }
@@ -308,7 +322,7 @@ export async function analyzeProjectPopups(
   const outputs: PopupAiOutput[] = [];
   const getClient = request.backend === 'api' ? (dependencies.getAiClient ?? getAiClient)(project.aiProvider, project.aiModel) : null;
   for (const [index, chunk] of chunks.entries()) {
-    if (await context.isCancelled()) return { ...resultBase, model, cancelled: true };
+    if (await context.isCancelled()) return cancelledResult({ model });
     let parsed: PopupAiOutput | null = null;
     if (request.backend === 'api') {
       parsed = await parseChunkWithRetry(
@@ -318,7 +332,7 @@ export async function analyzeProjectPopups(
       );
     } else {
       const cliResult = await runCliChunk(project, chunk, index, context, dependencies, config!, status!, model);
-      if ('cancelled' in cliResult) return { ...resultBase, model, runDirectories: [...resultBase.runDirectories], cancelled: true };
+      if ('cancelled' in cliResult) return cancelledResult({ model, runDirectories: [...resultBase.runDirectories] });
       parsed = cliResult.output;
       resultBase.runDirectories.push(cliResult.runDirectory);
     }
@@ -326,7 +340,7 @@ export async function analyzeProjectPopups(
     await context.reportProgress(Math.round(((index + 1) / chunks.length) * 85), { chunksCompleted: index + 1, chunksExpected: chunks.length });
   }
 
-  if (await context.isCancelled()) return { ...resultBase, model, runDirectories: [...resultBase.runDirectories], cancelled: true };
+  if (await context.isCancelled()) return cancelledResult({ model, runDirectories: [...resultBase.runDirectories] });
   const assembled = assemblePopupPlans({
     scenes,
     aiOutput: mergeOutputs(scenes, outputs),
@@ -339,7 +353,7 @@ export async function analyzeProjectPopups(
     model,
     now: dependencies.now?.() ?? new Date(),
   });
-  if (await context.isCancelled()) return { ...resultBase, model, runDirectories: [...resultBase.runDirectories], cancelled: true };
+  if (await context.isCancelled()) return cancelledResult({ model, runDirectories: [...resultBase.runDirectories] });
   const updates: ProjectScenePopupPlanUpdate[] = assembled.plans.map(({ sceneId, plan }) => {
     const scene = scenes.find((candidate) => candidate.id === sceneId)!;
     return { sceneId, expectedNarration: scene.narration, expectedAudioFileId: scene.audioFileId, popupPlan: plan };
@@ -347,7 +361,7 @@ export async function analyzeProjectPopups(
   const applied = await (dependencies.setProjectScenePopupPlans ?? setProjectScenePopupPlans)(projectId, updates);
   if (applied < updates.length) logger.warn(`Popup analysis wrote ${applied}/${updates.length} scenes; some scene snapshots changed while AI was running.`);
   const result: PopupAnalysisResult = { ...resultBase, model, scenesApplied: applied, summary: assembled.summary, runDirectories: [...resultBase.runDirectories], cancelled: false };
-  await context.appendLog(`Popup analysis ${request.backend}: applied ${applied}/${updates.length} scene plans.`);
+  await context.appendLog(`Popup analysis ${request.backend}: applied ${applied}/${updates.length} scene plans; skippedInactive: ${result.skippedInactive}.`);
   await context.reportProgress(100, result);
   return result;
 }

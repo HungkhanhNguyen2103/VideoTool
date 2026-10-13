@@ -11,6 +11,7 @@ export const SceneDocSchema = z.object({
   narration: z.string(),
   visualPrompt: z.string(),
   durationSec: SceneDurationSecSchema,
+  active: z.boolean().default(true),
   assetType: z.enum(['image', 'video']).default('image'),
   assetFileId: z.string().nullable().default(null),
   audioFileId: z.string().nullable().default(null),

@@ -1,6 +1,7 @@
 import type { ProjectDetail } from '../../../contracts/project';
 import { getAiClient } from '../../shared/ai';
 import { AppError } from '../../shared/errors';
+import { activeScenes, countInactiveScenes, isSceneActive } from '../../../contracts/scene-active';
 import { applyEmptySceneVisualPromptsWithResult, getProject } from '../project';
 import { buildVisualPromptPrompt, type VisualPromptSceneInput } from './ai/build-prompt';
 import { parseVisualPromptBatch } from './ai/parse-output';
@@ -15,6 +16,7 @@ export type VisualPromptJobResult = {
   updatedScenes: number;
   skippedScenes: number;
   failedChapters: number[];
+  skippedInactive: number;
 };
 
 type VisualPromptBatch = ReturnType<typeof parseVisualPromptBatch>;
@@ -23,9 +25,9 @@ function chapterScenes(project: ProjectDetail): VisualPromptSceneInput[][] {
   let nextScene = 0;
   const chapters = project.chapters.map((chapter) => {
     const count = chapter.scenesCount ?? 0;
-    const scenes = project.scenes.slice(nextScene, nextScene + count).map((scene, index) => ({
+    const scenes = activeScenes(project.scenes.slice(nextScene, nextScene + count).map((scene, index) => ({ ...scene, sceneIndex: nextScene + index + 1 }))).map((scene) => ({
       sceneId: scene.id,
-      sceneIndex: nextScene + index + 1,
+      sceneIndex: scene.sceneIndex,
       narration: scene.narration,
       assetType: scene.assetType,
       visualPrompt: scene.visualPrompt,
@@ -35,7 +37,7 @@ function chapterScenes(project: ProjectDetail): VisualPromptSceneInput[][] {
     nextScene += count;
     return scenes;
   });
-  if (nextScene !== project.scenes.length || chapters.some((scenes) => scenes.length === 0)) {
+  if (nextScene !== project.scenes.length || project.chapters.some((chapter) => !Number.isInteger(chapter.scenesCount) || (chapter.scenesCount ?? 0) < 0)) {
     throw new AppError('Finalized scenes do not match chapters.', 422, 'SCENES_NOT_READY');
   }
   return chapters;
@@ -68,16 +70,30 @@ export async function generateVisualPrompts(
   const project = await getProject(projectId);
   const scenesByChapter = chapterScenes(project);
   const client = getAiClient(project.aiProvider, project.aiModel);
-  const result: VisualPromptJobResult = { updatedScenes: 0, skippedScenes: 0, failedChapters: [] };
-  let styleNote = excerpt(project.scenes);
+  const activeSceneList = activeScenes(project.scenes);
+  const skippedInactive = countInactiveScenes(project.scenes);
+  const inactiveSceneIndexes = new Set(project.scenes.flatMap((scene, index) => isSceneActive(scene) ? [] : [index + 1]));
+  const result: VisualPromptJobResult = { updatedScenes: 0, skippedScenes: 0, failedChapters: [], skippedInactive };
+  let styleNote = excerpt(activeSceneList);
   let updatedSfxPrompts = 0;
   let updatedMotionPrompts = 0;
   let cancelled = false;
+
+  if (activeSceneList.length === 0) {
+    await context.appendLog(`Không có scene nào đang bật để tạo visual prompt; skippedInactive: ${skippedInactive}.`);
+    await context.reportProgress(100, result);
+    return result;
+  }
 
   for (const [chapterIndex, chapter] of project.chapters.entries()) {
     if (await context.isCancelled()) { cancelled = true; break; }
     const scenes = scenesByChapter[chapterIndex]!;
     const previousChapter = chapterIndex > 0 ? project.chapters[chapterIndex - 1] : null;
+    if (scenes.length === 0) {
+      await context.appendLog(`Chapter ${chapter.no}: no active scenes; skipped.`);
+      await context.reportProgress(Math.round(((chapterIndex + 1) / project.chapters.length) * 100), result);
+      continue;
+    }
     const prefilledVisual = scenes.filter((scene) => scene.visualPrompt !== '').length;
     const fullyPrefilled = scenes.filter((scene) => scene.visualPrompt !== '' && scene.sfxPrompt !== '' && (scene.assetType !== 'video' || scene.motionPrompt !== '')).length;
     result.skippedScenes += prefilledVisual;
@@ -110,6 +126,7 @@ export async function generateVisualPrompts(
           if (await context.isCancelled()) { cancelled = true; break; }
           try {
             batch = parseVisualPromptBatch(raw);
+            batch.prompts = batch.prompts.filter((prompt) => !inactiveSceneIndexes.has(prompt.sceneIndex));
             validateIndexes(batch, scenes);
             break;
           } catch (error) {
@@ -149,6 +166,6 @@ export async function generateVisualPrompts(
     await context.reportProgress(Math.round(((chapterIndex + 1) / project.chapters.length) * 100), result);
   }
 
-  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${updatedSfxPrompts} SFX prompts added, ${updatedMotionPrompts} motion prompts added, ${result.skippedScenes} skipped, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}.`);
+  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${updatedSfxPrompts} SFX prompts added, ${updatedMotionPrompts} motion prompts added, ${result.skippedScenes} skipped, skippedInactive: ${skippedInactive}, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}.`);
   return result;
 }

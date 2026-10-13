@@ -97,6 +97,14 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).popupPlan).toBeNull();
   });
 
+  it('defaults legacy scene documents to active and preserves active:false in project documents', () => {
+    const legacyScene = SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 });
+    expect(legacyScene.active).toBe(true);
+
+    const inactiveProject = ProjectDocSchema.parse({ ...validLegacyDoc, scenes: [{ ...legacyScene, active: false }] });
+    expect(inactiveProject.scenes[0]?.active).toBe(false);
+  });
+
   it('defaults legacy scene documents to no voiceover input record', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).voiceoverInput).toBeNull();
   });

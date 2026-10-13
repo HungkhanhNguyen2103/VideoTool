@@ -4,6 +4,7 @@ import { loadConfig } from '../../config';
 import { logger } from '../../shared/logger';
 import { createFileStoreService } from '../file-store';
 import { getProject, setSceneDepthMap } from '../project';
+import { activeScenes, countInactiveScenes, isSceneActive } from '../../../contracts/scene-active';
 
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
 let store = createFileStoreService('./data/files');
@@ -26,7 +27,8 @@ async function requestDepthMap(image: Buffer, originalName: string): Promise<{ b
   return { buffer: Buffer.from(await response.arrayBuffer()), score };
 }
 
-export async function generateSceneDepthMap(projectId: string, scene: Pick<Scene, 'id' | 'assetType' | 'assetFileId' | 'depthMap'>, onFailure?: (message: string) => void): Promise<DepthMapStatus> {
+export async function generateSceneDepthMap(projectId: string, scene: Pick<Scene, 'id' | 'assetType' | 'assetFileId' | 'depthMap' | 'active'>, onFailure?: (message: string) => void): Promise<DepthMapStatus> {
+  if (!isSceneActive(scene)) return 'skipped';
   if (scene.assetType !== 'image' || !scene.assetFileId) return 'skipped';
   if (scene.depthMap?.assetFileId === scene.assetFileId) return 'skipped';
   let storedId: string | null = null;
@@ -56,11 +58,16 @@ export async function generateProjectDepthMaps(
   appendLog: (message: string) => Promise<void>,
   reportProgress: (percent: number) => Promise<void>,
   isCancelled: () => Promise<boolean>,
-): Promise<{ generated: number; skipped: number; failed: number; stale: number }> {
+): Promise<{ generated: number; skipped: number; failed: number; stale: number; skippedInactive: number }> {
   const project = await getProject(projectId);
-  const totals = { generated: 0, skipped: 0, failed: 0, stale: 0 };
-  if (project.scenes.length === 0) { await reportProgress(100); return totals; }
-  for (const [index, snapshot] of project.scenes.entries()) {
+  const sceneSnapshots = project.scenes.map((scene, index) => ({ scene, index, active: scene.active }));
+  const scenesToProcess = activeScenes(sceneSnapshots);
+  const totals = { generated: 0, skipped: 0, failed: 0, stale: 0, skippedInactive: countInactiveScenes(sceneSnapshots) };
+  if (scenesToProcess.length === 0) {
+    await appendLog(`Không có scene nào đang bật để tạo depth map; skippedInactive: ${totals.skippedInactive}.`);
+    await reportProgress(100);
+  }
+  for (const [activeIndex, { scene: snapshot, index }] of scenesToProcess.entries()) {
     if (await isCancelled()) break;
     const current = (await getProject(projectId)).scenes.find((scene) => scene.id === snapshot.id);
     if (!current) continue;
@@ -68,7 +75,7 @@ export async function generateProjectDepthMaps(
     const status = await generateSceneDepthMap(projectId, current, (message) => { failureMessage = message; });
     totals[status] += 1;
     await appendLog(`Depth map scene ${index + 1}/${project.scenes.length}: ${status}${failureMessage ? ` — ${failureMessage}` : ''}`);
-    await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
+    await reportProgress(Math.round(((activeIndex + 1) / scenesToProcess.length) * 100));
   }
   await appendLog(`Depth map totals: ${JSON.stringify(totals)}`);
   return totals;

@@ -31,6 +31,13 @@ export const VideoDistributionApplyRequestSchema = VideoDistributionRequestSchem
 });
 export type VideoDistributionApplyRequest = z.infer<typeof VideoDistributionApplyRequestSchema>;
 
+export const ImportAssetsResultSchema = z.object({
+  updated: z.number().int().nonnegative(),
+  skipped: z.array(z.string()),
+  skippedInactive: z.number().int().nonnegative(),
+});
+export type ImportAssetsResult = z.infer<typeof ImportAssetsResultSchema>;
+
 export const FlowSceneExportSchema = z.object({
   sceneId: z.number().int().positive(),
   sceneNumber: z.number().int().positive(),

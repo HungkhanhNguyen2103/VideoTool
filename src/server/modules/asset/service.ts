@@ -3,12 +3,13 @@ import path from 'node:path';
 import type { ProjectDetail } from '../../../contracts/project';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
 import { createFileStoreService } from '../file-store';
-import { applyProjectVideoDistribution, applySceneAssets, getProject, patchProjectScene, pickVideoSceneIndexes } from '../project';
+import { applyProjectVideoDistribution, applySceneAssets, assertSceneActive, getProject, patchProjectScene, pickVideoSceneIndexes } from '../project';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../shared/logger';
 import { expectedAssetType, MIME_BY_EXTENSION, type FlowSceneExport } from './docs';
 import { probeVideoDuration } from '../../shared/ffprobe';
 import { extractLastFrame } from '../../shared/ffmpeg-frames';
+import { activeScenes, isSceneActive } from '../../../contracts/scene-active';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
@@ -47,7 +48,7 @@ function slugifyTitle(value: string, sceneNumber: number): string {
 }
 
 export function exportScenesJson(project: ProjectDetail): FlowSceneExport[] {
-  return project.scenes.map((scene, index) => {
+  return activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active }))).map(({ scene, index }) => {
     const sceneNumber = index + 1;
     return {
       sceneId: sceneNumber,
@@ -61,29 +62,40 @@ export function exportScenesJson(project: ProjectDetail): FlowSceneExport[] {
 }
 
 function videoDistributionIndexes(project: ProjectDetail, targetPercent: number): Set<number> {
-  return pickVideoSceneIndexes({
-    chapterSceneCounts: project.chapters.map((chapter) => chapter.scenesCount ?? 0),
-    currentTypes: project.scenes.map((scene) => scene.assetType),
-    locked: project.scenes.map((scene) => scene.assetFileId !== null || scene.videoKeyframeFileId !== null),
+  const indexedActive = activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active })));
+  const activeIndexes = indexedActive.map(({ index }) => index);
+  let sceneOffset = 0;
+  const chapterSceneCounts = project.chapters.map((chapter) => {
+    const count = chapter.scenesCount ?? 0;
+    const activeCount = activeScenes(project.scenes.slice(sceneOffset, sceneOffset + count)).length;
+    sceneOffset += count;
+    return activeCount;
+  });
+  const activeVideoIndexes = pickVideoSceneIndexes({
+    chapterSceneCounts,
+    currentTypes: indexedActive.map(({ scene }) => scene.assetType),
+    locked: indexedActive.map(({ scene }) => scene.assetFileId !== null || scene.videoKeyframeFileId !== null),
     targetPercent,
   });
+  return new Set([...activeVideoIndexes].map((activeIndex) => activeIndexes[activeIndex]!));
 }
 
 export async function previewVideoDistribution(projectId: string, targetPercent: number): Promise<VideoDistributionPreview> {
   const project = await getProject(projectId);
   const videoIndexes = videoDistributionIndexes(project, targetPercent);
-  const changes = project.scenes.flatMap((scene, index) => {
+  const activeIndexedScenes = activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active })));
+  const changes = activeIndexedScenes.flatMap(({ scene, index }) => {
     const to: 'image' | 'video' = videoIndexes.has(index) ? 'video' : 'image';
     return scene.assetType === to ? [] : [{ sceneId: scene.id, sceneNumber: index + 1, from: scene.assetType, to }];
   });
-  const lockedCount = project.scenes.filter((scene) => scene.assetFileId !== null || scene.videoKeyframeFileId !== null).length;
+  const lockedCount = activeIndexedScenes.filter(({ scene }) => scene.assetFileId !== null || scene.videoKeyframeFileId !== null).length;
   return {
-    total: project.scenes.length,
+    total: activeIndexedScenes.length,
     videoCount: videoIndexes.size,
-    imageCount: project.scenes.length - videoIndexes.size,
+    imageCount: activeIndexedScenes.length - videoIndexes.size,
     lockedCount,
     changes,
-    videoSceneNumbers: project.scenes.flatMap((scene, index) => videoIndexes.has(index) ? [index + 1] : []),
+    videoSceneNumbers: activeIndexedScenes.flatMap(({ index }) => videoIndexes.has(index) ? [index + 1] : []),
     projectVersion: project.version,
   };
 }
@@ -91,10 +103,11 @@ export async function previewVideoDistribution(projectId: string, targetPercent:
 export async function applyVideoDistribution(projectId: string, targetPercent: number, expectedVersion: number): Promise<ProjectDetail> {
   const project = await getProject(projectId);
   const videoIndexes = videoDistributionIndexes(project, targetPercent);
-  const toVideoSceneIds = project.scenes.flatMap((scene, index) => (
+  const activeIndexedScenes = activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active })));
+  const toVideoSceneIds = activeIndexedScenes.flatMap(({ scene, index }) => (
     videoIndexes.has(index) && scene.assetFileId === null && scene.videoKeyframeFileId === null && scene.assetType === 'image' ? [scene.id] : []
   ));
-  const toImageSceneIds = project.scenes.flatMap((scene, index) => (
+  const toImageSceneIds = activeIndexedScenes.flatMap(({ scene, index }) => (
     !videoIndexes.has(index) && scene.assetFileId === null && scene.videoKeyframeFileId === null && scene.assetType === 'video' ? [scene.id] : []
   ));
   if (toVideoSceneIds.length === 0 && toImageSceneIds.length === 0) return project;
@@ -105,6 +118,7 @@ export async function fitSceneToClip(projectId: string, sceneId: string, expecte
   const project = await getProject(projectId);
   const scene = project.scenes.find((candidate) => candidate.id === sceneId);
   if (!scene) throw new AppError('Không tìm thấy cảnh.', 404, 'not_found');
+  assertSceneActive(scene);
   if (scene.assetType !== 'video') throw new AppError('Chỉ scene video mới có thể kéo dài theo clip.', 422, 'FIT_TO_CLIP_NOT_VIDEO');
   if (scene.videoDurationSec === null) throw new AppError('Scene video chưa có thời lượng clip đã đo.', 422, 'VIDEO_DURATION_UNAVAILABLE');
   const durationSec = Math.ceil(scene.videoDurationSec);
@@ -117,7 +131,7 @@ const SCENE_FILE_PATTERN = /^SCENE_(\d{3})_([^/\\]+)\.([A-Za-z0-9]+)$/i;
 export async function importAssetsFromZip(
   projectId: string,
   zipBuffer: Buffer,
-): Promise<{ updated: number; skipped: string[] }> {
+): Promise<{ updated: number; skipped: string[]; skippedInactive: number }> {
   const project = await getProject(projectId);
   let zip: AdmZip;
   try {
@@ -127,6 +141,7 @@ export async function importAssetsFromZip(
   }
 
   const skipped: string[] = [];
+  let skippedInactive = 0;
   const updates = new Map<string, { sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoTailFileId?: string | null; videoDurationSec?: number | null }>();
   let entries: ReturnType<AdmZip['getEntries']>;
   try {
@@ -146,8 +161,17 @@ export async function importAssetsFromZip(
     const extension = match[3]!.toLowerCase();
     const type = expectedAssetType(extension);
     const scene = project.scenes[sceneNumber - 1];
-    const accepted = scene?.assetType === 'video' ? type === 'video' || type === 'image' : type === scene?.assetType;
-    if (!scene || !type || !accepted) {
+    if (!scene) {
+      skipped.push(filename);
+      continue;
+    }
+    if (!isSceneActive(scene)) {
+      skipped.push(`${filename}: Scene đang tắt.`);
+      skippedInactive += 1;
+      continue;
+    }
+    const accepted = scene.assetType === 'video' ? type === 'video' || type === 'image' : type === scene.assetType;
+    if (!type || !accepted) {
       skipped.push(filename);
       continue;
     }
@@ -202,10 +226,10 @@ export async function importAssetsFromZip(
     .filter((update) => update.assetFileId && project.scenes.find((scene) => scene.id === update.sceneId)?.assetType === 'image')
     .map((update) => update.sceneId);
   await requestDepthMaps(projectId, depthSceneIds);
-  return { updated: updates.size, skipped };
+  return { updated: updates.size, skipped, skippedInactive };
 }
 
 export async function requestDepthMapsForImageScenes(projectId: string): Promise<void> {
   const project = await getProject(projectId);
-  await requestDepthMaps(projectId, project.scenes.filter((scene) => scene.assetType === 'image' && scene.assetFileId).map((scene) => scene.id));
+  await requestDepthMaps(projectId, activeScenes(project.scenes).filter((scene) => scene.assetType === 'image' && scene.assetFileId).map((scene) => scene.id));
 }

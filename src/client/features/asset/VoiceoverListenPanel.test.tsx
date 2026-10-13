@@ -11,6 +11,7 @@ const scene = (id: string, narration: string, audioFileId: string | null, speed 
   narration,
   visualPrompt: '',
   durationSec: 2,
+  active: true,
   assetType: 'image',
   assetFileId: null,
   audioFileId,

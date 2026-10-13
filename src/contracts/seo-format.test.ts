@@ -23,6 +23,7 @@ function projectWithScenes(durations: number[], sceneCounts: number[], fps = 24)
       narration: `Narration ${index + 1}`,
       visualPrompt: '',
       durationSec,
+      active: true,
       assetType: 'image' as const,
       assetFileId: `asset-${index + 1}`,
       audioFileId: null,

@@ -4,6 +4,7 @@ import { probeAudioDuration } from '../../shared/tts';
 import { logger } from '../../shared/logger';
 import { createFileStoreService } from '../file-store';
 import { getProject, setProjectSceneDurations } from '../project';
+import { activeScenes, countInactiveScenes } from '../../../contracts/scene-active';
 
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
 
@@ -15,6 +16,7 @@ export type RecomputeSceneDurationsResult = {
   updated: number;
   skippedSceneNumbers: number[];
   failedSceneNumbers: number[];
+  skippedInactive: number;
 };
 
 export async function recomputeProjectSceneDurations(
@@ -26,8 +28,15 @@ export async function recomputeProjectSceneDurations(
   const updates: Array<{ sceneId: string; audioFileId: string; voiceoverDurationSec: number; durationSec: number }> = [];
   const skippedSceneNumbers: number[] = [];
   const failedSceneNumbers: number[] = [];
+  const snapshots = project.scenes.map((scene, index) => ({ scene, index, active: scene.active }));
+  const scenesToProcess = activeScenes(snapshots);
+  const skippedInactive = countInactiveScenes(snapshots);
+  if (scenesToProcess.length === 0) {
+    await appendLog(`Không có scene nào đang bật để tính lại thời lượng; skippedInactive: ${skippedInactive}.`);
+    await reportProgress(100);
+  }
 
-  for (const [index, scene] of project.scenes.entries()) {
+  for (const [activeIndex, { scene, index }] of scenesToProcess.entries()) {
     const sceneNumber = index + 1;
     if (!scene.audioFileId) {
       skippedSceneNumbers.push(sceneNumber);
@@ -47,11 +56,11 @@ export async function recomputeProjectSceneDurations(
         await appendLog(`Scene ${sceneNumber}: probe failed — ${message}`);
       }
     }
-    await reportProgress(project.scenes.length > 0 ? Math.round(((index + 1) / project.scenes.length) * 100) : 100);
+    await reportProgress(Math.round(((activeIndex + 1) / scenesToProcess.length) * 100));
   }
 
   if (updates.length > 0) await setProjectSceneDurations(project.id, project.version, updates);
-  const result = { updated: updates.length, skippedSceneNumbers, failedSceneNumbers };
+  const result = { updated: updates.length, skippedSceneNumbers, failedSceneNumbers, skippedInactive };
   await appendLog(`Duration recompute complete: ${JSON.stringify(result)}.`);
   return result;
 }

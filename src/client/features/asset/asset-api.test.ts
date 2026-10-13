@@ -176,7 +176,7 @@ describe('asset API helpers', () => {
   });
 
   it('analyzes name popups and fetches typed render-selected previews', async () => {
-    const summary = { scenesAnalyzed: 1, scenesSkippedNoTimings: 0, scenesWithName: 1, rejectedCandidates: 0, provider: 'deepseek', model: 'deepseek-chat' };
+    const summary = { scenesAnalyzed: 1, scenesSkippedNoTimings: 0, scenesWithName: 1, rejectedCandidates: 0, provider: 'deepseek', model: 'deepseek-chat', skippedInactive: 0 };
     const previews = [{ sceneId: 'scene-1', popup: { text: 'Sông Tiền', type: 'place', source: 'ai' } }];
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify(summary), { status: 200, headers: { 'content-type': 'application/json' } }))
@@ -229,7 +229,7 @@ describe('asset API helpers', () => {
   });
 
   it('formats the bulk voiceover skip summary for the Studio toast', () => {
-    expect(voiceoverSummary({ generated: 4, skippedSceneNumbers: [1, 7], failedSceneNumbers: [] })).toBe('Voiceover done for 4 scenes; skipped 2 scenes with no narration (scene numbers 1, 7).');
+    expect(voiceoverSummary({ generated: 4, skippedSceneNumbers: [1, 7], failedSceneNumbers: [], skippedInactive: 2 })).toBe('Voiceover done for 4 scenes; skipped 2 scenes with no narration (scene numbers 1, 7); skippedInactive: 2.');
   });
 
   it('marks empty-narration scenes and disables their voiceover action', async () => {
@@ -275,8 +275,8 @@ describe('asset API helpers', () => {
       method: 'PATCH', body: JSON.stringify({ sceneTailSec: 0.35 }),
     }));
 
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ updated: 2, skippedSceneNumbers: [], failedSceneNumbers: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    await expect(recomputeSceneDurations('project/1')).resolves.toEqual({ updated: 2, skippedSceneNumbers: [], failedSceneNumbers: [] });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ updated: 2, skippedSceneNumbers: [], failedSceneNumbers: [], skippedInactive: 1 }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(recomputeSceneDurations('project/1')).resolves.toEqual({ updated: 2, skippedSceneNumbers: [], failedSceneNumbers: [], skippedInactive: 1 });
     expect(fetchMock).toHaveBeenLastCalledWith('/api/project/project%2F1/scenes/recompute-durations', expect.objectContaining({ method: 'POST' }));
   });
 

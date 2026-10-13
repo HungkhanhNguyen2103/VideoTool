@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FlowSceneExportSchema, VideoDistributionPreviewSchema, type FlowSceneExport, type VideoDistributionPreview } from '../../../contracts/asset';
+import { FlowSceneExportSchema, ImportAssetsResultSchema, VideoDistributionPreviewSchema, type FlowSceneExport, type ImportAssetsResult, type VideoDistributionPreview } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
 import { AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type FilmLookStyle, type ParallaxStyle, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
@@ -7,7 +7,7 @@ import { ApiErrorBodySchema } from '../../../contracts/common';
 import type { PopupBackend, PopupDensity, PopupPlanPopup } from '../../../contracts/popup-analysis';
 import { ClaudeCliStatusSchema, type ClaudeCliStatus } from '../../../contracts/script';
 
-const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
+const ImportResultSchema = ImportAssetsResultSchema;
 const FileListSchema = z.array(FileSummarySchema);
 const JobResponseSchema = z.object({ jobId: z.string() });
 const NameKeywordAnalysisSummarySchema = z.object({
@@ -17,6 +17,7 @@ const NameKeywordAnalysisSummarySchema = z.object({
   rejectedCandidates: z.number().int().nonnegative(),
   provider: z.enum(AI_PROVIDERS),
   model: z.string().min(1),
+  skippedInactive: z.number().int().nonnegative(),
 });
 const NameKeywordPopupSchema = z.object({
   text: z.string(),
@@ -28,11 +29,13 @@ const VoiceoverBatchResultSchema = z.object({
   generated: z.number().int().nonnegative(),
   skippedSceneNumbers: z.array(z.number().int().positive()),
   failedSceneNumbers: z.array(z.number().int().positive()),
+  skippedInactive: z.number().int().nonnegative(),
 });
 const RecomputeSceneDurationsResultSchema = z.object({
   updated: z.number().int().nonnegative(),
   skippedSceneNumbers: z.array(z.number().int().positive()),
   failedSceneNumbers: z.array(z.number().int().positive()),
+  skippedInactive: z.number().int().nonnegative(),
 });
 const PopupPlanConflictSchema = z.object({ sceneId: z.string(), sceneNumber: z.number().int().positive(), anchor: z.string(), reason: z.string() });
 const PopupPlanMutationResultSchema = z.object({ project: ProjectDetailSchema, conflicts: z.array(PopupPlanConflictSchema) });
@@ -47,7 +50,7 @@ export type NameKeywordPopupPreview = z.infer<typeof NameKeywordPopupSchema>;
 export type NameKeywordScenePreview = z.infer<typeof NameKeywordPreviewsSchema>[number];
 
 export type { FlowSceneExport };
-export type ImportAssetsResult = z.infer<typeof ImportResultSchema>;
+export type { ImportAssetsResult };
 
 export const RENDER_ENGINE_OPTIONS = [
   { value: RENDER_ENGINES[0], label: 'FFmpeg' },
@@ -165,8 +168,8 @@ export function recomputeSceneDurations(projectId: string): Promise<RecomputeSce
 export function voiceoverSummary(result: unknown): string | null {
   const parsed = VoiceoverBatchResultSchema.safeParse(result);
   if (!parsed.success) return null;
-  const { generated, skippedSceneNumbers } = parsed.data;
-  return `Voiceover done for ${generated} scenes; skipped ${skippedSceneNumbers.length} scenes with no narration (scene numbers ${skippedSceneNumbers.join(', ')}).`;
+  const { generated, skippedSceneNumbers, skippedInactive } = parsed.data;
+  return `Voiceover done for ${generated} scenes; skipped ${skippedSceneNumbers.length} scenes with no narration (scene numbers ${skippedSceneNumbers.join(', ')}); skippedInactive: ${skippedInactive}.`;
 }
 
 export function previewVideoDistribution(projectId: string, targetPercent: number): Promise<VideoDistributionPreview> {

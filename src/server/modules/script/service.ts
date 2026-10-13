@@ -683,6 +683,7 @@ export async function finalizeScript(projectId: string): Promise<void> {
       narration,
       visualPrompt: '',
       durationSec: chapterDurations[index]!,
+      active: true,
       assetType: 'image' as const,
       assetFileId: null,
       audioFileId: null,

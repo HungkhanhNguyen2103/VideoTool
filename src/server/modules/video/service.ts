@@ -3,7 +3,7 @@ import { logger } from '../../shared/logger';
 import { access } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
 import { createFileStoreService } from '../file-store';
-import { getProject, patchProjectScene, setProjectBgm, setProjectDraftRenderFile, setProjectRenderFile } from '../project';
+import { assertSceneActive, getProject, patchProjectScene, setProjectBgm, setProjectDraftRenderFile, setProjectRenderFile } from '../project';
 import { getFreesoundClient } from '../../shared/freesound';
 import { getVideoRenderer, configureVideoRenderer } from './index';
 import { configureVideoTts, generateProjectVoiceovers, generateSceneVoiceover } from './tts-service';
@@ -13,6 +13,7 @@ import { configureDepthMapService } from './depth-map-service';
 import { configureLogoService } from './logo-service';
 import { configureSceneDurationService } from './scene-duration-service';
 import type { RenderVideoOptions } from './ffmpeg-renderer';
+import { activeScenes, countInactiveScenes } from '../../../contracts/scene-active';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
@@ -32,9 +33,10 @@ export function configureVideoModule(filesDir: string, remotionPublicDir = './da
 export { generateProjectVoiceovers, generateSceneVoiceover };
 
 export function assertProjectRenderReady(project: Pick<ProjectDetail, 'scenes'>): void {
-  if (project.scenes.length === 0) throw new AppError('Scenes are not ready: the project has no scenes.', 422, 'SCENES_NOT_READY');
-  const missing = project.scenes
-    .map((scene, index) => scene.assetFileId ? null : index + 1)
+  const scenes = activeScenes(project.scenes.map((scene, originalIndex) => ({ scene, originalIndex, active: scene.active })));
+  if (scenes.length === 0) throw new AppError('Không có scene nào đang bật để render.', 422, 'SCENES_NOT_READY');
+  const missing = scenes
+    .map(({ scene, originalIndex }) => scene.assetFileId ? null : originalIndex + 1)
     .filter((number): number is number => number !== null);
   if (missing.length > 0) throw new AppError(`Scenes are not ready: ${missing.join(', ')}.`, 422, 'SCENES_NOT_READY');
 }
@@ -55,12 +57,14 @@ export type SfxBatchSummary = {
   rateLimitedStop: boolean;
   counts: Record<string, number>;
   outcomes: SfxSceneOutcome[];
+  skippedInactive: number;
 };
 
 export async function generateSceneSfx(projectId: string, sceneId: string, sceneNumber = 1): Promise<SfxSceneOutcome> {
   const project = await getProject(projectId);
   const scene = project.scenes.find((candidate) => candidate.id === sceneId);
   if (!scene) throw new NotFound('Không tìm thấy cảnh.');
+  assertSceneActive(scene);
   if (!scene.sfxPrompt.trim()) {
     logger.warn(`SFX skipped for scene ${sceneId}: prompt is empty.`);
     return { sceneId, sceneNumber, outcome: 'skipped-no-prompt', reason: 'empty-prompt' };
@@ -90,7 +94,15 @@ export async function generateProjectSfx(
   options: { onlyMissing?: boolean } = {},
 ): Promise<SfxBatchSummary> {
   const project = await getProject(projectId);
-  const summary: SfxBatchSummary = { generated: 0, failed: 0, skippedNoPrompt: 0, skippedExisting: 0, rateLimitedStop: false, counts: {}, outcomes: [] };
+  const scopedScenes = project.scenes.map((scene, index) => ({ scene, index, active: scene.active }));
+  const scenesToProcess = activeScenes(scopedScenes);
+  const summary: SfxBatchSummary = { generated: 0, failed: 0, skippedNoPrompt: 0, skippedExisting: 0, rateLimitedStop: false, counts: {}, outcomes: [], skippedInactive: countInactiveScenes(scopedScenes) };
+  if (scenesToProcess.length === 0) {
+    await appendLog(`Không có scene nào đang bật để tạo SFX; skippedInactive: ${summary.skippedInactive}.`);
+    await reportProgress(100);
+    await appendLog(`SFX summary: ${JSON.stringify(summary)}.`);
+    return summary;
+  }
   let consecutiveRateLimits = 0;
   const remember = (result: SfxSceneOutcome) => {
     summary.outcomes.push(result);
@@ -104,7 +116,7 @@ export async function generateProjectSfx(
     }
   };
 
-  for (const [index, scene] of project.scenes.entries()) {
+  for (const [activeIndex, { scene, index }] of scenesToProcess.entries()) {
     const sceneNumber = index + 1;
     if (options.onlyMissing && scene.sfxFileId) {
       try {
@@ -114,7 +126,7 @@ export async function generateProjectSfx(
           const result: SfxSceneOutcome = { sceneId: scene.id, sceneNumber, outcome: 'skipped-existing' };
           remember(result);
           await appendLog(`SFX Scene ${String(sceneNumber).padStart(2, '0')}: skipped-existing (valid SFX file).`);
-          await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
+          await reportProgress(Math.round(((activeIndex + 1) / scenesToProcess.length) * 100));
           continue;
         }
       } catch {
@@ -126,7 +138,7 @@ export async function generateProjectSfx(
       const result: SfxSceneOutcome = { sceneId: scene.id, sceneNumber, outcome: 'skipped-no-prompt', reason: 'empty-prompt' };
       remember(result);
       await appendLog(`SFX Scene ${String(sceneNumber).padStart(2, '0')}: skipped-no-prompt.`);
-      await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
+      await reportProgress(Math.round(((activeIndex + 1) / scenesToProcess.length) * 100));
       continue;
     }
 
@@ -152,7 +164,7 @@ export async function generateProjectSfx(
       consecutiveRateLimits = 0;
       await appendLog(`SFX Scene ${String(sceneNumber).padStart(2, '0')}: failed:download-error — ${message}`);
     }
-    await reportProgress(Math.round(((index + 1) / project.scenes.length) * 100));
+    await reportProgress(Math.round(((activeIndex + 1) / scenesToProcess.length) * 100));
     if (consecutiveRateLimits >= 3) {
       summary.rateLimitedStop = true;
       await appendLog('Freesound đã chặn tạm thời — thử lại sau');
@@ -160,13 +172,13 @@ export async function generateProjectSfx(
       break;
     }
   }
-  if (project.scenes.length === 0) await reportProgress(100);
+  summary.skippedInactive = countInactiveScenes(scopedScenes);
   const noResults = summary.counts['no-results'] ?? 0;
   const rateLimited = summary.counts['rate-limited'] ?? 0;
   const httpErrors = summary.counts['http-error'] ?? 0;
   const downloadErrors = summary.counts['download-error'] ?? 0;
   const emptyQueries = summary.counts['empty-query'] ?? 0;
-  await appendLog(`SFX: ${summary.generated} ok, ${rateLimited} rate-limited, ${noResults} không tìm thấy, ${summary.skippedNoPrompt} không có prompt${httpErrors ? `, ${httpErrors} lỗi HTTP` : ''}${downloadErrors ? `, ${downloadErrors} lỗi tải` : ''}${emptyQueries ? `, ${emptyQueries} query rỗng` : ''}${summary.skippedExisting ? `, ${summary.skippedExisting} đã có SFX` : ''}.`);
+  await appendLog(`SFX: ${summary.generated} ok, ${rateLimited} rate-limited, ${noResults} không tìm thấy, ${summary.skippedNoPrompt} không có prompt${httpErrors ? `, ${httpErrors} lỗi HTTP` : ''}${downloadErrors ? `, ${downloadErrors} lỗi tải` : ''}${emptyQueries ? `, ${emptyQueries} query rỗng` : ''}${summary.skippedExisting ? `, ${summary.skippedExisting} đã có SFX` : ''}; skippedInactive: ${summary.skippedInactive}.`);
   return summary;
 }
 
@@ -209,6 +221,7 @@ export async function renderScenePreviewBuffer(projectId: string, sceneId: strin
   const project = await getProject(projectId);
   const scene = project.scenes.find((candidate) => candidate.id === sceneId);
   if (!scene) throw new NotFound('Không tìm thấy cảnh.');
+  assertSceneActive(scene);
   return getVideoRenderer(project.renderEngine).renderScenePreview(project, scene);
 }
 

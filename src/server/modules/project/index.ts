@@ -13,6 +13,8 @@ export {
   listProjects,
   applySceneAssets,
   patchProjectScene,
+  assertSceneActive,
+  setProjectSceneActive,
   setSceneWordTimings,
   setSceneDepthMap,
   setProjectSceneNameCandidates,

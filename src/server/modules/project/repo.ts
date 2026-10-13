@@ -46,13 +46,24 @@ export async function listProjectSummaries(filter: ListProjectsFilter): Promise<
       { $sort: { updatedAt: -1 } },
       { $limit: 200 },
       {
+        $addFields: {
+          activeScenes: {
+            $filter: {
+              input: { $ifNull: ['$scenes', []] },
+              as: 'scene',
+              cond: { $ne: [{ $ifNull: ['$$scene.active', true] }, false] },
+            },
+          },
+        },
+      },
+      {
         $project: {
           _id: 1,
           title: 1,
           status: 1,
           updatedAt: 1,
-          scenesCount: { $cond: [{ $gt: [{ $size: '$scenes' }, 0] }, { $size: '$scenes' }, null] },
-          durationSec: { $cond: [{ $gt: [{ $size: '$scenes' }, 0] }, { $round: [{ $sum: '$scenes.durationSec' }, 2] }, null] },
+          scenesCount: { $cond: [{ $gt: [{ $size: { $ifNull: ['$scenes', []] } }, 0] }, { $size: '$activeScenes' }, null] },
+          durationSec: { $cond: [{ $gt: [{ $size: { $ifNull: ['$scenes', []] } }, 0] }, { $round: [{ $sum: '$activeScenes.durationSec' }, 2] }, null] },
         },
       },
     ])

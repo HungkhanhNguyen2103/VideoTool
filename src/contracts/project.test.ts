@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateProjectRequestSchema } from './project';
+import { CreateProjectRequestSchema, SceneSchema } from './project';
 
 const validCreateInput = {
   title: 'Contract project',
@@ -39,5 +39,14 @@ describe('voice speed project field', () => {
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 0.75 })).toThrow();
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 1.31 })).toThrow();
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 1.11 })).toThrow();
+  });
+});
+
+describe('scene active field', () => {
+  const legacyScene = { id: 'scene-1', narration: 'Narration', visualPrompt: '', durationSec: 1 };
+
+  it('defaults legacy scenes to active and preserves an explicit inactive flag', () => {
+    expect(SceneSchema.parse(legacyScene).active).toBe(true);
+    expect(SceneSchema.parse({ ...legacyScene, active: false }).active).toBe(false);
   });
 });

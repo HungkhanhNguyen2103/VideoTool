@@ -13,6 +13,7 @@ import { areNameCandidatesFresh, hashNarration } from '../../../contracts/name-k
 import {
   createProject,
   getProject,
+  listProjects,
   duplicateProject,
   replaceProjectScenes,
   patchProjectScene,
@@ -24,6 +25,8 @@ import {
   setProjectSfxVolume,
   setProjectVoiceSpeed,
   setProjectSceneDurations,
+  setProjectSceneActive,
+  replaceProjectChapters,
   setProjectRenderFile,
   setProjectLogo,
   setProjectSceneNameCandidates,
@@ -35,7 +38,7 @@ import { createFileStoreService } from '../file-store';
 import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
-import { alignProjectWordTimings, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectSfx, generateProjectVoiceovers, generateSceneVoiceover, recomputeProjectSceneDurations, renderFullProject } from './index';
+import { alignProjectWordTimings, assertProjectRenderReady, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectDepthMaps, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, recomputeProjectSceneDurations, renderFullProject, renderScenePreviewBuffer } from './index';
 import { createVideoRouter } from './routes';
 import type { NameKeywordAnalysisSummary } from './name-keyword-service';
 import { enqueueJob as insertJob } from '../job';
@@ -167,8 +170,82 @@ describe('video project mutations', () => {
     await replaceProjectScenes(project.id, [{ ...(await getProject(project.id)).scenes[0]!, narration: 'Rewritten narration' }]);
     expect((await getProject(project.id)).scenes[0]!.wordTimings).toBeNull();
   });
+
+  it('toggles scene activity with version control and preserves all stored scene data', async () => {
+    const project = await seedProject();
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', voiceoverDurationSec: 4.8, sfxFileId: 'sfx-1' });
+    const timings = { audioFileId: 'voice-1', words: [{ text: 'Narration', startSec: 0, endSec: 1 }] };
+    await setSceneWordTimings(project.id, 'scene-1', 'voice-1', 'Narration', timings);
+    await setSceneDepthMap(project.id, 'scene-1', 'asset-1', { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.95 });
+    await setProjectScenePopupPlans(project.id, [{
+      sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1',
+      popupPlan: { narrationHash: hashNarration('Narration'), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', backend: 'api', density: 'low', generatedAt: '2026-10-13T00:00:00.000Z', needed: false, reason: 'KhÃ´ng cáº§n popup.', popups: [], dropped: [] },
+    }]);
+    const before = await getProject(project.id);
+
+    const inactive = await setProjectSceneActive(project.id, 'scene-1', false, before.version);
+
+    expect(inactive.version).toBe(before.version + 1);
+    expect(inactive.scenes[0]).toMatchObject({
+      active: false,
+      assetFileId: 'asset-1',
+      audioFileId: 'voice-1',
+      voiceoverDurationSec: 4.8,
+      wordTimings: timings,
+      popupPlan: before.scenes[0]!.popupPlan,
+      sfxFileId: 'sfx-1',
+      depthMap: { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.95 },
+    });
+
+    const unchanged = await setProjectSceneActive(project.id, 'scene-1', false, inactive.version);
+    expect(unchanged.version).toBe(inactive.version);
+    await expect(setProjectSceneActive(project.id, 'scene-1', true, before.version)).rejects.toMatchObject({ status: 409, code: 'PROJECT_CHANGED' });
+    await expect(setProjectSceneActive(project.id, 'missing', false)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('lists only active scenes and their duration while treating missing flags as active', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [
+      { id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 3, active: true },
+      { id: 'scene-2', narration: 'Off', visualPrompt: '', durationSec: 50, active: false },
+      { id: 'scene-3', narration: 'Legacy', visualPrompt: '', durationSec: 7 },
+    ]);
+
+    expect(await listProjects({})).toContainEqual(expect.objectContaining({ id: project.id, scenesCount: 2, durationSec: 10 }));
+
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    await setProjectSceneActive(project.id, 'scene-3', false);
+    expect(await listProjects({})).toContainEqual(expect.objectContaining({ id: project.id, scenesCount: 0, durationSec: 0 }));
+  });
+
+  it('recomputes chapter durations from active scenes for toggles, edits, and duration batches', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [
+      { id: 'scene-1', narration: 'One', visualPrompt: '', durationSec: 3, audioFileId: 'voice-1' },
+      { id: 'scene-2', narration: 'Two', visualPrompt: '', durationSec: 50, audioFileId: 'voice-2' },
+      { id: 'scene-3', narration: 'Three', visualPrompt: '', durationSec: 7, audioFileId: 'voice-3' },
+    ]);
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Chapter', paragraphs: ['One', 'Two', 'Three'], status: 'approved', scenesCount: 3, durationSec: 60 }], null);
+
+    let current = await getProject(project.id);
+    current = await setProjectSceneActive(project.id, 'scene-2', false, current.version);
+    expect(current.chapters[0]?.durationSec).toBe(10);
+
+    current = await patchProjectScene(project.id, 'scene-1', { durationSec: 4 }, current.version);
+    expect(current.chapters[0]?.durationSec).toBe(11);
+    current = await patchProjectScene(project.id, 'scene-2', { durationSec: 100 }, current.version);
+    expect(current.chapters[0]?.durationSec).toBe(11);
+
+    current = await setProjectSceneDurations(project.id, current.version, [
+      { sceneId: 'scene-1', audioFileId: 'voice-1', voiceoverDurationSec: 5.8, durationSec: 6 },
+      { sceneId: 'scene-2', audioFileId: 'voice-2', voiceoverDurationSec: 200, durationSec: 200.2 },
+    ]);
+    expect(current.chapters[0]?.durationSec).toBe(13);
+    expect(current.scenes.find((scene) => scene.id === 'scene-2')?.durationSec).toBe(100);
+  });
   it('clears all cross-project media references when duplicating a project', async () => {
     const project = await seedProject();
+    await setProjectSceneActive(project.id, 'scene-1', false);
     await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', voiceoverDurationSec: 2.2, sfxFileId: 'sfx-1' });
     await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', nameCandidates: candidateRecord() }]);
     await setProjectBgm(project.id, 'calm', 'bgm-1');
@@ -182,7 +259,7 @@ describe('video project mutations', () => {
     expect(duplicate.draftRenderFileId).toBeNull();
     expect(duplicate.bgmFileId).toBeNull();
     expect(duplicate.logoFileId).toBeNull();
-    expect(duplicate.scenes[0]).toMatchObject({ assetFileId: null, audioFileId: null, voiceoverDurationSec: null, sfxFileId: null, nameCandidates: null, popupPlan: null });
+    expect(duplicate.scenes[0]).toMatchObject({ active: false, assetFileId: null, audioFileId: null, voiceoverDurationSec: null, sfxFileId: null, nameCandidates: null, popupPlan: null });
   });
 
   it('retains stale name candidates through narration edits and voiceover regeneration, then clears them on bulk reset', async () => {
@@ -427,10 +504,33 @@ describe('video orchestration services', () => {
     ]);
     const logs: string[] = [];
     const counts = await alignProjectWordTimings(project.id, async (line) => { logs.push(line); }, async () => {}, async () => false);
-    expect(counts).toEqual({ aligned: 1, rejected: 0, failed: 0, stale: 0, skipped: 1 });
+    expect(counts).toEqual({ aligned: 1, rejected: 0, failed: 0, stale: 0, skipped: 1, skippedInactive: 0 });
     expect((await getProject(project.id)).scenes[0]!.wordTimings?.words.map((word) => word.text)).toEqual(['First', 'narration']);
     expect(logs.at(-1)).toContain('"aligned":1');
     expect((await alignProjectWordTimings(project.id, async () => {}, async () => {}, async () => false)).skipped).toBe(2);
+  });
+
+  it('aligns only active scenes and reports inactive scenes separately', async () => {
+    const project = await seedVoiceProject();
+    const store = createFileStoreService(filesDir);
+    const voice = await store.storeFile({ projectId: project.id, originalName: 'active.wav', mimeType: 'audio/wav', buffer: Buffer.from('voice'), purpose: 'voiceover' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: voice.id });
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    mocks.probeAudioDuration.mockResolvedValue(2);
+    mocks.requestWhisperAlignment.mockResolvedValue([
+      { word: 'First', start: 0, end: 0.8, probability: 0.9 },
+      { word: 'narration', start: 1, end: 1.8, probability: 0.9 },
+    ]);
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    const result = await alignProjectWordTimings(project.id, async (line) => { logs.push(line); }, async (percent) => { progress.push(percent); }, async () => false);
+
+    expect(result).toMatchObject({ aligned: 1, skippedInactive: 1 });
+    expect(mocks.requestWhisperAlignment).toHaveBeenCalledTimes(1);
+    expect((await getProject(project.id)).scenes[1]!.wordTimings).toBeNull();
+    expect(progress).toEqual([100]);
+    expect(logs.at(-1)).toContain('"skippedInactive":1');
   });
 
   it('preserves a generated voiceover when alignment fails', async () => {
@@ -535,7 +635,7 @@ describe('video orchestration services', () => {
 
     const result = await recomputeProjectSceneDurations(project.id, async (line) => { logs.push(line); }, async (percent) => { progress.push(percent); });
 
-    expect(result).toEqual({ updated: 1, skippedSceneNumbers: [3], failedSceneNumbers: [2] });
+    expect(result).toEqual({ updated: 1, skippedSceneNumbers: [3], failedSceneNumbers: [2], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes.map((scene) => [scene.durationSec, scene.voiceoverDurationSec])).toEqual([[2.44, 2.237], [9, null], [4, null]]);
     expect(mocks.probeAudioDuration).toHaveBeenCalledTimes(2);
     expect(progress).toEqual([33, 67, 100]);
@@ -552,7 +652,7 @@ describe('video orchestration services', () => {
     const response = await fetch(`${base}/api/project/${project.id}/scenes/recompute-durations`, { method: 'POST' });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ updated: 1, skippedSceneNumbers: [], failedSceneNumbers: [] });
+    expect(await response.json()).toEqual({ updated: 1, skippedSceneNumbers: [], failedSceneNumbers: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes[0]).toMatchObject({ durationSec: 1.44, voiceoverDurationSec: 1.237 });
     expect(mocks.probeAudioDuration).toHaveBeenCalledOnce();
     expect(mocks.synthesize).not.toHaveBeenCalled();
@@ -626,7 +726,7 @@ describe('video orchestration services', () => {
 
     const result = await generateProjectVoiceovers(project.id, async () => {}, async () => {}, { startSceneId: 'scene-2' });
 
-    expect(result).toEqual({ generated: 1, skippedSceneNumbers: [], failedSceneNumbers: [] });
+    expect(result).toEqual({ generated: 1, skippedSceneNumbers: [], failedSceneNumbers: [], skippedInactive: 0 });
     expect(mocks.synthesize).toHaveBeenCalledTimes(1);
     expect(mocks.synthesize).toHaveBeenCalledWith('Second narration', expect.anything());
     expect((await getProject(project.id)).scenes.map((scene) => scene.audioFileId)).toEqual([null, expect.any(String)]);
@@ -638,12 +738,14 @@ describe('video orchestration services', () => {
     mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
     mocks.probeAudioDuration.mockResolvedValue(1.1);
     const isCancelled = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const logs: string[] = [];
 
-    const result = await generateProjectVoiceovers(project.id, async () => {}, async () => {}, { isCancelled });
+    const result = await generateProjectVoiceovers(project.id, async (message) => { logs.push(message); }, async () => {}, { isCancelled });
 
     expect(result.generated).toBe(1);
     expect(mocks.synthesize).toHaveBeenCalledTimes(1);
     expect((await getProject(project.id)).scenes[1]!.audioFileId).toBeNull();
+    expect(logs.at(-1)).toContain('skippedInactive: 0');
   });
 
   it('skips empty scenes in the batch and reports their scene numbers', async () => {
@@ -658,10 +760,97 @@ describe('video orchestration services', () => {
       generated: 1,
       skippedSceneNumbers: [1],
       failedSceneNumbers: [],
+      skippedInactive: 0,
     });
 
     expect(mocks.synthesize).toHaveBeenCalledTimes(1);
-    expect(logs.at(-1)).toBe('Voiceover done for 1 scenes; skipped 1 scenes with no narration (scene numbers 1).');
+    expect(logs.at(-1)).toBe('Voiceover done for 1 scenes; skipped 1 scenes with no narration (scene numbers 1). skippedInactive: 0.');
+  });
+
+  it('rejects voiceover, SFX, and preview actions for inactive scenes before external work', async () => {
+    const project = await seedProject();
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn() };
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+
+    await expect(generateSceneVoiceover(project.id, 'scene-1')).rejects.toMatchObject({ status: 409, code: 'SCENE_INACTIVE' });
+    await expect(generateSceneSfx(project.id, 'scene-1')).rejects.toMatchObject({ status: 409, code: 'SCENE_INACTIVE' });
+    await expect(renderScenePreviewBuffer(project.id, 'scene-1')).rejects.toMatchObject({ status: 409, code: 'SCENE_INACTIVE' });
+    expect(mocks.synthesize).not.toHaveBeenCalled();
+    expect(mocks.searchSfx).not.toHaveBeenCalled();
+    expect(renderer.renderScenePreview).not.toHaveBeenCalled();
+  });
+
+  it('skips inactive voiceover scenes, reports the count, and rejects an inactive start scene', async () => {
+    const project = await seedVoiceProject();
+    const before = await getProject(project.id);
+    await setProjectSceneActive(project.id, 'scene-1', false, before.version);
+    mocks.synthesize.mockResolvedValue(Buffer.from('voice'));
+    mocks.masterAudio.mockImplementation(async (buffer: Buffer) => buffer);
+    mocks.probeAudioDuration.mockResolvedValue(1.1);
+    const logs: string[] = [];
+
+    const result = await generateProjectVoiceovers(project.id, async (message) => { logs.push(message); }, async () => {});
+
+    expect(result).toMatchObject({ generated: 1, skippedInactive: 1, skippedSceneNumbers: [], failedSceneNumbers: [] });
+    expect(mocks.synthesize).toHaveBeenCalledTimes(1);
+    expect(mocks.synthesize).toHaveBeenCalledWith('Second narration', expect.anything());
+    expect(logs.at(-1)).toContain('skippedInactive: 1');
+    await expect(generateProjectVoiceovers(project.id, async () => {}, async () => {}, { startSceneId: 'scene-1' })).rejects.toMatchObject({ status: 409, code: 'SCENE_INACTIVE' });
+  });
+
+  it('finishes an all-inactive voiceover batch without calling TTS', async () => {
+    const project = await seedVoiceProject();
+    const before = await getProject(project.id);
+    await setProjectSceneActive(project.id, 'scene-1', false, before.version);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    const result = await generateProjectVoiceovers(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
+
+    expect(result).toMatchObject({ generated: 0, skippedInactive: 2 });
+    expect(mocks.synthesize).not.toHaveBeenCalled();
+    expect(progress).toEqual([100]);
+    expect(logs.at(-1)?.toLocaleLowerCase('vi')).toContain('không có scene nào đang bật');
+    expect(logs.at(-1)).toContain('skippedInactive: 2');
+  });
+
+  it('finishes an all-inactive SFX batch with a clear log and no external work', async () => {
+    const project = await seedVoiceProject();
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    const result = await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async (percent) => { progress.push(percent); });
+
+    expect(result).toMatchObject({ generated: 0, skippedInactive: 2 });
+    expect(mocks.searchSfx).not.toHaveBeenCalled();
+    expect(progress).toEqual([100]);
+    expect(logs[0]?.toLocaleLowerCase('vi')).toContain('không có scene nào đang bật');
+  });
+
+  it('finishes all-inactive alignment and duration batches without probing or aligning', async () => {
+    const project = await seedVoiceProject();
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const alignmentLogs: string[] = [];
+    const alignmentProgress: number[] = [];
+    const durationLogs: string[] = [];
+    const durationProgress: number[] = [];
+
+    const alignment = await alignProjectWordTimings(project.id, async (message) => { alignmentLogs.push(message); }, async (percent) => { alignmentProgress.push(percent); }, async () => false);
+    const durations = await recomputeProjectSceneDurations(project.id, async (message) => { durationLogs.push(message); }, async (percent) => { durationProgress.push(percent); });
+
+    expect(alignment).toMatchObject({ aligned: 0, skippedInactive: 2 });
+    expect(mocks.requestWhisperAlignment).not.toHaveBeenCalled();
+    expect(alignmentProgress).toEqual([100]);
+    expect(alignmentLogs.join('\n').toLocaleLowerCase('vi')).toContain('không có scene nào đang bật');
+    expect(durations).toMatchObject({ updated: 0, skippedInactive: 2 });
+    expect(mocks.probeAudioDuration).not.toHaveBeenCalled();
+    expect(durationProgress).toEqual([100]);
+    expect(durationLogs.join('\n').toLocaleLowerCase('vi')).toContain('không có scene nào đang bật');
   });
 
   it('generates project SFX sequentially and reports progress for every scene', async () => {
@@ -750,6 +939,41 @@ describe('video orchestration services', () => {
     await replaceProjectScenes(project.id, [{ id: 'scene-1', narration: 'Missing', visualPrompt: 'Visual', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null }]);
 
     await expect(renderFullProject(project.id, async () => undefined, async () => undefined)).rejects.toMatchObject({ code: 'SCENES_NOT_READY', status: 422 });
+  });
+
+  it('checks only active scenes for render readiness and preserves original scene numbers', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [
+      { id: 'scene-1', narration: 'Off', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, active: false },
+      { id: 'scene-2', narration: 'On', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: 'asset-2', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+      { id: 'scene-3', narration: 'On but missing', visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    ]);
+    const loaded = await getProject(project.id);
+
+    expect(() => assertProjectRenderReady({ scenes: loaded.scenes.slice(0, 2) })).not.toThrow();
+    expect(() => assertProjectRenderReady(loaded)).toThrow(expect.objectContaining({ code: 'SCENES_NOT_READY', message: expect.stringContaining('3') }));
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    await setProjectSceneActive(project.id, 'scene-3', false);
+    await expect(renderFullProject(project.id, async () => undefined, async () => undefined)).rejects.toMatchObject({ code: 'SCENES_NOT_READY', message: 'Không có scene nào đang bật để render.' });
+  });
+
+  it('recomputes only active scene durations and reports inactive skips', async () => {
+    const project = await seedVoiceProject();
+    const store = createFileStoreService(filesDir);
+    const activeVoice = await store.storeFile({ projectId: project.id, originalName: 'active.wav', mimeType: 'audio/wav', buffer: Buffer.from('active'), purpose: 'voiceover' });
+    const inactiveVoice = await store.storeFile({ projectId: project.id, originalName: 'inactive.wav', mimeType: 'audio/wav', buffer: Buffer.from('inactive'), purpose: 'voiceover' });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: activeVoice.id });
+    await patchProjectScene(project.id, 'scene-2', { audioFileId: inactiveVoice.id, durationSec: 7 });
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    mocks.probeAudioDuration.mockResolvedValue(2.237);
+    const logs: string[] = [];
+
+    const result = await recomputeProjectSceneDurations(project.id, async (line) => { logs.push(line); }, async () => {});
+
+    expect(result).toMatchObject({ updated: 1, skippedInactive: 1 });
+    expect(mocks.probeAudioDuration).toHaveBeenCalledTimes(1);
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({ audioFileId: inactiveVoice.id, durationSec: 7, voiceoverDurationSec: null, active: false });
+    expect(logs.at(-1)).toContain('skippedInactive');
   });
 
   it('stores rendered output and updates the project final file/status', async () => {
@@ -905,6 +1129,108 @@ describe('video routes and worker handlers', () => {
     expect(body.conflicts).toEqual([]);
   });
 
+  it.each([
+    ['popup flags', '/popup-plan/flags', { anchor: 'Sông Tiền', pinned: false }],
+    ['popup edit', '/popup-plan', { kind: 'place', anchor: 'Sông Tiền', display: 'Dòng Tiền', importance: 4, reason: 'Địa danh trong lời dẫn.' }],
+  ])('rejects %s updates while its scene is inactive', async (_name, suffix, body) => {
+    const project = await seedPopupPlanProject();
+    const beforePlan = project.scenes[0]!.popupPlan;
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/scene-1${suffix}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'SCENE_INACTIVE' } });
+    expect((await getProject(project.id)).scenes[0]!.popupPlan).toEqual(beforePlan);
+  });
+
+  it.each([false, true])('skips inactive SFX scenes when onlyMissing=%s', async (onlyMissing) => {
+    const project = await seedVoiceProject();
+    await patchProjectScene(project.id, 'scene-1', { sfxPrompt: 'wind' });
+    await patchProjectScene(project.id, 'scene-2', { sfxPrompt: 'rain' });
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    mocks.searchSfx.mockResolvedValue({ audio: Buffer.from('sfx'), reason: 'ok', sound: null, query: 'rain' });
+    const logs: string[] = [];
+
+    const summary = await generateProjectSfx(project.id, async (message) => { logs.push(message); }, async () => {}, { onlyMissing });
+
+    expect(summary).toMatchObject({ generated: 1, skippedInactive: 1 });
+    expect(mocks.searchSfx).toHaveBeenCalledTimes(1);
+    expect(mocks.searchSfx).toHaveBeenCalledWith('rain');
+    expect((await getProject(project.id)).scenes[0]!.sfxFileId).toBeNull();
+    expect(logs.at(-1)).toContain('skippedInactive: 1');
+  });
+
+  it('finishes an all-inactive depth-map batch without calling the service', async () => {
+    const project = await seedVoiceProject();
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const logs: string[] = [];
+    const progress: number[] = [];
+
+    const result = await generateProjectDepthMaps(project.id, async (line) => { logs.push(line); }, async (percent) => { progress.push(percent); }, async () => false);
+
+    expect(result).toMatchObject({ skippedInactive: 2 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(progress).toEqual([100]);
+    expect(logs.some((line) => line.includes('skippedInactive: 2'))).toBe(true);
+  });
+
+  it('toggles a scene through the version-guarded route and rejects stale or missing targets', async () => {
+    const project = await seedProject();
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    const toggle = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/active`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ active: false, expectedVersion: project.version }),
+    });
+    expect(toggle.status).toBe(200);
+    expect(await toggle.json()).toMatchObject({ version: project.version + 1, scenes: [{ active: false }] });
+
+    const stale = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/active`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ active: true, expectedVersion: project.version }),
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: { code: 'PROJECT_CHANGED' } });
+
+    const missing = await fetch(`${base}/api/project/${project.id}/scenes/missing/active`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: false }),
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it.each([
+    ['render-full-video', 'RENDER_IN_PROGRESS'],
+    ['generate-voiceover', 'PROJECT_JOB_IN_PROGRESS'],
+    ['align-word-timings', 'PROJECT_JOB_IN_PROGRESS'],
+    ['analyze-popups', 'POPUP_ANALYSIS_IN_PROGRESS'],
+    ['generate-all-sfx', 'PROJECT_JOB_IN_PROGRESS'],
+    ['generate-depth-maps', 'PROJECT_JOB_IN_PROGRESS'],
+    ['generate-depth-map', 'PROJECT_JOB_IN_PROGRESS'],
+    ['generate-visual-prompts', 'PROJECT_JOB_IN_PROGRESS'],
+    ['split-scenes', 'PROJECT_JOB_IN_PROGRESS'],
+    ['generate-script', 'PROJECT_JOB_IN_PROGRESS'],
+    ['final-qa', 'PROJECT_JOB_IN_PROGRESS'],
+    ['regenerate-chapters-claude-cli', 'PROJECT_JOB_IN_PROGRESS'],
+  ])('refuses a scene toggle while %s is active', async (jobType, code) => {
+    const project = await seedProject();
+    const getActiveJob = vi.fn(async (_projectId: string, type: string) => type === jobType ? { id: 'job-active', payload: {} } : null);
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue, undefined, { getActiveJob });
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/active`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: false }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code, message: expect.any(String) } });
+    expect((await getProject(project.id)).scenes[0]?.active).toBe(true);
+    expect(getActiveJob).toHaveBeenCalledWith(project.id, jobType);
+  });
+
   it('records the losing popup when a pin creates a same-scene conflict', async () => {
     const project = await seedPopupPlanProject();
     const stored = (await getProject(project.id)).scenes[0]!;
@@ -986,6 +1312,21 @@ describe('video routes and worker handlers', () => {
     });
     expect(invalid.status).toBe(400);
   });
+
+  it('rejects a voiceover batch start scene when it is inactive', async () => {
+    const project = await seedVoiceProject();
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-inactive-start' });
+    const base = await startVideoRouterServer(enqueueJob);
+
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/generate-voiceover`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ startSceneId: 'scene-2' }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'SCENE_INACTIVE' } });
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
   it('serves project scene popup previews from the same selector used by Remotion', async () => {
     const project = await seedProject();
     const narration = 'Trên sông Tiền hôm nay.';
@@ -1021,7 +1362,7 @@ describe('video routes and worker handlers', () => {
 
   it('returns the manual name-popup analysis summary', async () => {
     const project = await seedProject();
-    const summary = { scenesAnalyzed: 3, scenesSkippedNoTimings: 1, scenesWithName: 2, rejectedCandidates: 1, provider: 'deepseek', model: 'deepseek-chat' } satisfies NameKeywordAnalysisSummary;
+    const summary = { scenesAnalyzed: 3, scenesSkippedNoTimings: 1, scenesWithName: 2, rejectedCandidates: 1, provider: 'deepseek', model: 'deepseek-chat', skippedInactive: 0 } satisfies NameKeywordAnalysisSummary;
     const analyzeNameKeywords = vi.fn().mockResolvedValue(summary);
     const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue, analyzeNameKeywords);
 
@@ -1382,6 +1723,22 @@ describe('video routes and worker handlers', () => {
 
     expect(mocks.synthesize).not.toHaveBeenCalled();
     expect(context.isCancelled).toHaveBeenCalledTimes(4);
+  });
+
+  it('silently skips an inactive single-scene depth-map job and reports its count', async () => {
+    const project = await seedProject();
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    const context = {
+      isCancelled: vi.fn().mockResolvedValue(false),
+      appendLog: vi.fn().mockResolvedValue(undefined),
+      reportProgress: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await jobHandlers['generate-depth-map']!({ payload: { projectId: project.id, sceneId: 'scene-1' } } as never, context);
+
+    expect(result).toEqual({ skipped: 1, skippedInactive: 1 });
+    expect(context.appendLog).toHaveBeenCalledWith(expect.stringContaining('skippedInactive: 1'));
+    expect(context.reportProgress).toHaveBeenCalledWith(100);
   });
 });
 

@@ -67,7 +67,7 @@ function replacements(batch: SceneSplitBatch, scenes: readonly SceneDoc[], input
     if (chunks.length === 0) return [];
     if (chunks.length === 1) return [scene];
     return chunks.map((chunk) => ({
-      id: newId(), narration: chunk, visualPrompt: '', durationSec: estimateNarrationDurationSec(chunk),
+      id: newId(), narration: chunk, visualPrompt: '', durationSec: estimateNarrationDurationSec(chunk), active: true,
       assetType: 'image' as const, assetFileId: null, audioFileId: null, voiceoverDurationSec: null, voiceoverInput: null, wordTimings: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null, nameCandidates: null, popupPlan: null,
     }));
   });

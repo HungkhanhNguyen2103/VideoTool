@@ -18,6 +18,7 @@
 - Import Flow's root-level `SCENE_{N}_{anything}.{ext}` ZIP entries and attach stored file IDs to matching scenes.
 - Image MIME mapping is `png -> image/png`, `jpg|jpeg -> image/jpeg`, `webp -> image/webp`; video mapping is `mp4 -> video/mp4`, `mov -> video/quicktime`, `webm -> video/webm`.
 - Asset ZIP uploads are limited to 200 MB and unsupported, malformed, nested, out-of-range, or asset-type-mismatched entries are reported in `skipped[]` without aborting valid entries.
+- This module currently imports existing files from ZIPs and adjusts asset types/distribution; it has no image/video generation route or worker.
 
 ## Known pitfalls
 
@@ -27,6 +28,10 @@
 - Integration tests cover mixed ZIP skips, type mismatches, duplicate/re-import replacement, malformed ZIP enumeration/extraction, route validation, the 200 MB Multer limit, and MIME-based preview classification.
 - The Studio client uses `FileSummary.storedPath` for previews, XHR upload progress, and no DOM test dependency; browser rendering remains an acceptance check. It selects media elements by stored MIME and flags a scene/file type mismatch. Visual-prompt generation is queued through the script API, and its button stays disabled while the current project job is queued or running, including before the first progress event.
 - `FlowSceneExport` is canonicalized in `contracts/asset.ts` so the client shares the route shape without importing this server module.
+
+## Inactive scenes — Task 98 Part A
+
+Flow JSON export omits inactive scenes while keeping their original scene numbers. ZIP import skips files targeting inactive scenes, returns the skipped filenames with a Vietnamese reason, and reports `skippedInactive`; project-wide asset-type changes, video-distribution preview/apply, and automatic depth-map enqueueing only target active scenes. `fitSceneToClip` rejects an inactive target through the project module's shared guard.
 
 ## Acceptance
 

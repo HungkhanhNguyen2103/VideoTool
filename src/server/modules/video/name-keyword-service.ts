@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { NameCandidateSchema, type AiProvider, type NameCandidate, type ProjectDetail, type Scene } from '../../../contracts/project';
 import { areNameCandidatesFresh } from '../../../contracts/name-keywords';
 import { hashNarration } from '../../../contracts/name-keywords';
+import { activeScenes, countInactiveScenes } from '../../../contracts/scene-active';
 import { getAiClient, type AiClient, type ChatMessage } from '../../shared/ai';
 import { logger } from '../../shared/logger';
 import { AppError } from '../../shared/errors';
@@ -35,6 +36,7 @@ export type NameKeywordAnalysisSummary = {
   rejectedCandidates: number;
   provider: AiProvider;
   model: string;
+  skippedInactive: number;
 };
 
 type EligibleScene = { sceneNo: number; scene: Scene };
@@ -59,7 +61,7 @@ function parseResponse(raw: string, eligibleSceneNumbers: ReadonlySet<number>): 
 }
 
 function eligibleScenes(project: ProjectDetail): EligibleScene[] {
-  return project.scenes.flatMap((scene, index) => scene.narration.trim()
+  return activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active }))).flatMap(({ scene, index }) => scene.narration.trim()
     && scene.audioFileId
     && scene.wordTimings?.audioFileId === scene.audioFileId
     && scene.wordTimings.words.length > 0
@@ -85,13 +87,15 @@ export async function analyzeProjectNameKeywords(
   const project = await getProject(projectId);
   const scenes = eligibleScenes(project);
   const client = clientResolver(project.aiProvider, project.aiModel);
+  const activeSceneCount = activeScenes(project.scenes).length;
   const summary: NameKeywordAnalysisSummary = {
     scenesAnalyzed: scenes.length,
-    scenesSkippedNoTimings: project.scenes.length - scenes.length,
+    scenesSkippedNoTimings: activeSceneCount - scenes.length,
     scenesWithName: 0,
     rejectedCandidates: 0,
     provider: project.aiProvider,
     model: client.model,
+    skippedInactive: countInactiveScenes(project.scenes),
   };
   if (scenes.length === 0) {
     logger.info(`Name popup analysis skipped: no scenes with current narration timings in project ${projectId}.`);
@@ -173,7 +177,7 @@ export async function autoAnalyzeProjectNameKeywordsIfStale(
   analyzer: typeof analyzeProjectNameKeywords = analyzeProjectNameKeywords,
 ): Promise<boolean> {
   const project = await getProject(projectId);
-  const needsAnalysis = project.scenes.some((scene) => scene.narration.trim()
+  const needsAnalysis = activeScenes(project.scenes).some((scene) => scene.narration.trim()
     && scene.audioFileId
     && scene.wordTimings?.audioFileId === scene.audioFileId
     && scene.wordTimings.words.length > 0

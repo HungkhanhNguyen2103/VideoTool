@@ -8,7 +8,7 @@ const words = (...items: Array<[string, number, number]>) => items.map(([text, s
 function sceneWithPlan(overrides: Partial<Scene> = {}): Scene {
   const narration = overrides.narration ?? 'Năm 1785, Sông Tiền có 3.000 quân.';
   return {
-    id: 'scene-1', narration, visualPrompt: '', durationSec: 8, assetType: 'image', assetFileId: null,
+    id: 'scene-1', narration, visualPrompt: '', durationSec: 8, active: true, assetType: 'image', assetFileId: null,
     audioFileId: 'voice-1', voiceoverDurationSec: 7, voiceoverInput: null,
     wordTimings: { audioFileId: 'voice-1', words: words(['Năm', 0, .2], ['1785,', .2, .4], ['Sông', 1, 1.2], ['Tiền', 1.2, 1.4], ['có', 2, 2.2], ['3.000', 2.2, 2.4], ['quân.', 2.4, 2.6]) },
     nameCandidates: null, popupPlan: {
@@ -34,6 +34,11 @@ describe('project popup-plan selection', () => {
     const scene = sceneWithPlan();
     expect(selectProjectSceneKeywords([{ ...scene, popupPlan: null }])[0]!.keywords).toEqual([]);
     expect(selectProjectSceneKeywords([{ ...scene, popupPlan: { ...scene.popupPlan!, narrationHash: hashNarration('old') } }])[0]!.keywords).toEqual([]);
+  });
+
+  it('returns no popup or keywords for an inactive scene with a fresh plan', () => {
+    const scene = sceneWithPlan({ active: false });
+    expect(selectProjectSceneKeywords([scene])[0]).toMatchObject({ sceneId: scene.id, keywords: [], popup: null });
   });
 
   it('does not read legacy nameCandidates as a fallback', () => {

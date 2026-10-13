@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectPopupDensity, setProjectRenderEngine, setProjectSceneTailSec, setProjectSfxVolume, setProjectTransitionStyle, setProjectVoiceSpeed } from '../project';
+import { assertSceneActive, getProject, setProjectFilmLook, setProjectKeywordPopups, setProjectParallax, setProjectPopupDensity, setProjectRenderEngine, setProjectSceneActive, setProjectSceneTailSec, setProjectSfxVolume, setProjectTransitionStyle, setProjectVoiceSpeed } from '../project';
 import { FILM_LOOK_STYLES, PARALLAX_STYLES, RENDER_ENGINES, SfxVolumeSchema, TRANSITION_STYLES } from '../../../contracts/project';
 import { POPUP_DENSITIES, PopupBackendSchema } from '../../../contracts/popup-analysis';
 import { isAiModelForProvider } from '../../../contracts/ai-models';
@@ -56,15 +56,49 @@ const PopupAnalysisSchema = z.object({
   density: z.enum(POPUP_DENSITIES).optional(),
 }).strict();
 const PopupDensitySettingSchema = z.object({ density: z.enum(POPUP_DENSITIES) }).strict();
+const SceneActiveSchema = z.object({ active: z.boolean(), expectedVersion: z.number().int().positive().optional() }).strict();
+
+export const SCENE_WRITE_BLOCKING_JOB_TYPES = [
+  'render-full-video',
+  'generate-voiceover',
+  'align-word-timings',
+  'analyze-popups',
+  'generate-all-sfx',
+  'generate-depth-maps',
+  'generate-depth-map',
+  'generate-visual-prompts',
+  'split-scenes',
+  'generate-script',
+  'final-qa',
+  'regenerate-chapters-claude-cli',
+] as const;
 
 export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyzeNameKeywords?: AnalyzeNameKeywords; getActiveJob?: GetActiveVideoJob; getClaudeCliStatus?: ReadClaudeCliStatus }): Router {
   const router = Router();
+
+  router.patch('/:id/scenes/:sceneId/active', async (req, res) => {
+    const { active, expectedVersion } = SceneActiveSchema.parse(req.body);
+    const project = await getProject(req.params.id);
+    const readActiveJob = options.getActiveJob ?? getActiveJobByType;
+    for (const jobType of SCENE_WRITE_BLOCKING_JOB_TYPES) {
+      const job = await readActiveJob(project.id, jobType);
+      if (!job) continue;
+      if (jobType === 'render-full-video') throw new AppError('Không thể đổi trạng thái scene khi đang render.', 409, 'RENDER_IN_PROGRESS');
+      if (jobType === POPUP_ANALYSIS_JOB_TYPE) throw new AppError('Không thể đổi trạng thái scene khi phân tích popup đang ghi dữ liệu.', 409, 'POPUP_ANALYSIS_IN_PROGRESS');
+      throw new AppError('Không thể đổi trạng thái scene khi tác vụ dự án đang chạy.', 409, 'PROJECT_JOB_IN_PROGRESS');
+    }
+    res.json(await setProjectSceneActive(project.id, String(req.params.sceneId), active, expectedVersion));
+  });
 
   router.post('/:id/scenes/generate-voiceover', async (req, res) => {
     const { startSceneId } = GenerateVoiceoverSchema.parse(req.body ?? {});
     const project = await getProject(req.params.id);
     if (startSceneId !== undefined && !project.scenes.some((scene) => scene.id === startSceneId)) {
       throw new AppError('Không tìm thấy scene bắt đầu voiceover.', 400, 'VOICEOVER_START_SCENE_NOT_FOUND');
+    }
+    if (startSceneId !== undefined) {
+      const startScene = project.scenes.find((scene) => scene.id === startSceneId)!;
+      assertSceneActive(startScene);
     }
     const payload = startSceneId === undefined ? { projectId: project.id } : { projectId: project.id, startSceneId };
     const job = await options.enqueueJob({ type: 'generate-voiceover', projectId: project.id, payload });

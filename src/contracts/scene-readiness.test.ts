@@ -8,6 +8,7 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     narration: 'Narration',
     visualPrompt: 'Visual',
     durationSec: 5,
+    active: true,
     assetType: 'image',
     assetFileId: 'asset-1',
     audioFileId: 'audio-1',

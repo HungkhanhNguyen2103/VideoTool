@@ -11,8 +11,8 @@ export function resolvePopupPresetDirectory(moduleUrl = import.meta.url): string
 
 export function loadPopupPreset(directory = resolvePopupPresetDirectory()): PopupPreset {
   const markdown = readFileSync(join(directory, 'popup-analysis.md'), 'utf8');
-  const frontmatter = /^---\s*\nid:\s*([^\n]+)\s*\nversion:\s*(\d+)\s*\n---\s*\n/iu.exec(markdown);
-  if (!frontmatter || frontmatter[1] !== 'popup-analysis') throw new Error('Invalid popup-analysis preset frontmatter.');
+  const frontmatter = /^---[ \t]*\r?\nid:[ \t]*([^\r\n]+)[ \t]*\r?\nversion:[ \t]*(\d+)[ \t]*\r?\n---[ \t]*\r?\n/iu.exec(markdown);
+  if (!frontmatter || frontmatter[1]?.trim() !== 'popup-analysis') throw new Error('Invalid popup-analysis preset frontmatter.');
   const body = markdown.slice(frontmatter[0].length);
   const section = (heading: string): string => {
     const match = new RegExp(`(?:^|\\n)# ${heading}\\r?\\n([\\s\\S]*?)(?=\\r?\\n# |$)`).exec(body);

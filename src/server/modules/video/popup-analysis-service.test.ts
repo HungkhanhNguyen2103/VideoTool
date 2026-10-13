@@ -84,6 +84,57 @@ describe('project popup analysis service', () => {
     expect(result.summary.scenesNeeded).toBe(1);
   });
 
+  it('excludes inactive scenes from AI input and active-timeline start times without touching their stored plan', async () => {
+    const project = twoSceneProjectFixture();
+    const inactivePlan = { generatedAt: '2026-10-12T00:00:00.000Z', popups: [], dropped: [] } as unknown as NonNullable<(typeof project.scenes)[number]['popupPlan']>;
+    const third = { ...project.scenes[1]!, id: 'scene-3', durationSec: 7, audioFileId: 'voice-3', wordTimings: project.scenes[1]!.wordTimings ? { ...project.scenes[1]!.wordTimings!, audioFileId: 'voice-3' } : null };
+    project.scenes[1]!.durationSec = 20;
+    project.scenes[1]!.active = false;
+    project.scenes[1]!.popupPlan = inactivePlan;
+    project.scenes.push(third);
+    const chat = vi.fn().mockResolvedValue(JSON.stringify({ scenes: [
+      { scene: 1, needed: false, reason: 'No popup needed.', popups: [] },
+      { scene: 3, needed: false, reason: 'No popup needed.', popups: [] },
+    ] }));
+    const setPlans = vi.fn(async (_id, updates) => updates.length);
+    const dependencies: PopupAnalysisDependencies = {
+      getProject: vi.fn().mockResolvedValue(project),
+      getAiClient: vi.fn().mockReturnValue({ model: 'deepseek-chat', chat } as unknown as AiClient),
+      setProjectScenePopupPlans: setPlans,
+    };
+
+    const jobContext = context();
+    const result = await analyzeProjectPopups('project-1', { backend: 'api', density: 'low' }, jobContext, dependencies);
+
+    const prompt = chat.mock.calls[0]![0][1].content as string;
+    const updates = setPlans.mock.calls[0]![1] as Array<{ sceneId: string }>;
+    expect(result).toMatchObject({ scenesExpected: 2, scenesApplied: 2, skippedInactive: 1 });
+    expect(prompt).toContain('Scene 3 · bắt đầu 5.00s');
+    expect(prompt).not.toContain('Scene 2');
+    expect(updates.map(({ sceneId }) => sceneId)).toEqual(['scene-1', 'scene-3']);
+    expect(project.scenes[1]!.popupPlan).toBe(inactivePlan);
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('skippedInactive: 1'));
+  });
+
+  it('completes an all-inactive popup analysis without creating a provider client', async () => {
+    const project = projectFixture();
+    project.scenes[0]!.active = false;
+    const chat = vi.fn();
+    const getAiClient = vi.fn().mockReturnValue({ model: 'deepseek-chat', chat } as unknown as AiClient);
+    const jobContext = context();
+
+    const result = await analyzeProjectPopups('project-1', { backend: 'api', density: 'low' }, jobContext, {
+      getProject: vi.fn().mockResolvedValue(project),
+      getAiClient,
+    });
+
+    expect(result).toMatchObject({ scenesExpected: 0, scenesApplied: 0, skippedInactive: 1 });
+    expect(getAiClient).not.toHaveBeenCalled();
+    expect(chat).not.toHaveBeenCalled();
+    expect(jobContext.reportProgress).toHaveBeenCalledWith(100, expect.objectContaining({ skippedInactive: 1 }));
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('skippedInactive: 1'));
+  });
+
   it('rejects missing scene verdicts without changing the previous plan', async () => {
     const project = projectFixture();
     const setPlans = vi.fn();
@@ -176,6 +227,7 @@ describe('project popup analysis service', () => {
 
     expect(result.cancelled).toBe(true);
     expect(setPlans).not.toHaveBeenCalled();
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('skippedInactive: 0'));
   });
 
   it('uses primary scenes once while allowing one-scene context overlap in each measured chunk', () => {

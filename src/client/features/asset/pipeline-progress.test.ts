@@ -8,6 +8,7 @@ function scene(id: string, overrides: Partial<Scene> = {}): Scene {
     narration: `Scene ${id}`,
     visualPrompt: '',
     durationSec: 5,
+    active: true,
     assetType: 'image',
     assetFileId: null,
     audioFileId: null,
