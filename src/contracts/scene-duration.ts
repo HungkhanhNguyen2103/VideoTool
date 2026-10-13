@@ -28,10 +28,12 @@ export type SceneDurationStatusInput = {
   voiceoverDurationSec?: number | null;
 };
 
+export function hasUnappliedSceneTailForScene(scene: SceneDurationStatusInput, sceneTailSec: number): boolean {
+  if (!scene.audioFileId) return false;
+  if (scene.voiceoverDurationSec == null) return true;
+  return scene.durationSec !== durationWithTail(scene.voiceoverDurationSec, sceneTailSec);
+}
+
 export function hasUnappliedSceneTail(scenes: readonly SceneDurationStatusInput[], sceneTailSec: number): boolean {
-  return scenes.some((scene) => {
-    if (!scene.audioFileId) return false;
-    if (scene.voiceoverDurationSec == null) return true;
-    return scene.durationSec !== durationWithTail(scene.voiceoverDurationSec, sceneTailSec);
-  });
+  return scenes.some((scene) => hasUnappliedSceneTailForScene(scene, sceneTailSec));
 }
