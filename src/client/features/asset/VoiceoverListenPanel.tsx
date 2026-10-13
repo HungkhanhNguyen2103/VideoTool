@@ -6,6 +6,7 @@ import { Button } from '../../shared/ui/Button';
 import styles from './VoiceoverListenPanel.module.css';
 import {
   audioUrlWithCacheBust,
+  buildVoiceoverListenQueue,
   createVoiceoverGapTimer,
   decideVoiceoverEnd,
   readVoiceoverAutoAdvancePreference,
@@ -35,6 +36,8 @@ type VoiceoverListenPanelProps = {
 const initialState: VoiceoverListenState = { currentIndex: 0, isPlaying: false, blocked: null, reloadVersion: 0 };
 
 export function VoiceoverListenPanel({ scenes, project, sceneTailInput, audioUrls, reloadVersions, onRegenerate, regeneratingSceneId = null }: VoiceoverListenPanelProps) {
+  const listenQueue = useMemo(() => buildVoiceoverListenQueue(scenes), [scenes]);
+  const queueScenes = useMemo(() => listenQueue.map(({ scene }) => scene), [listenQueue]);
   const [state, dispatch] = useState(() => initialState);
   const [autoAdvance, setAutoAdvance] = useState(() => readVoiceoverAutoAdvancePreference());
   const [gapState, setGapState] = useState<{ waiting: boolean; paused: boolean; remainingMs: number }>({ waiting: false, paused: false, remainingMs: 0 });
@@ -44,25 +47,25 @@ export function VoiceoverListenPanel({ scenes, project, sceneTailInput, audioUrl
   const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const gapTimerRef = useRef<VoiceoverGapTimer | null>(null);
   if (!gapTimerRef.current) gapTimerRef.current = createVoiceoverGapTimer();
-  const currentIndex = Math.min(state.currentIndex, Math.max(scenes.length - 1, 0));
-  const currentScene = scenes[currentIndex];
+  const currentIndex = Math.min(state.currentIndex, Math.max(queueScenes.length - 1, 0));
+  const currentScene = queueScenes[currentIndex];
   const currentStatus = currentScene ? voiceoverSceneStatus(currentScene, project) : 'missing';
   const currentAudioUrl = currentScene?.audioFileId ? audioUrls[currentScene.id] : undefined;
   const currentReloadVersion = currentScene ? (reloadVersions[currentScene.id] ?? 0) + state.reloadVersion : 0;
   const currentSrc = currentAudioUrl ? audioUrlWithCacheBust(currentAudioUrl, currentReloadVersion) : undefined;
   const currentTailSeconds = resolveVoiceoverTailSeconds(sceneTailInput, project.sceneTailSec);
   const statusLabels = useMemo(() => ({ ready: 'Đã có voiceover', missing: 'Thiếu / tạo thất bại', stale: 'Voiceover đã cũ' }), []);
-  const scenesRef = useRef(scenes);
+  const scenesRef = useRef(queueScenes);
   const projectRef = useRef(project);
   const currentIndexRef = useRef(currentIndex);
-  scenesRef.current = scenes;
+  scenesRef.current = queueScenes;
   projectRef.current = project;
   currentIndexRef.current = currentIndex;
 
   useEffect(() => {
-    if (scenes.length === 0 || state.currentIndex < scenes.length) return;
-    dispatch((current) => ({ ...current, currentIndex: scenes.length - 1, isPlaying: false }));
-  }, [scenes.length, state.currentIndex]);
+    if (queueScenes.length === 0 || state.currentIndex < queueScenes.length) return;
+    dispatch((current) => ({ ...current, currentIndex: queueScenes.length - 1, isPlaying: false }));
+  }, [queueScenes.length, state.currentIndex]);
 
   useEffect(() => {
     return () => gapTimerRef.current?.cancel();
@@ -144,17 +147,17 @@ export function VoiceoverListenPanel({ scenes, project, sceneTailInput, audioUrl
   }
 
   function moveNext(): void {
-    if (scenes.length === 0) return;
+    if (queueScenes.length === 0) return;
     cancelGap();
     setFinished(false);
-    dispatch((current) => voiceoverListenReducer(current, { type: 'next', sceneCount: scenes.length }));
+    dispatch((current) => voiceoverListenReducer(current, { type: 'next', sceneCount: queueScenes.length }));
   }
 
   function movePrevious(): void {
-    if (scenes.length === 0) return;
+    if (queueScenes.length === 0) return;
     cancelGap();
     setFinished(false);
-    dispatch((current) => voiceoverListenReducer(current, { type: 'previous', sceneCount: scenes.length }));
+    dispatch((current) => voiceoverListenReducer(current, { type: 'previous', sceneCount: queueScenes.length }));
   }
 
   function selectScene(index: number): void {
@@ -164,11 +167,11 @@ export function VoiceoverListenPanel({ scenes, project, sceneTailInput, audioUrl
   }
 
   function handleEnded(): void {
-    const nextScene = scenes[currentIndex + 1];
+    const nextScene = queueScenes[currentIndex + 1];
     const nextStatus = nextScene ? voiceoverSceneStatus(nextScene, project) : null;
     const decision = decideVoiceoverEnd({
       currentIndex,
-      sceneCount: scenes.length,
+      sceneCount: queueScenes.length,
       autoAdvance,
       waitSeconds: currentScene ? voiceoverTailWaitSeconds(currentTailSeconds) : 0,
       nextStatus,
@@ -242,17 +245,17 @@ export function VoiceoverListenPanel({ scenes, project, sceneTailInput, audioUrl
     <div className={styles.header}>
       <div><h3 className={styles.title}>Nghe voiceover</h3><p className={styles.muted}>Nghe lần lượt theo thứ tự scene, không kèm hình ảnh hay video.</p></div>
       <div className={styles.controls}>
-        <Button size="sm" onClick={movePrevious} disabled={scenes.length === 0 || currentIndex === 0}>Scene trước</Button>
-        <Button size="sm" variant="amber" onClick={togglePlayback} disabled={scenes.length === 0}>{state.isPlaying ? 'Tạm dừng' : 'Phát'}</Button>
-        <Button size="sm" onClick={moveNext} disabled={scenes.length === 0 || currentIndex === scenes.length - 1}>Scene tiếp</Button>
+        <Button size="sm" onClick={movePrevious} disabled={queueScenes.length === 0 || currentIndex === 0}>Scene trước</Button>
+        <Button size="sm" variant="amber" onClick={togglePlayback} disabled={queueScenes.length === 0}>{state.isPlaying ? 'Tạm dừng' : 'Phát'}</Button>
+        <Button size="sm" onClick={moveNext} disabled={queueScenes.length === 0 || currentIndex === queueScenes.length - 1}>Scene tiếp</Button>
       </div>
     </div>
     <audio ref={audioRef} className={styles.audio} src={currentSrc} preload="metadata" onEnded={handleEnded} onCanPlay={handleAudioCanPlay} onError={() => dispatch((current) => ({ ...current, isPlaying: false, blocked: currentStatus === 'stale' ? 'stale' : 'missing' }))} />
     {playbackError && <p className={styles.error} role="alert">{playbackError}</p>}
     {blockedMessage && <div className={styles.blocked} role="status"><p>{blockedMessage}</p><Button size="sm" variant="amber" disabled={regeneratingSceneId === currentScene?.id || !currentScene?.narration.trim()} onClick={() => void regenerateCurrent()}>{regeneratingSceneId === currentScene?.id ? 'Đang tạo lại…' : 'Tạo lại voice scene này'}</Button></div>}
-    {currentScene && !state.isPlaying && !blockedMessage && <div className={styles.pausedAction}><span>Đang tạm dừng ở scene {currentIndex + 1}.</span><Button size="sm" variant="amber" disabled={regeneratingSceneId === currentScene.id || !currentScene.narration.trim()} onClick={() => void regenerateCurrent()}>{regeneratingSceneId === currentScene.id ? 'Đang tạo lại…' : 'Tạo lại voice scene này'}</Button></div>}
+    {currentScene && !state.isPlaying && !blockedMessage && <div className={styles.pausedAction}><span>Đang tạm dừng ở scene {listenQueue[currentIndex]?.sceneNumber}.</span><Button size="sm" variant="amber" disabled={regeneratingSceneId === currentScene.id || !currentScene.narration.trim()} onClick={() => void regenerateCurrent()}>{regeneratingSceneId === currentScene.id ? 'Đang tạo lại…' : 'Tạo lại voice scene này'}</Button></div>}
     <div className={styles.list} role="list" aria-label="Danh sách voiceover">
-      {scenes.map((scene, index) => {
+      {listenQueue.map(({ scene, sceneNumber }, index) => {
         const status = voiceoverSceneStatus(scene, project);
         const selected = index === currentIndex;
         return <button
@@ -264,7 +267,7 @@ export function VoiceoverListenPanel({ scenes, project, sceneTailInput, audioUrl
           aria-current={selected ? 'true' : undefined}
           onClick={() => selectScene(index)}
         >
-          <span className={styles.number}>{String(index + 1).padStart(2, '0')}</span>
+          <span className={styles.number}>{String(sceneNumber).padStart(2, '0')}</span>
           <span className={styles.narration}>{scene.narration || 'Không có lời dẫn'}</span>
           <span className={styles.duration}>{formatDurationSeconds(scene.voiceoverDurationSec ?? scene.durationSec)}s</span>
           <Badge tone={status === 'ready' ? 'green' : status === 'stale' ? 'amber' : 'muted'}>{statusLabels[status]}</Badge>

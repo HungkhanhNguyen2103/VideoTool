@@ -16,6 +16,7 @@ const scene = {
 const project = {
   renderEngine: 'remotion', keywordPopupsEnabled: true, transitionStyle: 'varied', filmLook: 'auto', parallax: 'auto', logoFileId: 'logo-1',
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 },
+  scenes: [scene, { ...scene, id: 'scene-2' }],
 } as ProjectDetail;
 
 function componentMarkup(overrides: Partial<ComponentProps<typeof ScenePreviewSection>> = {}): string {
@@ -36,6 +37,18 @@ describe('scene preview helpers', () => {
     const fingerprint = createScenePreviewFingerprint(scene, project);
 
     expect(firstChangedScenePreviewField(fingerprint, { ...fingerprint, asset: { ...fingerprint.asset } })).toBeNull();
+  });
+
+  it('changes the current and later scene fingerprint when an earlier scene is switched off', () => {
+    const earlier = { ...scene, id: 'scene-1' };
+    const later = { ...scene, id: 'scene-2' };
+    const beforeProject = { ...project, scenes: [earlier, later] } as ProjectDetail;
+    const afterProject = { ...project, scenes: [{ ...earlier, active: false }, later] } as ProjectDetail;
+    const before = createScenePreviewFingerprint(later, beforeProject);
+    const after = createScenePreviewFingerprint(later, afterProject);
+
+    expect(firstChangedScenePreviewField(before, after)).toBe('activeScenes');
+    expect(scenePreviewStaleReason(before, after)).toBe('Thứ tự scene đang bật đã thay đổi sau lần render.');
   });
 
   it('returns the first changed field in the requested scene-content order', () => {

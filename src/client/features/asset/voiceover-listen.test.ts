@@ -3,6 +3,7 @@ import { hashNarration } from '../../../contracts/name-keywords';
 import { isVoiceoverFresh } from '../../../contracts/voiceover';
 import {
   audioUrlWithCacheBust,
+  buildVoiceoverListenQueue,
   createVoiceoverGapTimer,
   decideVoiceoverEnd,
   KNOWN_IN_FILE_VOICEOVER_TAIL_SECONDS,
@@ -21,6 +22,19 @@ const project = { voiceoverVoice: 'vi-female', voiceSpeed: 1 };
 const readyScene = { narration: 'Narration', audioFileId: 'file-1', voiceoverInput: { voice: 'vi-female', speed: 1, narrationHash: hashNarration('Narration') } };
 
 describe('voiceover listen state', () => {
+  it('builds an active-only queue and keeps original scene numbers', () => {
+    const scenes = [
+      { id: 'scene-1', active: true },
+      { id: 'scene-2', active: false },
+      { id: 'scene-3' },
+    ] as never;
+
+    expect(buildVoiceoverListenQueue(scenes)).toEqual([
+      { scene: scenes[0], sceneNumber: 1 },
+      { scene: scenes[2], sceneNumber: 3 },
+    ]);
+  });
+
   it('toggles play/pause, resumes the same scene, and advances to next scene', () => {
     const initial: VoiceoverListenState = { currentIndex: 0, isPlaying: false, blocked: null, reloadVersion: 0 };
     const playing = voiceoverListenReducer(initial, { type: 'toggle-play' });

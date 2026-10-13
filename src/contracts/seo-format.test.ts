@@ -97,6 +97,30 @@ describe('SEO format helpers', () => {
     );
   });
 
+  it('uses active scenes for chapter frame starts and skips an all-inactive chapter with a warning', () => {
+    const project = projectWithScenes([10.01, 18, 10.03, 10.04], [1, 1, 1, 1], 24);
+    project.scenes[1]!.active = false;
+
+    const result = chapterTimestamps(project);
+
+    expect(result).toMatchObject({ ok: true, warnings: [expect.stringContaining('Chapter 2')] });
+    if (!result.ok) return;
+    expect(result.timestamps.map(({ no, startFrame, durationInFrames }) => ({ no, startFrame, durationInFrames }))).toEqual([
+      { no: 1, startFrame: 0, durationInFrames: 240 },
+      { no: 3, startFrame: 240, durationInFrames: 241 },
+      { no: 4, startFrame: 481, durationInFrames: 241 },
+    ]);
+    expect(assembleDescription({ descriptionIntro: '', hashtags: [], tags: [] }, project)).toContain('0:10 Chương 3');
+    expect(assembleDescription({ descriptionIntro: '', hashtags: [], tags: [] }, project)).not.toContain('Chương 2');
+
+    const fewerActiveChapters = projectWithScenes([10, 10, 10], [1, 1, 1]);
+    fewerActiveChapters.scenes[1]!.active = false;
+    expect(chapterTimestamps(fewerActiveChapters)).toMatchObject({
+      ok: false,
+      warnings: [expect.stringContaining('Chapter 2')],
+    });
+  });
+
   it('rejects missing scenes, mismatched scene counts, fewer than three chapters, and short chapters', () => {
     expect(chapterTimestamps(projectWithScenes([], []))).toMatchObject({ ok: false });
     expect(chapterTimestamps(projectWithScenes([10, 10, 10], [2, 2]))).toMatchObject({ ok: false });

@@ -2,8 +2,9 @@ import { z } from 'zod';
 import type { PopupDensity } from '../../../../contracts/popup-analysis';
 import { loadPopupPreset } from './presets/loader';
 import { PopupAiOutputSchema } from './output-schema';
+import { activeScenes } from '../../../../contracts/scene-active';
 
-export type PopupPromptScene = { scene: number; startSec: number; narration: string };
+export type PopupPromptScene = { scene: number; startSec: number; narration: string; active?: boolean };
 export type PopupPromptInput = {
   title: string;
   brief: string;
@@ -31,7 +32,7 @@ const DENSITY_GUIDANCE: Record<PopupDensity, string> = {
 
 export function buildPopupAnalysisPrompt(input: PopupPromptInput): string {
   const preset = loadPopupPreset();
-  const scenes = input.scenes.map((scene) => `Scene ${scene.scene} · bắt đầu ${scene.startSec.toFixed(2)}s\n${scene.narration}`).join('\n\n');
+  const scenes = activeScenes(input.scenes).map((scene) => `Scene ${scene.scene} · bắt đầu ${scene.startSec.toFixed(2)}s\n${scene.narration}`).join('\n\n');
   return [
     `POPUP_PROMPT_ID=${preset.id}@${preset.version}`,
     preset.system,

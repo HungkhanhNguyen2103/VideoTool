@@ -214,6 +214,21 @@ async function mountedPanel(options: { scenes?: Scene[]; sceneTailInput?: string
 }
 
 describe('VoiceoverListenPanel integration wiring', () => {
+  it('removes inactive scenes from the visible queue after project data refreshes', () => {
+    const html = renderToStaticMarkup(createElement(VoiceoverListenPanel, {
+      scenes: [scene('scene-1', 'First narration', 'voice-1'), { ...scene('scene-2', 'INACTIVE_SENTINEL', 'voice-2'), active: false }, scene('scene-3', 'Third narration', 'voice-3')],
+      project: { id: 'project-1', voiceoverVoice: 'vi-female', voiceSpeed: 1, sceneTailSec: 0.2 },
+      sceneTailInput: '0.2',
+      audioUrls: { 'scene-1': '/files/voice-1.wav', 'scene-3': '/files/voice-3.wav' },
+      reloadVersions: {},
+      onRegenerate: async () => true,
+    }));
+
+    expect(html).not.toContain('INACTIVE_SENTINEL');
+    expect(html).toContain('Third narration');
+    expect(html).toContain('>03</span>');
+  });
+
   it('renders the selected audio with the regeneration cache bust and scene statuses', () => {
     const html = renderToStaticMarkup(createElement(VoiceoverListenPanel, {
       scenes: [scene('scene-1', 'First narration', 'voice-1'), scene('scene-2', 'Second narration', 'voice-2', 1.2)],

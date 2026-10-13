@@ -1,8 +1,10 @@
 import type { ProjectDetail, RenderEngine, Scene } from '../../../contracts/project';
 import { formatDurationSeconds } from '../../../contracts/scene-duration';
 import { hashNarration } from '../../../contracts/name-keywords';
+import { activeScenes } from '../../../contracts/scene-active';
 
 export type ScenePreviewFingerprint = {
+  activeScenes: { sceneActive: boolean; orderedIdsThroughScene: string[] };
   narration: string;
   visualPrompt: string;
   asset: {
@@ -26,6 +28,7 @@ export type ScenePreviewFingerprint = {
 };
 
 export type ScenePreviewChangedField =
+  | 'activeScenes'
   | 'narration'
   | 'visualPrompt'
   | 'asset'
@@ -43,6 +46,7 @@ export type ScenePreviewChangedField =
   | 'logo';
 
 const CHANGE_REASONS: Record<ScenePreviewChangedField, string> = {
+  activeScenes: 'Thứ tự scene đang bật đã thay đổi sau lần render.',
   popupPlan: 'popup plan changed after render',
   narration: 'lời dẫn scene đã thay đổi sau lần render',
   visualPrompt: 'visual prompt scene đã thay đổi sau lần render',
@@ -61,7 +65,13 @@ const CHANGE_REASONS: Record<ScenePreviewChangedField, string> = {
 };
 
 export function createScenePreviewFingerprint(scene: Scene, project: ProjectDetail): ScenePreviewFingerprint {
+  const sceneIndex = project.scenes.findIndex((candidate) => candidate.id === scene.id);
+  const scenesThroughCurrent = sceneIndex >= 0 ? project.scenes.slice(0, sceneIndex + 1) : [scene];
   return {
+    activeScenes: {
+      sceneActive: scene.active !== false,
+      orderedIdsThroughScene: activeScenes(scenesThroughCurrent).map((candidate) => candidate.id),
+    },
     narration: scene.narration,
     visualPrompt: scene.visualPrompt,
     asset: {
@@ -86,6 +96,7 @@ export function createScenePreviewFingerprint(scene: Scene, project: ProjectDeta
 }
 
 const CHANGED_FIELDS: ReadonlyArray<ScenePreviewChangedField> = [
+  'activeScenes',
   'narration', 'visualPrompt', 'asset', 'voiceover', 'sfx', 'motionPrompt', 'durationSec',
   'renderSettings', 'renderEngine', 'keywordPopups', 'popupPlan', 'transitionStyle', 'filmLook', 'parallax', 'logo',
 ];

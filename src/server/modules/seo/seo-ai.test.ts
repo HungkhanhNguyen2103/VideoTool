@@ -88,6 +88,18 @@ describe('SEO AI generation', () => {
     expect(prompt.jsonSchema).toMatchObject({ type: 'object' });
   });
 
+  it('uses active scenes only for the SEO duration and opening excerpt', () => {
+    const inactive = { ...project.scenes[0]!, id: 'scene-off', narration: 'INACTIVE_SENTINEL', durationSec: 40, active: false };
+    const active = { ...project.scenes[0]!, id: 'scene-on', narration: 'ACTIVE_SENTINEL', durationSec: 20, active: true };
+    const activeProject = { ...project, scenes: [inactive, active] };
+
+    const prompt = buildSeoPrompt(activeProject, ['titles']);
+
+    expect(prompt.user).toContain('Duration seconds: 20');
+    expect(prompt.user).toContain('ACTIVE_SENTINEL');
+    expect(prompt.user).not.toContain('INACTIVE_SENTINEL');
+  });
+
   it('maps snake_case output, creates stable ids, removes duplicate tags, and drops invalid hashtags', () => {
     const parsed = parseSeoOutput(generatedJson, ['titles', 'description', 'tags', 'pinnedComment', 'thumbnail']);
 

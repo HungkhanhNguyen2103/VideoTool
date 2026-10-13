@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { SEO_DESCRIPTION_MAX_CHARS, SEO_HASHTAGS_MAX_COUNT, SEO_SECTIONS, SEO_TAGS_MAX_CHARS, SEO_THUMBNAIL_MAX_WORDS, SEO_TITLE_MAX_CHARS, SEO_TITLE_RECOMMENDED_MAX_CHARS, type SeoSection } from '../../../../contracts/seo';
 import { loadSeoPreset } from './presets/loader';
 import { SeoAiOutputSchema } from './output-schema';
+import { activeScenes } from '../../../../contracts/scene-active';
 
 export type SeoBuiltPrompt = { system: string; user: string; jsonSchema: Record<string, unknown>; promptVersion: string };
 
@@ -15,13 +16,12 @@ function selectedSections(sections: readonly SeoSection[]): SeoSection[] {
 }
 
 function openingExcerpt(project: ProjectDetail): string {
-  const firstChapterCount = project.chapters[0]?.scenesCount ?? 0;
-  const opening = project.scenes.slice(0, firstChapterCount)[0]?.narration.trim() ?? '';
+  const opening = activeScenes(project.scenes)[0]?.narration.trim() ?? '';
   return opening.slice(0, 1000) || '(none)';
 }
 
 function totalDuration(project: ProjectDetail): number {
-  return project.scenes.reduce((sum, scene) => sum + scene.durationSec, 0);
+  return activeScenes(project.scenes).reduce((sum, scene) => sum + scene.durationSec, 0);
 }
 
 export function buildSeoPrompt(project: ProjectDetail, sections: readonly SeoSection[] = SEO_SECTIONS): SeoBuiltPrompt {

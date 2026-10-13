@@ -13,7 +13,7 @@ export interface VideoRenderer {
   renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<Buffer>;
 }
 
-export type RenderVideoOptions = { draft?: boolean };
+export type RenderVideoOptions = { draft?: boolean; originalSceneNumbers?: readonly number[]; originalSceneCount?: number };
 
 type RendererOptions = {
   filesDir?: string;
@@ -82,13 +82,14 @@ export class FfmpegRenderer implements VideoRenderer {
     }
   }
 
-  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, _options?: RenderVideoOptions): Promise<Buffer> {
-    void _options;
+  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<Buffer> {
     const directory = await mkdtemp(path.join(tmpdir(), 'video-tool-render-'));
     try {
       const segmentPaths: string[] = [];
       for (const [index, scene] of project.scenes.entries()) {
-        await appendLog(`Rendering scene ${index + 1}/${project.scenes.length}…`);
+        const sceneNumber = options?.originalSceneNumbers?.[index] ?? index + 1;
+        const sceneCount = options?.originalSceneCount ?? project.scenes.length;
+        await appendLog(`Rendering scene ${sceneNumber}/${sceneCount}…`);
         const filename = `segment-${String(index + 1).padStart(4, '0')}.mp4`;
         await this.renderSegment(project, scene, directory, filename, appendLog);
         segmentPaths.push(path.join(directory, filename));

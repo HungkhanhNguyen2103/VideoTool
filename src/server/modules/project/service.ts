@@ -51,6 +51,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     sceneTailSec: doc.sceneTailSec,
     sfxVolume: doc.sfxVolume,
     renderFileId: doc.renderFileId,
+    renderedActiveSceneIds: doc.renderedActiveSceneIds,
     draftRenderFileId: doc.draftRenderFileId,
     bgmMood: doc.bgmMood,
     bgmFileId: doc.bgmFileId,
@@ -183,6 +184,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     createdAt: now,
     updatedAt: now,
   };
+  delete doc.renderedActiveSceneIds;
   await insertProject(doc);
   return toDetail(doc);
 }
@@ -605,8 +607,9 @@ export async function setSceneDepthMap(
   return result.matchedCount > 0;
 }
 
-export async function setProjectRenderFile(id: string, renderFileId: string): Promise<ProjectDetail> {
-  await updateProject(id, { renderFileId, status: 'rendered' });
+export async function setProjectRenderFile(id: string, renderFileId: string, renderedActiveSceneIds?: readonly string[]): Promise<ProjectDetail> {
+  const activeSceneIds = renderedActiveSceneIds ?? activeScenes((await getProject(id)).scenes).map((scene) => scene.id);
+  await updateProject(id, { renderFileId, renderedActiveSceneIds: [...activeSceneIds], status: 'rendered' });
   return getProject(id);
 }
 

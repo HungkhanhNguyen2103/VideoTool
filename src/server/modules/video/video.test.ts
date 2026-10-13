@@ -9,6 +9,8 @@ import type { Server } from 'node:http';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
 import { AppError } from '../../shared/errors';
+import type { Scene } from '../../../contracts/project';
+import { activeScenes } from '../../../contracts/scene-active';
 import { areNameCandidatesFresh, hashNarration } from '../../../contracts/name-keywords';
 import {
   createProject,
@@ -254,13 +256,14 @@ describe('video project mutations', () => {
     await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', voiceoverDurationSec: 2.2, sfxFileId: 'sfx-1' });
     await setProjectSceneNameCandidates(project.id, [{ sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1', nameCandidates: candidateRecord() }]);
     await setProjectBgm(project.id, 'calm', 'bgm-1');
-    await setProjectRenderFile(project.id, 'render-1');
+    await setProjectRenderFile(project.id, 'render-1', ['scene-1']);
     await setProjectDraftRenderFile(project.id, 'draft-1');
     await setProjectLogo(project.id, 'logo-1');
 
     const duplicate = await duplicateProject(project.id);
 
     expect(duplicate.renderFileId).toBeNull();
+    expect(duplicate.renderedActiveSceneIds).toBeUndefined();
     expect(duplicate.draftRenderFileId).toBeNull();
     expect(duplicate.bgmFileId).toBeNull();
     expect(duplicate.logoFileId).toBeNull();
@@ -991,15 +994,36 @@ describe('video orchestration services', () => {
 
     const updated = await getProject(project.id);
     expect(updated).toMatchObject({ status: 'rendered', renderFileId: expect.any(String) });
+    expect(updated.renderedActiveSceneIds).toEqual(['scene-1']);
     const files = await createFileStoreService(filesDir).listProjectFiles(project.id);
     expect(files).toContainEqual(expect.objectContaining({ purpose: 'render', mimeType: 'video/mp4' }));
     expect(renderer.renderFullVideo).toHaveBeenCalledOnce();
-    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), reportProgress);
+    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), reportProgress, { originalSceneNumbers: [1], originalSceneCount: 1 });
+  });
+
+  it('renders only active scenes and snapshots the ordered ids from the same active timeline', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [
+      { id: 'scene-1', narration: 'First', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+      { id: 'scene-2', narration: 'Inactive middle', visualPrompt: '', durationSec: 9, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, active: false },
+      { id: 'scene-3', narration: 'Last', visualPrompt: '', durationSec: 2, assetType: 'image', assetFileId: 'asset-3', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    ]);
+    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('mp4')) };
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+
+    await renderFullProject(project.id, async () => undefined, async () => undefined);
+
+    const [renderProject, , , renderOptions] = renderer.renderFullVideo.mock.calls[0]!;
+    const renderedScenes = renderProject.scenes as Scene[];
+    expect(renderedScenes.map((scene) => scene.id)).toEqual(['scene-1', 'scene-3']);
+    expect(renderedScenes.reduce((sum, scene) => sum + scene.durationSec, 0)).toBe(3);
+    expect(renderOptions).toEqual({ originalSceneNumbers: [1, 3], originalSceneCount: 3 });
+    expect((await getProject(project.id)).renderedActiveSceneIds).toEqual(['scene-1', 'scene-3']);
   });
 
   it('stores draft output separately without changing final render metadata or status', async () => {
     const project = await seedProject();
-    await setProjectRenderFile(project.id, 'existing-final-render');
+    await setProjectRenderFile(project.id, 'existing-final-render', ['scene-1']);
     await setProjectRenderEngine(project.id, 'remotion');
     const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('draft-mp4')) };
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
@@ -1007,9 +1031,9 @@ describe('video orchestration services', () => {
     await renderFullProject(project.id, async () => undefined, async () => undefined, { draft: true });
 
     const updated = await getProject(project.id);
-    expect(updated).toMatchObject({ status: 'rendered', renderFileId: 'existing-final-render', draftRenderFileId: expect.any(String) });
+    expect(updated).toMatchObject({ status: 'rendered', renderFileId: 'existing-final-render', renderedActiveSceneIds: ['scene-1'], draftRenderFileId: expect.any(String) });
     expect(await createFileStoreService(filesDir).listProjectFiles(project.id)).toContainEqual(expect.objectContaining({ purpose: 'render-draft', originalName: 'render-draft.mp4' }));
-    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), expect.any(Function), { draft: true });
+    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), expect.any(Function), { draft: true, originalSceneNumbers: [1], originalSceneCount: 1 });
   });
 });
 
@@ -1824,6 +1848,11 @@ describe('real FFmpeg integration', () => {
     expect(generatedBgm.status).toBe(0);
     const project = await seedProject();
     await setProjectBgm(project.id, 'test', 'bgm-1');
+    await replaceProjectScenes(project.id, [
+      { id: 'scene-1', narration: 'First', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+      { id: 'scene-2', narration: 'Inactive sentinel', visualPrompt: '', durationSec: 9, assetType: 'image', assetFileId: 'asset-2', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, active: false },
+      { id: 'scene-3', narration: 'Last', visualPrompt: '', durationSec: 2, assetType: 'image', assetFileId: 'asset-3', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
+    ]);
     const renderer = new FfmpegRenderer({
       ffmpegPath,
       resolveFilePath: async (_projectId, fileId) => fileId === 'bgm-1'
@@ -1834,11 +1863,19 @@ describe('real FFmpeg integration', () => {
     const latest = await getProject(project.id);
     const preview = await renderer.renderScenePreview(latest, latest.scenes[0]!);
     const progress: number[] = [];
-    const full = await renderer.renderFullVideo(latest, async () => undefined, async (percent) => { progress.push(percent); });
+    const renderLogs: string[] = [];
+    const activeProject = { ...latest, scenes: activeScenes(latest.scenes) };
+    const full = await renderer.renderFullVideo(activeProject, async (message) => { renderLogs.push(message); }, async (percent) => { progress.push(percent); }, { originalSceneNumbers: [1, 3], originalSceneCount: 3 });
 
     expect(preview.byteLength).toBeGreaterThan(100);
     expect(full.byteLength).toBeGreaterThan(100);
-    expect(progress).toEqual([90, 100]);
+    expect(progress).toEqual([45, 90, 100]);
+    expect(renderLogs.filter((line) => line.startsWith('Rendering scene'))).toEqual(['Rendering scene 1/3…', 'Rendering scene 3/3…']);
+    const fullPath = path.join(filesDir, 'active-scenes-with-bgm.mp4');
+    await writeFile(fullPath, full);
+    const fullDuration = spawnSync(ffprobePath, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', fullPath], { encoding: 'utf8' });
+    expect(fullDuration.status).toBe(0);
+    expect(Number.parseFloat(fullDuration.stdout.trim())).toBeCloseTo(3, 1);
 
     const shortVideoPath = path.join(filesDir, 'short.mp4');
     const shortOutputPath = path.join(filesDir, 'short-preview.mp4');

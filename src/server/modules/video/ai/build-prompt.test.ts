@@ -22,4 +22,17 @@ describe('popup analysis prompt', () => {
     expect(prompt).toContain('display chỉ được có một con số duy nhất kèm danh từ');
     expect(prompt).toContain('3.000 quân');
   });
+
+  it('omits inactive scenes from popup analysis prompt context', () => {
+    const prompt = buildPopupAnalysisPrompt({
+      title: 'Title', brief: 'Brief', referencesText: 'Sources', language: 'en', density: 'low',
+      scenes: [
+        { scene: 1, startSec: 0, narration: 'INACTIVE_SENTINEL', active: false },
+        { scene: 2, startSec: 1, narration: 'ACTIVE_SENTINEL' },
+      ],
+    });
+
+    expect(prompt).not.toContain('INACTIVE_SENTINEL');
+    expect(prompt).toContain('ACTIVE_SENTINEL');
+  });
 });

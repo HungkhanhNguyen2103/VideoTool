@@ -244,6 +244,7 @@ export const ProjectDetailSchema = z.object({
   sceneTailSec: SceneTailSecSchema.default(DEFAULT_SCENE_TAIL_SEC),
   sfxVolume: SfxVolumeSchema.default(0.5),
   renderFileId: z.string().nullable().default(null),
+  renderedActiveSceneIds: z.array(z.string()).optional(),
   draftRenderFileId: z.string().nullable().default(null),
   bgmMood: z.string().default(''),
   bgmFileId: z.string().nullable().default(null),

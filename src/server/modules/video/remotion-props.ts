@@ -5,6 +5,7 @@ import type { FilePurpose } from '../../../contracts/file';
 import { AppError } from '../../shared/errors';
 import { annotateYearKeywords, resolveFilmLookByTimedWords, selectProjectSceneKeywords } from './keywords';
 import { isDepthSceneEligible } from './depth-eligibility';
+import { activeScenes } from '../../../contracts/scene-active';
 
 export type ResolvedRenderFile = {
   absolutePath: string;
@@ -84,7 +85,7 @@ export async function resolveRemotionAssets(
   validateRenderId(renderId);
   const sources: RemotionSource[] = [];
   const sceneProps: RemotionSceneProps[] = [];
-  const keywordContextScenes = options.keywordContextScenes ?? scenes;
+  const keywordContextScenes = activeScenes(options.keywordContextScenes ?? scenes);
   const contextKeywords = selectProjectSceneKeywords(keywordContextScenes).map((selection) => selection.keywords);
   const annotatedContextKeywords = annotateYearKeywords(contextKeywords);
   const keywordsBySceneId = new Map(keywordContextScenes.map((scene, index) => [scene.id, annotatedContextKeywords[index]!]));

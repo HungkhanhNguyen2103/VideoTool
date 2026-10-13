@@ -1,5 +1,6 @@
 import type { ProjectDetail } from './project';
 import { secondsToFrames } from './frame-math';
+import { activeScenes } from './scene-active';
 import {
   SEO_HASHTAGS_MAX_COUNT,
   SEO_THUMBNAIL_MAX_BYTES,
@@ -24,8 +25,8 @@ export type ChapterTimestamp = {
 };
 
 export type ChapterTimestampsResult =
-  | { ok: true; timestamps: ChapterTimestamp[] }
-  | { ok: false; reason: string };
+  | { ok: true; timestamps: ChapterTimestamp[]; warnings: string[] }
+  | { ok: false; reason: string; warnings?: string[] };
 
 /** Match 2+ digit numbers and grouped forms such as 1.954 or 1,954. */
 const FACT_NUMBER_RE = /(?<![\p{L}\p{N}])(?:\d{1,3}(?:[.,]\d{3})+|\d{2,})(?![\p{L}\p{N}])/gu;
@@ -67,12 +68,16 @@ export function chapterTimestamps(project: TimingProject): ChapterTimestampsResu
   let sceneIndex = 0;
   let startFrame = 0;
   const timestamps: ChapterTimestamp[] = [];
+  const warnings: string[] = [];
   for (const chapter of chapters) {
     const count = chapter.scenesCount!;
-    let durationInFrames = 0;
-    for (let offset = 0; offset < count; offset += 1) {
-      durationInFrames += secondsToFrames(scenes[sceneIndex + offset]!.durationSec, fps);
+    const chapterScenes = activeScenes(scenes.slice(sceneIndex, sceneIndex + count));
+    sceneIndex += count;
+    if (chapterScenes.length === 0) {
+      warnings.push(`Chapter ${chapter.no} kh\u00f4ng c\u00f3 scene n\u00e0o \u0111ang b\u1eadt n\u00ean m\u1ed1c th\u1eddi gian \u0111\u00e3 b\u1ecb b\u1ecf qua.`);
+      continue;
     }
+    const durationInFrames = chapterScenes.reduce((sum, scene) => sum + secondsToFrames(scene.durationSec, fps), 0);
     timestamps.push({
       no: chapter.no,
       title: chapter.title,
@@ -82,14 +87,13 @@ export function chapterTimestamps(project: TimingProject): ChapterTimestampsResu
       startFrame,
       durationInFrames,
     });
-    sceneIndex += count;
     startFrame += durationInFrames;
   }
 
-  if (timestamps.length < 3) return { ok: false, reason: 'Cần ít nhất 3 chương để tạo mốc YouTube.' };
-  if (timestamps[0]?.startFrame !== 0) return { ok: false, reason: 'Mốc chương đầu tiên phải bắt đầu từ 0:00.' };
-  if (timestamps.some((timestamp) => timestamp.durationSec < 10)) return { ok: false, reason: 'Mỗi chương phải dài ít nhất 10 giây.' };
-  return { ok: true, timestamps };
+  if (timestamps.length < 3) return { ok: false, reason: 'Cần ít nhất 3 chương để tạo mốc YouTube.', warnings };
+  if (timestamps[0]?.startFrame !== 0) return { ok: false, reason: 'Mốc chương đầu tiên phải bắt đầu từ 0:00.', warnings };
+  if (timestamps.some((timestamp) => timestamp.durationSec < 10)) return { ok: false, reason: 'Mỗi chương phải dài ít nhất 10 giây.', warnings };
+  return { ok: true, timestamps, warnings };
 }
 
 export function assembleDescription(seo: Pick<SeoPackage, 'descriptionIntro' | 'hashtags' | 'tags'>, project: TimingProject): string {
@@ -186,8 +190,8 @@ export function findUnsupportedFacts(texts: readonly string[], sourceText: strin
   return unsupported;
 }
 
-export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'video';
-export type PublishChecklistItem = { key: PublishChecklistKey; label: string; done: boolean; detail: string };
+export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'chapter-timestamps' | 'video';
+export type PublishChecklistItem = { key: PublishChecklistKey; label: string; done: boolean; detail: string; warning?: boolean };
 export type PublishThumbnailFile = { id: string; mimeType: string; sizeBytes: number };
 
 /** Build the warn-only publish checklist from the project package and optional file metadata. */
@@ -201,7 +205,9 @@ export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: Pu
       && (thumbnailFile.mimeType === 'image/png' || thumbnailFile.mimeType === 'image/jpeg')
       && thumbnailFile.sizeBytes <= SEO_THUMBNAIL_MAX_BYTES
     : Boolean(seo.thumbnail.fileId);
+  const chapterWarnings = chapterTimestamps(project).warnings ?? [];
   return [
+    ...(chapterWarnings.length > 0 ? [{ key: 'chapter-timestamps' as const, label: 'M\u1ed1c ch\u01b0\u01a1ng', done: true, warning: true, detail: chapterWarnings.join(' ') }] : []),
     { key: 'title', label: 'Đã chọn tiêu đề', done: Boolean(title && titleStatus(title.text).length <= SEO_TITLE_MAX_CHARS), detail: title?.text ?? 'Chưa chọn tiêu đề.' },
     { key: 'description', label: 'Có mô tả', done: seo.descriptionIntro.trim().length > 0, detail: seo.descriptionIntro.trim() ? 'Mô tả đã có phần mở đầu.' : 'Chưa có phần mở đầu mô tả.' },
     { key: 'tags', label: 'Tags trong ngân sách', done: !tags.overLimit && seo.tags.length > 0, detail: `${tags.used}/${tags.max} ký tự.` },

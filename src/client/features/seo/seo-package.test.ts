@@ -53,4 +53,22 @@ describe('SEO publish package helpers', () => {
     expect(markdown).toContain('Bẫy hoàn hảo');
     expect(slugifyPackageTitle('Điện Biên Phủ: Một thế trận!')).toBe('dien-bien-phu-mot-the-tran');
   });
+
+  it('keeps all-inactive chapter timestamps warn-only and omits them from the package', () => {
+    const value = project();
+    value.scenes = [1, 2, 3, 4].map((number) => ({
+      id: `scene-${number}`, narration: `Scene ${number}`, visualPrompt: '', durationSec: 10, active: number !== 2,
+    })) as unknown as ProjectDetail['scenes'];
+    value.chapters = [1, 2, 3, 4].map((number) => ({
+      id: `chapter-${number}`, no: number, title: `Chapter ${number}`, paragraphs: [`Scene ${number}`], status: 'approved', scenesCount: 1, durationSec: 10,
+    })) as unknown as ProjectDetail['chapters'];
+
+    const checklist = buildPublishChecklist(value);
+    const timelineNote = checklist.find((item) => item.key === 'chapter-timestamps');
+    const markdown = buildPackageMarkdown(value);
+
+    expect(timelineNote).toMatchObject({ done: true, warning: true, detail: expect.stringContaining('Chapter 2') });
+    expect(markdown).toContain('0:10 Chapter 3');
+    expect(markdown).not.toContain('Chapter 2');
+  });
 });

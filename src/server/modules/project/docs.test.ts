@@ -97,6 +97,11 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 }).popupPlan).toBeNull();
   });
 
+  it('stores the ordered active scene ids used for a final render and keeps legacy documents without a snapshot', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).renderedActiveSceneIds).toBeUndefined();
+    expect(ProjectDocSchema.parse({ ...validLegacyDoc, renderedActiveSceneIds: ['scene-1', 'scene-3'] }).renderedActiveSceneIds).toEqual(['scene-1', 'scene-3']);
+  });
+
   it('defaults legacy scene documents to active and preserves active:false in project documents', () => {
     const legacyScene = SceneDocSchema.parse({ id: 'scene-1', narration: '', visualPrompt: '', durationSec: 1 });
     expect(legacyScene.active).toBe(true);

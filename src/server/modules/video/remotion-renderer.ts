@@ -2,6 +2,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { cpus, freemem } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import type { ProjectDetail, Scene } from '../../../contracts/project';
+import { activeScenes } from '../../../contracts/scene-active';
 import { sceneFrameTimings, sceneVisualTimings } from '../../../remotion/frame-math';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../shared/logger';
@@ -99,7 +100,8 @@ export class RemotionRenderer implements VideoRenderer {
   }
 
   async renderScenePreview(project: ProjectDetail, scene: Scene): Promise<Buffer> {
-    return this.render({ ...project, bgmFileId: null }, [scene]);
+    const activeProject = { ...project, scenes: activeScenes(project.scenes ?? [scene]) };
+    return this.render({ ...activeProject, bgmFileId: null }, [scene]);
   }
 
   async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<Buffer> {
@@ -231,13 +233,13 @@ export class RemotionRenderer implements VideoRenderer {
         if (metrics.frames === 0) continue;
         const scene = stagedScenes[index]!;
         const throughput = metrics.elapsedMs > 0 ? `${(metrics.frames / (metrics.elapsedMs / 1000)).toFixed(2)} frames/s` : 'not measurable';
-        await this.logMessage(`Remotion scene throughput ${index + 1} ${scene.id}: ${metrics.frames} frames in ${seconds(metrics.elapsedMs)}s (${throughput}, estimated from progress intervals; ${scene.assetType}, filmLook ${scene.filmLook ? 'on' : 'off'}, popups ${scene.keywords.length}, transition ${renderProject.transitionStyle ?? 'varied'}).`, appendLog);
+        await this.logMessage(`Remotion scene throughput ${options?.originalSceneNumbers?.[index] ?? index + 1} ${scene.id}: ${metrics.frames} frames in ${seconds(metrics.elapsedMs)}s (${throughput}, estimated from progress intervals; ${scene.assetType}, filmLook ${scene.filmLook ? 'on' : 'off'}, popups ${scene.keywords.length}, transition ${renderProject.transitionStyle ?? 'varied'}).`, appendLog);
       }
       for (const slowFrame of renderResult.slowestFrames) {
         const sceneIndexes = sceneIndexesForVisualFrame(slowFrame.frame, visualTimings);
         const sceneDetails = sceneIndexes.map((index) => {
           const scene = stagedScenes[index]!;
-          return `scene ${index + 1} ${scene.id} (${scene.assetType}, filmLook ${scene.filmLook ? 'on' : 'off'}, popups ${scene.keywords.length}, transition ${renderProject.transitionStyle ?? 'varied'})`;
+          return `scene ${options?.originalSceneNumbers?.[index] ?? index + 1} ${scene.id} (${scene.assetType}, filmLook ${scene.filmLook ? 'on' : 'off'}, popups ${scene.keywords.length}, transition ${renderProject.transitionStyle ?? 'varied'})`;
         });
         if (sceneDetails.length > 0) await this.logMessage(`Remotion slow frame ${slowFrame.frame}: ${slowFrame.time}ms, ${sceneDetails.join('; ')}.`, appendLog);
       }

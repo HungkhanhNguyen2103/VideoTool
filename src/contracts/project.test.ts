@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateProjectRequestSchema, SceneSchema } from './project';
+import { CreateProjectRequestSchema, ProjectDetailSchema, SceneSchema } from './project';
 
 const validCreateInput = {
   title: 'Contract project',
@@ -48,5 +48,30 @@ describe('scene active field', () => {
   it('defaults legacy scenes to active and preserves an explicit inactive flag', () => {
     expect(SceneSchema.parse(legacyScene).active).toBe(true);
     expect(SceneSchema.parse({ ...legacyScene, active: false }).active).toBe(false);
+  });
+});
+
+describe('render snapshot contract', () => {
+  const projectDetail = {
+    id: 'project-1',
+    title: 'Project',
+    status: 'rendered',
+    language: 'vi',
+    brief: '',
+    referencesText: '',
+    scriptPresetId: 'documentary',
+    targetDurationSec: 60,
+    chapterCount: null,
+    voiceId: null,
+    renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 },
+    scenes: [],
+    version: 1,
+    createdAt: '2026-10-13T00:00:00.000Z',
+    updatedAt: '2026-10-13T00:00:00.000Z',
+  };
+
+  it('accepts the rendered active-scene snapshot and leaves it absent for legacy projects', () => {
+    expect(ProjectDetailSchema.parse({ ...projectDetail, renderedActiveSceneIds: ['scene-1', 'scene-3'] }).renderedActiveSceneIds).toEqual(['scene-1', 'scene-3']);
+    expect(ProjectDetailSchema.parse(projectDetail).renderedActiveSceneIds).toBeUndefined();
   });
 });

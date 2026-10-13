@@ -402,6 +402,25 @@ describe('Remotion props and public-dir staging', () => {
     expect(props.scenes[0]?.filmLook).toBe(true);
   });
 
+  it('does not let an inactive earlier scene affect a preview film-look chain', async () => {
+    const resolver = async (_projectId: string, fileId: string) => ({
+      absolutePath: path.join(tmpdir(), fileId === 'asset-1' ? 'image.png' : 'voice.wav'),
+      mimeType: fileId === 'asset-1' ? 'image/png' : 'audio/wav',
+      purpose: fileId === 'asset-1' ? 'reference' as const : 'voiceover' as const,
+    });
+    const makeTimedScene = (id: string, yearWords: Array<string>, active = true) => ({
+      id, active, narration: '', visualPrompt: '', assetType: 'image', assetFileId: 'asset-1', audioFileId: 'voice-1', sfxFileId: null, durationSec: 1,
+      wordTimings: { audioFileId: 'voice-1', words: yearWords.map((text, index) => ({ text, startSec: index, endSec: index + .2 })) },
+    }) as unknown as Scene;
+    const earlier = makeTimedScene('scene-1', ['1965'], false);
+    const target = makeTimedScene('scene-2', []);
+    const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, filmLook: 'auto' } as never;
+
+    const props = await buildRemotionInputProps(project, [target], 'render-preview-inactive-context', resolver, { keywordContextScenes: [earlier, target] });
+
+    expect(props.scenes[0]?.filmLook).toBe(false);
+  });
+
   it('resolves owned media and produces generated forward-slash paths', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'remotion-props-'));
     try {
@@ -683,14 +702,14 @@ describe('Remotion renderer orchestration', () => {
       } as never;
       const logs: string[] = [];
 
-      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined);
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { originalSceneNumbers: [1, 3] });
 
       expect(logs).toContain('Remotion frame rendering: 2.40s.');
       expect(logs).toContain('Remotion encoding/stitching: 4.20s.');
       expect(logs).toContain('Remotion audio mixing: not separately exposed by @remotion/renderer.');
       expect(logs.some((message) => message.startsWith('Remotion scene throughput 1 still-scene:'))).toBe(true);
-      expect(logs.some((message) => message.startsWith('Remotion scene throughput 2 clip-scene:'))).toBe(true);
-      expect(logs).toContain('Remotion slow frame 59: 812ms, scene 2 clip-scene (video, filmLook on, popups 0, transition crossfade).');
+      expect(logs.some((message) => message.startsWith('Remotion scene throughput 3 clip-scene:'))).toBe(true);
+      expect(logs).toContain('Remotion slow frame 59: 812ms, scene 3 clip-scene (video, filmLook on, popups 0, transition crossfade).');
       expect(logs).toContain('Remotion slow frame 2: 740ms, scene 1 still-scene (image, filmLook on, popups 0, transition crossfade).');
     } finally {
       await rm(sourceDir, { recursive: true, force: true });

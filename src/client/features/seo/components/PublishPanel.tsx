@@ -11,7 +11,7 @@ export function PublishPanel({ project, thumbnailFile, renderFile, onCopy, onDow
   const checklist = buildPublishChecklist(project, thumbnailFile);
   return <section className={styles.panel} aria-labelledby="seo-publish-title">
     <div className={styles.panelHead}><div><h2 id="seo-publish-title">Sẵn sàng đăng</h2><p className={styles.muted}>Kiểm tra lần cuối trước khi đưa video lên YouTube.</p></div><div className={styles.actions}><Button onClick={onCopy}>Sao chép tất cả</Button><Button variant="amber" onClick={onDownload}>Tải gói đăng (.md)</Button></div></div>
-    <ul className={styles.checklist}>{checklist.map((item) => <li key={item.key} className={item.done ? styles.checkDone : styles.checkPending}><span aria-hidden="true">{item.done ? '✓' : '○'}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span></li>)}</ul>
+    <ul className={styles.checklist}>{checklist.map((item) => <li key={item.key} className={item.warning ? styles.checkWarning : item.done ? styles.checkDone : styles.checkPending}><span aria-hidden="true">{item.warning ? '!' : item.done ? '✓' : '○'}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span></li>)}</ul>
     <div className={styles.publishLinks}>
       {renderFile ? <a href={fileUrlForSummary(renderFile)} download>⬇ Tải video render</a> : <span className={styles.muted}>Chưa có link video render</span>}
       {thumbnailFile ? <a href={fileUrlForSummary(thumbnailFile)} download>⬇ Tải thumbnail</a> : <span className={styles.muted}>Chưa có link thumbnail</span>}

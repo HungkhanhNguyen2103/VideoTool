@@ -1,6 +1,14 @@
 import type { ProjectDetail, Scene } from '../../../contracts/project';
 import { SceneTailSecSchema, hasUnappliedSceneTailForScene, roundDurationSeconds } from '../../../contracts/scene-duration';
 import { isVoiceoverFresh } from '../../../contracts/voiceover';
+import { activeScenes } from '../../../contracts/scene-active';
+
+export type VoiceoverListenQueueEntry = { scene: Scene; sceneNumber: number };
+
+export function buildVoiceoverListenQueue(scenes: readonly Scene[]): VoiceoverListenQueueEntry[] {
+  return activeScenes(scenes.map((scene, index) => ({ scene, sceneNumber: index + 1, active: scene.active })))
+    .map(({ scene, sceneNumber }) => ({ scene, sceneNumber }));
+}
 
 export type VoiceoverListenState = {
   currentIndex: number;

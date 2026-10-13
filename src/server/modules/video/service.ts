@@ -199,13 +199,17 @@ export async function generateProjectBgm(projectId: string, mood: string): Promi
 
 export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<void> {
   const project = await getProject(projectId);
-  assertProjectRenderReady(project);
+  const renderEntries = activeScenes(project.scenes.map((scene, originalIndex) => ({ scene, originalIndex, active: scene.active })));
+  const renderScenes = renderEntries.map(({ scene }) => scene);
+  const originalSceneNumbers = renderEntries.map(({ originalIndex }) => originalIndex + 1);
+  const renderProject = { ...project, scenes: renderScenes };
+  assertProjectRenderReady(renderProject);
   const draft = options?.draft === true;
-  if (draft && project.renderEngine === 'ffmpeg') throw new AppError('Draft render is available only with Remotion.', 422, 'DRAFT_REQUIRES_REMOTION');
-  const renderer = getVideoRenderer(project.renderEngine);
+  if (draft && renderProject.renderEngine === 'ffmpeg') throw new AppError('Draft render is available only with Remotion.', 422, 'DRAFT_REQUIRES_REMOTION');
+  const renderer = getVideoRenderer(renderProject.renderEngine);
   const output = draft
-    ? await renderer.renderFullVideo(project, appendLog, reportProgress, { draft: true })
-    : await renderer.renderFullVideo(project, appendLog, reportProgress);
+    ? await renderer.renderFullVideo(renderProject, appendLog, reportProgress, { draft: true, originalSceneNumbers, originalSceneCount: project.scenes.length })
+    : await renderer.renderFullVideo(renderProject, appendLog, reportProgress, { originalSceneNumbers, originalSceneCount: project.scenes.length });
   const stored = await storeFile({
     projectId,
     originalName: draft ? 'render-draft.mp4' : 'render.mp4',
@@ -214,7 +218,7 @@ export async function renderFullProject(projectId: string, appendLog: (message: 
     purpose: draft ? 'render-draft' : 'render',
   });
   if (draft) await setProjectDraftRenderFile(projectId, stored.id);
-  else await setProjectRenderFile(projectId, stored.id);
+  else await setProjectRenderFile(projectId, stored.id, renderScenes.map((scene) => scene.id));
 }
 
 export async function renderScenePreviewBuffer(projectId: string, sceneId: string): Promise<Buffer> {

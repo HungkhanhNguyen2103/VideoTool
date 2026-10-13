@@ -61,6 +61,8 @@
 .checkDone { color: var(--green); }
 .checkDone small, .checkPending { color: var(--text-2); }
 .checkPending > span:first-child { color: var(--text-3); }
+.checkWarning { color: var(--amber-text, var(--amber)); border-color: var(--amber-border, var(--border)); background: var(--amber-bg, transparent); }
+.checkWarning small { color: var(--text-2); }
 .publishLinks { display: flex; flex-wrap: wrap; gap: 1rem; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .ideaGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .header { align-items: flex-start; flex-direction: column; } .providerHint { width: 100%; margin-left: 0; } .ideaGrid { grid-template-columns: 1fr; } .toolbar .field { flex: 1 1 8rem; } .toolbar .modelSelect { flex-basis: 100%; } }
