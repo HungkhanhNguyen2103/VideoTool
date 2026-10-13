@@ -9,6 +9,7 @@ export type PopupPromptInput = {
   language: 'vi' | 'en';
   density: PopupDensity;
   scenes: readonly PopupPromptScene[];
+  primarySceneNumbers?: readonly number[];
 };
 
 const DENSITY_GUIDANCE: Record<PopupDensity, string> = {
@@ -30,6 +31,7 @@ export function buildPopupAnalysisPrompt(input: PopupPromptInput): string {
     `Brief:\n${input.brief}`,
     `Tài liệu tham khảo:\n${input.referencesText}`,
     `Ngôn ngữ: ${input.language}`,
+    ...(input.primarySceneNumbers ? [`PRIMARY SCENES ONLY: ${input.primarySceneNumbers.join(', ')}. Return verdicts only for these primary scenes; other scenes are context.`] : []),
     'NARRATION SCENES:',
     scenes,
   ].join('\n\n');

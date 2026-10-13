@@ -17,6 +17,7 @@ export {
   setSceneDepthMap,
   setProjectSceneNameCandidates,
   setProjectScenePopupPlans,
+  setProjectPopupDensity,
   setProjectSceneDurations,
   patchProjectChapter,
   replaceProjectChapters,
@@ -44,4 +45,5 @@ export {
 } from './service';
 export { SceneDocSchema } from './docs';
 export type { ProjectDoc, SceneDoc } from './docs';
+export type { ProjectScenePopupPlanUpdate } from './service';
 export { pickVideoSceneIndexes } from './video-scene-picker';

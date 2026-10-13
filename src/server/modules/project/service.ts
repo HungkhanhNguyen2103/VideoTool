@@ -1,5 +1,5 @@
 import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ParallaxStyle, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
-import type { PopupPlan } from '../../../contracts/popup-analysis';
+import { PopupDensitySchema, type PopupDensity, type PopupPlan } from '../../../contracts/popup-analysis';
 import { SeoPackageSchema, SeoPatchSchema, type GeneratedSeoSections, type SeoPatch, type SeoSection } from '../../../contracts/seo';
 import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
 import type { z } from 'zod';
@@ -400,6 +400,12 @@ export async function setProjectScenePopupPlans(id: string, updates: readonly Pr
       && scene.audioFileId === update.expectedAudioFileId
       && scene.popupPlan?.generatedAt === update.popupPlan.generatedAt;
   }).length;
+}
+
+export async function setProjectPopupDensity(id: string, density: PopupDensity): Promise<ProjectDetail> {
+  const parsed = PopupDensitySchema.parse(density);
+  await updateProject(id, { popupDensity: parsed });
+  return getProject(id);
 }
 
 export async function setProjectScenesAssetType(id: string, assetType: 'image' | 'video'): Promise<ProjectDetail> {

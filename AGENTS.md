@@ -10,7 +10,9 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
-_Last updated: 2026-10-13 · Task 97 Part A review round 1 complete; Part B pending_
+- Task 97 Part B adds the cancellable `analyze-popups` job and `POST /api/project/:id/popup-analysis` route for project API or Claude CLI analysis, with density/model payloads, active-job mismatch protection, CLI availability 503 before enqueue, shared audit folders, cooperative cancellation, exact primary-scene verdict parsing, one retry only for malformed JSON, and guarded scene-plan writes. Prompt chunks use measured UTF-8 size with one-scene context overlap; automatic post-alignment analysis is API-only. Its deliberate guard skips when any eligible scene already has a fresh plan, so a single re-voiced scene remains without popups until a manual run; Part C surfaces the stale/unanalysed warning. The render route returns `POPUP_ANALYSIS_IN_PROGRESS` during plan writes, and `PATCH /api/project/:id/popup-density` persists density. Focused Part B coverage is 106/106; the full suite is 1004 passed, 0 failed across 86 files with 1 skipped file; typecheck, lint, and build pass. The existing Vite chunk-size warning remains informational.
+
+_Last updated: 2026-10-13 · Task 97 Parts A-B complete; Part B review round 1 fixes included_
 
 - Task 97 Part A review round 1 adds whole-digit and Vietnamese number tracing (`3000` ↔ `3.000`, dates, years, decimal millions), legacy popup hold/fade windowing with visible insufficient-time drops, and the pure project-wide `assemblePopupPlans` step. Assembly stores every eligible scene verdict, validates/windowed candidates, applies the safety net once across the merged project, records validation/safety drops, and carries pin/suppress flags by scene and normalized anchor. Focused popup-plan coverage is 19/19; the full suite is 989 passed across 84 files with 1 skipped file; typecheck, lint, and build pass. The existing Vite chunk-size warning remains informational. Commit `bd30aa0` contains Part A baseline; the review corrections are in the next commit.
 

@@ -786,10 +786,10 @@ describe('video orchestration services', () => {
 
 type VideoEnqueue = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
 
-async function startVideoRouterServer(enqueueJob: VideoEnqueue, analyzeNameKeywords?: (projectId: string) => Promise<NameKeywordAnalysisSummary>): Promise<string> {
+async function startVideoRouterServer(enqueueJob: VideoEnqueue, analyzeNameKeywords?: (projectId: string) => Promise<NameKeywordAnalysisSummary>, options: { getActiveJob?: (projectId: string, type: string) => Promise<{ id: string; payload: unknown } | null>; getClaudeCliStatus?: () => Promise<{ available: boolean; version?: string; reason?: string; authPathLikely: 'api-key' | 'subscription' }> } = {}): Promise<string> {
   const app = express();
   app.use(express.json());
-  app.use('/api/project', createVideoRouter({ enqueueJob, analyzeNameKeywords }));
+  app.use('/api/project', createVideoRouter({ enqueueJob, analyzeNameKeywords, ...options }));
   app.use((error: { status?: number; code?: string; message?: string; name?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     void next;
     const status = error.status ?? (error.name === 'ZodError' ? 400 : 500);
@@ -800,6 +800,72 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue, analyzeNameKeywo
 }
 
 describe('video routes and worker handlers', () => {
+  it('enqueues popup analysis with the project density', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-popup-1' });
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+    const api = await fetch(`${base}/api/project/${project.id}/popup-analysis`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'api' }),
+    });
+    expect(api.status).toBe(201);
+    expect(enqueueJob).toHaveBeenCalledWith({ type: 'analyze-popups', projectId: project.id, payload: { projectId: project.id, backend: 'api', density: 'low' } });
+  });
+
+  it('rejects unavailable CLI before queueing popup analysis', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn();
+    const cliBase = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue, undefined, {
+      getClaudeCliStatus: async () => ({ available: false, reason: 'not installed', authPathLikely: 'subscription' }),
+    });
+    const cli = await fetch(`${cliBase}/api/project/${project.id}/popup-analysis`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'cli', cliModel: 'claude-haiku-4-5-20251001', density: 'medium' }),
+    });
+    expect(cli.status).toBe(503);
+    expect(await cli.json()).toMatchObject({ error: { code: 'CLAUDE_CLI_UNAVAILABLE' } });
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue popup analysis while a render job is active', async () => {
+    const project = await seedProject();
+    await insertJob({ type: 'render-full-video', projectId: project.id, payload: { projectId: project.id, draft: false } });
+    const enqueueJob = vi.fn();
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue);
+    const response = await fetch(`${base}/api/project/${project.id}/popup-analysis`, { method: 'POST' });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'RENDER_IN_PROGRESS' } });
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('persists popup density and deduplicates a matching active popup-analysis job', async () => {
+    const project = await seedProject();
+    const enqueueJob = vi.fn();
+    const getActiveJob = vi.fn().mockResolvedValue({ id: 'job-popup-existing', payload: { backend: 'cli', density: 'high', cliModel: 'claude-haiku-4-5-20251001' } });
+    const base = await startVideoRouterServer(enqueueJob as unknown as VideoEnqueue, undefined, {
+      getActiveJob,
+      getClaudeCliStatus: async () => ({ available: true, version: 'Claude Code 2.1.294', authPathLikely: 'subscription' }),
+    });
+    const updated = await fetch(`${base}/api/project/${project.id}/popup-density`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ density: 'high' }),
+    });
+    expect(updated.status).toBe(200);
+    expect((await updated.json()).popupDensity).toBe('high');
+    const response = await fetch(`${base}/api/project/${project.id}/popup-analysis`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'cli', cliModel: 'claude-haiku-4-5-20251001' }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ jobId: 'job-popup-existing' });
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('blocks render while popup analysis is writing scene plans', async () => {
+    const project = await seedProject();
+    await insertJob({ type: 'analyze-popups', projectId: project.id, payload: { projectId: project.id, backend: 'api', density: 'low' } });
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    const response = await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: 'POPUP_ANALYSIS_IN_PROGRESS' } });
+  });
+
   it('validates and enqueues an optional voiceover start scene while preserving the default payload', async () => {
     const project = await seedVoiceProject();
     const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' });

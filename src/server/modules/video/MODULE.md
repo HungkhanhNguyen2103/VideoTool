@@ -57,6 +57,8 @@ The active popup authority is the validated per-scene `popupPlan`, not legacy `n
 
 Digit tracing accepts whole digit runs, Vietnamese number phrases, and verified evidence quotes. A single Vietnamese number word such as `năm`, `một`, or `hai` is intentionally lenient because it may be a quantity or ordinary narration; the AI kind/anchor verdict remains authoritative and validation still rejects fabricated numeric values.
 
+Part B runs the project-wide analysis as the cancellable `analyze-popups` job. `POST /api/project/:id/popup-analysis` accepts the API or Claude CLI backend, density, and an optional registry Claude model; CLI availability is checked before enqueue and the worker checks it again. Prompts are measured in UTF-8 bytes, split into primary-scene chunks with one-scene context overlap, and the parser requires exactly the primary verdict set for every chunk. Only malformed JSON retries once; schema, duplicate-scene, missing-scene, and validation failures leave existing plans untouched. API analysis uses the project's provider/model, while CLI runs use the shared `claude-cli` audit folders, bounded output, and cooperative cancellation without changing project AI settings. After word alignment, automatic analysis is API-only. Its deliberate guard skips when any eligible scene already has a fresh plan; consequently, re-voicing only one scene leaves that scene without popups until a manual run, and Part C surfaces the stale/unanalysed warning. The render route returns `POPUP_ANALYSIS_IN_PROGRESS` while this job can write scene plans.
+
 ## Prerequisites and known gaps
 
 - FFmpeg and ffprobe are external prerequisites selected by `FFMPEG_PATH`/`FFPROBE_PATH`, falling back to binaries on `PATH`.
