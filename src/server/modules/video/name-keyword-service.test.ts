@@ -57,7 +57,7 @@ describe('analyzeProjectNameKeywords', () => {
     expect(refreshed.nameCandidates).toMatchObject({
       audioFileId: 'audio-1', provider: 'claude', model: 'fake-model', candidates: [{ phrase: 'Sông Tiền', kind: 'place' }],
     });
-    expect(selectProjectSceneKeywords([refreshed])[0]!.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'ai' });
+    expect(selectProjectSceneKeywords([refreshed])[0]!.popup).toBeNull();
   });
 
   it('retries once when the response is invalid JSON', async () => {
@@ -102,7 +102,7 @@ describe('analyzeProjectNameKeywords', () => {
 
     expect(summary).toMatchObject({ scenesWithName: 0, rejectedCandidates: 0 });
     expect(refreshed.nameCandidates).toMatchObject({ narrationHash: expect.any(String), audioFileId: 'audio-1', candidates: [] });
-    expect(selectProjectSceneKeywords([refreshed])[0]!.popup?.source).toBe('rules');
+    expect(selectProjectSceneKeywords([refreshed])[0]!.popup).toBeNull();
   });
 
   it('leaves stored candidates untouched after both JSON attempts fail', async () => {

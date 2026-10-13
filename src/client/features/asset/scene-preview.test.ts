@@ -54,6 +54,26 @@ describe('scene preview helpers', () => {
     expect(scenePreviewStaleReason(fingerprint, changed)).toBe('cấu hình video đã thay đổi sau lần render');
   });
 
+  it('marks a preview stale when the stored popup plan changes', () => {
+    const fingerprint = createScenePreviewFingerprint({ ...scene, popupPlan: null } as Scene, project);
+    const changed = createScenePreviewFingerprint({ ...scene, popupPlan: { needed: true } } as Scene, project);
+
+    expect(firstChangedScenePreviewField(fingerprint, changed)).toBe('popupPlan');
+    expect(scenePreviewStaleReason(fingerprint, changed)).toContain('popup');
+  });
+
+  it('changes the preview fingerprint after a popup flag or display edit', () => {
+    const basePlan = { needed: true, popups: [{ anchor: 'Sông Tiền', display: 'Sông Tiền', pinned: false, suppressed: false }] };
+    const before = createScenePreviewFingerprint({ ...scene, popupPlan: basePlan } as Scene, project);
+    const afterPin = createScenePreviewFingerprint({ ...scene, popupPlan: { ...basePlan, popups: [{ ...basePlan.popups[0]!, pinned: true }] } } as Scene, project);
+    const afterEdit = createScenePreviewFingerprint({ ...scene, popupPlan: { ...basePlan, popups: [{ ...basePlan.popups[0]!, display: 'Sông Tiền — địa danh' }] } } as Scene, project);
+
+    expect(afterPin.popupPlan).not.toBe(before.popupPlan);
+    expect(afterEdit.popupPlan).not.toBe(before.popupPlan);
+    expect(firstChangedScenePreviewField(before, afterPin)).toBe('popupPlan');
+    expect(firstChangedScenePreviewField(before, afterEdit)).toBe('popupPlan');
+  });
+
   it('does not stale a preview when only the retained tail reference changes', () => {
     const fingerprint = createScenePreviewFingerprint(scene, project);
     const changed = { ...scene, videoTailFileId: 'new-tail' };

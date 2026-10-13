@@ -21,6 +21,7 @@ export type BlockingTaskKind =
   | 'claude-cli-regeneration'
   | 'final-qa'
   | 'name-keywords'
+  | 'popup-analysis'
   | 'recompute-durations'
   | 'qa-bulk-apply';
 
@@ -75,6 +76,7 @@ const TASK_TITLES: Record<BlockingTaskKind, string> = {
   'claude-cli-regeneration': 'Đang tái tạo bằng Claude CLI',
   'final-qa': 'Đang kiểm tra QA',
   'name-keywords': 'Đang phân tích tên popup',
+  'popup-analysis': 'Đang phân tích popup',
   'recompute-durations': 'Đang tính lại thời lượng scene',
   'qa-bulk-apply': 'Đang áp dụng QA',
 };
@@ -101,6 +103,7 @@ export function taskFromBusyKey(busy: string | null, sceneLabelForId: (sceneId: 
   if (busy === 'visual-prompts') return { kind: 'visual-prompts' };
   if (busy === 'split-scenes') return { kind: 'split-scenes' };
   if (busy === 'name-keywords') return { kind: 'name-keywords' };
+  if (busy === 'popup-analysis') return { kind: 'popup-analysis' };
   if (busy === 'recompute-durations') return { kind: 'recompute-durations' };
   const sceneMatch = /^(voice|sfx):(.+)$/.exec(busy);
   if (sceneMatch) {

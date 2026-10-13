@@ -15,7 +15,7 @@ import { createProject, getProject, getProjectHistory, replaceProjectChapters } 
 import { buildRegenerationPromptForChapter, formatRegenerationPrompt } from './service';
 import { createScriptCliStatusRouter, createScriptRouter } from './routes';
 import { handleCliRegeneration, type ScriptCliJobContext } from './cli-regenerate-handler';
-import type { ClaudeCliSpawn } from './cli-runner';
+import type { ClaudeCliSpawn } from '../../shared/claude-cli/cli-runner';
 
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-cli.mjs', import.meta.url));
 const projectInput = {

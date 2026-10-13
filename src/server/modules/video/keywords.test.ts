@@ -1,363 +1,66 @@
 import { describe, expect, it } from 'vitest';
-import { annotateNameKeywords, annotateYearKeywords, FILM_LOOK_BEFORE_YEAR, LOWER_THIRD_HOLD_SEC, parseNumberPhrase, resolveFilmLookByScene, selectKeywords, selectProjectSceneKeywords, type Keyword } from './keywords';
-import type { ValidatedNameCandidate } from './name-keywords';
 import type { Scene } from '../../../contracts/project';
 import { hashNarration } from '../../../contracts/name-keywords';
+import { annotateNameKeywords, annotateYearKeywords, nameKeywordDedupeKey, parseNumberPhrase, resolveFilmLookByTimedWords, selectProjectSceneKeywords, type Keyword } from './keywords';
 
-const words = (items: Array<[string, number, number]>) => items.map(([text, startSec, endSec]) => ({ text, startSec, endSec }));
-const aiName = (phrase: string, kind: ValidatedNameCandidate['kind'], startSec: number, endSec: number, role?: string): ValidatedNameCandidate => ({
-  phrase, kind, ...(role ? { role } : {}), startWordIndex: 0, endWordIndex: 1, startSec, endSec,
-});
+const words = (...items: Array<[string, number, number]>) => items.map(([text, startSec, endSec]) => ({ text, startSec, endSec }));
 
-describe('selectKeywords', () => {
-  it('uses an eligible AI candidate ahead of an earlier rule candidate', () => {
-    const timedWords = words([
-      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['rồi', 1, 1.2], ['gặp', 2, 2.2],
-      ['Nguyễn', 2.3, 2.5], ['Huệ', 2.5, 2.7], ['sau', 5, 5.2], ['đó.', 6, 6.2],
-    ]);
-    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', 'person', 2.3, 2.7)] }))
-      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', nameRole: 'person' }));
-  });
-
-  it('skips a higher-ranked AI candidate with too little remaining audio and tries the next one', () => {
-    const timedWords = words([
-      ['gặp', 0, .2], ['Nguyễn', .3, .5], ['Ánh', .5, .7], ['rồi', 2, 2.2], ['Trần', 8.4, 8.6],
-      ['Hưng', 8.6, 8.8], ['Đạo', 8.8, 9], ['hết.', 9.4, 9.7],
-    ]);
-    expect(selectKeywords(timedWords, { nameCandidates: [
-      aiName('Trần Hưng Đạo', 'person', 8.4, 9), aiName('Nguyễn Ánh', 'person', .3, .7),
-    ] })).toContainEqual(expect.objectContaining({ text: 'Nguyễn Ánh' }));
-  });
-
-  it('falls back to an eligible rule name when every AI candidate fails the hold rule', () => {
-    const timedWords = words([
-      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['rồi', 1, 1.2], ['gặp', 8, 8.2],
-      ['Nguyễn', 8.3, 8.5], ['Ánh', 8.5, 8.7], ['hết.', 9.4, 9.7],
-    ]);
-    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Ánh', 'person', 8.3, 8.7)] }))
-      .toContainEqual(expect.objectContaining({ text: 'Sông Tiền', nameRole: 'place' }));
-  });
-
-  it('maps AI candidate kinds to the existing lower-third roles', () => {
-    const timedWords = words([
-      ['gặp', 0, .2], ['Nguyễn', .3, .5], ['Huệ,', .5, .7], ['sau', 4, 4.2], ['đó.', 6, 6.2],
-    ]);
-    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', 'person', .3, .7, 'tướng')] }))
-      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', kind: 'name', nameRole: 'person', subtitle: 'Tướng' }));
-    expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', 'place', .3, .7)] }))
-      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', nameRole: 'place' }));
-    for (const kind of ['event', 'group'] as const) {
-      expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', kind, .3, .7, 'tướng')] }))
-        .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', kind: 'name' }));
-      expect(selectKeywords(timedWords, { nameCandidates: [aiName('Nguyễn Huệ', kind, .3, .7)] })[0]).not.toHaveProperty('nameRole');
-    }
-  });
-
-  it('keeps no-options rule output unchanged', () => {
-    const timedWords = words([
-      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['rồi', 1, 1.2], ['sau', 5, 5.2], ['đó.', 6, 6.2],
-    ]);
-    expect(selectKeywords(timedWords)).toEqual([
-      { text: 'Sông Tiền', startSec: .3, endSec: 3.6, kind: 'name', nameRole: 'place' },
-    ]);
-  });
-
-  it('skips previously used names before choosing the next AI candidate, then tries rules', () => {
-    const timedWords = words([
-      ['trên', 0, .2], ['sông', .3, .5], ['Tiền,', .5, .7], ['gặp', 1, 1.2], ['Nguyễn', 1.3, 1.5], ['Huệ,', 1.5, 1.7],
-      ['sau', 2, 2.2], ['Trần', 3, 3.2], ['Hưng', 3.2, 3.4], ['Đạo', 3.4, 3.6], ['rồi', 5, 5.2], ['đi.', 6, 6.2],
-    ]);
-    const options = { nameCandidates: [aiName('Sông Tiền', 'place', .3, .7), aiName('Nguyễn Huệ', 'person', 1.3, 1.7)] };
-    expect(selectKeywords(timedWords, { ...options, usedNameKeys: new Set(['tien']) }))
-      .toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ' }));
-    expect(selectKeywords(timedWords, { ...options, usedNameKeys: new Set(['tien', 'nguyen hue']) }))
-      .toContainEqual(expect.objectContaining({ text: 'Trần Hưng Đạo' }));
-  });
-
-  it('merges number units, strips punctuation, and finishes fading by the final word', () => {
-    expect(selectKeywords(words([
-      ['Doanh', 0, .3], ['thu', .3, .6], ['30', 1, 1.2], ['tỷ', 1.2, 1.5], ['đô', 1.5, 1.8], ['la,', 1.8, 2],
-      ['tăng', 2.3, 2.6], ['mạnh.', 3, 3.3],
-    ]))).toMatchObject([{ text: '30 tỷ đô la', startSec: 1, endSec: 2.5 }]);
-  });
-
-  it('excludes sentence-start capitals and selects one later proper-name run', () => {
-    expect(selectKeywords(words([
-      ['Eastman', 0, .3], ['Kodak', .3, .6], ['đã', .7, .9], ['gặp', 1, 1.2], ['Steven', 1.3, 1.6], ['Sasson.', 1.6, 1.9],
-      ['ở', 3.7, 3.9], ['New', 4, 4.2], ['York', 4.2, 4.4], ['rất', 4.5, 4.7], ['lớn', 5, 5.2],
-    ]))).toMatchObject([
-      { text: 'Steven Sasson', kind: 'name', nameRole: 'person', startSec: 1.3, endSec: 4.6 },
-    ]);
-  });
-
-  it('does not treat names immediately after sentence punctuation as pop-ups', () => {
-    expect(selectKeywords(words([
-      ['Hết.', 0, .3], ['New', .5, .7], ['York', .7, .9], ['rồi', 1, 1.2], ['thôi', 2, 2.2],
-    ]))).toMatchObject([]);
-  });
-
-  it('selects two centre pop-ups and one independent lower third', () => {
-    expect(selectKeywords(words([
-      ['hãng', 0, .2], ['Eastman', .4, .6], ['Kodak', .6, .8], ['có', 1, 1.1],
-      ['30', 1.2, 1.4], ['tỷ', 1.4, 1.6], ['và', 2, 2.2], ['40', 3.8, 4], ['triệu', 4, 4.2],
-      ['đến', 5, 5.2], ['Steven', 6, 6.2], ['Sasson', 6.2, 6.4], ['rồi', 7, 7.2], ['kết', 8, 8.2], ['thúc', 8.2, 8.4],
-    ]))).toMatchObject([
-      { text: 'Eastman Kodak', kind: 'name', nameRole: 'person', startSec: .4, endSec: 3.7 },
-      { text: '30 tỷ', kind: 'number', startSec: 1.2, endSec: 2.7 },
-      { text: '40 triệu', kind: 'number', startSec: 3.8, endSec: 5.3 },
-    ]);
-  });
-
-  it('skips overlapping or too-close candidates and returns none without timings', () => {
-    expect(selectKeywords([])).toEqual([]);
-    expect(selectKeywords(words([
-      ['vào', 0, .2], ['1975.', .3, .5], ['có', 1, 1.2], ['2012', 1.4, 1.6], ['rồi', 3, 3.2], ['2020', 4.1, 4.3], ['kết', 6, 6.2],
-    ]))).toMatchObject([
-      { text: '1975', startSec: .3, endSec: 1.8 },
-      { text: '2020', startSec: 4.1, endSec: 5.6 },
-    ]);
-  });
-
-  it('clamps late phrases so their entire fade finishes before audio ends', () => {
-    expect(selectKeywords(words([
-      ['giá', 0, .2], ['30', 1, 1.2], ['tỷ', 1.2, 1.4], ['hết', 1.45, 1.7],
-    ]))).toMatchObject([{ text: '30 tỷ', startSec: 1, endSec: 1.7 }]);
-  });
-
-  it('retains percent signs whether attached to a number or spoken as a separate token', () => {
-    expect(selectKeywords(words([
-      ['gần', 0, .2], ['90%,', .5, .8], ['và', 2, 2.2], ['85', 3.2, 3.4], ['%', 3.4, 3.6], ['hết', 5, 5.2],
-    ]))).toMatchObject([
-      { text: '90%', startSec: .5, endSec: 2 },
-      { text: '85%', startSec: 3.2, endSec: 4.7 },
-    ]);
-  });
-
-  it('turns a full Vietnamese date into one compact pop-up instead of a bare day', () => {
-    expect(selectKeywords(words([
-      ['Ngày', 0, .2], ['19', .2, .4], ['tháng', .4, .6], ['1', .6, .8], ['năm', .8, 1], ['2012,', 1, 1.3], ['sau', 2, 2.2], ['đó', 2.2, 2.4],
-    ]))).toMatchObject([{ text: '19/1/2012', startSec: 0, endSec: 1.6 }]);
-  });
-
-  it('selects month-year and year-only date chains while retaining duration phrases', () => {
-    expect(selectKeywords(words([
-      ['tháng', 0, .2], ['1', .2, .4], ['năm', .4, .6], ['2012', .6, .9], ['và', 2, 2.2],
-      ['năm', 3.5, 3.7], ['1975', 3.7, 4], ['rồi', 5, 5.2],
-    ]))).toMatchObject([
-      { text: '1/2012', startSec: 0, endSec: 1.5 },
-      { text: '1975', startSec: 3.5, endSec: 5 },
-    ]);
-  });
-
-  it('keeps a number followed by năm as a duration, not a date', () => {
-    expect(selectKeywords(words([
-      ['Nó', 0, .2], ['mất', .2, .4], ['37', 1, 1.2], ['năm.', 1.2, 1.4], ['xong', 2.5, 2.7],
-    ]))).toMatchObject([{ text: '37 năm', startSec: 1, endSec: 2.5 }]);
-  });
-
-  it('adds a role subtitle and detects places for names', () => {
-    const result = selectKeywords(words([
-      ['gặp', 0, .2], ['kỹ', .4, .6], ['sư', .6, .8], ['Steven', .8, 1], ['Sasson', 1, 1.2], ['sau', 3.8, 4],
-    ]));
-    expect(result).toMatchObject([{ text: 'Steven Sasson', kind: 'name', subtitle: 'Kỹ sư', nameRole: 'person' }]);
-    expect(selectKeywords(words([
-      ['ở', 0, .2], ['Rochester', .3, .5], ['nổi', 3, 3.2], ['tiếng', 3.2, 3.4],
-    ]))).toMatchObject([{ text: 'Rochester', kind: 'name', nameRole: 'place' }]);
-  });
-
-  it('includes a lowercase geography prefix in the displayed place name and starts its timing at the prefix', () => {
-    const result = selectKeywords(words([
-      ['Trước', 0, .2], ['khi', .2, .4], ['trời', .4, .6], ['sáng,', .6, .8], ['trên', 1, 1.2], ['khúc', 1.2, 1.4],
-      ['sông', 1.4, 1.6], ['Tiền,', 1.6, 1.8], ['khoảng', 2, 2.2], ['300', 2.2, 2.4], ['thuyền', 2.4, 2.6],
-      ['Xiêm', 2.6, 2.8], ['đã', 3, 3.2], ['nằm', 3.2, 3.4], ['giữa', 3.4, 3.6], ['hai', 3.6, 3.8], ['làn', 3.8, 4], ['đạn.', 4, 4.2],
-    ]));
-    expect(result).toContainEqual(expect.objectContaining({ text: 'Sông Tiền', kind: 'name', nameRole: 'place', startSec: 1.4 }));
-    expect(result.filter((keyword) => keyword.kind === 'name').map((keyword) => keyword.text)).not.toContain('Xiêm');
-  });
-
-  it('handles geography and event prefixes without moving role text into the popup', () => {
-    expect(selectKeywords(words([
-      ['ở', 0, .2], ['thành', .3, .5], ['phố', .5, .7], ['Mỹ', .7, .9], ['Tho,', .9, 1.1], ['rất', 3, 3.2], ['đông.', 4, 4.2],
-    ]))).toContainEqual(expect.objectContaining({ text: 'Thành phố Mỹ Tho', nameRole: 'place', startSec: .3 }));
-    const eventResult = selectKeywords(words([
-      ['trong', 0, .2], ['trận', .3, .5], ['Rạch', .5, .7], ['Gầm,', .7, .9], ['quân', 3, 3.2], ['ta', 3.2, 3.4], ['thắng.', 4, 4.2],
-    ]));
-    expect(eventResult).toContainEqual(expect.objectContaining({ text: 'Trận Rạch Gầm', kind: 'name', startSec: .3 }));
-    expect(eventResult.find((keyword) => keyword.text === 'Trận Rạch Gầm')).not.toHaveProperty('nameRole');
-    expect(selectKeywords(words([
-      ['ông', 0, .2], ['Nguyễn', .3, .5], ['Huệ,', .5, .7], ['sau', 3, 3.2], ['đó.', 4, 4.2],
-    ]))).toContainEqual(expect.objectContaining({ text: 'Nguyễn Huệ', subtitle: 'Ông', nameRole: 'person' }));
-    expect(selectKeywords(words([
-      ['nhà', 0, .2], ['khoa', .2, .4], ['học', .4, .6], ['Trần', .7, .9], ['Văn', .9, 1.1], ['A,', 1.1, 1.3], ['đã', 3, 3.2], ['nói.', 4, 4.2],
-    ]))).toContainEqual(expect.objectContaining({ text: 'Trần Văn A', subtitle: 'Nhà khoa học', nameRole: 'person' }));
-  });
-
-  it('allows only a prefixed proper name at sentence start', () => {
-    expect(selectKeywords(words([
-      ['Sông', 0, .2], ['Tiền', .2, .4], ['chảy', .5, .7], ['qua', .7, .9], ['đồng', 3, 3.2], ['bằng.', 4, 4.2],
-    ]))).toContainEqual(expect.objectContaining({ text: 'Sông Tiền', nameRole: 'place', startSec: 0 }));
-    expect(selectKeywords(words([
-      ['Nguyễn', 0, .2], ['Huệ', .2, .4], ['tiến', .5, .7], ['quân', 3, 3.2], ['sang', 4, 4.2],
-    ]))).not.toContainEqual(expect.objectContaining({ kind: 'name' }));
-    expect(selectKeywords(words([
-      ['trên', 0, .2], ['sông', .2, .4], ['lớn', .4, .6], ['chảy', 3, 3.2], ['mãi.', 4, 4.2],
-    ])).filter((keyword) => keyword.kind === 'name')).toEqual([]);
-  });
-
-  it('uses the lower-third hold and skips names with too little remaining audio', () => {
-    expect(LOWER_THIRD_HOLD_SEC).toBe(3);
-    expect(selectKeywords(words([
-      ['gặp', 0, .2], ['Steven', .4, .6], ['Sasson', .6, .8], ['xong', 3.2, 3.5],
-    ]))).toMatchObject([{ text: 'Steven Sasson', endSec: 3.5 }]);
-    expect(selectKeywords(words([
-      ['gặp', 0, .2], ['Steven', .4, .6], ['Sasson', .6, .8], ['xong', 1.7, 1.8],
-    ])).filter((keyword) => keyword.kind === 'name')).toEqual([]);
-  });
-
-  it('classifies kinds and attaches parsed number and year data', () => {
-    const result = selectKeywords(words([
-      ['Ngày', 0, .2], ['19', .2, .4], ['tháng', .4, .6], ['1', .6, .8], ['năm', .8, 1], ['2012,', 1, 1.3],
-      ['hơn', 3, 3.2], ['30', 3.4, 3.6], ['tỷ', 3.6, 3.8], ['đô', 3.8, 4], ['la.', 4, 4.2], ['xong', 6, 6.2],
-    ]));
-    expect(result).toEqual([
-      expect.objectContaining({ text: '19/1/2012', kind: 'date', year: 2012 }),
-      expect.objectContaining({ text: '30 tỷ đô la', kind: 'number', value: 30, decimals: 0, grouping: false, prefix: '', suffix: 'tỷ đô la' }),
-    ]);
-    expect(selectKeywords(words([['vào', 0, .2], ['1975.', .3, .5], ['rồi', 2, 2.2]]))).toEqual([
-      expect.objectContaining({ text: '1975', kind: 'year', year: 1975 }),
-    ]);
-    expect(selectKeywords(words([['năm', 0, .2], ['1975', .2, .5], ['rồi', 2, 2.2]]))[0]).toMatchObject({ kind: 'year', year: 1975 });
-    expect(selectKeywords(words([['mất', 0, .2], ['37', .3, .5], ['năm', .5, .7], ['rồi', 2, 2.2]]))[0]).toMatchObject({ kind: 'number', value: 37, suffix: 'năm' });
-    expect(selectKeywords(words([['và', 0, .2], ['Steven', .3, .5], ['Sasson', .5, .7], ['rồi', 2, 2.2]]))[0]).toMatchObject({ kind: 'name' });
-  });
-});
-
-describe('selectProjectSceneKeywords', () => {
-  const popupScene = (recordFresh: boolean): Scene => {
-    const narration = 'Trên sông Tiền hôm nay.';
-    return {
-      id: 'scene-1', narration, visualPrompt: '', durationSec: 5, assetType: 'image', assetFileId: null,
-      audioFileId: 'voice-1', wordTimings: { audioFileId: 'voice-1', words: words([
-        ['Trên', 0, .2], ['sông', .3, .5], ['Tiền', .5, .8], ['hôm', 2, 2.2], ['nay.', 4, 4.3],
-      ]) },
-      nameCandidates: {
-        narrationHash: recordFresh ? hashNarration(narration) : hashNarration('Old narration'),
-        audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', generatedAt: '2026-10-07T00:00:00.000Z',
-        candidates: [{ phrase: 'Sông Tiền', kind: 'place' }],
-      },
-      sfxPrompt: '', motionPrompt: '', sfxFileId: null,
-    } as Scene;
+function sceneWithPlan(overrides: Partial<Scene> = {}): Scene {
+  const narration = overrides.narration ?? 'Năm 1785, Sông Tiền có 3.000 quân.';
+  return {
+    id: 'scene-1', narration, visualPrompt: '', durationSec: 8, assetType: 'image', assetFileId: null,
+    audioFileId: 'voice-1', voiceoverDurationSec: 7, voiceoverInput: null,
+    wordTimings: { audioFileId: 'voice-1', words: words(['Năm', 0, .2], ['1785,', .2, .4], ['Sông', 1, 1.2], ['Tiền', 1.2, 1.4], ['có', 2, 2.2], ['3.000', 2.2, 2.4], ['quân.', 2.4, 2.6]) },
+    nameCandidates: null, popupPlan: {
+      narrationHash: hashNarration(narration), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', backend: 'api', density: 'low', generatedAt: '2026-10-13T00:00:00.000Z', needed: true, reason: 'Cần hiển thị mốc chính.',
+      popups: [{ kind: 'place', anchor: 'Sông Tiền', display: 'Sông Tiền', importance: 4, reason: 'Địa danh chính.', startSec: 1, endSec: 4.3, status: 'kept', dropReason: null, pinned: false, suppressed: false }, { kind: 'number', anchor: '3.000 quân.', display: '3.000 quân', importance: 5, reason: 'Quy mô quan trọng.', startSec: 2.2, endSec: 3.5, status: 'kept', dropReason: null, pinned: false, suppressed: false }], dropped: [],
+    },
+    sfxPrompt: '', motionPrompt: '', sfxFileId: null, videoKeyframeFileId: null, videoTailFileId: null, videoDurationSec: null, depthMap: null,
+    ...overrides,
   };
+}
 
-  it('reports the exact fresh AI popup used by render-time selection', () => {
-    expect(selectProjectSceneKeywords([popupScene(true)])[0]!.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'ai' });
-  });
-
-  it('ignores stale candidates and reports the rule-based fallback actually selected', () => {
-    expect(selectProjectSceneKeywords([popupScene(false)])[0]!.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'rules' });
-  });
-
-  it('returns no popup after narration edits clear audio and timings but retain the stale record', () => {
-    const edited = popupScene(false);
-    edited.narration = 'Changed narration';
-    edited.audioFileId = null;
-    edited.wordTimings = null;
-    expect(edited.nameCandidates).not.toBeNull();
-    expect(selectProjectSceneKeywords([edited])[0]!.popup).toBeNull();
+describe('project popup-plan selection', () => {
+  it('converts only fresh kept plan entries into existing Keyword shapes', () => {
+    const selection = selectProjectSceneKeywords([sceneWithPlan()])[0]!;
+    expect(selection.keywords).toMatchObject([
+      { text: 'Sông Tiền', kind: 'name', nameRole: 'place', startSec: 1 },
+      { text: '3.000 quân', kind: 'number', value: 3000, startSec: 2.2 },
+    ]);
+    expect(selection.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'ai' });
   });
 
-  it('uses rules after new aligned audio exists while the old candidate record remains stale', () => {
-    const realigned = popupScene(false);
-    realigned.narration = 'A different narration mentions Sông Tiền, rồi kết thúc.';
-    realigned.audioFileId = 'voice-2';
-    realigned.wordTimings = { audioFileId: 'voice-2', words: words([
-      ['A', 0, .1], ['different', .2, .4], ['narration', .5, .7], ['mentions', .8, 1],
-      ['Sông', 1.1, 1.3], ['Tiền,', 1.3, 1.5], ['rồi', 3, 3.2], ['kết', 4, 4.2], ['thúc.', 5, 5.2],
-    ]) };
-    expect(realigned.nameCandidates?.audioFileId).toBe('voice-1');
-    expect(selectProjectSceneKeywords([realigned])[0]!.popup).toEqual({ text: 'Sông Tiền', type: 'place', source: 'rules' });
-  });
-});
-describe('parseNumberPhrase', () => {
-  it('parses Vietnamese thousands and decimal separators', () => {
-    expect(parseNumberPhrase('30')).toEqual({ value: 30, decimals: 0, grouping: false, prefix: '', suffix: '' });
-    expect(parseNumberPhrase('90%')).toMatchObject({ value: 90, suffix: '%' });
-    expect(parseNumberPhrase('1.000 người')).toMatchObject({ value: 1000, grouping: true, suffix: 'người' });
-    expect(parseNumberPhrase('1,5 triệu')).toMatchObject({ value: 1.5, decimals: 1, suffix: 'triệu' });
+  it('renders no popup when a plan is missing or stale, even with digits and names in narration', () => {
+    const scene = sceneWithPlan();
+    expect(selectProjectSceneKeywords([{ ...scene, popupPlan: null }])[0]!.keywords).toEqual([]);
+    expect(selectProjectSceneKeywords([{ ...scene, popupPlan: { ...scene.popupPlan!, narrationHash: hashNarration('old') } }])[0]!.keywords).toEqual([]);
   });
 
-  it('returns null for malformed numbers so the plain pop-up is used', () => {
-    expect(parseNumberPhrase('1.5.6')).toBeNull();
-    expect(parseNumberPhrase('abc')).toBeNull();
-    expect(parseNumberPhrase('12.34')).toBeNull();
+  it('does not read legacy nameCandidates as a fallback', () => {
+    const scene = sceneWithPlan({ popupPlan: null, nameCandidates: { narrationHash: hashNarration('Năm 1785, Sông Tiền có 3.000 quân.'), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', generatedAt: '2026-10-13T00:00:00.000Z', candidates: [{ phrase: 'Sông Tiền', kind: 'place' }] } });
+    expect(selectProjectSceneKeywords([scene])[0]).toMatchObject({ keywords: [], popup: null });
   });
+
 });
 
-describe('annotateYearKeywords', () => {
-  const kw = (text: string, startSec: number, kind: Keyword['kind'], year?: number): Keyword => ({ text, startSec, endSec: startSec + 1.5, kind, ...(year ? { year } : {}) });
-
-  it('chains years across scenes in mention order and shares one padded timeline', () => {
-    const result = annotateYearKeywords([
-      [kw('1975', 1, 'year', 1975), kw('30 tỷ', 5, 'number')],
-      [kw('19/1/2012', 0, 'date', 2012)],
-      [kw('2020', 2, 'year', 2020)],
-    ]);
-    expect(result[0]![0]).toMatchObject({ fromYear: 1965, timeline: { min: 1962, max: 2023 } });
-    expect(result[0]![1]).not.toHaveProperty('fromYear');
-    expect(result[1]![0]).not.toHaveProperty('fromYear');
-    expect(result[2]![0]).toMatchObject({ fromYear: 2012, timeline: { min: 1962, max: 2023 } });
+describe('renderer annotations that remain after rule removal', () => {
+  it('parses numeric display metadata without selecting a popup', () => {
+    expect(parseNumberPhrase('3.000 quân')).toMatchObject({ value: 3000, grouping: true, suffix: 'quân' });
+    expect(selectProjectSceneKeywords([sceneWithPlan({ popupPlan: { ...sceneWithPlan().popupPlan!, popups: [] } })])[0]!.keywords).toEqual([]);
   });
 
-  it('handles a single year and leaves scenes without years untouched', () => {
-    const single = annotateYearKeywords([[kw('1975', 0, 'year', 1975)]])[0]?.[0];
-    expect(single).toMatchObject({ fromYear: 1965, timeline: { min: 1964, max: 1976 } });
-    expect(annotateYearKeywords([[kw('30', 0, 'number')], []])).toEqual([[kw('30', 0, 'number')], []]);
-  });
-});
-
-describe('annotateNameKeywords', () => {
-  const kw = (text: string, startSec: number, kind: Keyword['kind']): Keyword => ({ text, startSec, endSec: startSec + 2, kind });
-
-  it('keeps the first case- and diacritic-insensitive mention only', () => {
-    const result = annotateNameKeywords([
-      [kw('Steven Sasson', 1, 'name'), kw('30 tỷ', 2, 'number')],
-      [kw('Stévên Sasson', 0, 'name'), kw('1975', 2, 'year')],
-      [kw('Rochester', 0, 'name')],
-    ]);
-    expect(result).toEqual([
-      [kw('Steven Sasson', 1, 'name'), kw('30 tỷ', 2, 'number')],
-      [kw('1975', 2, 'year')],
-      [kw('Rochester', 0, 'name')],
-    ]);
+  it('chains years only for already-approved plan keywords', () => {
+    const keyword: Keyword = { text: '1975', startSec: 0, endSec: 1, kind: 'year', year: 1975 };
+    expect(annotateYearKeywords([[keyword]])[0]![0]).toMatchObject({ fromYear: 1965, timeline: { min: 1964, max: 1976 } });
   });
 
-  it('deduplicates prefixed and bare mentions by their capitalized name run', () => {
-    const result = annotateNameKeywords([
-      [kw('Sông Tiền', 1, 'name')],
-      [kw('Tiền', 2, 'name')],
-      [kw('sông Tiền', 3, 'name')],
-    ]);
-    expect(result).toEqual([[kw('Sông Tiền', 1, 'name')], [], []]);
-  });
-});
-
-describe('resolveFilmLookByScene', () => {
-  const kw = (text: string, startSec: number, year?: number): Keyword => ({ text, startSec, endSec: startSec + .2, kind: year && text.includes('/') ? 'date' : 'year', ...(year === undefined ? {} : { year }) });
-
-  it('turns on after a pre-1990 year and stays on until a later year turns it off', () => {
-    expect(resolveFilmLookByScene([
-      [],
-      [kw('1975', 0, 1975)],
-      [],
-      [kw('19/1/2012', 0, 2012)],
-      [],
-    ])).toEqual([false, true, true, false, false]);
-    expect(FILM_LOOK_BEFORE_YEAR).toBe(1990);
+  it('keeps film-look year detection independent of displayed plan entries', () => {
+    expect(resolveFilmLookByTimedWords([[{ text: 'Năm', startSec: 0, endSec: .2 }, { text: '1785', startSec: .2, endSec: .4 }], [{ text: '2012', startSec: 0, endSec: .2 }]], 'auto')).toEqual([true, false]);
   });
 
-  it('supports always and off modes', () => {
-    const scenes = [[], [kw('1975', 0, 1975)]];
-    expect(resolveFilmLookByScene(scenes, 'always')).toEqual([true, true]);
-    expect(resolveFilmLookByScene(scenes, 'off')).toEqual([false, false]);
+  it('retains first-mention dedupe helpers for explicit plan annotations', () => {
+    expect(nameKeywordDedupeKey('Sông Tiền')).toBe(nameKeywordDedupeKey('Tiền'));
+    const keyword = (text: string, startSec: number): Keyword => ({ text, startSec, endSec: startSec + 1, kind: 'name' });
+    expect(annotateNameKeywords([[keyword('Sông Tiền', 1)], [keyword('Tiền', 2)], [keyword('Nguyễn Huệ', 3)]]).map((scene) => scene.map((item) => item.text))).toEqual([['Sông Tiền'], [], ['Nguyễn Huệ']]);
   });
 });

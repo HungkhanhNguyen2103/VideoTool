@@ -4,6 +4,8 @@ import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
 import { AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type FilmLookStyle, type ParallaxStyle, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
 import { ApiErrorBodySchema } from '../../../contracts/common';
+import type { PopupBackend, PopupDensity, PopupPlanPopup } from '../../../contracts/popup-analysis';
+import { ClaudeCliStatusSchema, type ClaudeCliStatus } from '../../../contracts/script';
 
 const ImportResultSchema = z.object({ updated: z.number().int().nonnegative(), skipped: z.array(z.string()) });
 const FileListSchema = z.array(FileSummarySchema);
@@ -32,9 +34,14 @@ const RecomputeSceneDurationsResultSchema = z.object({
   skippedSceneNumbers: z.array(z.number().int().positive()),
   failedSceneNumbers: z.array(z.number().int().positive()),
 });
+const PopupPlanConflictSchema = z.object({ sceneId: z.string(), sceneNumber: z.number().int().positive(), anchor: z.string(), reason: z.string() });
+const PopupPlanMutationResultSchema = z.object({ project: ProjectDetailSchema, conflicts: z.array(PopupPlanConflictSchema) });
 
 export type VoiceoverBatchResult = z.infer<typeof VoiceoverBatchResultSchema>;
 export type RecomputeSceneDurationsResult = z.infer<typeof RecomputeSceneDurationsResultSchema>;
+export type PopupAnalysisResult = { scenesApplied: number; scenesExpected: number; summary: { rejectedCandidates: number } };
+export type PopupPlanMutationResult = z.infer<typeof PopupPlanMutationResultSchema>;
+export type PopupPlanConflict = z.infer<typeof PopupPlanConflictSchema>;
 export type NameKeywordAnalysisSummary = z.infer<typeof NameKeywordAnalysisSummarySchema>;
 export type NameKeywordPopupPreview = z.infer<typeof NameKeywordPopupSchema>;
 export type NameKeywordScenePreview = z.infer<typeof NameKeywordPreviewsSchema>[number];
@@ -258,6 +265,31 @@ export function setKeywordPopups(projectId: string, enabled: boolean): Promise<P
 export function analyzeProjectNameKeywords(projectId: string): Promise<NameKeywordAnalysisSummary> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/name-keywords/analyze`, NameKeywordAnalysisSummarySchema, { method: 'POST' });
 }
+
+export function analyzeProjectPopups(projectId: string, options: { backend: PopupBackend; density: PopupDensity; cliModel?: string }): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/popup-analysis`, JobResponseSchema, {
+    method: 'POST',
+    body: { backend: options.backend, density: options.density, ...(options.backend === 'cli' && options.cliModel ? { cliModel: options.cliModel } : {}) },
+  });
+}
+
+export function getClaudeCliStatus(): Promise<ClaudeCliStatus> {
+  return apiRequest('/api/script/cli-status', ClaudeCliStatusSchema);
+}
+
+export function setPopupDensity(projectId: string, density: PopupDensity): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/popup-density`, ProjectDetailSchema, { method: 'PATCH', body: { density } });
+}
+
+export function setPopupPlanFlags(projectId: string, sceneId: string, input: { anchor: string; pinned?: boolean; suppressed?: boolean }): Promise<PopupPlanMutationResult> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/popup-plan/flags`, PopupPlanMutationResultSchema, { method: 'PATCH', body: input });
+}
+
+export function editPopupPlan(projectId: string, sceneId: string, popup: PopupPlanPopup): Promise<PopupPlanMutationResult> {
+  const candidate = { kind: popup.kind, anchor: popup.anchor, display: popup.display, importance: popup.importance, reason: popup.reason, ...(popup.role ? { role: popup.role } : {}), ...(popup.evidence ? { evidence: popup.evidence } : {}) };
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/popup-plan`, PopupPlanMutationResultSchema, { method: 'PATCH', body: candidate });
+}
+
 
 export function getNameKeywordPreviews(projectId: string): Promise<NameKeywordScenePreview[]> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/name-keywords/previews`, NameKeywordPreviewsSchema);

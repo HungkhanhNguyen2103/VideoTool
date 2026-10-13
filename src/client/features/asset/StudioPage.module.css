@@ -53,8 +53,7 @@
 .progress ul { grid-column: 1 / -1; max-height: 7rem; margin: 0; padding-left: 1.2rem; overflow: auto; color: var(--text-3); }
 .renderPlayer { width: min(100%, 42rem); max-height: 24rem; border-radius: .6rem; background: var(--input); }
 .readinessSummary { display: grid; gap: .5rem; padding: .7rem .8rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); font-size: .85rem; }
-.nameKeywordRow { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); }
-.nameKeywordStatus, .nameKeywordDetail { margin: 0; color: var(--text-2); font-size: .82rem; }
+.nameKeywordDetail { margin: 0; color: var(--text-2); font-size: .82rem; }
 .nameKeywordDetail { padding: .55rem .7rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--panel-2); }
 .readinessSummary p { margin: .3rem 0 0; }
 .readinessSummary ul, .renderConfirmList { margin: .5rem 0 0; padding-left: 1.2rem; color: var(--text-2); }

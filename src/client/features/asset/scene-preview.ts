@@ -1,5 +1,6 @@
 import type { ProjectDetail, RenderEngine, Scene } from '../../../contracts/project';
 import { formatDurationSeconds } from '../../../contracts/scene-duration';
+import { hashNarration } from '../../../contracts/name-keywords';
 
 export type ScenePreviewFingerprint = {
   narration: string;
@@ -17,6 +18,7 @@ export type ScenePreviewFingerprint = {
   renderSettings: ProjectDetail['renderSettings'];
   renderEngine: RenderEngine;
   keywordPopups: boolean;
+  popupPlan: string | null;
   transitionStyle: ProjectDetail['transitionStyle'];
   filmLook: ProjectDetail['filmLook'];
   parallax: ProjectDetail['parallax'];
@@ -34,12 +36,14 @@ export type ScenePreviewChangedField =
   | 'renderSettings'
   | 'renderEngine'
   | 'keywordPopups'
+  | 'popupPlan'
   | 'transitionStyle'
   | 'filmLook'
   | 'parallax'
   | 'logo';
 
 const CHANGE_REASONS: Record<ScenePreviewChangedField, string> = {
+  popupPlan: 'popup plan changed after render',
   narration: 'lời dẫn scene đã thay đổi sau lần render',
   visualPrompt: 'visual prompt scene đã thay đổi sau lần render',
   asset: 'asset scene đã thay đổi sau lần render',
@@ -73,6 +77,7 @@ export function createScenePreviewFingerprint(scene: Scene, project: ProjectDeta
     renderSettings: { ...project.renderSettings },
     renderEngine: project.renderEngine,
     keywordPopups: project.keywordPopupsEnabled,
+    popupPlan: scene.popupPlan ? hashNarration(JSON.stringify(scene.popupPlan)) : null,
     transitionStyle: project.transitionStyle,
     filmLook: project.filmLook,
     parallax: project.parallax,
@@ -82,7 +87,7 @@ export function createScenePreviewFingerprint(scene: Scene, project: ProjectDeta
 
 const CHANGED_FIELDS: ReadonlyArray<ScenePreviewChangedField> = [
   'narration', 'visualPrompt', 'asset', 'voiceover', 'sfx', 'motionPrompt', 'durationSec',
-  'renderSettings', 'renderEngine', 'keywordPopups', 'transitionStyle', 'filmLook', 'parallax', 'logo',
+  'renderSettings', 'renderEngine', 'keywordPopups', 'popupPlan', 'transitionStyle', 'filmLook', 'parallax', 'logo',
 ];
 
 function sameValue(left: unknown, right: unknown): boolean {

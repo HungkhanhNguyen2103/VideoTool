@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, applyVideoDistribution, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setRenderEngine, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, setVoiceSpeed, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, analyzeProjectPopups, applyVideoDistribution, editPopupPlan, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setPopupDensity, setPopupPlanFlags, setRenderEngine, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, setVoiceSpeed, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -12,7 +12,7 @@ const project = {
 } as unknown as ProjectDetail;
 const projectPayload = {
   id: 'project-1', title: 'Project', status: 'assets', language: 'vi', brief: 'Brief', referencesText: '', scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: 1, voiceId: null,
-  aiProvider: 'deepseek', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, draftRenderFileId: null, bgmMood: '', bgmFileId: null,
+  aiProvider: 'deepseek', aiModel: 'deepseek-chat', popupDensity: 'low', renderEngine: 'ffmpeg', voiceoverVoice: 'Truc Ly', renderFileId: null, draftRenderFileId: null, bgmMood: '', bgmFileId: null,
   customStyleReferenceFileId: null, logoFileId: null,
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: project.scenes, chapters: [], version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 };
@@ -186,6 +186,26 @@ describe('asset API helpers', () => {
     await expect(getNameKeywordPreviews('project/1')).resolves.toEqual(previews);
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/name-keywords/analyze', expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/name-keywords/previews', expect.objectContaining({ method: 'GET' }));
+  });
+
+  it('uses project-owned popup analysis and mutation routes with typed responses', async () => {
+    const job = { jobId: 'popup-job' };
+    const mutation = { project: projectPayload, conflicts: [] };
+    const popup = { kind: 'place' as const, anchor: 'Song Tien', display: 'Song Tien', importance: 4, reason: 'main place', startSec: 0, endSec: 3, status: 'kept' as const, dropReason: null, pinned: false, suppressed: false };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(job), { status: 201, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(mutation), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(mutation), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(analyzeProjectPopups('project/1', { backend: 'api', density: 'medium' })).resolves.toEqual(job);
+    await expect(setPopupDensity('project/1', 'high')).resolves.toMatchObject({ popupDensity: 'low' });
+    await expect(setPopupPlanFlags('project/1', 'scene/1', { anchor: 'Song Tien', pinned: true })).resolves.toMatchObject({ project: { id: 'project-1' }, conflicts: [] });
+    await expect(editPopupPlan('project/1', 'scene/1', popup)).resolves.toMatchObject({ project: { id: 'project-1' }, conflicts: [] });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/project/project%2F1/popup-analysis', expect.objectContaining({ method: 'POST', body: JSON.stringify({ backend: 'api', density: 'medium' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/project/project%2F1/popup-density', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ density: 'high' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/project/project%2F1/scenes/scene%2F1/popup-plan/flags', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ anchor: 'Song Tien', pinned: true }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/project/project%2F1/scenes/scene%2F1/popup-plan', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ kind: 'place', anchor: 'Song Tien', display: 'Song Tien', importance: 4, reason: 'main place' }) }));
   });
 
   it('patches a scene motion prompt with the exact route and body', async () => {
