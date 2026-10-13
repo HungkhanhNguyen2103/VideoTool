@@ -42,7 +42,7 @@ export type PopupPlanAssemblyResult = {
   summary: PopupPlanAssemblySummary;
 };
 
-function normaliseAnchor(value: string): string {
+export function normalisePopupAnchor(value: string): string {
   return nameKeywordDedupeKey(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
@@ -54,8 +54,8 @@ function previousPlanFor(input: PopupPlanAssemblyInput, sceneId: string): PopupP
 
 function previousPopup(plan: PopupPlan | null, anchor: string): PopupPlanPopup | null {
   if (!plan) return null;
-  const target = normaliseAnchor(anchor);
-  return [...plan.popups, ...plan.dropped].find((popup) => normaliseAnchor(popup.anchor) === target) ?? null;
+  const target = normalisePopupAnchor(anchor);
+  return [...plan.popups, ...plan.dropped].find((popup) => normalisePopupAnchor(popup.anchor) === target) ?? null;
 }
 
 function toCandidate(candidate: PopupAiCandidate): Omit<PopupSafetyCandidate, 'startSec' | 'endSec'> {

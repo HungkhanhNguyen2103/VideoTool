@@ -3,7 +3,7 @@ import { handleCliRegeneration, handleFinalQa, handleGenerateScript, handleGener
 import { getProject } from '../server/modules/project';
 import { generateSeoPackage } from '../server/modules/seo';
 import { SEO_SECTIONS, type SeoSection } from '../contracts/seo';
-import { alignProjectWordTimings, analyzeProjectPopups, autoAnalyzeProjectNameKeywordsIfStale, autoAnalyzeProjectPopupsIfStale, generateProjectDepthMaps, generateSceneDepthMap, generateProjectSfx, generateProjectVoiceovers, PopupAnalysisRequestSchema, renderFullProject } from '../server/modules/video';
+import { alignProjectWordTimings, analyzeProjectPopups, autoAnalyzeProjectPopupsIfStale, generateProjectDepthMaps, generateSceneDepthMap, generateProjectSfx, generateProjectVoiceovers, PopupAnalysisRequestSchema, renderFullProject } from '../server/modules/video';
 import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
 
@@ -27,15 +27,13 @@ const handleAlignWordTimings: JobHandler = async (job, context) => {
   const projectId = projectIdFrom(job);
   await alignProjectWordTimings(projectId, context.appendLog, context.reportProgress, context.isCancelled);
   if (await context.isCancelled()) return;
-  await autoAnalyzeProjectNameKeywordsIfStale(projectId, context.appendLog);
-  if (await context.isCancelled()) return;
   await autoAnalyzeProjectPopupsIfStale(projectId, context.appendLog);
 };
 
 const handleAnalyzePopups: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
   const payload = job.payload as { backend?: unknown; density?: unknown; cliModel?: unknown };
-  await analyzeProjectPopups(projectIdFrom(job), PopupAnalysisRequestSchema.parse({
+  return analyzeProjectPopups(projectIdFrom(job), PopupAnalysisRequestSchema.parse({
     backend: payload.backend,
     density: payload.density,
     ...(typeof payload.cliModel === 'string' ? { cliModel: payload.cliModel } : {}),

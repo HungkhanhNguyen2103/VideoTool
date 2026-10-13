@@ -1,5 +1,7 @@
+import { z } from 'zod';
 import type { PopupDensity } from '../../../../contracts/popup-analysis';
 import { loadPopupPreset } from './presets/loader';
+import { PopupAiOutputSchema } from './output-schema';
 
 export type PopupPromptScene = { scene: number; startSec: number; narration: string };
 export type PopupPromptInput = {
@@ -10,6 +12,15 @@ export type PopupPromptInput = {
   density: PopupDensity;
   scenes: readonly PopupPromptScene[];
   primarySceneNumbers?: readonly number[];
+};
+
+export const POPUP_AI_OUTPUT_JSON_SCHEMA = z.toJSONSchema(PopupAiOutputSchema) as Record<string, unknown>;
+
+const POPUP_AI_OUTPUT_EXAMPLE = {
+  scenes: [
+    { scene: 12, needed: true, reason: 'Quy mô lực lượng là mốc người xem cần nhớ.', popups: [{ scene: 12, kind: 'number', anchor: 'ba nghìn người', display: '3.000 người', importance: 5, reason: 'Nêu quy mô lực lượng.' }] },
+    { scene: 13, needed: false, reason: 'Không có mốc mới đủ quan trọng để hiện chữ.', popups: [] },
+  ],
 };
 
 const DENSITY_GUIDANCE: Record<PopupDensity, string> = {
@@ -26,7 +37,9 @@ export function buildPopupAnalysisPrompt(input: PopupPromptInput): string {
     preset.system,
     preset.instructions,
     `Mật độ ${input.density}: ${DENSITY_GUIDANCE[input.density]}.`,
-    'Các loại popup: person, place, event, number, year, date. Trả về {"scenes":[...]} với verdict cho mọi scene; popup phải có anchor là các từ liên tiếp nguyên văn trong narration.',
+    'Các loại popup: person, place, event, number, year, date. Dùng đúng các key trong schema, không thêm key khác. Mỗi PRIMARY scene phải xuất hiện đúng một lần; trường scene là số ngay sau chữ Scene. Popup phải có anchor là các từ liên tiếp nguyên văn trong narration. Với kind number, display chỉ được có một con số duy nhất kèm danh từ (ví dụ "3.000 quân"), tuyệt đối không hiển thị khoảng số hoặc hai mốc.',
+    `EXACT JSON SCHEMA: ${JSON.stringify(POPUP_AI_OUTPUT_JSON_SCHEMA)}`,
+    `COMPACT JSON EXAMPLE: ${JSON.stringify(POPUP_AI_OUTPUT_EXAMPLE)}`,
     `Tiêu đề dự án: ${input.title}`,
     `Brief:\n${input.brief}`,
     `Tài liệu tham khảo:\n${input.referencesText}`,

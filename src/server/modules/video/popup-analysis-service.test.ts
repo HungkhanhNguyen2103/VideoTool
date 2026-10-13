@@ -95,7 +95,8 @@ describe('project popup analysis service', () => {
     };
 
     await expect(analyzeProjectPopups('project-1', { backend: 'api', density: 'low' }, context(), dependencies)).rejects.toMatchObject({ code: 'POPUP_ANALYSIS_INVALID_RESPONSE', status: 422 });
-    expect(chat).toHaveBeenCalledOnce();
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect(chat.mock.calls[1]?.[0]?.[1]?.content).toContain('Lần trước JSON sai vì:');
     expect(setPlans).not.toHaveBeenCalled();
   });
 
@@ -157,6 +158,7 @@ describe('project popup analysis service', () => {
 
     await expect(analyzeProjectPopups('project-1', { backend: 'cli', cliModel: 'claude-haiku-4-5-20251001', density: 'low' }, context(), dependencies)).rejects.toMatchObject({ code: 'POPUP_ANALYSIS_INVALID_RESPONSE', status: 422 });
     expect(runCli).toHaveBeenCalledTimes(3);
+    expect(runCli.mock.calls[2]?.[0]?.promptText).toContain('Lần trước JSON sai vì:');
     expect(setPlans).not.toHaveBeenCalled();
   });
 

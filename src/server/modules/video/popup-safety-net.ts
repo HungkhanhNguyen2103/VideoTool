@@ -57,7 +57,7 @@ export function applyPopupSafetyNet(entries: ReadonlyArray<{ sceneId: string; sc
       continue;
     }
     const key = nameKey(entry.popup);
-    if (key && firstNameScene.has(key) && firstNameScene.get(key) !== entry.sceneId) {
+    if (key && firstNameScene.has(key) && firstNameScene.get(key) !== entry.sceneId && !entry.popup.pinned) {
       dropped.push(toDrop(entry, 'đã hiện ở cảnh trước'));
       continue;
     }

@@ -800,6 +800,31 @@ async function startVideoRouterServer(enqueueJob: VideoEnqueue, analyzeNameKeywo
 }
 
 describe('video routes and worker handlers', () => {
+  async function seedPopupPlanProject() {
+    const project = await seedProject();
+    const narration = 'Sông Tiền, quân ta tiến.';
+    await patchProjectScene(project.id, 'scene-1', { narration });
+    await patchProjectScene(project.id, 'scene-1', { audioFileId: 'voice-1', voiceoverDurationSec: 5 });
+    const words = [
+      { text: 'Sông', startSec: 0, endSec: 0.2 },
+      { text: 'Tiền,', startSec: 0.2, endSec: 0.4 },
+      { text: 'quân', startSec: 1, endSec: 1.2 },
+      { text: 'ta', startSec: 1.2, endSec: 1.4 },
+      { text: 'tiến.', startSec: 1.4, endSec: 1.6 },
+    ];
+    await setSceneWordTimings(project.id, 'scene-1', 'voice-1', narration, { audioFileId: 'voice-1', words });
+    await setProjectScenePopupPlans(project.id, [{
+      sceneId: 'scene-1',
+      expectedNarration: narration,
+      expectedAudioFileId: 'voice-1',
+      popupPlan: {
+        narrationHash: hashNarration(narration), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', backend: 'api', density: 'low', generatedAt: '2026-10-13T00:00:00.000Z', needed: true, reason: 'Địa danh chính.',
+        popups: [{ kind: 'place', anchor: 'Sông Tiền', display: 'Sông Tiền', importance: 4, reason: 'Địa danh chính.', startSec: 0, endSec: 3.3, status: 'kept', dropReason: null, pinned: true, suppressed: false }], dropped: [],
+      },
+    }]);
+    return getProject(project.id);
+  }
+
   it('enqueues popup analysis with the project density', async () => {
     const project = await seedProject();
     const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-popup-1' });
@@ -808,7 +833,7 @@ describe('video routes and worker handlers', () => {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'api' }),
     });
     expect(api.status).toBe(201);
-    expect(enqueueJob).toHaveBeenCalledWith({ type: 'analyze-popups', projectId: project.id, payload: { projectId: project.id, backend: 'api', density: 'low' } });
+    expect(enqueueJob).toHaveBeenCalledWith({ type: 'analyze-popups', projectId: project.id, payload: { projectId: project.id, backend: 'api', density: 'low' }, maxAttempts: 1 });
   });
 
   it('rejects unavailable CLI before queueing popup analysis', async () => {
@@ -864,6 +889,62 @@ describe('video routes and worker handlers', () => {
     const response = await fetch(`${base}/api/project/${project.id}/render`, { method: 'POST' });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: 'POPUP_ANALYSIS_IN_PROGRESS' } });
+  });
+
+  it('pins a stored popup through a project-owned flags route and reports conflicts', async () => {
+    const project = await seedPopupPlanProject();
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/popup-plan/flags`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ anchor: 'Sông Tiền', pinned: true }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { project: { version: number; scenes: Array<{ popupPlan: { popups: Array<{ pinned: boolean }> } | null }> }; conflicts: unknown[] };
+    expect(body.project.version).toBe(project.version + 1);
+    expect(body.project.scenes[0]!.popupPlan?.popups[0]!.pinned).toBe(true);
+    expect(body.conflicts).toEqual([]);
+  });
+
+  it('records the losing popup when a pin creates a same-scene conflict', async () => {
+    const project = await seedPopupPlanProject();
+    const stored = (await getProject(project.id)).scenes[0]!;
+    const existing = stored.popupPlan!;
+    await setProjectScenePopupPlans(project.id, [{
+      sceneId: 'scene-1',
+      expectedNarration: stored.narration,
+      expectedAudioFileId: stored.audioFileId!,
+      popupPlan: {
+        ...existing,
+        popups: [...existing.popups, { kind: 'event', anchor: 'quân', display: 'Quân ta', importance: 5, reason: 'Cùng đoạn lời dẫn.', startSec: 0.3, endSec: 3.4, status: 'kept', dropReason: null, pinned: false, suppressed: false }],
+      },
+    }]);
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/popup-plan/flags`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ anchor: 'Sông Tiền', pinned: true }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { project: { scenes: Array<{ popupPlan: { generatedAt: string; popups: Array<{ anchor: string }>; dropped: Array<{ anchor: string; dropReason: string | null }> } | null }> }; conflicts: Array<{ anchor: string; reason: string }> };
+    expect(body.conflicts).toEqual([{ sceneId: 'scene-1', sceneNumber: 1, anchor: 'quân', reason: 'gần popup khác' }]);
+    expect(body.project.scenes[0]!.popupPlan?.dropped).toEqual(expect.arrayContaining([expect.objectContaining({ anchor: 'quân', dropReason: 'gần popup khác' })]));
+    expect(body.project.scenes[0]!.popupPlan?.generatedAt).toBe('2026-10-13T00:00:00.000Z');
+
+    const repeat = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/popup-plan/flags`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ anchor: 'Sông Tiền', pinned: true }),
+    });
+    expect((await repeat.json()).conflicts).toEqual([]);
+  });
+
+  it('validates an inline popup edit and preserves the stored flags', async () => {
+    const project = await seedPopupPlanProject();
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+    const response = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/popup-plan`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'place', anchor: 'Sông Tiền', display: 'Sông Tiền — địa danh', importance: 5, reason: 'Tên địa danh cần nhớ.' }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { project: { scenes: Array<{ popupPlan: { popups: Array<{ display: string; pinned: boolean }> } | null }> } };
+    expect(body.project.scenes[0]!.popupPlan?.popups[0]).toMatchObject({ display: 'Sông Tiền — địa danh', pinned: true });
   });
 
   it('validates and enqueues an optional voiceover start scene while preserving the default payload', async () => {

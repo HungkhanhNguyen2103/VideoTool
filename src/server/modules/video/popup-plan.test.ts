@@ -94,8 +94,17 @@ describe('popup timing windows', () => {
     expect(windowPopupTiming({ kind: 'person', startSec: 0, endSec: 0.2 }, words)).toEqual({ accepted: true, startSec: 0, endSec: 3.3 });
   });
 
-  it('records a visible drop when the remaining audio is below the old minimum', () => {
-    expect(windowPopupTiming({ kind: 'person', startSec: 0, endSec: 0.2 }, [{ text: 'mốc', startSec: 0, endSec: 1 }])).toMatchObject({ accepted: false, reason: 'không đủ thời gian hiển thị popup' });
+  it('starts a lower-third up to 0.5 seconds earlier when that preserves at least one second', () => {
+    for (const kind of ['person', 'place', 'event'] as const) {
+      expect(windowPopupTiming({ kind, startSec: 2.04, endSec: 2.2 }, [{ text: 'mốc', startSec: 0, endSec: 2.98 }])).toEqual({ accepted: true, startSec: 1.54, endSec: 2.98 });
+    }
+  });
+
+  it('keeps center popup timing anchored and does not allow a sub-second lower-third', () => {
+    for (const kind of ['number', 'year', 'date'] as const) {
+      expect(windowPopupTiming({ kind, startSec: 0.4, endSec: 0.6 }, [{ text: 'mốc', startSec: 0, endSec: 0.8 }])).toEqual({ accepted: true, startSec: 0.4, endSec: 0.8 });
+    }
+    expect(windowPopupTiming({ kind: 'person', startSec: 1, endSec: 1.2 }, [{ text: 'mốc', startSec: 0, endSec: 1.48 }])).toMatchObject({ accepted: false, reason: 'không đủ thời gian hiển thị popup' });
   });
 });
 
@@ -124,6 +133,16 @@ describe('popup safety net', () => {
     ]);
     expect(result.kept).toHaveLength(1);
     expect(result.dropped).toMatchObject([{ popup: { status: 'dropped', dropReason: 'đã hiện ở cảnh trước' } }]);
+  });
+
+  it('keeps a pinned repeated name while still applying overlap safety', () => {
+    const result = applyPopupSafetyNet([
+      { sceneId: 'scene-1', sceneStartSec: 0, popup: { kind: 'person' as const, anchor: 'Nguyễn Huệ', display: 'Nguyễn Huệ', importance: 5, reason: 'first', startSec: 1, endSec: 2 } },
+      { sceneId: 'scene-2', sceneStartSec: 10, popup: { kind: 'person' as const, anchor: 'Nguyễn Huệ', display: 'Nguyễn Huệ', importance: 5, reason: 'pinned repeat', startSec: 1, endSec: 2, pinned: true } },
+    ]);
+    expect(result.kept).toHaveLength(2);
+    expect(result.kept[1]?.popup.pinned).toBe(true);
+    expect(result.dropped).toHaveLength(0);
   });
 });
 

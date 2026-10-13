@@ -34,6 +34,13 @@ describe('blocking progress helpers', () => {
     expect(blockingProgressViewModel({ task: task!, jobId: null, progress: null, uploadProgress: null, startedAt: 0, lastEventAt: null, now: 1 }).indeterminate).toBe(true);
   });
 
+  it('maps popup analysis to a cancellable shared job task', () => {
+    const task = taskFromBusyKey('popup-analysis', () => undefined);
+    expect(task).toEqual({ kind: 'popup-analysis' });
+    expect(blockingTaskTitle(task!)).toBe('Đang phân tích popup');
+    expect(isStudioLocked('popup-analysis', 'job-popup', { status: 'running' })).toBe(true);
+  });
+
   it('shows and allows cancellation of a local bulk QA apply task', () => {
     const task = { kind: 'qa-bulk-apply', detail: 'Chương 1/3 · Áp dụng gợi ý', immediate: true } as const;
     const view = blockingProgressViewModel({

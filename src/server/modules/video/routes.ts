@@ -21,10 +21,11 @@ import { LOGO_MIME_TYPES, removeProjectLogo, replaceProjectLogo } from './logo-s
 import { analyzeProjectNameKeywords, type NameKeywordAnalysisSummary } from './name-keyword-service';
 import { selectProjectSceneKeywords } from './keywords';
 import { POPUP_ANALYSIS_JOB_TYPE } from './popup-analysis-service';
+import { editProjectPopupPlan, PopupPlanEditSchema, PopupPlanFlagsSchema, updateProjectPopupPlanFlags } from './popup-plan-edit-service';
 import { getClaudeCliStatus as readClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { loadConfig } from '../../config';
 
-type EnqueueVideoJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
+type EnqueueVideoJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<{ id: string }>;
 type AnalyzeNameKeywords = (projectId: string) => Promise<NameKeywordAnalysisSummary>;
 type GetActiveVideoJob = (projectId: string, type: string) => Promise<{ id: string; payload: unknown } | null>;
 type ReadClaudeCliStatus = () => ReturnType<typeof readClaudeCliStatus>;
@@ -114,7 +115,7 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyz
       density,
       ...(body.cliModel ? { cliModel: body.cliModel } : {}),
     };
-    const job = await options.enqueueJob({ type: POPUP_ANALYSIS_JOB_TYPE, projectId: project.id, payload });
+    const job = await options.enqueueJob({ type: POPUP_ANALYSIS_JOB_TYPE, projectId: project.id, payload, maxAttempts: 1 });
     res.status(201).json({ jobId: job.id });
   });
 
@@ -196,6 +197,16 @@ export function createVideoRouter(options: { enqueueJob: EnqueueVideoJob; analyz
   router.patch('/:id/popup-density', async (req, res) => {
     const { density } = PopupDensitySettingSchema.parse(req.body);
     res.json(await setProjectPopupDensity(req.params.id, density));
+  });
+
+  router.patch('/:id/scenes/:sceneId/popup-plan/flags', async (req, res) => {
+    const input = PopupPlanFlagsSchema.parse(req.body);
+    res.json(await updateProjectPopupPlanFlags(req.params.id, req.params.sceneId, input));
+  });
+
+  router.patch('/:id/scenes/:sceneId/popup-plan', async (req, res) => {
+    const input = PopupPlanEditSchema.parse(req.body);
+    res.json(await editProjectPopupPlan(req.params.id, req.params.sceneId, input));
   });
 
   router.patch('/:id/transition-style', async (req, res) => {

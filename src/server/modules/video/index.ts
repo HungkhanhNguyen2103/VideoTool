@@ -33,6 +33,7 @@ export { recomputeProjectSceneDurations } from './scene-duration-service';
 export { analyzeProjectNameKeywords } from './name-keyword-service';
 export { autoAnalyzeProjectNameKeywordsIfStale } from './name-keyword-service';
 export { analyzeProjectPopups, autoAnalyzeProjectPopupsIfStale, POPUP_ANALYSIS_JOB_TYPE, PopupAnalysisRequestSchema } from './popup-analysis-service';
+export { editProjectPopupPlan, PopupPlanEditSchema, PopupPlanFlagsSchema, updateProjectPopupPlanFlags } from './popup-plan-edit-service';
 export { configureDepthMapService, generateProjectDepthMaps, generateSceneDepthMap } from './depth-map-service';
 export { configureLogoService, removeProjectLogo, replaceProjectLogo } from './logo-service';
 export {

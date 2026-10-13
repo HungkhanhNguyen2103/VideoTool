@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
+import { hashNarration } from '../../../contracts/name-keywords';
 import { SfxVolumeSchema, type Scene, type VisualStyleId } from '../../../contracts/project';
 import { isVoiceoverFresh, VoiceSpeedSchema } from '../../../contracts/voiceover';
 import { SfxBatchSummarySchema } from '../../../contracts/video';
@@ -23,8 +24,9 @@ import { readinessBadgeForStatus } from './scene-readiness-ui';
 import { ProjectLogoControl } from './ProjectLogoControl';
 import { ScenePreviewSection, type ScenePreviewState } from './ScenePreviewSection';
 import { createScenePreviewFingerprint } from './scene-preview';
-import { nameKeywordPopupLine, nameKeywordStatusText } from './name-keyword-ui';
+import { nameKeywordPopupLine } from './name-keyword-ui';
 import { VoiceoverListenPanel } from './VoiceoverListenPanel';
+import { PopupAnalysisCard, type PopupAnalysisSummary } from './components/PopupAnalysisCard';
 import styles from './StudioPage.module.css';
 
 const statusTone = { draft: 'muted', script: 'indigo', assets: 'green', rendered: 'green' } as const;
@@ -54,6 +56,7 @@ export function StudioPage() {
   const [jobLocallyUnlocked, setJobLocallyUnlocked] = useState(false);
   const [voiceoverJobId, setVoiceoverJobId] = useState<string | null>(null);
   const [sfxJobId, setSfxJobId] = useState<string | null>(null);
+  const [popupAnalysisSummary, setPopupAnalysisSummary] = useState<PopupAnalysisSummary | null>(null);
   const [lastSfxBatchSummary, setLastSfxBatchSummary] = useState<{ failed: number; rateLimitedStop: boolean } | null>(null);
   const [voiceoverResetSceneIds, setVoiceoverResetSceneIds] = useState<Set<string>>(new Set());
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null);
@@ -75,10 +78,12 @@ export function StudioPage() {
   const projectQuery = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) });
   const filesQuery = useQuery({ queryKey: ['project-files', projectId], queryFn: () => api.listProjectFiles(projectId), enabled: Boolean(projectId) });
   const project = projectQuery.data;
-  const namePopupPreviewsQuery = useQuery({
-    queryKey: ['project-name-keyword-previews', projectId],
-    queryFn: () => api.getNameKeywordPreviews(projectId),
+  const cliStatusQuery = useQuery({
+    queryKey: ['script', 'claude-cli-status'],
+    queryFn: api.getClaudeCliStatus,
     enabled: Boolean(project),
+    staleTime: 15_000,
+    retry: false,
   });
   const scenes = project?.scenes ?? [];
   const files = filesQuery.data ?? [];
@@ -91,6 +96,8 @@ export function StudioPage() {
   const missingScenes = project ? api.missingSceneNumbers(project) : [];
   const readinessBySceneId = useMemo(() => new Map(scenes.map((scene) => [scene.id, analyzeScene(scene)])), [scenes]);
   const renderReadiness = useMemo(() => summarizeRenderReadiness(scenes), [scenes]);
+  const popupEligibleScenes = scenes.filter((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId && scene.wordTimings.words.length > 0);
+  const popupUnreadyScenes = popupEligibleScenes.filter((scene) => !(scene.popupPlan && scene.popupPlan.audioFileId === scene.audioFileId && scene.popupPlan.narrationHash === hashNarration(scene.narration)));
   const pipelineProgress = useMemo(() => project ? computePipelineProgress(project) : null, [project]);
   const hasUnappliedTail = project ? hasUnappliedSceneTail(scenes, project.sceneTailSec) : false;
   const expandedScene = scenes.find((scene) => scene.id === expandedSceneId) ?? null;
@@ -105,7 +112,11 @@ export function StudioPage() {
   const expandedAssetFile = expandedScene?.assetFileId ? filesById.get(expandedScene.assetFileId) : undefined;
   const expandedAssetSrc = expandedAssetFile ? api.fileUrlForSummary(expandedAssetFile) : null;
   const expandedAssetType = expandedAssetFile ? api.mediaTypeForMime(expandedAssetFile.mimeType) : null;
-  const expandedNamePopup = namePopupPreviewsQuery.data?.find((preview) => preview.sceneId === expandedScene?.id)?.popup ?? null;
+  const expandedPopupPlan = expandedScene && expandedScene.audioFileId && expandedScene.wordTimings?.audioFileId === expandedScene.audioFileId
+    && expandedScene.popupPlan?.audioFileId === expandedScene.audioFileId && expandedScene.popupPlan.narrationHash === hashNarration(expandedScene.narration)
+    ? expandedScene.popupPlan
+    : null;
+  const expandedNamePopup = expandedPopupPlan?.popups.find((popup) => popup.status === 'kept' && !popup.suppressed && ['person', 'place', 'event'].includes(popup.kind)) ?? null;
   const progress = useJobProgress(jobId, jobReconnectKey);
   const busyTask = useMemo(() => taskFromBusyKey(busy, (sceneId) => {
     const index = scenes.findIndex((scene) => scene.id === sceneId);
@@ -126,7 +137,15 @@ export function StudioPage() {
   useEffect(() => {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;
     refreshedJobRef.current = jobId;
-    if (progress.status === 'done' && voiceoverJobId === jobId) {
+    if (progress.status === 'done' && jobTask?.kind === 'popup-analysis') {
+      const result = progress.result as { scenesApplied?: unknown; scenesExpected?: unknown; summary?: { rejectedCandidates?: unknown } } | null;
+      if (typeof result?.scenesApplied === 'number' && typeof result.scenesExpected === 'number' && typeof result.summary?.rejectedCandidates === 'number') {
+        setPopupAnalysisSummary({ scenesApplied: result.scenesApplied, scenesExpected: result.scenesExpected, rejectedCandidates: result.summary.rejectedCandidates });
+        toast(`Đã áp dụng ${result.scenesApplied}/${result.scenesExpected} scene; từ chối ${result.summary.rejectedCandidates} ứng viên.`);
+      }
+      setJobTask(null);
+      setJobId(null);
+    } else if (progress.status === 'done' && voiceoverJobId === jobId) {
       const summary = api.voiceoverSummary(progress.result);
       if (summary) toast(summary);
       setVoiceoverJobId(null);
@@ -145,7 +164,7 @@ export function StudioPage() {
       toast(progress.error ?? (progress.status === 'cancelled' ? 'Đã huỷ tác vụ.' : 'Tác vụ thất bại.'));
     }
     void refresh();
-  }, [jobId, progress?.status, progress?.result, voiceoverJobId, sfxJobId]);
+  }, [jobId, progress?.status, progress?.result, voiceoverJobId, sfxJobId, jobTask]);
   useEffect(() => {
     if (progress) setJobLastEventAt(Date.now());
   }, [progress]);
@@ -212,16 +231,39 @@ export function StudioPage() {
 
   async function refresh() {
     await Promise.all([projectQuery.refetch(), filesQuery.refetch()]);
-    await namePopupPreviewsQuery.refetch();
   }
 
-  async function analyzeNameKeywords() {
+  async function analyzeProjectPopups(options: Parameters<typeof api.analyzeProjectPopups>[1]): Promise<void> {
     try {
-      setBusy('name-keywords');
-      const summary = await api.analyzeProjectNameKeywords(projectId);
+      setBusy('popup-analysis');
+      setPopupAnalysisSummary(null);
+      const result = await api.analyzeProjectPopups(projectId, options);
+      startJob({ kind: 'popup-analysis' }, result.jobId);
+      toast('Đã xếp hàng phân tích popup.');
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể phân tích popup.'); }
+    finally { setBusy(null); }
+  }
+
+  async function changePopupDensity(density: Parameters<typeof api.setPopupDensity>[1]): Promise<void> {
+    if (density === project?.popupDensity) return;
+    try { setBusy('popup-density'); await api.setPopupDensity(projectId, density); await refresh(); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật mật độ popup.'); }
+    finally { setBusy(null); }
+  }
+
+  async function togglePopupFlags(sceneId: string, anchor: string, flags: { pinned?: boolean; suppressed?: boolean }): Promise<void> {
+    try {
+      setBusy('popup-plan');
+      const result = await api.setPopupPlanFlags(projectId, sceneId, { anchor, ...flags });
       await refresh();
-      toast(`Đã phân tích tên popup: ${summary.scenesWithName}/${summary.scenesAnalyzed} scene có tên.`);
-    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể phân tích tên popup.'); }
+      if (result.conflicts.length > 0) toast(`Đã cập nhật popup; ${result.conflicts.length} popup xung đột được ghi nhận.`);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Không thể cập nhật popup.'); }
+    finally { setBusy(null); }
+  }
+
+  async function editPopup(sceneId: string, popup: Parameters<typeof api.editPopupPlan>[2]): Promise<void> {
+    try { setBusy('popup-plan'); await api.editPopupPlan(projectId, sceneId, popup); await refresh(); toast('Đã sửa popup.'); }
+    catch (error) { toast(error instanceof Error ? error.message : 'Không thể sửa popup.'); }
     finally { setBusy(null); }
   }
 
@@ -671,17 +713,27 @@ export function StudioPage() {
               {project.renderEngine === 'ffmpeg' && <span className={styles.renderHint}>Chỉ có ở engine Remotion</span>}
             </fieldset>
             <p className={styles.controlHelp}>FFmpeg bỏ qua hiệu ứng Remotion và logo; render nháp chỉ dùng được với Remotion.</p>
+            <PopupAnalysisCard
+              project={project}
+              scenes={scenes}
+              disabled={studioLocked}
+              analysisActive={jobTask?.kind === 'popup-analysis'}
+              cliAvailable={cliStatusQuery.data?.available === true}
+              cliStatusText={cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliStatusQuery.data?.reason}
+              summary={popupAnalysisSummary}
+              onApiModelChange={setAiModel}
+              onAnalyze={analyzeProjectPopups}
+              onDensityChange={changePopupDensity}
+              onToggleFlags={togglePopupFlags}
+              onEdit={editPopup}
+            />
             <ProjectLogoControl project={project} logoFile={project.logoFileId ? filesById.get(project.logoFileId) : undefined} busy={busy} setBusy={setBusy} refresh={refresh} />
           </section>
 
           <section className={`${styles.controlCard} ${styles.renderControlsCard}`} aria-labelledby="render-controls-title">
             <div className={styles.controlCardHead}><div><h3 id="render-controls-title" className={styles.controlTitle}>Render &amp; xuất</h3><p className={styles.muted}>Kiểm tra readiness trước khi xuất video</p></div></div>
             <section className={styles.readinessSummary} aria-label="Render readiness"><div><strong>{renderReadiness.total} scenes: {renderReadiness.ready} ready, {renderReadiness.warnings} warnings, {renderReadiness.errors} errors</strong><p className={styles.muted}>Cảnh cảnh báo chỉ cần xác nhận; cảnh lỗi bị chặn theo khả năng render hiện tại.</p></div><details><summary>Chi tiết readiness</summary>{renderReadiness.issues.length > 0 ? <ul>{renderReadiness.issues.map((issue) => <li key={issue.sceneId}><strong>Scene {issue.sceneNumber}</strong>: {issue.messages.join(' · ')}{issue.blocking ? ' — blocker' : ''}</li>)}</ul> : <p className={styles.muted}>Tất cả scene đã sẵn sàng.</p>}</details></section>
-            <div className={styles.nameKeywordRow}>
-              <p className={styles.nameKeywordStatus}>{nameKeywordStatusText(scenes)}</p>
-              <Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void analyzeNameKeywords()}>{scenes.some((scene) => scene.nameCandidates !== null) ? 'Phân tích lại' : 'Phân tích tên popup'}</Button>
-            </div>
-            <p className={styles.controlHelp}>Phân tích lời dẫn để gợi ý tên riêng và địa danh cho chữ pop-up.</p>
+            {popupUnreadyScenes.length > 0 && <p className={styles.warning} role="status">{popupUnreadyScenes.length}/{popupEligibleScenes.length} scene chưa có popupPlan mới; có thể phân tích lại trước khi render. Nút render không bị chặn.</p>}
             {missingScenes.length > 0 && <p className={styles.warning}>Chưa sẵn sàng render: scene {missingScenes.join(', ')} thiếu asset.</p>}
             <div className={styles.renderActions}><Button size="sm" variant="amber" disabled={studioLocked || missingScenes.length > 0} onClick={() => requestRender()}>Render video</Button><Button size="sm" variant="indigoline" title="Chi co o engine Remotion" disabled={studioLocked || missingScenes.length > 0 || project.renderEngine === 'ffmpeg'} onClick={() => requestRender(true)}>Render nháp (nhanh)</Button></div>
             <p className={styles.controlHelp}>Bản nháp chỉ có trên Remotion và lưu riêng, không ghi đè bản render chính.</p>
@@ -765,7 +817,7 @@ export function StudioPage() {
               <div className={styles.actions}><Button size="sm" variant="amber" title="Tạo lại voiceover có thể hoàn tác thay đổi này" disabled={studioLocked || expandedScene.videoDurationSec === null || Math.ceil(expandedScene.videoDurationSec) <= expandedScene.durationSec} onClick={() => void fitSceneToClip(expandedScene)}>Kéo dài scene = clip</Button></div>
             </section>}
             <div className={styles.prompt}><span className={styles.label}>Lời dẫn</span>{expandedNarrationEditing ? <><textarea className={styles.textarea} value={draftNarration} onChange={(event) => setDraftNarration(event.target.value)} aria-label={`Sửa lời dẫn scene ${scenes.findIndex((scene) => scene.id === expandedScene.id) + 1}`} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingNarrationScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy || studioLocked} onClick={() => void saveNarration(expandedScene)}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.narration || 'Khong co loi dan'}</span><Button size="sm" disabled={studioLocked} onClick={() => startNarrationEdit(expandedScene)}>Edit</Button></div>}</div>
-            {namePopupPreviewsQuery.data && <p className={styles.nameKeywordDetail}>{nameKeywordPopupLine(expandedNamePopup)}</p>}
+            <p className={styles.nameKeywordDetail}>{nameKeywordPopupLine(expandedNamePopup)}</p>
             <div className={styles.prompt}><span className={styles.label}>Visual prompt</span>{expandedEditing ? <><textarea className={styles.textarea} value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy || studioLocked} onClick={() => { void patchScene(expandedScene.id, { visualPrompt: draftPrompt }); setEditingScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.visualPrompt || 'Chưa có visual prompt.'}</span><Button size="sm" disabled={studioLocked} onClick={() => startEdit(expandedScene)}>Edit</Button></div>}</div>
             {expandedScene.assetType === 'video' && <div className={styles.prompt}><span className={styles.label}>Motion prompt</span>{expandedMotionEditing ? <><textarea className={styles.textarea} value={draftMotionPrompt} onChange={(event) => setDraftMotionPrompt(event.target.value)} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingMotionScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy || studioLocked} onClick={() => { void patchScene(expandedScene.id, { motionPrompt: draftMotionPrompt }); setEditingMotionScene(null); }}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.motionPrompt || 'Chưa có motion prompt.'}</span><Button size="sm" disabled={studioLocked} onClick={() => startMotionEdit(expandedScene)}>Edit</Button></div>}</div>}
             <div className={styles.audioControls}>

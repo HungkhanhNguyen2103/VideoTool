@@ -2,13 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('Studio scene readiness presentation', () => {
-  it('shows project name-popup status/action and a read-only selected popup in scene details', async () => {
+  it('shows the stored popup-plan line in scene details and no legacy analysis action', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('nameKeywordStatusText(scenes)');
-    expect(source).toContain('Phân tích tên popup');
-    expect(source).toContain("setBusy('name-keywords')");
-    expect(source).toContain('namePopupPreviewsQuery');
-    expect(source).toContain('nameKeywordPopupLine');
+    expect(source).toContain('nameKeywordPopupLine(expandedNamePopup)');
+    expect(source).toContain('expandedPopupPlan');
+    expect(source).not.toContain('nameKeywordStatusText');
+    expect(source).not.toContain('analyzeNameKeywords');
+    expect(source).not.toContain('namePopupPreviewsQuery');
+    expect(source).not.toContain('Phân tích tên popup');
   });
 
   it('shows measured clip facts, readiness tooltips, and video thumbnails in cards and detail', async () => {
@@ -30,6 +31,8 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('Tiếp tục render');
     expect(source).toContain('Cảnh cảnh báo chỉ cần xác nhận');
     expect(source).toContain('disabled={studioLocked || missingScenes.length > 0}');
+    expect(source).toContain('popupUnreadyScenes.length > 0');
+    expect(source).toContain('Nút render không bị chặn.');
   });
 
   it('wires scene preview results into the detail section and labeled card fallback', async () => {
@@ -107,6 +110,7 @@ describe('Studio configuration card structure', () => {
 describe('Studio verified control explanations', () => {
   it('explains the behavior and limits confirmed by the existing handlers', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    const popupCard = await readFile(new URL('./components/PopupAnalysisCard.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
     for (const explanation of [
       'Model AI dùng cho các tác vụ AI; phong cách chỉ áp dụng khi tạo visual prompt.',
@@ -122,9 +126,9 @@ describe('Studio verified control explanations', () => {
       'FFmpeg bỏ qua hiệu ứng Remotion và logo; render nháp chỉ dùng được với Remotion.',
       'Các tùy chọn pop-up, chuyển cảnh, phim cũ và chiều sâu chỉ áp dụng với Remotion.',
       'Tạo depth map cho scene ảnh có asset; map cùng ảnh sẽ được giữ lại.',
-      'Phân tích lời dẫn để gợi ý tên riêng và địa danh cho chữ pop-up.',
       'Bản nháp chỉ có trên Remotion và lưu riêng, không ghi đè bản render chính.',
     ]) expect(source).toContain(explanation);
+    expect(popupCard).toContain('Phân tích từ popupPlan đã lưu; không đọc dữ liệu nameCandidates cũ.');
     expect(css).toContain('.controlHelp {');
   });
 });

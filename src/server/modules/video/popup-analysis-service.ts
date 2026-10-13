@@ -11,7 +11,7 @@ import { getClaudeCliStatus, runClaudeCli, type ClaudeCliRunOptions, type Claude
 import { logger } from '../../shared/logger';
 import { getProject, setProjectScenePopupPlans, type ProjectScenePopupPlanUpdate } from '../project';
 import { assemblePopupPlans, type PopupAssemblyScene, type PopupPlanAssemblyResult } from './popup-plan';
-import { buildPopupAnalysisPrompt, type PopupPromptScene } from './ai/build-prompt';
+import { buildPopupAnalysisPrompt, POPUP_AI_OUTPUT_JSON_SCHEMA, type PopupPromptScene } from './ai/build-prompt';
 import { parsePopupAiOutputForScenes, PopupAiOutputError } from './ai/parse-output';
 import type { PopupAiOutput } from './ai/output-schema';
 
@@ -167,25 +167,27 @@ function cliFailure(result: ClaudeCliRunResult, config: PopupCliConfig): AppErro
   return null;
 }
 
-function apiMessages(prompt: string): ChatMessage[] {
+function apiMessages(prompt: string, correction?: string): ChatMessage[] {
   return [
-    { role: 'system', content: 'Return only valid JSON matching the popup analysis contract. Do not include markdown or prose outside JSON.' },
-    { role: 'user', content: prompt },
+    { role: 'system', content: `Return only valid JSON matching this exact popup analysis schema: ${JSON.stringify(POPUP_AI_OUTPUT_JSON_SCHEMA)}. Do not include markdown or prose outside JSON.` },
+    { role: 'user', content: correction ? `${prompt}\n\n${correction}` : prompt },
   ];
 }
 
 async function parseChunkWithRetry(
-  request: () => Promise<string>,
+  request: (correction?: string) => Promise<string>,
   primarySceneNumbers: readonly number[],
   appendLog: (message: string) => Promise<void>,
 ): Promise<PopupAiOutput> {
+  let correction: string | undefined;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const raw = await request();
+    const raw = await request(correction);
     try {
       return parsePopupAiOutputForScenes(raw, primarySceneNumbers);
     } catch (error) {
-      if (error instanceof PopupAiOutputError && error.kind === 'json' && attempt === 0) {
-        await appendLog(`JSON popup chunk ${primarySceneNumbers[0]}-${primarySceneNumbers.at(-1)} không hợp lệ; thử lại một lần.`);
+      if (error instanceof PopupAiOutputError && attempt === 0) {
+        correction = `Lần trước JSON sai vì: ${error.message}. Sửa lại đúng schema.`;
+        await appendLog(`Popup chunk ${primarySceneNumbers[0]}-${primarySceneNumbers.at(-1)} sai JSON/schema; thử lại một lần.`);
         continue;
       }
       throw invalidResponse(error);
@@ -225,17 +227,19 @@ async function runCliChunk(
   status: ClaudeCliStatus,
   model: string,
 ): Promise<{ output: PopupAiOutput; runDirectory: string } | { cancelled: true }> {
+  let correction: string | undefined;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
     const stopWatching = watchCancellation(context, controller);
     let result: ClaudeCliRunResult;
+    const promptText = correction ? `${chunk.prompt}\n\n${correction}` : chunk.prompt;
     try {
       result = await (dependencies.runCli ?? runClaudeCli)({
         ...config,
         projectId: project.id,
         chapterId: 'popup-analysis',
         stepLabel: `chunk-${chunkIndex + 1}${attempt ? '-retry' : ''}`,
-        promptText: chunk.prompt,
+        promptText,
         model,
         cliVersion: status.version,
         signal: controller.signal,
@@ -244,15 +248,16 @@ async function runCliChunk(
     } finally {
       stopWatching();
     }
-    await context.appendLog(`Claude CLI popup chunk ${chunkIndex + 1}: prompt ${Buffer.byteLength(chunk.prompt, 'utf8')} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
+    await context.appendLog(`Claude CLI popup chunk ${chunkIndex + 1}: prompt ${Buffer.byteLength(promptText, 'utf8')} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
     if (result.cancelled || controller.signal.aborted || await context.isCancelled()) return { cancelled: true };
     const failure = cliFailure(result, config);
     if (failure) throw failure;
     try {
       return { output: parsePopupAiOutputForScenes(result.output, chunk.primarySceneNumbers), runDirectory: result.displayPath };
     } catch (error) {
-      if (error instanceof PopupAiOutputError && error.kind === 'json' && attempt === 0) {
-        await context.appendLog(`JSON popup chunk ${chunk.primarySceneNumbers[0]}-${chunk.primarySceneNumbers.at(-1)} không hợp lệ; thử lại một lần.`);
+      if (error instanceof PopupAiOutputError && attempt === 0) {
+        correction = `Lần trước JSON sai vì: ${error.message}. Sửa lại đúng schema.`;
+        await context.appendLog(`Popup chunk ${chunk.primarySceneNumbers[0]}-${chunk.primarySceneNumbers.at(-1)} sai JSON/schema; thử lại một lần.`);
         continue;
       }
       throw invalidResponse(error);
@@ -307,7 +312,7 @@ export async function analyzeProjectPopups(
     let parsed: PopupAiOutput | null = null;
     if (request.backend === 'api') {
       parsed = await parseChunkWithRetry(
-        () => getClient!.chat(apiMessages(chunk.prompt), { json: true, maxTokens: POPUP_ANALYSIS_MAX_TOKENS, temperature: 0 }),
+        (correction) => getClient!.chat(apiMessages(chunk.prompt, correction), { json: true, maxTokens: POPUP_ANALYSIS_MAX_TOKENS, temperature: 0 }),
         chunk.primarySceneNumbers,
         context.appendLog,
       );
