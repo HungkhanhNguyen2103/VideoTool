@@ -41,6 +41,7 @@ import * as videoIndex from './index';
 import { alignProjectWordTimings, assertProjectRenderReady, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectDepthMaps, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, recomputeProjectSceneDurations, renderFullProject, renderScenePreviewBuffer } from './index';
 import { createVideoRouter } from './routes';
 import type { NameKeywordAnalysisSummary } from './name-keyword-service';
+import { analyzeProjectPopups } from './popup-analysis-service';
 import { enqueueJob as insertJob } from '../job';
 import { jobHandlers } from '../../../worker/registry';
 
@@ -179,7 +180,7 @@ describe('video project mutations', () => {
     await setSceneDepthMap(project.id, 'scene-1', 'asset-1', { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.95 });
     await setProjectScenePopupPlans(project.id, [{
       sceneId: 'scene-1', expectedNarration: 'Narration', expectedAudioFileId: 'voice-1',
-      popupPlan: { narrationHash: hashNarration('Narration'), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', backend: 'api', density: 'low', generatedAt: '2026-10-13T00:00:00.000Z', needed: false, reason: 'KhÃ´ng cáº§n popup.', popups: [], dropped: [] },
+      popupPlan: { narrationHash: hashNarration('Narration'), audioFileId: 'voice-1', provider: 'deepseek', model: 'deepseek-chat', backend: 'api', density: 'low', generatedAt: '2026-10-13T00:00:00.000Z', needed: false, reason: 'Không cần popup.', popups: [], dropped: [] },
     }]);
     const before = await getProject(project.id);
 
@@ -201,6 +202,10 @@ describe('video project mutations', () => {
     expect(unchanged.version).toBe(inactive.version);
     await expect(setProjectSceneActive(project.id, 'scene-1', true, before.version)).rejects.toMatchObject({ status: 409, code: 'PROJECT_CHANGED' });
     await expect(setProjectSceneActive(project.id, 'missing', false)).rejects.toMatchObject({ status: 404 });
+
+    const reactivated = await setProjectSceneActive(project.id, 'scene-1', true, inactive.version);
+    expect(reactivated.version).toBe(inactive.version + 1);
+    expect(reactivated.scenes[0]).toEqual(before.scenes[0]);
   });
 
   it('lists only active scenes and their duration while treating missing flags as active', async () => {
@@ -1135,7 +1140,7 @@ describe('video routes and worker handlers', () => {
   ])('rejects %s updates while its scene is inactive', async (_name, suffix, body) => {
     const project = await seedPopupPlanProject();
     const beforePlan = project.scenes[0]!.popupPlan;
-    await setProjectSceneActive(project.id, 'scene-1', false);
+    const inactive = await setProjectSceneActive(project.id, 'scene-1', false);
     const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
 
     const response = await fetch(`${base}/api/project/${project.id}/scenes/scene-1${suffix}`, {
@@ -1144,7 +1149,72 @@ describe('video routes and worker handlers', () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: 'SCENE_INACTIVE' } });
-    expect((await getProject(project.id)).scenes[0]!.popupPlan).toEqual(beforePlan);
+    const after = await getProject(project.id);
+    expect(after.version).toBe(inactive.version);
+    expect(after.scenes[0]!.popupPlan).toEqual(beforePlan);
+  });
+
+  it('returns SCENE_INACTIVE from single-scene voiceover, SFX, and preview routes', async () => {
+    const project = await seedVoiceProject();
+    const inactive = await setProjectSceneActive(project.id, 'scene-1', false);
+    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn() };
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+    const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue);
+
+    const responses = [
+      await fetch(`${base}/api/project/${project.id}/scenes/scene-1/regenerate-voiceover`, { method: 'POST' }),
+      await fetch(`${base}/api/project/${project.id}/scenes/scene-1/generate-sfx`, { method: 'POST' }),
+      await fetch(`${base}/api/project/${project.id}/scenes/scene-1/render-preview`),
+    ];
+
+    for (const response of responses) {
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: { code: 'SCENE_INACTIVE', message: 'Scene này đang tắt. Bật scene trước khi thực hiện.' } });
+    }
+    expect(mocks.synthesize).not.toHaveBeenCalled();
+    expect(mocks.searchSfx).not.toHaveBeenCalled();
+    expect(renderer.renderScenePreview).not.toHaveBeenCalled();
+    expect(await getProject(project.id)).toEqual(inactive);
+  });
+
+  it('preserves the stored popup plan of an inactive scene during popup analysis', async () => {
+    const project = await seedVoiceProject();
+    const scenes = await getProject(project.id);
+    for (const [index, scene] of scenes.scenes.entries()) {
+      const audioFileId = `voice-${index + 1}`;
+      await patchProjectScene(project.id, scene.id, { audioFileId, voiceoverDurationSec: 2 });
+      await setSceneWordTimings(project.id, scene.id, audioFileId, scene.narration, {
+        audioFileId,
+        words: [{ text: scene.narration, startSec: 0, endSec: 0.2 }],
+      });
+    }
+    const inactiveScene = (await getProject(project.id)).scenes[1]!;
+    const inactivePlan = {
+      narrationHash: hashNarration(inactiveScene.narration), audioFileId: inactiveScene.audioFileId!,
+      provider: 'deepseek' as const, model: 'deepseek-chat', backend: 'api' as const, density: 'low' as const,
+      generatedAt: '2026-10-12T00:00:00.000Z', needed: false, reason: 'No popup needed.', popups: [], dropped: [],
+    };
+    await setProjectScenePopupPlans(project.id, [{
+      sceneId: inactiveScene.id, expectedNarration: inactiveScene.narration,
+      expectedAudioFileId: inactiveScene.audioFileId!, popupPlan: inactivePlan,
+    }]);
+    await setProjectSceneActive(project.id, inactiveScene.id, false);
+    const storedBeforeAnalysis = (await getProject(project.id)).scenes[1]!.popupPlan;
+    const chat = vi.fn().mockResolvedValue(JSON.stringify({ scenes: [
+      { scene: 1, needed: false, reason: 'No popup needed.', popups: [] },
+    ] }));
+
+    const result = await analyzeProjectPopups(project.id, { backend: 'api', density: 'low' }, {
+      reportProgress: vi.fn().mockResolvedValue(undefined),
+      isCancelled: vi.fn().mockResolvedValue(false),
+      appendLog: vi.fn().mockResolvedValue(undefined),
+    }, {
+      getAiClient: vi.fn().mockReturnValue({ model: 'deepseek-chat', chat } as never),
+    });
+
+    expect(result).toMatchObject({ scenesExpected: 1, scenesApplied: 1, skippedInactive: 1 });
+    expect(chat.mock.calls[0]![0][1].content).not.toContain('Scene 2');
+    expect((await getProject(project.id)).scenes[1]!.popupPlan).toEqual(storedBeforeAnalysis);
   });
 
   it.each([false, true])('skips inactive SFX scenes when onlyMissing=%s', async (onlyMissing) => {
@@ -1218,6 +1288,7 @@ describe('video routes and worker handlers', () => {
     ['regenerate-chapters-claude-cli', 'PROJECT_JOB_IN_PROGRESS'],
   ])('refuses a scene toggle while %s is active', async (jobType, code) => {
     const project = await seedProject();
+    const before = await getProject(project.id);
     const getActiveJob = vi.fn(async (_projectId: string, type: string) => type === jobType ? { id: 'job-active', payload: {} } : null);
     const base = await startVideoRouterServer(vi.fn() as unknown as VideoEnqueue, undefined, { getActiveJob });
 
@@ -1227,7 +1298,7 @@ describe('video routes and worker handlers', () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code, message: expect.any(String) } });
-    expect((await getProject(project.id)).scenes[0]?.active).toBe(true);
+    expect(await getProject(project.id)).toEqual(before);
     expect(getActiveJob).toHaveBeenCalledWith(project.id, jobType);
   });
 

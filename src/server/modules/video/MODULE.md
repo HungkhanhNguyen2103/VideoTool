@@ -81,6 +81,8 @@ The written design and seven-task implementation plan are committed at `docs/sup
 
 `contracts/scene-active.ts` defines active-scene filtering. Voiceover (including a requested start scene), word alignment, SFX, depth-map batches, duration recompute, name-keyword analysis, and popup analysis skip inactive scenes and report `skippedInactive`; all-inactive batches log a Vietnamese explanation and complete without entering an error loop. Batch logs/progress retain original scene numbers while progress denominators use active scenes. Popup analysis excludes inactive scenes from AI input, context overlap, and active-timeline start times, and does not replace their stored plans. Single-scene voiceover, SFX, preview, fit-to-clip, and popup-plan actions reject inactive scenes with `409 SCENE_INACTIVE`. `PATCH /api/project/:id/scenes/:sceneId/active` lives in this router and refuses changes while the exported scene-writing job-type list has an active job. Render timeline exclusion and preview freshness are Part B.
 
+Review-round HTTP regressions cover `409 SCENE_INACTIVE` for voiceover, SFX, preview, popup-plan flags, and popup-plan edits; the 12-job toggle guard checks that the full project remains unchanged. Mongo integration also confirms popup analysis leaves a stored inactive-scene plan unchanged. The preset loader accepts the checked-in CRLF `popup-analysis.md`; the earlier LF-only frontmatter regex rejected the captured `popup-analysis\r` value.
+
 ## Acceptance
 
 - Task 5 pure renderer tests cover scaling/padding/fps, silent inputs, voice/SFX mixing, exact volume constants, concat/BGM arguments, and Remotion renderer selection.
