@@ -41,6 +41,8 @@
 .addRow .input { flex: 1 1 14rem; }
 .actions { justify-content: flex-end; flex-wrap: wrap; }
 .ideaGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ideaItem { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: .4rem; min-width: 0; }
+.ideaItem > :last-child { width: 100%; justify-content: center; }
 .idea { display: grid; gap: .35rem; min-width: 0; padding: .65rem; text-align: left; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); color: var(--text); cursor: pointer; }
 .idea span, .idea small { color: var(--text-2); }
 .idea small { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
