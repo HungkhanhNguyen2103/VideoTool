@@ -24,6 +24,7 @@
 .remotionEffects { min-width: 0; margin: 0; padding: .65rem .75rem .75rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); }
 .remotionEffects legend { padding: 0 .3rem; color: var(--text-2); font-size: .78rem; font-weight: 700; }
 .effectsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; align-items: end; }
+.depthMapButton { grid-column: 1 / -1; justify-self: start; max-width: 100%; height: auto; min-height: 30px; padding-block: .35rem; white-space: normal; text-align: left; }
 .popupToggle { display: inline-flex; align-items: center; gap: .35rem; min-height: 2.25rem; font-size: .85rem; font-weight: 700; }
 .popupToggle input { accent-color: var(--indigo); }
 .transitionField { display: grid; gap: .25rem; color: var(--text-3); font-size: .75rem; font-weight: 700; }
