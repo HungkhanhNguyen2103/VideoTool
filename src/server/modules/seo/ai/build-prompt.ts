@@ -24,16 +24,6 @@ function totalDuration(project: ProjectDetail): number {
   return activeScenes(project.scenes).reduce((sum, scene) => sum + scene.durationSec, 0);
 }
 
-/** Short English descriptors of each video visual style, so thumbnail prompts match the video's look (kept in sync with the script module's style presets). */
-const VISUAL_STYLE_BRIEFS: Record<ProjectDetail['visualStylePresetId'], string> = {
-  cinematic: 'cinematic historical documentary still: naturalistic dramatic light, muted desaturated grading, photographic texture',
-  anime: 'clean modern anime illustration: confident linework, cel-shaded color blocks, clear silhouettes',
-  watercolor: 'soft watercolor painting on textured paper: visible brush strokes, transparent washes',
-  photorealistic: 'documentary-style photograph: true-to-life color, natural light, real-camera look',
-  'flat-cartoon': 'flat cel-shaded cartoon illustration: bold clean black outlines, flat color fills, minimal shadow blocks, slightly chibi characters, muted earthy palette (olive green, tan, brown, dusty blue), no photorealistic lighting or gradients',
-  'strategic-map': '2D vector illustration with flat colors and bold outlines: top-down tactical maps with color-coded forces and arrows, or simplified characters with exaggerated expressions; earth-tone terrain',
-};
-
 export function buildSeoPrompt(project: ProjectDetail, sections: readonly SeoSection[] = SEO_SECTIONS): SeoBuiltPrompt {
   const preset = loadSeoPreset();
   const requested = selectedSections(sections);
@@ -46,7 +36,7 @@ export function buildSeoPrompt(project: ProjectDetail, sections: readonly SeoSec
       `Titles: provide up to five options, cover the requested angle enum values when possible, keep each at most ${SEO_TITLE_MAX_CHARS} characters and prefer ${SEO_TITLE_RECOMMENDED_MAX_CHARS} or fewer.`,
       `Description intro: at most ${SEO_DESCRIPTION_MAX_CHARS} characters. Tags must be specific-to-broad and together use at most ${SEO_TAGS_MAX_CHARS} characters.`,
       `Hashtags: at most ${SEO_HASHTAGS_MAX_COUNT}; each starts with #, has no spaces, uses CamelCase and prefers unaccented spelling; put the three most relevant first and do not repeat tags.`,
-      `Thumbnail overlay text: at most ${SEO_THUMBNAIL_MAX_WORDS} words; imagePrompt must describe an English visual concept, not embedded readable text.`,
+      `Thumbnail overlay text: at most ${SEO_THUMBNAIL_MAX_WORDS} words; imagePrompt is an English, paste-ready image-generator prompt that includes the exact overlay text to render on the image.`,
       preset.system,
       preset.instructions,
     ].join('\n\n'),
@@ -60,7 +50,6 @@ export function buildSeoPrompt(project: ProjectDetail, sections: readonly SeoSec
       `Duration seconds: ${totalDuration(project)}`,
       `Chapters: ${JSON.stringify(project.chapters.map((chapter) => ({ no: chapter.no, title: chapter.title, role: chapter.role, chapterSummary: chapter.chapterSummary })))}`,
       `Opening excerpt of chapter 1: ${openingExcerpt(project)}`,
-      `Video visual style: ${project.visualStylePresetId} (${VISUAL_STYLE_BRIEFS[project.visualStylePresetId]})`,
       `Chosen title context: ${chosenTitle}`,
       `Requested sections: ${requested.join(', ')}`,
       `Return JSON matching this schema: ${JSON.stringify(jsonSchema)}`,

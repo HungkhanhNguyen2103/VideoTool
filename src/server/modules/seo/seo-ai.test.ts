@@ -80,10 +80,11 @@ describe('SEO AI generation', () => {
   it('builds a bounded prompt with only the requested sections and no full narration', () => {
     const prompt = buildSeoPrompt(project, ['titles', 'tags']);
 
-    expect(prompt.promptVersion).toBe('seo-prompt-v1/seo-documentary@4');
+    expect(prompt.promptVersion).toBe('seo-prompt-v1/seo-documentary@5');
     expect(prompt.system).toContain('titles');
     expect(prompt.user).toContain('Requested sections: titles, tags');
-    expect(prompt.user).toContain('Video visual style: ');
+    expect(prompt.user).not.toContain('Video visual style');
+    expect(prompt.system).toContain('paste-ready image-generator prompt');
     expect(prompt.user).toContain('Mở đầu dài của chương một.');
     expect(prompt.user).not.toContain('Toàn bộ narration không nên đưa vào prompt SEO.');
     expect(prompt.jsonSchema).toMatchObject({ type: 'object' });
