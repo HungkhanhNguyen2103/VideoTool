@@ -43,7 +43,7 @@ export function ScenePreviewSection({ scene, currentScene = scene, sceneNumber, 
     {staleReason && <p className={styles.scenePreviewStale} aria-live="polite">Preview có thể đã cũ · {staleReason}</p>}
     {error && <p className={styles.scenePreviewError} role="alert">{error}</p>}
     <div className={styles.scenePreviewActions}>
-      <Button size="sm" variant="amber" disabled={studioLocked} onClick={onRender}>{preview ? 'Render lại preview' : 'Render preview'}</Button>
+      <span title={scene.active === false ? 'Scene đang tắt — bật lại để dùng chức năng này' : undefined}><Button size="sm" variant="amber" disabled={studioLocked || scene.active === false} aria-disabled={studioLocked || scene.active === false} title={scene.active === false ? 'Scene đang tắt — bật lại để dùng chức năng này' : undefined} onClick={onRender}>{preview ? 'Render lại preview' : 'Render preview'}</Button></span>
       {preview && <span className={styles.muted}>Preview chỉ lưu trong phiên này; tải lại trang sẽ mất.</span>}
     </div>
   </section>;

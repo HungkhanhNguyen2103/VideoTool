@@ -33,10 +33,14 @@
 
 Flow JSON export omits inactive scenes while keeping their original scene numbers. ZIP import skips files targeting inactive scenes, returns the skipped filenames with a Vietnamese reason, and reports `skippedInactive`; project-wide asset-type changes, video-distribution preview/apply, and automatic depth-map enqueueing only target active scenes. `fitSceneToClip` rejects an inactive target through the project module's shared guard.
 
+## Studio inactive-scene controls — Task 98 Part C
+
+The Studio client displays active/inactive counts and active-only total duration. Each scene card and detail panel has an accessible, version-guarded activation switch; inactive cards remain selectable and editable while single-scene generation and preview actions are disabled. Batch labels use the shared scene-activity helper, and popup/readiness/progress/listening summaries use the active timeline. Successful batch notices report `skippedInactive`; a 409 from the activation route is shown as a Vietnamese conflict notice.
+
 ## Acceptance
 
 - `npm run typecheck`, `npm run lint`, and the Task 6 asset API suite pass; the client visual-prompt action uses the typed enqueue route and has enqueue-gap/terminal-state predicate coverage.
 - `mongodb-memory-server` ran successfully; asset ZIP tests use a temporary files directory and cover the 200 MB limit.
 - Flow export/import, project scene mutation ownership, route error mapping, and Studio API/client behavior are implemented.
 - `eslint.config.js` and package dependencies were unchanged in Phase 4; no Together AI integration was added.
-- Built worker logged startup and graceful SIGINT shutdown. Studio browser visual acceptance remains pending in the headless environment.
+- Built worker logged startup and graceful SIGINT shutdown. Task 98 Part C Studio acceptance was verified on a disposable duplicate through Chrome CDP at exact 1920×1080, 1440×900, and 390×844 captures; Playwright was unavailable and live SFX search was not run.

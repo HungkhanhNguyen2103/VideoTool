@@ -26,11 +26,11 @@ describe('Studio scene readiness presentation', () => {
     expect(source).toContain('Kéo dài scene = clip');
     expect(source).toContain('Tạo lại voiceover có thể hoàn tác thay đổi này');
     expect(source).toContain('api.fitSceneToClip(projectId, scene.id, project.version)');
-    expect(source).toContain('{renderReadiness.total} scenes:');
+    expect(source).toContain('{renderReadiness.total} scene đang bật:');
     expect(source).toContain('renderReadiness.confirmations.length > 0');
     expect(source).toContain('Tiếp tục render');
     expect(source).toContain('Cảnh cảnh báo chỉ cần xác nhận');
-    expect(source).toContain('disabled={studioLocked || missingScenes.length > 0}');
+    expect(source).toContain('disabled={studioLocked || activeSceneList.length === 0 || missingScenes.length > 0}');
     expect(source).toContain('popupUnreadyScenes.length > 0');
     expect(source).toContain('Nút render không bị chặn.');
   });
@@ -66,11 +66,11 @@ describe('Studio scene readiness presentation', () => {
   it('shows SFX asset counts and exposes missing-only retry after a failed batch result', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
     expect(source).toContain('SfxBatchSummarySchema.safeParse(progress.result)');
-    expect(source).toContain('scenes.filter((scene) => scene.sfxFileId !== null).length');
-    expect(source).toContain('scenes.filter((scene) => scene.sfxPrompt.trim().length > 0).length');
+    expect(source).toContain('activeSceneList.filter((scene) => scene.sfxFileId !== null).length');
+    expect(source).toContain('activeSceneList.filter((scene) => scene.sfxPrompt.trim().length > 0).length');
     expect(source).toContain('Tạo lại SFX còn thiếu');
     expect(source).toContain('api.generateAllSfx(projectId, true)');
-    expect(source).toContain('disabled={studioLocked || !scenes.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)}');
+    expect(source).toContain('disabled={studioLocked || !activeSceneList.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)}');
   });
 
   it('exposes the fast-save SFX relative-volume control', async () => {
@@ -85,6 +85,29 @@ describe('Studio scene readiness presentation', () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
     expect(source).toContain('formatDurationSeconds(scene.durationSec)');
     expect(source).toContain('formatDurationSeconds(expandedScene.durationSec)');
+  });
+});
+
+describe('Studio inactive scene controls', () => {
+  it('shows activity totals, active-only batch counts, switches, retained scene details, and render freshness', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
+
+    expect(source).toContain('formatSceneActivityHeader(sceneActivity)');
+    expect(source).toContain('Tổng thời lượng đang bật: {formatDurationSeconds(sceneActivity.activeDurationSec)}s');
+    expect(source).toContain('className={`${styles.card} ${sceneActive ? \'\' : styles.cardInactive}`}');
+    expect(source).toContain('<Badge tone="muted">Đã tắt</Badge>');
+    expect(source).toContain('accessibleName={`Bật/tắt scene ${index + 1}`}');
+    expect(source).toContain('accessibleName="Dùng scene này"');
+    expect(source).toContain('disabled={sceneToggleDisabled}');
+    expect(source).toContain('expectedVersion: project.version');
+    expect(source).toContain('isRenderStale(project)');
+    expect(source).toContain('đã thay đổi sau lần render');
+    expect(source).toContain('Scene đang tắt — bật lại để dùng chức năng này');
+    expect(source).toContain('formatBatchSceneCount(voiceoverConfirmScenes, (scene) => scene.narration.trim().length > 0)');
+    expect(css).toContain('.cardInactive {');
+    expect(css).toContain('.sceneActiveSwitch:focus-visible');
+    expect(css).not.toMatch(/\.cardInactive\s*\{[^}]*opacity:/s);
   });
 });
 
@@ -148,5 +171,14 @@ describe('Studio compact control columns', () => {
     expect(css).toMatch(/\.controlGrid\s*\{[^}]*columns:\s*2/s);
     expect(css).toContain('break-inside: avoid;');
     expect(css).toMatch(/@media\s*\(max-width:\s*1099px\)\s*\{[^}]*\.controlGrid\s*\{[^}]*columns:\s*1/s);
+  });
+
+  it('keeps long batch labels inside the Studio viewport', async () => {
+    const css = await readFile(new URL('./StudioPage.module.css', import.meta.url), 'utf8');
+
+    expect(css).toMatch(/\.page\s*>\s*\*\s*\{[^}]*min-width:\s*0/s);
+    expect(css).toMatch(/\.controlGrid\s*\{[^}]*min-width:\s*0/s);
+    expect(css).toMatch(/\.actions\s*\{[^}]*flex-wrap:\s*wrap/s);
+    expect(css).toMatch(/@media\s*\(max-width:\s*560px\)[\s\S]*?\.controlCard\s+button\s*\{[^}]*white-space:\s*normal/s);
   });
 });

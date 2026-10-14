@@ -3,9 +3,11 @@ import { AI_MODEL_REGISTRY } from '../../../../contracts/ai-models';
 import { hashNarration } from '../../../../contracts/name-keywords';
 import { POPUP_DENSITIES, type PopupBackend, type PopupDensity, type PopupPlanPopup } from '../../../../contracts/popup-analysis';
 import type { ProjectDetail, Scene } from '../../../../contracts/project';
+import { activeScenes } from '../../../../contracts/scene-active';
 import { AiModelSelect } from '../../../shared/ai/AiModelSelect';
 import { Button } from '../../../shared/ui/Button';
 import styles from './PopupAnalysisCard.module.css';
+import { formatBatchSceneCount } from '../scene-activity-ui';
 
 export type PopupAnalysisSummary = { scenesApplied: number; scenesExpected: number; rejectedCandidates: number };
 
@@ -60,11 +62,14 @@ export function PopupAnalysisCard({
   const [cliModel, setCliModel] = useState<string>(AI_MODEL_REGISTRY.claude.defaultModelId);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingDisplay, setEditingDisplay] = useState('');
-  const freshCount = useMemo(() => scenes.filter((scene) => freshPlan(scene)).length, [scenes]);
-  const staleCount = scenes.filter((scene) => scene.popupPlan && !freshPlan(scene)).length;
-  const eligibleCount = scenes.filter((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId && scene.wordTimings.words.length > 0).length;
+  const activeSceneEntries = useMemo(() => activeScenes(scenes.map((scene, index) => ({ scene, index, active: scene.active }))), [scenes]);
+  const activeSceneList = useMemo(() => activeSceneEntries.map(({ scene }) => scene), [activeSceneEntries]);
+  const freshCount = activeSceneList.filter((scene) => freshPlan(scene)).length;
+  const staleCount = activeSceneList.filter((scene) => scene.popupPlan && !freshPlan(scene)).length;
+  const eligible = (scene: Scene) => Boolean(scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId && scene.wordTimings.words.length > 0);
+  const eligibleCount = activeSceneList.filter(eligible).length;
   const cliBlocked = backend === 'cli' && !cliAvailable;
-  const latestPlan = [...scenes].map((scene) => scene.popupPlan).filter((plan): plan is NonNullable<Scene['popupPlan']> => Boolean(plan)).sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))[0];
+  const latestPlan = activeSceneList.map((scene) => scene.popupPlan).filter((plan): plan is NonNullable<Scene['popupPlan']> => Boolean(plan)).sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))[0];
 
   useEffect(() => { setDensity(project.popupDensity); }, [project.popupDensity]);
 
@@ -110,7 +115,7 @@ export function PopupAnalysisCard({
           {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label} — {model.hint}</option>)}
         </select>
       </label> : <AiModelSelect provider={project.aiProvider} value={project.aiModel} disabled={disabled || analysisActive} showCostNote={false} onChange={(model) => void onApiModelChange(model)} />}
-      <Button size="sm" variant="indigoline" disabled={disabled || analysisActive || cliBlocked || eligibleCount === 0} onClick={() => void analyze()}>Phân tích popup</Button>
+      <Button size="sm" variant="indigoline" disabled={disabled || analysisActive || cliBlocked || eligibleCount === 0} onClick={() => void analyze()}>Phân tích popup · {formatBatchSceneCount(scenes, eligible)}</Button>
     </div>
     {backend === 'cli' && <p className={cliBlocked ? styles.warning : styles.muted} role="status">{cliBlocked ? (cliStatusText ?? 'Claude Code CLI chưa khả dụng trên máy chủ này.') : 'Claude Code CLI sẵn sàng.'}</p>}
     <p className={styles.muted} role="status">{latestPlan ? `Lần chạy gần nhất: ${latestPlan.backend} · ${latestPlan.provider}/${latestPlan.model} · ${new Date(latestPlan.generatedAt).toLocaleString('vi-VN')}.` : 'Chưa có lần phân tích popup nào.'}</p>
@@ -119,7 +124,7 @@ export function PopupAnalysisCard({
     {summary && <p className={styles.summary} role="status">Đã áp dụng {summary.scenesApplied}/{summary.scenesExpected} scene · từ chối {summary.rejectedCandidates} ứng viên.</p>}
 
     <div className={styles.sceneList}>
-      {scenes.map((scene, index) => {
+      {activeSceneEntries.map(({ scene, index }) => {
         const plan = scene.popupPlan;
         const rows = popupRows(scene);
         return <article className={styles.scene} key={scene.id}>
@@ -148,6 +153,7 @@ export function PopupAnalysisCard({
         </article>;
       })}
       {scenes.length === 0 && <p className={styles.muted}>Chưa có scene để phân tích.</p>}
+      {scenes.length > 0 && activeSceneEntries.length === 0 && <p className={styles.muted}>Không có scene nào đang bật để phân tích.</p>}
     </div>
   </section>;
 }

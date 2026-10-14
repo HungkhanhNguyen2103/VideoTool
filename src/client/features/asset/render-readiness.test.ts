@@ -26,4 +26,15 @@ describe('render readiness summary', () => {
     expect(summary.confirmations.map((item) => item.sceneNumber)).toEqual([2]);
     expect(summary.issues.map((item) => item.sceneNumber)).toEqual([2, 3, 4]);
   });
+
+  it('omits inactive scenes while retaining original numbering for active blockers', () => {
+    const summary = summarizeRenderReadiness([
+      scene({ id: 'ready' }),
+      scene({ id: 'inactive-missing', active: false, assetFileId: null }),
+      scene({ id: 'active-missing', assetFileId: null }),
+    ]);
+
+    expect(summary).toMatchObject({ total: 2, ready: 1, errors: 1 });
+    expect(summary.blockers.map((issue) => issue.sceneNumber)).toEqual([3]);
+  });
 });

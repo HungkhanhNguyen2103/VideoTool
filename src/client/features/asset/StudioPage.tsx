@@ -7,7 +7,9 @@ import { SfxVolumeSchema, type Scene, type VisualStyleId } from '../../../contra
 import { isVoiceoverFresh, VoiceSpeedSchema } from '../../../contracts/voiceover';
 import { SfxBatchSummarySchema } from '../../../contracts/video';
 import { analyzeScene } from '../../../contracts/scene-readiness';
+import { activeScenes, isSceneActive } from '../../../contracts/scene-active';
 import { SceneTailSecSchema, formatDurationSeconds, hasUnappliedSceneTail } from '../../../contracts/scene-duration';
+import { isRenderStale } from '../../../contracts/render-freshness';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
@@ -27,10 +29,14 @@ import { createScenePreviewFingerprint } from './scene-preview';
 import { nameKeywordPopupLine } from './name-keyword-ui';
 import { VoiceoverListenPanel } from './VoiceoverListenPanel';
 import { PopupAnalysisCard, type PopupAnalysisSummary } from './components/PopupAnalysisCard';
+import { SceneActiveToggle } from './SceneActiveToggle';
+import { useSetSceneActive } from './hooks';
+import { formatBatchSceneCount, formatSceneActivityHeader, formatSkippedInactiveToast, isSceneToggleDisabled, summarizeSceneActivity } from './scene-activity-ui';
 import styles from './StudioPage.module.css';
 
 const statusTone = { draft: 'muted', script: 'indigo', assets: 'green', rendered: 'green' } as const;
 const statusLabel = { draft: 'Bản nháp', script: 'Kịch bản', assets: 'Đang làm asset', rendered: 'Đã render' } as const;
+const INACTIVE_SCENE_ACTION_TITLE = 'Scene đang tắt — bật lại để dùng chức năng này';
 
 export function StudioPage() {
   const { projectId = '' } = useParams();
@@ -57,7 +63,7 @@ export function StudioPage() {
   const [voiceoverJobId, setVoiceoverJobId] = useState<string | null>(null);
   const [sfxJobId, setSfxJobId] = useState<string | null>(null);
   const [popupAnalysisSummary, setPopupAnalysisSummary] = useState<PopupAnalysisSummary | null>(null);
-  const [lastSfxBatchSummary, setLastSfxBatchSummary] = useState<{ failed: number; rateLimitedStop: boolean } | null>(null);
+  const [lastSfxBatchSummary, setLastSfxBatchSummary] = useState<{ failed: number; rateLimitedStop: boolean; skippedInactive: number } | null>(null);
   const [voiceoverResetSceneIds, setVoiceoverResetSceneIds] = useState<Set<string>>(new Set());
   const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null);
   const [scenePreviews, setScenePreviews] = useState<Record<string, ScenePreviewState>>({});
@@ -92,15 +98,19 @@ export function StudioPage() {
     const file = scene.audioFileId ? filesById.get(scene.audioFileId) : undefined;
     return file?.mimeType.startsWith('audio/') ? [[scene.id, api.fileUrlForSummary(file)] as const] : [];
   })), [filesById, scenes]);
-  const filled = scenes.filter((scene) => scene.assetFileId !== null).length;
+  const activeSceneList = useMemo(() => activeScenes(scenes), [scenes]);
+  const sceneActivity = summarizeSceneActivity(scenes);
+  const filled = activeSceneList.filter((scene) => scene.assetFileId !== null).length;
   const missingScenes = project ? api.missingSceneNumbers(project) : [];
   const readinessBySceneId = useMemo(() => new Map(scenes.map((scene) => [scene.id, analyzeScene(scene)])), [scenes]);
   const renderReadiness = useMemo(() => summarizeRenderReadiness(scenes), [scenes]);
-  const popupEligibleScenes = scenes.filter((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId && scene.wordTimings.words.length > 0);
+  const popupEligibleScenes = activeSceneList.filter((scene) => scene.audioFileId && scene.wordTimings?.audioFileId === scene.audioFileId && scene.wordTimings.words.length > 0);
   const popupUnreadyScenes = popupEligibleScenes.filter((scene) => !(scene.popupPlan && scene.popupPlan.audioFileId === scene.audioFileId && scene.popupPlan.narrationHash === hashNarration(scene.narration)));
   const pipelineProgress = useMemo(() => project ? computePipelineProgress(project) : null, [project]);
-  const hasUnappliedTail = project ? hasUnappliedSceneTail(scenes, project.sceneTailSec) : false;
+  const hasUnappliedTail = project ? hasUnappliedSceneTail(activeSceneList, project.sceneTailSec) : false;
   const expandedScene = scenes.find((scene) => scene.id === expandedSceneId) ?? null;
+  const expandedSceneActive = expandedScene ? isSceneActive(expandedScene) : false;
+  const expandedInactiveActionTitle = expandedSceneActive ? undefined : INACTIVE_SCENE_ACTION_TITLE;
   const expandedEditing = expandedScene !== null && editingScene === expandedScene.id;
   const expandedNarrationEditing = expandedScene !== null && editingNarrationScene === expandedScene.id;
   const expandedMotionEditing = expandedScene !== null && editingMotionScene === expandedScene.id;
@@ -118,6 +128,7 @@ export function StudioPage() {
     : null;
   const expandedNamePopup = expandedPopupPlan?.popups.find((popup) => popup.status === 'kept' && !popup.suppressed && ['person', 'place', 'event'].includes(popup.kind)) ?? null;
   const progress = useJobProgress(jobId, jobReconnectKey);
+  const sceneActivationMutation = useSetSceneActive(projectId);
   const busyTask = useMemo(() => taskFromBusyKey(busy, (sceneId) => {
     const index = scenes.findIndex((scene) => scene.id === sceneId);
     return index >= 0 ? `Scene ${String(index + 1).padStart(2, '0')}` : undefined;
@@ -125,8 +136,11 @@ export function StudioPage() {
   const activeBlockingTask = jobTask ?? busyTask;
   const activeBlockingStartedAt = jobTask ? jobStartedAt : busyStartedAt;
   const studioLocked = !jobLocallyUnlocked && isStudioLocked(busy, jobId, progress);
+  const sceneToggleDisabled = isSceneToggleDisabled({ jobId, progress, busy, mutationPending: sceneActivationMutation.isPending });
   const voiceoverConfirmStartIndex = voiceoverConfirmSceneId ? scenes.findIndex((scene) => scene.id === voiceoverConfirmSceneId) : -1;
-  const voiceoverConfirmCount = voiceoverConfirmStartIndex >= 0 ? scenes.slice(voiceoverConfirmStartIndex).filter((scene) => scene.narration.trim()).length : 0;
+  const voiceoverConfirmScenes = voiceoverConfirmStartIndex >= 0 ? scenes.slice(voiceoverConfirmStartIndex) : [];
+  const voiceoverConfirmCount = activeScenes(voiceoverConfirmScenes).filter((scene) => scene.narration.trim()).length;
+  const voiceoverConfirmBatchText = formatBatchSceneCount(voiceoverConfirmScenes, (scene) => scene.narration.trim().length > 0);
   const voiceoverConfirmStartNumber = voiceoverConfirmStartIndex >= 0 ? voiceoverConfirmStartIndex + 1 : 0;
 
   useEffect(() => { if (project) setBgmMood(project.bgmMood); }, [project?.id, project?.bgmMood]);
@@ -138,10 +152,10 @@ export function StudioPage() {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;
     refreshedJobRef.current = jobId;
     if (progress.status === 'done' && jobTask?.kind === 'popup-analysis') {
-      const result = progress.result as { scenesApplied?: unknown; scenesExpected?: unknown; summary?: { rejectedCandidates?: unknown } } | null;
+      const result = progress.result as { scenesApplied?: unknown; scenesExpected?: unknown; skippedInactive?: unknown; summary?: { rejectedCandidates?: unknown } } | null;
       if (typeof result?.scenesApplied === 'number' && typeof result.scenesExpected === 'number' && typeof result.summary?.rejectedCandidates === 'number') {
         setPopupAnalysisSummary({ scenesApplied: result.scenesApplied, scenesExpected: result.scenesExpected, rejectedCandidates: result.summary.rejectedCandidates });
-        toast(`Đã áp dụng ${result.scenesApplied}/${result.scenesExpected} scene; từ chối ${result.summary.rejectedCandidates} ứng viên.`);
+        toast(`Đã áp dụng ${result.scenesApplied}/${result.scenesExpected} scene; từ chối ${result.summary.rejectedCandidates} ứng viên; bỏ qua ${typeof result.skippedInactive === 'number' ? result.skippedInactive : 0} scene đã tắt.`);
       }
       setJobTask(null);
       setJobId(null);
@@ -153,11 +167,14 @@ export function StudioPage() {
       setJobId(null);
     } else if (progress.status === 'done' && sfxJobId === jobId) {
       const summary = SfxBatchSummarySchema.safeParse(progress.result);
-      setLastSfxBatchSummary(summary.success ? { failed: summary.data.failed, rateLimitedStop: summary.data.rateLimitedStop } : null);
+      setLastSfxBatchSummary(summary.success ? { failed: summary.data.failed, rateLimitedStop: summary.data.rateLimitedStop, skippedInactive: summary.data.skippedInactive } : null);
+      if (summary.success) toast(`Đã tạo ${summary.data.generated} SFX; bỏ qua ${summary.data.skippedInactive} scene đã tắt.`);
       setSfxJobId(null);
       setJobTask(null);
       setJobId(null);
     } else if (progress.status === 'done') {
+      const skippedToast = formatSkippedInactiveToast(progress.result);
+      if (skippedToast) toast(skippedToast);
       setJobTask(null);
       setJobId(null);
     } else {
@@ -231,6 +248,13 @@ export function StudioPage() {
 
   async function refresh() {
     await Promise.all([projectQuery.refetch(), filesQuery.refetch()]);
+  }
+
+  function toggleSceneActive(scene: Scene, active: boolean): void {
+    if (!project || sceneToggleDisabled || isSceneActive(scene) === active) return;
+    sceneActivationMutation.mutate({ sceneId: scene.id, active, expectedVersion: project.version }, {
+      onSuccess: () => toast(active ? 'Đã bật scene.' : 'Đã tắt scene.'),
+    });
   }
 
   async function analyzeProjectPopups(options: Parameters<typeof api.analyzeProjectPopups>[1]): Promise<void> {
@@ -400,7 +424,7 @@ export function StudioPage() {
       const result = await api.recomputeSceneDurations(projectId);
       await refresh();
       const failed = result.failedSceneNumbers.length;
-      toast(`Đã cập nhật ${result.updated} scene; bỏ qua ${result.skippedSceneNumbers.length} scene chưa có voiceover${failed ? `; lỗi đo ${failed} scene` : ''}.`);
+      toast(`Đã cập nhật ${result.updated} scene; bỏ qua ${result.skippedSceneNumbers.length} scene chưa có voiceover, ${result.skippedInactive} scene đã tắt${failed ? `; lỗi đo ${failed} scene` : ''}.`);
     } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tính lại thời lượng theo voiceover.'); }
     finally { setBusy(null); }
   }
@@ -625,8 +649,9 @@ export function StudioPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <div><h2 className={styles.title}>Studio Phân Cảnh</h2><p className={styles.muted}>{project.title}</p></div>
+        <div><h2 className={styles.title}>Studio Phân Cảnh</h2><p className={styles.muted}>{project.title}</p><p className={styles.sceneActivitySummary}>{formatSceneActivityHeader(sceneActivity)} · Tổng thời lượng đang bật: {formatDurationSeconds(sceneActivity.activeDurationSec)}s</p></div>
         <Badge tone={statusTone[project.status]}>{statusLabel[project.status]}</Badge>
+        {isRenderStale(project) && <Badge tone="amber">đã thay đổi sau lần render</Badge>}
         <select aria-label="AI provider" className={styles.audioInput} disabled={studioLocked} value={project.aiProvider} onChange={(event) => void setAiProvider(event.target.value as 'deepseek' | 'claude')}>
           {api.AI_PROVIDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
@@ -637,10 +662,10 @@ export function StudioPage() {
           </select>
         </div>
         <div className={styles.actions}>
-          <Button size="sm" disabled={studioLocked} onClick={() => void copyJson()}>Copy JSON</Button>
-          <Button size="sm" disabled={studioLocked} onClick={() => void downloadJson()}>Export JSON</Button>
+          <Button size="sm" disabled={studioLocked} onClick={() => void copyJson()}>Copy JSON · {formatBatchSceneCount(scenes)}</Button>
+          <Button size="sm" disabled={studioLocked} onClick={() => void downloadJson()}>Export JSON · {formatBatchSceneCount(scenes)}</Button>
           <input ref={fileInputRef} className={styles.hiddenInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importZip(file); }} />
-          <Button size="sm" variant="amber" disabled={studioLocked} onClick={() => fileInputRef.current?.click()}>Import ZIP</Button>
+          <Button size="sm" variant="amber" disabled={studioLocked} onClick={() => fileInputRef.current?.click()}>Import ZIP · {formatBatchSceneCount(scenes)}</Button>
         </div>
         <p className={styles.controlHelp}>Model AI dùng cho các tác vụ AI; phong cách chỉ áp dụng khi tạo visual prompt. JSON chứa số scene, visual/motion prompt và loại asset; ZIP ghép file theo số scene trong tên SCENE_###_....</p>
       </header>
@@ -650,14 +675,14 @@ export function StudioPage() {
           <section className={`${styles.controlCard} ${styles.sceneControls}`} aria-labelledby="scene-controls-title">
             <div className={styles.controlCardHead}>
               <div><h3 id="scene-controls-title" className={styles.controlTitle}>Scene &amp; hình ảnh</h3><p className={styles.muted}>Chuẩn bị hình ảnh và clip cho từng scene</p></div>
-              <div className={styles.sceneAssetSummary}><strong>{filled} / {scenes.length} scenes have assets</strong>{uploadProgress !== null && <span className={styles.muted}>Đang upload {uploadProgress}%</span>}</div>
+              <div className={styles.sceneAssetSummary}><strong>{filled} / {sceneActivity.activeCount} scene đang bật có asset</strong>{uploadProgress !== null && <span className={styles.muted}>Đang upload {uploadProgress}%</span>}</div>
             </div>
-            <div className={styles.controlRow}><span className={styles.controlLabel}>Loại asset</span><div className={styles.actions}><Button size="sm" disabled={studioLocked} onClick={() => void setAllAssetType('image')}>All images</Button><Button size="sm" disabled={studioLocked} onClick={() => void setAllAssetType('video')}>All videos</Button></div></div>
+            <div className={styles.controlRow}><span className={styles.controlLabel}>Loại asset</span><div className={styles.actions}><Button size="sm" disabled={studioLocked} onClick={() => void setAllAssetType('image')}>All images · {formatBatchSceneCount(scenes)}</Button><Button size="sm" disabled={studioLocked} onClick={() => void setAllAssetType('video')}>All videos · {formatBatchSceneCount(scenes)}</Button></div></div>
             <p className={styles.controlHelp}>Đổi loại áp dụng cho tất cả scene; metadata riêng của loại cũ sẽ được làm mới.</p>
             <div className={styles.videoDistribution}>
               <div className={styles.videoDistributionControls}>
                 <label className={styles.videoDistributionInput} htmlFor="video-distribution-percent"><span className={styles.label}>% scene video</span><input id="video-distribution-percent" className={styles.audioInput} type="number" min="0" max="100" step="5" value={videoDistributionPercent} disabled={studioLocked} onChange={(event) => { setVideoDistributionPercent(Number(event.target.value)); setVideoDistributionPreview(null); }} /></label>
-                <Button size="sm" disabled={studioLocked || scenes.length === 0} onClick={() => void previewVideoDistribution()}>Xem trước</Button>
+                <Button size="sm" disabled={studioLocked || activeSceneList.length === 0} onClick={() => void previewVideoDistribution()}>Xem trước · {formatBatchSceneCount(scenes)}</Button>
               </div>
               <p className={styles.videoDistributionHint}>Sau khi áp dụng, bấm 'Tạo visual prompt' để AI điền motion prompt cho scene video mới.</p>
               <p className={styles.controlHelp}>Xem trước trước khi áp dụng; scene đã có asset hoặc keyframe sẽ được giữ nguyên.</p>
@@ -665,10 +690,10 @@ export function StudioPage() {
                 <p>{videoDistributionPreview.videoCount} scene video / {videoDistributionPreview.imageCount} ảnh · {videoDistributionPreview.lockedCount} scene đã có asset (giữ nguyên)</p>
                 <p className={styles.videoDistributionNumbers}>{videoDistributionPreview.videoSceneNumbers.length > 0 ? `Scene ${videoDistributionPreview.videoSceneNumbers.join(', ')}` : 'Không có scene video.'}</p>
                 {videoDistributionPreview.changes.length === 0 && <p className={styles.muted}>Không có thay đổi.</p>}
-                <div className={styles.actions}><Button size="sm" variant="amber" disabled={studioLocked || videoDistributionPreview.changes.length === 0} onClick={() => void applyVideoDistribution()}>Áp dụng</Button><Button size="sm" disabled={studioLocked} onClick={() => setVideoDistributionPreview(null)}>Huỷ</Button></div>
+                <div className={styles.actions}><Button size="sm" variant="amber" disabled={studioLocked || videoDistributionPreview.changes.length === 0} onClick={() => void applyVideoDistribution()}>Áp dụng · {formatBatchSceneCount(scenes)}</Button><Button size="sm" disabled={studioLocked} onClick={() => setVideoDistributionPreview(null)}>Huỷ</Button></div>
               </div>}
             </div>
-            <div className={styles.controlRow}><span className={styles.controlLabel}>AI</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void generateVisualPrompts()}>Tạo visual prompt</Button></div></div>
+            <div className={styles.controlRow}><span className={styles.controlLabel}>AI</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void splitScenes()}>Tách nhỏ scene</Button><Button size="sm" variant="indigoline" disabled={studioLocked || activeSceneList.length === 0} onClick={() => void generateVisualPrompts()}>Tạo visual prompt · {formatBatchSceneCount(scenes)}</Button></div></div>
             <p className={styles.controlHelp}>Tách nhỏ dùng AI và bỏ qua chương đã có asset, voiceover, SFX hoặc visual prompt.</p>
             <p className={styles.controlHelp}>Visual prompt bổ sung trường còn thiếu như visual và SFX; motion prompt chỉ tạo cho scene video.</p>
           </section>
@@ -683,14 +708,14 @@ export function StudioPage() {
               <label className={styles.transitionField} htmlFor="voice-speed">Tốc độ đọc<input id="voice-speed" className={styles.audioInput} type="number" min="0.8" max="1.3" step="0.05" value={voiceSpeedDraft} disabled={studioLocked} onChange={(event) => setVoiceSpeedDraft(event.currentTarget.value)} onBlur={() => void saveVoiceSpeed()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} /></label>
               <p className={styles.muted}>Tốc độ đọc; 1.0 là bình thường. Đổi xong cần tạo lại voice.</p>
               {hasUnappliedTail && <p className={styles.muted}>Chưa áp dụng cho scene đã có voiceover — bấm Tính lại thời lượng</p>}
-              <Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void recomputeSceneDurations()}>Tính lại thời lượng theo voiceover</Button>
+              <Button size="sm" variant="indigoline" disabled={studioLocked || !activeSceneList.some((scene) => scene.audioFileId)} onClick={() => void recomputeSceneDurations()}>Tính lại thời lượng theo voiceover · {formatBatchSceneCount(scenes, (scene) => Boolean(scene.audioFileId))}</Button>
             </div>
-            <div className={styles.controlRow}><span className={styles.controlLabel}>Voiceover</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => void generateAllVoiceovers()}>Tạo voiceover</Button><Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.audioFileId)} onClick={() => void alignWordTimings()}>Căn thời gian từ</Button><Button size="sm" variant="ghost" disabled={scenes.length === 0} onClick={() => setListenMode((current) => !current)}>{listenMode ? 'Đóng nghe voiceover' : 'Nghe voiceover'}</Button></div></div>
+            <div className={styles.controlRow}><span className={styles.controlLabel}>Voiceover</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || !activeSceneList.some((scene) => scene.narration.trim())} onClick={() => void generateAllVoiceovers()}>Tạo voiceover · {formatBatchSceneCount(scenes, (scene) => Boolean(scene.narration.trim()))}</Button><Button size="sm" variant="indigoline" disabled={studioLocked || !activeSceneList.some((scene) => scene.audioFileId)} onClick={() => void alignWordTimings()}>Căn thời gian từ · {formatBatchSceneCount(scenes, (scene) => Boolean(scene.audioFileId))}</Button><Button size="sm" variant="ghost" disabled={activeSceneList.length === 0} onClick={() => setListenMode((current) => !current)}>{listenMode ? 'Đóng nghe voiceover' : `Nghe voiceover · ${formatBatchSceneCount(scenes, (scene) => Boolean(scene.audioFileId))}`}</Button></div></div>
             <p className={styles.controlHelp}>Tạo voiceover cho scene có lời dẫn; scene lỗi được ghi riêng.</p>
             <p className={styles.controlHelp}>Căn thời gian chỉ cập nhật word timings cho voiceover WAV hiện có.</p>
             {listenMode && <VoiceoverListenPanel scenes={scenes} project={project} sceneTailInput={sceneTailDraft} audioUrls={voiceoverAudioUrls} reloadVersions={voiceoverReloadVersions} onRegenerate={regenerateVoiceover} regeneratingSceneId={busy?.startsWith('voice:') ? busy.slice('voice:'.length) : null} />}
-            <div className={styles.controlRow}><span className={styles.controlLabel}>SFX</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || scenes.length === 0} onClick={() => void generateAllSfx()}>Tạo tất cả SFX</Button></div></div>
-            <div className={styles.sfxBatchSummary} aria-live="polite"><span>SFX: {scenes.filter((scene) => scene.sfxFileId !== null).length}/{scenes.filter((scene) => scene.sfxPrompt.trim().length > 0).length} scene có SFX{lastSfxBatchSummary ? ` · ${lastSfxBatchSummary.failed} lỗi` : ''}</span>{lastSfxBatchSummary && lastSfxBatchSummary.failed > 0 && <Button size="sm" variant="indigoline" disabled={studioLocked || !scenes.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)} onClick={() => void regenerateMissingSfx()}>Tạo lại SFX còn thiếu</Button>}</div>
+            <div className={styles.controlRow}><span className={styles.controlLabel}>SFX</span><div className={styles.actions}><Button size="sm" variant="indigoline" disabled={studioLocked || !activeSceneList.some((scene) => scene.sfxPrompt.trim())} onClick={() => void generateAllSfx()}>Tạo tất cả SFX · {formatBatchSceneCount(scenes, (scene) => Boolean(scene.sfxPrompt.trim()))}</Button></div></div>
+            <div className={styles.sfxBatchSummary} aria-live="polite"><span>SFX: {activeSceneList.filter((scene) => scene.sfxFileId !== null).length}/{activeSceneList.filter((scene) => scene.sfxPrompt.trim().length > 0).length} scene có SFX{lastSfxBatchSummary ? ` · ${lastSfxBatchSummary.failed} lỗi · bỏ qua ${lastSfxBatchSummary.skippedInactive} scene đã tắt` : ''}</span>{lastSfxBatchSummary && lastSfxBatchSummary.failed > 0 && <Button size="sm" variant="indigoline" disabled={studioLocked || !activeSceneList.some((scene) => scene.sfxPrompt.trim() && !scene.sfxFileId)} onClick={() => void regenerateMissingSfx()}>Tạo lại SFX còn thiếu · {formatBatchSceneCount(scenes, (scene) => Boolean(scene.sfxPrompt.trim() && !scene.sfxFileId))}</Button>}</div>
             <p className={styles.controlHelp}>SFX tìm trên Freesound theo prompt; scene không có prompt sẽ được bỏ qua.</p>
             <div className={styles.controlRow}><span className={styles.controlLabel}>BGM</span><div className={styles.audioActionRow}><input className={styles.audioInput} disabled={studioLocked} value={bgmMood} onChange={(event) => setBgmMood(event.target.value)} placeholder="Ví dụ: calm cinematic" /><Button size="sm" disabled={studioLocked || !bgmMood.trim()} onClick={() => void generateBgm()}>Tạo BGM</Button>{(() => { const file = project.bgmFileId ? filesById.get(project.bgmFileId) : undefined; return file && file.purpose === 'bgm' && file.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(file)} /> : null; })()}</div></div>
             <p className={styles.controlHelp}>Tìm bản nhạc nền trên Freesound theo mood bạn nhập.</p>
@@ -706,7 +731,7 @@ export function StudioPage() {
                 <label className={styles.transitionField}>Chuyển cảnh<select aria-label="Chuyển cảnh" className={styles.audioInput} value={project.transitionStyle} disabled={studioLocked || project.renderEngine === 'ffmpeg'} onChange={(event) => void setTransitionStyle(event.target.value as 'crossfade' | 'varied')}>{api.TRANSITION_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                 <label className={styles.transitionField}>Hiệu ứng phim cũ<select aria-label="Hiệu ứng phim cũ" className={styles.audioInput} value={project.filmLook} disabled={studioLocked || project.renderEngine === 'ffmpeg'} onChange={(event) => void setFilmLook(event.target.value as 'auto' | 'always' | 'off')}>{api.FILM_LOOK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                 <label className={styles.transitionField}>Hiệu ứng chiều sâu<select aria-label="Hiệu ứng chiều sâu" className={styles.audioInput} value={project.parallax} disabled={studioLocked || project.renderEngine === 'ffmpeg'} onChange={(event) => void setParallax(event.target.value as 'auto' | 'off')}>{api.PARALLAX_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-                <Button size="sm" variant="indigoline" disabled={studioLocked || project.renderEngine === 'ffmpeg' || scenes.length === 0} onClick={() => void generateDepthMaps()}>Tạo depth map</Button>
+                <Button size="sm" variant="indigoline" disabled={studioLocked || project.renderEngine === 'ffmpeg' || !activeSceneList.some((scene) => scene.assetType === 'image' && scene.assetFileId)} onClick={() => void generateDepthMaps()}>Tạo depth map · {formatBatchSceneCount(scenes, (scene) => scene.assetType === 'image' && Boolean(scene.assetFileId))}</Button>
               </div>
               <p className={styles.controlHelp}>Các tùy chọn pop-up, chuyển cảnh, phim cũ và chiều sâu chỉ áp dụng với Remotion.</p>
               <p className={styles.controlHelp}>Tạo depth map cho scene ảnh có asset; map cùng ảnh sẽ được giữ lại.</p>
@@ -732,10 +757,10 @@ export function StudioPage() {
 
           <section className={`${styles.controlCard} ${styles.renderControlsCard}`} aria-labelledby="render-controls-title">
             <div className={styles.controlCardHead}><div><h3 id="render-controls-title" className={styles.controlTitle}>Render &amp; xuất</h3><p className={styles.muted}>Kiểm tra readiness trước khi xuất video</p></div></div>
-            <section className={styles.readinessSummary} aria-label="Render readiness"><div><strong>{renderReadiness.total} scenes: {renderReadiness.ready} ready, {renderReadiness.warnings} warnings, {renderReadiness.errors} errors</strong><p className={styles.muted}>Cảnh cảnh báo chỉ cần xác nhận; cảnh lỗi bị chặn theo khả năng render hiện tại.</p></div><details><summary>Chi tiết readiness</summary>{renderReadiness.issues.length > 0 ? <ul>{renderReadiness.issues.map((issue) => <li key={issue.sceneId}><strong>Scene {issue.sceneNumber}</strong>: {issue.messages.join(' · ')}{issue.blocking ? ' — blocker' : ''}</li>)}</ul> : <p className={styles.muted}>Tất cả scene đã sẵn sàng.</p>}</details></section>
+            <section className={styles.readinessSummary} aria-label="Render readiness"><div><strong>{renderReadiness.total} scene đang bật: {renderReadiness.ready} sẵn sàng, {renderReadiness.warnings} cảnh báo, {renderReadiness.errors} lỗi</strong><p className={styles.muted}>Cảnh cảnh báo chỉ cần xác nhận; cảnh lỗi bị chặn theo khả năng render hiện tại.</p></div><details><summary>Chi tiết readiness</summary>{renderReadiness.issues.length > 0 ? <ul>{renderReadiness.issues.map((issue) => <li key={issue.sceneId}><strong>Scene {issue.sceneNumber}</strong>: {issue.messages.join(' · ')}{issue.blocking ? ' — blocker' : ''}</li>)}</ul> : <p className={styles.muted}>Tất cả scene đang bật đã sẵn sàng.</p>}</details></section>
             {popupUnreadyScenes.length > 0 && <p className={styles.warning} role="status">{popupUnreadyScenes.length}/{popupEligibleScenes.length} scene chưa có popupPlan mới; có thể phân tích lại trước khi render. Nút render không bị chặn.</p>}
             {missingScenes.length > 0 && <p className={styles.warning}>Chưa sẵn sàng render: scene {missingScenes.join(', ')} thiếu asset.</p>}
-            <div className={styles.renderActions}><Button size="sm" variant="amber" disabled={studioLocked || missingScenes.length > 0} onClick={() => requestRender()}>Render video</Button><Button size="sm" variant="indigoline" title="Chi co o engine Remotion" disabled={studioLocked || missingScenes.length > 0 || project.renderEngine === 'ffmpeg'} onClick={() => requestRender(true)}>Render nháp (nhanh)</Button></div>
+            <div className={styles.renderActions}><Button size="sm" variant="amber" disabled={studioLocked || activeSceneList.length === 0 || missingScenes.length > 0} onClick={() => requestRender()}>Render video · {formatBatchSceneCount(scenes)}</Button><Button size="sm" variant="indigoline" title="Chi co o engine Remotion" disabled={studioLocked || activeSceneList.length === 0 || missingScenes.length > 0 || project.renderEngine === 'ffmpeg'} onClick={() => requestRender(true)}>Render nháp (nhanh) · {formatBatchSceneCount(scenes)}</Button></div>
             <p className={styles.controlHelp}>Bản nháp chỉ có trên Remotion và lưu riêng, không ghi đè bản render chính.</p>
             {progress && !jobTask && <div className={styles.progress}><strong>Job {progress.status}</strong><progress max="100" value={progress.progress}>{progress.progress}%</progress><span>{progress.progress}%</span>{progress.logs.length > 0 && <ul>{progress.logs.map((line, index) => <li key={`${line}-${index}`}>{line}</li>)}</ul>}</div>}
             {(() => { const file = project.renderFileId ? filesById.get(project.renderFileId) : undefined; return file && file.purpose === 'render' && file.mimeType.startsWith('video/') ? <video className={styles.renderPlayer} controls src={api.fileUrlForSummary(file)} /> : null; })()}
@@ -777,10 +802,11 @@ export function StudioPage() {
            const readiness = readinessBySceneId.get(scene.id)!;
            const readinessBadge = readinessBadgeForStatus(readiness.status);
            const voiceoverIsFresh = scene.audioFileId !== null && scene.voiceoverInput != null && isVoiceoverFresh(scene, project);
-          return <article className={styles.card} key={scene.id}>
-            <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span><div className={styles.sceneText}><span className={styles.muted}>{formatDurationSeconds(scene.durationSec)}s{scene.assetType === 'video' && scene.videoDurationSec !== null ? ` · clip ${scene.videoDurationSec.toFixed(1)}s` : ''}</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={studioLocked} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
+          const sceneActive = isSceneActive(scene);
+          return <article className={`${styles.card} ${sceneActive ? '' : styles.cardInactive}`} key={scene.id}>
+            <div className={styles.cardHead}><span className={styles.number}>{String(index + 1).padStart(2, '0')}</span>{!sceneActive && <Badge tone="muted">Đã tắt</Badge>}<div className={styles.sceneText}><span className={styles.muted}>{formatDurationSeconds(scene.durationSec)}s{scene.assetType === 'video' && scene.videoDurationSec !== null ? ` · clip ${scene.videoDurationSec.toFixed(1)}s` : ''}</span></div><Button size="sm" variant={scene.assetType === 'video' ? 'indigoline' : 'ghost'} disabled={studioLocked} onClick={() => void patchScene(scene.id, { assetType: scene.assetType === 'image' ? 'video' : 'image' })}>{scene.assetType}</Button></div>
             <div className={`${styles.preview} ${styles.cardPreview}`}>{scenePreview ? <><video controls src={scenePreview.url} aria-label={`Preview render scene ${index + 1}`} /><div className={styles.cardPreviewLabel}><Badge tone="amber">Preview render</Badge><Button size="sm" variant="ghost" disabled={studioLocked} onClick={() => clearScenePreview(scene.id)}>Xem asset gốc</Button></div></> : src && actualType ? <>{previewType === 'video' ? <video controls src={src} /> : <img src={src} alt={`Asset scene ${index + 1}`} />}{typeMismatch && <span className={styles.mismatch}>Asset {actualType} không khớp loại scene {scene.assetType}.</span>}</> : src ? <span className={styles.placeholder}>Không thể preview loại file này.</span> : <span className={styles.placeholder}>No asset yet</span>}</div>
-             <div className={styles.cardFooter}><div className={styles.statusBadges}>{readinessBadge && <span title={readiness.messages.join(' · ')}><Badge tone={readinessBadge.tone}>{readinessBadge.label}</Badge></span>}{!scene.narration.trim() && <Badge tone="amber">Không có lời dẫn</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? (voiceoverIsFresh ? 'green' : 'amber') : 'muted'}>{scene.audioFileId ? (voiceoverIsFresh ? 'Đã có voiceover' : 'Voiceover đã cũ') : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button></div>
+             <div className={styles.cardFooter}><div className={styles.statusBadges}>{readinessBadge && <span title={readiness.messages.join(' · ')}><Badge tone={readinessBadge.tone}>{readinessBadge.label}</Badge></span>}{!scene.narration.trim() && <Badge tone="amber">Không có lời dẫn</Badge>}<Badge tone={scene.visualPrompt ? 'green' : 'muted'}>{scene.visualPrompt ? 'Đã có visual prompt' : 'Chưa có visual prompt'}</Badge><Badge tone={scene.audioFileId ? (voiceoverIsFresh ? 'green' : 'amber') : 'muted'}>{scene.audioFileId ? (voiceoverIsFresh ? 'Đã có voiceover' : 'Voiceover đã cũ') : 'Chưa có voiceover'}</Badge><Badge tone={scene.sfxFileId ? 'green' : 'muted'}>{scene.sfxFileId ? 'Đã có SFX' : 'Chưa có SFX'}</Badge></div><div className={styles.cardActions}><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => setExpandedSceneId(scene.id)}>Chi tiết</Button><SceneActiveToggle compact active={sceneActive} disabled={sceneToggleDisabled} accessibleName={`Bật/tắt scene ${index + 1}`} onChange={(active) => toggleSceneActive(scene, active)} /></div></div>
           </article>;
         })}
       </section>
@@ -789,6 +815,7 @@ export function StudioPage() {
         {expandedScene ? <div key={expandedScene.id} className={styles.detailContent}>
           <div className={styles.detailHeader}><div><h2 id="scene-detail-title" className={styles.detailTitle}>Scene {String(expandedSceneNumber).padStart(2, '0')}</h2><p className={styles.muted}>Chi tiết scene</p></div><Button size="sm" onClick={() => { setExpandedSceneId(null); setEditingScene(null); setEditingNarrationScene(null); setEditingMotionScene(null); }}>Đóng</Button></div>
           <div className={styles.detailBody}>
+            <SceneActiveToggle active={expandedSceneActive} disabled={sceneToggleDisabled} accessibleName="Dùng scene này" label="Dùng scene này" hint="Scene tắt sẽ bị bỏ qua khi tạo asset, voice và render. Dữ liệu vẫn được giữ." onChange={(active) => toggleSceneActive(expandedScene, active)} />
             <section className={styles.detailAsset} aria-label="Asset gốc">
               <div className={styles.detailAssetHeader}><span className={styles.label}>Asset gốc</span><span className={styles.muted}>{expandedAssetFile?.originalName ?? 'Chưa có asset'}</span></div>
               {expandedAssetSrc && expandedAssetType === 'video' ? <video className={styles.detailAssetMedia} controls src={expandedAssetSrc} aria-label={`Asset gốc scene ${expandedSceneNumber}`} /> : expandedAssetSrc && expandedAssetType === 'image' ? <img className={styles.detailAssetMedia} src={expandedAssetSrc} alt={`Asset gốc scene ${expandedSceneNumber}`} /> : <span className={styles.placeholder}>Chưa có asset.</span>}
@@ -814,7 +841,7 @@ export function StudioPage() {
                 })}
               </div>
               <p className={styles.videoFactDuration}>Thời lượng scene: {formatDurationSeconds(expandedScene.durationSec)}s ({expandedScene.audioFileId ? 'từ voiceover' : 'ước tính'})</p>
-              <div className={styles.actions}><Button size="sm" variant="amber" title="Tạo lại voiceover có thể hoàn tác thay đổi này" disabled={studioLocked || expandedScene.videoDurationSec === null || Math.ceil(expandedScene.videoDurationSec) <= expandedScene.durationSec} onClick={() => void fitSceneToClip(expandedScene)}>Kéo dài scene = clip</Button></div>
+              <div className={styles.actions}><span title={expandedInactiveActionTitle}><Button size="sm" variant="amber" title={expandedInactiveActionTitle ?? 'Tạo lại voiceover có thể hoàn tác thay đổi này'} disabled={!expandedSceneActive || studioLocked || expandedScene.videoDurationSec === null || Math.ceil(expandedScene.videoDurationSec) <= expandedScene.durationSec} onClick={() => void fitSceneToClip(expandedScene)}>Kéo dài scene = clip</Button></span></div>
             </section>}
             <div className={styles.prompt}><span className={styles.label}>Lời dẫn</span>{expandedNarrationEditing ? <><textarea className={styles.textarea} value={draftNarration} onChange={(event) => setDraftNarration(event.target.value)} aria-label={`Sửa lời dẫn scene ${scenes.findIndex((scene) => scene.id === expandedScene.id) + 1}`} /><div className={styles.actions}><Button size="sm" onClick={() => setEditingNarrationScene(null)}>Cancel</Button><Button size="sm" variant="amber" disabled={expandedSceneBusy || studioLocked} onClick={() => void saveNarration(expandedScene)}>Save</Button></div></> : <div className={styles.promptLine}><span>{expandedScene.narration || 'Khong co loi dan'}</span><Button size="sm" disabled={studioLocked} onClick={() => startNarrationEdit(expandedScene)}>Edit</Button></div>}</div>
             <p className={styles.nameKeywordDetail}>{nameKeywordPopupLine(expandedNamePopup)}</p>
@@ -826,12 +853,12 @@ export function StudioPage() {
                 {expandedVoiceoverFile?.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(expandedVoiceoverFile)} /> : <span className={styles.placeholder}>Chưa có voiceover.</span>}
                 {expandedScene.audioFileId && !isVoiceoverFresh(expandedScene, project) && <span className={styles.warning}>Voiceover đã cũ — cần tạo lại theo tốc độ/giọng hiện tại.</span>}
                 {voiceoverResetSceneIds.has(expandedScene.id) && <span className={styles.warning}>Tao lai voiceover</span>}
-                <div className={styles.actions}><Button size="sm" disabled={studioLocked || !expandedScene.narration.trim()} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button><Button size="sm" variant="indigoline" disabled={studioLocked} onClick={() => { setExpandedSceneId(null); setVoiceoverConfirmSceneId(expandedScene.id); }}>Chạy voiceover từ scene này</Button></div>
+                <div className={styles.actions}><span title={expandedInactiveActionTitle}><Button size="sm" title={expandedInactiveActionTitle} disabled={!expandedSceneActive || studioLocked || !expandedScene.narration.trim()} onClick={() => void regenerateVoiceover(expandedScene.id)}>Tạo lại voiceover</Button></span><span title={expandedInactiveActionTitle}><Button size="sm" variant="indigoline" title={expandedInactiveActionTitle} disabled={!expandedSceneActive || studioLocked} onClick={() => { setExpandedSceneId(null); setVoiceoverConfirmSceneId(expandedScene.id); }}>Chạy voiceover từ scene này</Button></span></div>
               </section>
               <section className={styles.prompt}>
                 <label className={styles.label} htmlFor={`sfx-${expandedScene.id}`}>SFX prompt</label>
                 <input id={`sfx-${expandedScene.id}`} className={styles.audioInput} defaultValue={expandedScene.sfxPrompt} onBlur={(event) => { if (event.currentTarget.value !== expandedScene.sfxPrompt) void patchScene(expandedScene.id, { sfxPrompt: event.currentTarget.value }); }} placeholder="Ví dụ: tiếng gió" />
-                <div className={styles.actions}><Button size="sm" disabled={studioLocked} onClick={() => void generateSfx(expandedScene.id)}>Tạo SFX</Button></div>
+                <div className={styles.actions}><span title={expandedInactiveActionTitle}><Button size="sm" title={expandedInactiveActionTitle} disabled={!expandedSceneActive || studioLocked} onClick={() => void generateSfx(expandedScene.id)}>Tạo SFX</Button></span></div>
                 {expandedSfxFile?.mimeType.startsWith('audio/') ? <audio controls src={api.fileUrlForSummary(expandedSfxFile)} /> : <span className={styles.placeholder}>Chưa có SFX.</span>}
               </section>
             </div>
@@ -840,7 +867,7 @@ export function StudioPage() {
       </dialog>
       <dialog ref={voiceoverConfirmDialogRef} className={styles.detailDialog} aria-labelledby="voiceover-confirm-title" onClose={() => setVoiceoverConfirmSceneId(null)}>
         <div className={styles.detailContent}>
-          <div className={styles.detailHeader}><div><h2 id="voiceover-confirm-title" className={styles.detailTitle}>Chạy voiceover từ đây</h2><p className={styles.detailNarration}>{voiceoverConfirmCount} scene sẽ được tạo lại, từ scene {voiceoverConfirmStartNumber} đến scene {scenes.length}</p></div><Button size="sm" onClick={() => setVoiceoverConfirmSceneId(null)}>Huỷ</Button></div>
+          <div className={styles.detailHeader}><div><h2 id="voiceover-confirm-title" className={styles.detailTitle}>Chạy voiceover từ đây</h2><p className={styles.detailNarration}>{voiceoverConfirmBatchText} sẽ được tạo lại, từ scene {voiceoverConfirmStartNumber} đến scene {scenes.length}</p></div><Button size="sm" onClick={() => setVoiceoverConfirmSceneId(null)}>Huỷ</Button></div>
           <p className={styles.muted}>Batch sẽ tiếp tục qua các scene phía sau; scene không có lời dẫn sẽ được bỏ qua.</p>
           <div className={styles.actions}><Button size="sm" onClick={() => setVoiceoverConfirmSceneId(null)}>Huỷ</Button><Button size="sm" variant="amber" disabled={voiceoverConfirmStartIndex < 0 || voiceoverConfirmCount === 0} onClick={() => void continueVoiceoverFromScene()}>Chạy voiceover</Button></div>
         </div>
@@ -848,6 +875,7 @@ export function StudioPage() {
       <dialog ref={renderConfirmDialogRef} className={styles.detailDialog} aria-labelledby="render-confirm-title" onClose={() => setRenderConfirmationDraft(null)}>
         <div className={styles.detailContent}>
           <div className={styles.detailHeader}><div><h2 id="render-confirm-title" className={styles.detailTitle}>Xác nhận render</h2><p className={styles.detailNarration}>Một số scene có cảnh báo. Bạn vẫn có thể tiếp tục render.</p></div><Button size="sm" onClick={() => setRenderConfirmationDraft(null)}>Quay lại</Button></div>
+          <p className={styles.detailNarration}>{formatBatchSceneCount(scenes)} sẽ được đưa vào video.</p>
           <ul className={styles.renderConfirmList}>{renderReadiness.confirmations.map((issue) => <li key={issue.sceneId}><strong>Scene {issue.sceneNumber}</strong>: {issue.messages.join(' · ')}</li>)}</ul>
           <div className={styles.actions}><Button size="sm" onClick={() => setRenderConfirmationDraft(null)}>Quay lại</Button><Button size="sm" variant="amber" onClick={continueConfirmedRender}>Tiếp tục render</Button></div>
         </div>

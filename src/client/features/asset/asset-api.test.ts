@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, analyzeProjectPopups, applyVideoDistribution, editPopupPlan, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setPopupDensity, setPopupPlanFlags, setRenderEngine, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, setVoiceSpeed, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, analyzeProjectPopups, applyVideoDistribution, editPopupPlan, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setPopupDensity, setPopupPlanFlags, setRenderEngine, setSceneActive, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, setVoiceSpeed, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -20,6 +20,15 @@ const projectPayload = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('asset API helpers', () => {
+  it('patches scene activation with the expected project version', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(projectPayload), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(setSceneActive('project/1', 'scene/2', false, 7)).resolves.toMatchObject({ id: 'project-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/scene%2F2/active', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ active: false, expectedVersion: 7 }),
+    }));
+  });
+
   it('sends the project voice speed to the setting route', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ...projectPayload, voiceSpeed: 1.2 }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
@@ -229,7 +238,7 @@ describe('asset API helpers', () => {
   });
 
   it('formats the bulk voiceover skip summary for the Studio toast', () => {
-    expect(voiceoverSummary({ generated: 4, skippedSceneNumbers: [1, 7], failedSceneNumbers: [], skippedInactive: 2 })).toBe('Voiceover done for 4 scenes; skipped 2 scenes with no narration (scene numbers 1, 7); skippedInactive: 2.');
+    expect(voiceoverSummary({ generated: 4, skippedSceneNumbers: [1, 7], failedSceneNumbers: [], skippedInactive: 2 })).toBe('Đã tạo voiceover cho 4 scene; bỏ qua 2 scene không có lời dẫn (scene 1, 7); bỏ qua 2 scene đã tắt.');
   });
 
   it('marks empty-narration scenes and disables their voiceover action', async () => {
@@ -329,5 +338,15 @@ describe('asset API helpers', () => {
       { purpose: 'voiceover' }, { purpose: 'bgm' }, { purpose: 'render' },
     ] as never, 'voiceover')).toHaveLength(1);
     expect(missingSceneNumbers(project)).toEqual([2]);
+  });
+
+  it('keeps original positions while excluding inactive scenes from render blockers', () => {
+    const mixed = { ...project, scenes: [
+      project.scenes[0]!,
+      { ...project.scenes[1]!, id: 'inactive-missing', active: false },
+      { ...project.scenes[1]!, id: 'active-missing' },
+    ] } as ProjectDetail;
+
+    expect(missingSceneNumbers(mixed)).toEqual([3]);
   });
 });

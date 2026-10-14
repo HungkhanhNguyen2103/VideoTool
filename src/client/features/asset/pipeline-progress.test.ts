@@ -91,4 +91,16 @@ describe('computePipelineProgress', () => {
 
     expect(result.percent).toBe(48);
   });
+
+  it('excludes inactive scenes from each scene-based pipeline total and completion count', () => {
+    const result = computePipelineProgress(project([
+      scene('active'),
+      scene('inactive', { active: false, visualPrompt: 'done', assetFileId: 'image-2', audioFileId: 'voice-2', sfxFileId: 'sfx-2' }),
+    ]));
+
+    expect(step(result, 'visualPrompt')).toMatchObject({ done: 0, total: 1 });
+    expect(step(result, 'assets')).toMatchObject({ done: 0, total: 1 });
+    expect(step(result, 'voiceover')).toMatchObject({ done: 0, total: 1 });
+    expect(step(result, 'sfx')).toMatchObject({ done: 0, total: 1 });
+  });
 });

@@ -87,6 +87,32 @@ describe('PopupAnalysisCard mounted interactions', () => {
       await view.unmount();
     }
   });
+
+  it('excludes inactive scenes from popup counts and the visible analysis list', async () => {
+    const inactiveScene = {
+      ...project.scenes[0]!,
+      id: 'scene-2',
+      active: false,
+      popupPlan: plan(),
+    };
+    const mixedProject = { ...project, scenes: [...project.scenes, inactiveScene] } as ProjectDetail;
+    const view = await mountPopupCard({
+      project: mixedProject,
+      scenes: mixedProject.scenes,
+      onAnalyze: async () => undefined,
+      onApiModelChange: async () => undefined,
+      onDensityChange: async () => undefined,
+      onToggleFlags: async () => undefined,
+      onEdit: async () => undefined,
+    });
+
+    try {
+      expect(view.text()).toContain('1/1 scene đã có kết quả');
+      expect(view.text()).not.toContain('Scene 02');
+    } finally {
+      await view.unmount();
+    }
+  });
 });
 
 type FakeListener = (event: Record<string, unknown>) => void;
@@ -173,13 +199,13 @@ async function mountPopupCard(props: PopupAnalysisCardProps): Promise<{
   dom.document.body.appendChild(container);
   const root = createRoot(container as unknown as Element);
   await act(async () => { root.render(createElement(PopupAnalysisCard, props)); });
-  const buttonByLabel = (label: string): FakeNode => findNodes(container, 'BUTTON').find((node) => node.textContent === label) ?? (() => { throw new Error(`Button not found: ${label}`); })();
+  const buttonByLabel = (label: string): FakeNode => findNodes(container, 'BUTTON').find((node) => node.textContent.trim().startsWith(label)) ?? (() => { throw new Error(`Button not found: ${label}`); })();
   return {
     text: () => container.textContent,
     click: async (label) => { await act(async () => { reactProps(buttonByLabel(label)).onClick?.({}); }); },
     change: async (label, value) => { const node = findNodes(container, 'SELECT').find((item) => item.attributes.get('aria-label') === label); if (!node) throw new Error(`Select not found: ${label}`); await act(async () => { reactProps(node).onChange?.({ currentTarget: { value } }); }); },
     editDisplay: async (value) => { await act(async () => { reactProps(buttonByLabel('Sửa')).onClick?.({}); }); const input = findNodes(container, 'INPUT').find((item) => item.attributes.get('aria-label') === 'Sửa display popup'); if (!input) throw new Error('Edit input not found'); await act(async () => { reactProps(input).onChange?.({ currentTarget: { value } }); reactProps(buttonByLabel('Lưu')).onClick?.({}); }); },
-    tabLabels: () => [...findNodes(container, 'SELECT'), ...findNodes(container, 'BUTTON')].map((node) => node.attributes.get('aria-label') ?? node.textContent).filter((value): value is string => Boolean(value)).filter((value) => ['Backend popup', 'Mật độ popup', 'Model AI', 'Phân tích popup', 'Ghim', 'Tắt', 'Sửa'].includes(value)),
+    tabLabels: () => [...findNodes(container, 'SELECT'), ...findNodes(container, 'BUTTON')].map((node) => node.attributes.get('aria-label') ?? node.textContent).filter((value): value is string => Boolean(value)).map((value) => ['Backend popup', 'Mật độ popup', 'Model AI', 'Phân tích popup', 'Ghim', 'Tắt', 'Sửa'].find((label) => value.startsWith(label)) ?? value).filter((value) => ['Backend popup', 'Mật độ popup', 'Model AI', 'Phân tích popup', 'Ghim', 'Tắt', 'Sửa'].includes(value)),
     rerender: async (nextProject) => { await act(async () => { root.render(createElement(PopupAnalysisCard, { ...props, project: nextProject, scenes: nextProject.scenes })); }); },
     unmount: async () => { await act(async () => root.unmount()); dom.restore(); },
   };

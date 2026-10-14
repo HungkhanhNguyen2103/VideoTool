@@ -23,6 +23,7 @@ export const SfxBatchSummarySchema = z.object({
   skippedNoPrompt: z.number().int().nonnegative(),
   skippedExisting: z.number().int().nonnegative(),
   rateLimitedStop: z.boolean(),
+  skippedInactive: z.number().int().nonnegative().default(0),
   counts: z.record(z.string(), z.number().int().nonnegative()),
   outcomes: z.array(SfxBatchSceneOutcomeSchema),
 }).strict();

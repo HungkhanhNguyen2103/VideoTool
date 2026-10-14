@@ -1,4 +1,5 @@
 import type { ProjectDetail as Project } from '../../../contracts/project';
+import { activeScenes } from '../../../contracts/scene-active';
 import { analyzeScene, type SceneReadinessStatus } from '../../../contracts/scene-readiness';
 
 export type PipelineStepKey =
@@ -52,7 +53,7 @@ function makeStep(key: PipelineStepKey, done: number, total: number): PipelineSt
 }
 
 export function computePipelineProgress(project: Project): PipelineProgress {
-  const { scenes } = project;
+  const scenes = activeScenes(project.scenes);
   const totalScenes = scenes.length;
   const assetsDone = scenes.filter((scene) => !INCOMPLETE_ASSET_STATUSES.has(analyzeScene(scene).status)).length;
   const steps = [

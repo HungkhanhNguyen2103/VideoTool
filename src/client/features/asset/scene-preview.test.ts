@@ -136,6 +136,14 @@ describe('scene preview helpers', () => {
 
     expect(html).toContain('Remotion render failed: missing asset.');
     expect(html).toContain('Render preview');
-    expect(html).not.toContain('disabled');
+    expect(html).not.toContain('disabled=""');
+  });
+
+  it('disables the scene preview action when its scene is inactive', () => {
+    const inactiveScene = { ...scene, active: false } as Scene;
+    const html = componentMarkup({ scene: inactiveScene, currentScene: inactiveScene });
+
+    expect(html).toContain('disabled=""');
+    expect(html).toContain('Scene đang tắt — bật lại để dùng chức năng này');
   });
 });

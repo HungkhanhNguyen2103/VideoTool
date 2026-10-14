@@ -1,4 +1,5 @@
 import type { Scene } from '../../../contracts/project';
+import { isSceneActive } from '../../../contracts/scene-active';
 import { analyzeScene, type SceneReadiness, type SceneReadinessStatus } from '../../../contracts/scene-readiness';
 
 export type RenderReadinessIssue = SceneReadiness & {
@@ -26,8 +27,11 @@ export function summarizeRenderReadiness(scenes: ReadonlyArray<Scene>): RenderRe
   let ready = 0;
   let warnings = 0;
   let errors = 0;
+  let total = 0;
 
   for (const [index, scene] of scenes.entries()) {
+    if (!isSceneActive(scene)) continue;
+    total += 1;
     const readiness = analyzeScene(scene);
     if (readiness.status === 'ok') {
       ready += 1;
@@ -41,7 +45,7 @@ export function summarizeRenderReadiness(scenes: ReadonlyArray<Scene>): RenderRe
   }
 
   return {
-    total: scenes.length,
+    total,
     ready,
     warnings,
     errors,

@@ -6,6 +6,7 @@ import { ApiError, apiRequest } from '../../shared/api-client';
 import { ApiErrorBodySchema } from '../../../contracts/common';
 import type { PopupBackend, PopupDensity, PopupPlanPopup } from '../../../contracts/popup-analysis';
 import { ClaudeCliStatusSchema, type ClaudeCliStatus } from '../../../contracts/script';
+import { activeScenes } from '../../../contracts/scene-active';
 
 const ImportResultSchema = ImportAssetsResultSchema;
 const FileListSchema = z.array(FileSummarySchema);
@@ -124,6 +125,12 @@ export function patchScene(
   });
 }
 
+export function setSceneActive(projectId: string, sceneId: string, active: boolean, expectedVersion: number): Promise<ProjectDetail> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/active`, ProjectDetailSchema, {
+    method: 'PATCH', body: { active, expectedVersion },
+  });
+}
+
 export function setAllAssetType(projectId: string, assetType: 'image' | 'video'): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/set-asset-type`, ProjectDetailSchema, {
     method: 'POST', body: { assetType },
@@ -169,7 +176,7 @@ export function voiceoverSummary(result: unknown): string | null {
   const parsed = VoiceoverBatchResultSchema.safeParse(result);
   if (!parsed.success) return null;
   const { generated, skippedSceneNumbers, skippedInactive } = parsed.data;
-  return `Voiceover done for ${generated} scenes; skipped ${skippedSceneNumbers.length} scenes with no narration (scene numbers ${skippedSceneNumbers.join(', ')}); skippedInactive: ${skippedInactive}.`;
+  return `Đã tạo voiceover cho ${generated} scene; bỏ qua ${skippedSceneNumbers.length} scene không có lời dẫn${skippedSceneNumbers.length > 0 ? ` (scene ${skippedSceneNumbers.join(', ')})` : ''}; bỏ qua ${skippedInactive} scene đã tắt.`;
 }
 
 export function previewVideoDistribution(projectId: string, targetPercent: number): Promise<VideoDistributionPreview> {
@@ -339,7 +346,8 @@ export function filesByPurpose(files: FileSummary[], purpose: FileSummary['purpo
 }
 
 export function missingSceneNumbers(project: Pick<ProjectDetail, 'scenes'>): number[] {
-  return project.scenes.flatMap((scene, index) => scene.assetFileId ? [] : [index + 1]);
+  const entries = activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active })));
+  return entries.flatMap(({ scene, index }) => scene.assetFileId ? [] : [index + 1]);
 }
 
 export function importAssetsZip(
