@@ -80,7 +80,7 @@ describe('SEO AI generation', () => {
   it('builds a bounded prompt with only the requested sections and no full narration', () => {
     const prompt = buildSeoPrompt(project, ['titles', 'tags']);
 
-    expect(prompt.promptVersion).toBe('seo-prompt-v1/seo-documentary@5');
+    expect(prompt.promptVersion).toBe('seo-prompt-v1/seo-documentary@6');
     expect(prompt.system).toContain('titles');
     expect(prompt.user).toContain('Requested sections: titles, tags');
     expect(prompt.user).not.toContain('Video visual style');
