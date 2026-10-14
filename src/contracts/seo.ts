@@ -15,7 +15,7 @@ export const SEO_THUMBNAIL_WIDTH = 1280;
 export const SEO_THUMBNAIL_HEIGHT = 720;
 export const SEO_THUMBNAIL_MIN_WIDTH = 640;
 export const SEO_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
-export const SEO_THUMBNAIL_MAX_WORDS = 5;
+export const SEO_THUMBNAIL_MAX_WORDS = 8;
 
 export const SEO_TITLE_ANGLES = ['curiosity', 'stakes', 'number', 'question', 'contrarian'] as const;
 export type SeoTitleAngle = (typeof SEO_TITLE_ANGLES)[number];

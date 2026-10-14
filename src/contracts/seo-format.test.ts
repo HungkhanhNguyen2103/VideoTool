@@ -141,7 +141,8 @@ describe('SEO format helpers', () => {
     expect(tagBudget(['a'.repeat(499)])).toMatchObject({ used: 499, remaining: 1, overLimit: false });
     expect(tagBudget(['a'.repeat(250), 'b'.repeat(250)]).used).toBe(501);
     expect(hashtagStatus(Array.from({ length: 16 }, (_, index) => `#Tag${index}`)).overLimit).toBe(true);
-    expect(thumbnailTextStatus('Một chữ hai ba bốn năm')).toMatchObject({ words: 6, overLimit: true });
+    expect(thumbnailTextStatus('VÌ SAO 300 THUYỀN KHÔNG THOÁT ĐƯỢC?')).toMatchObject({ words: 7, max: 8, overLimit: false });
+    expect(thumbnailTextStatus('Một hai ba bốn năm sáu bảy tám chín')).toMatchObject({ words: 9, overLimit: true });
   });
 
   it('returns only unsupported multi-digit facts and canonicalizes separators', () => {

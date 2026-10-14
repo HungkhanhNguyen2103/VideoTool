@@ -100,7 +100,7 @@ describe('SEO routes and thumbnail files', () => {
     const base = await startSeoServer();
     const prompt = await fetch(`${base}/api/project/${project.id}/seo/manual-prompt?sections=titles,tags`);
     expect(prompt.status).toBe(200);
-    expect(await prompt.json()).toMatchObject({ prompt: expect.stringContaining('SYSTEM'), promptVersion: 'seo-prompt-v1/seo-documentary@2' });
+    expect(await prompt.json()).toMatchObject({ prompt: expect.stringContaining('SYSTEM'), promptVersion: 'seo-prompt-v1/seo-documentary@7' });
 
     const imported = await fetch(`${base}/api/project/${project.id}/seo/manual-import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: seoRaw, sections: ['titles', 'tags'] }) });
     expect(imported.status).toBe(200);
