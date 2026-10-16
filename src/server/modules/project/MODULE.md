@@ -38,6 +38,7 @@
 - Delete is a hard delete (`repo.deleteProjectById`); the app-level delete route removes referenced final, draft render, logo, and SEO thumbnail files through the file-store hook before deleting the project.
 
 ## Flow
+- The create-project client form shows the shared five-slot style reference pack for the selected `visualStylePresetId`; the pack library is owned by file-store and is not copied into or sent with project creation. The bundled cinematic image is a display fallback for an empty `core` slot.
 - `POST /api/project` -> `routes.ts` parses the body with `CreateProjectRequestSchema` (validation + Vietnamese messages live in `contracts/project.ts`, copied from `docs/prototypes/khoi-tao-du-an/app.js`) -> `service.createProject` builds the `ProjectDoc` and inserts it -> `service.toDetail` shapes the response (`ProjectDetail`, dates as ISO strings).
 - `GET /api/project` -> `ListProjectsQuerySchema` (optional `q`, `status`) -> `repo.listProjectSummaries` runs an aggregation: `$match` (status + accent-insensitive `titleSearch` regex, query escaped by `escapeRegex`), `$sort` by `updatedAt desc`, `$limit` 200, `$project` computing `scenesCount`/`durationSec` (duration sum rounded to two decimal places).
 - `GET /api/project/:id` -> `service.getProject` -> `NotFound` (404) if missing.

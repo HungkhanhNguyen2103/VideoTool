@@ -1,7 +1,7 @@
 # Module: file-store
 
-**Purpose:** Shared disk-backed storage for project reference files and shared visual-style samples.
-**Owns collection(s):** files, visual_style_samples
+**Purpose:** Shared disk-backed storage for project reference files and shared visual-style reference packs.
+**Owns collection(s):** files, visual_style_samples, visual_style_pack_images
 **Boundary:** This directory is shared infrastructure and intentionally is not listed in `eslint.config.js` `MODULES`.
 
 ## Invariants
@@ -10,11 +10,13 @@
 - File purposes are `reference`, `style-reference`, `voiceover`, `sfx`, `bgm`, `render`, `render-draft`, and `depth`; generated audio/video files use the same project-scoped store as references.
 - `resolveFilePath(projectId, fileId)` verifies ownership before returning an absolute path for server-side media processing; clients still use `storedPath` URLs.
 - Database metadata and disk content are coordinated by the service; deleting an already-missing disk file is allowed.
-- Shared style samples use a server-generated filename under `FILES_DIR`; their original name is metadata only. The create-project sample resolver reads this shared collection only.
+- Style pack images use server-generated filenames under `FILES_DIR`; their original names are metadata only. Each document is keyed by `<styleId>:<slotId>` and stores style ID, slot ID, relative path, MIME type, original name, and creation time.
+- The legacy `visual_style_samples` collection remains readable through the old routes and as a `core` fallback when no pack `core` exists. Uploading or deleting a pack `core` removes the legacy document and file.
 
 ## Flow
 - Routes validate project ownership and upload MIME/size, then call the injected file-store service.
-- `GET /api/visual-style-samples` lists shared samples. `PUT /api/visual-style-samples/:styleId` accepts JPEG, PNG, or WebP using the existing 100 MB upload limit.
+- `GET /api/visual-style-packs` lists all six styles and their uploaded slots, with the legacy `core` fallback. `PUT /api/visual-style-packs/:styleId/:slotId` replaces one image; `DELETE` on the same path removes it. Uploads accept JPEG, PNG, or WebP using the existing 100 MB limit.
+- `GET /api/visual-style-samples` and `PUT /api/visual-style-samples/:styleId` are deprecated but remain available for older clients.
 - Repository methods only query the `files` collection.
 - ZIP import validates scenes and delegates replacement to the project module; it replaces, never merges, scenes.
 

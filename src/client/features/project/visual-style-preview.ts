@@ -1,6 +1,6 @@
 import cinematicPreview from '../../assets/visual-style-previews/cinematic.jpg';
 import type { VisualStyleId } from '../../../contracts/project';
-import type { VisualStyleSamples } from '../../../contracts/visual-style-sample';
+import type { VisualStyleSample } from '../../../contracts/visual-style-sample';
 
 export type VisualStylePreview = { src: string; alt: string; filename: string };
 
@@ -12,8 +12,7 @@ const BUNDLED_PREVIEWS: Partial<Record<VisualStyleId, VisualStylePreview>> = {
   },
 };
 
-export function resolveVisualStylePreview(styleId: VisualStyleId, samples: VisualStyleSamples | undefined): VisualStylePreview | undefined {
-  const sample = samples?.[styleId];
+export function resolveVisualStylePreview(styleId: VisualStyleId, sample: VisualStyleSample | undefined): VisualStylePreview | undefined {
   return sample
     ? { src: sample.url, alt: `Ảnh mẫu phong cách ${styleId}`, filename: sample.filename }
     : BUNDLED_PREVIEWS[styleId];

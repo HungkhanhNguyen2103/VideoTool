@@ -16,10 +16,10 @@ import { AiModelSelect, aiModelForProviderChange } from '../../../shared/ai/AiMo
 import { Icon } from '../../../shared/ui/Icon';
 import { toast } from '../../../shared/ui/toast-store';
 import { formatDuration } from '../format';
-import { useCreateProject, useUploadVisualStyleSample, useVisualStyleSamples } from '../hooks';
+import { useCreateProject, useDeleteVisualStylePackImage, useUploadVisualStylePackImage, useVisualStylePacks } from '../hooks';
 import { useProjectUiStore } from '../store';
 import { appendReferenceText, isReferenceFile, mergeProjectPrefill, readReferenceText } from '../reference-import';
-import { resolveVisualStylePreview } from '../visual-style-preview';
+import { StylePackPanel } from './StylePackPanel';
 import styles from './NewProjectForm.module.css';
 
 const DEFAULT_VALUES: CreateProjectRequest = {
@@ -55,9 +55,9 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   const navigate = useNavigate();
   const setCurrentProjectId = useProjectUiStore((s) => s.setCurrentProjectId);
   const createProject = useCreateProject();
-  const samplesQuery = useVisualStyleSamples();
-  const uploadSample = useUploadVisualStyleSample();
-  const sampleInputRef = useRef<HTMLInputElement>(null);
+  const packsQuery = useVisualStylePacks();
+  const uploadPack = useUploadVisualStylePackImage();
+  const deletePack = useDeleteVisualStylePackImage();
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
 
@@ -86,7 +86,6 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   const width = watch('renderSettings.width');
   const height = watch('renderSettings.height');
   const busy = createProject.isPending;
-  const visualStylePreview = resolveVisualStylePreview(visualStylePresetId, samplesQuery.data);
 
   useEffect(() => {
     if (!prefill) return;
@@ -113,15 +112,23 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
     }
   }
 
-  async function uploadVisualStyleSample(file: File) {
+  async function uploadStylePackImage(styleId: typeof visualStylePresetId, slotId: string, file: File) {
     try {
-      await uploadSample.mutateAsync({ styleId: visualStylePresetId, file });
-      await samplesQuery.refetch();
-      toast('Đã cập nhật ảnh mẫu phong cách.');
+      await uploadPack.mutateAsync({ styleId, slotId, file });
+      await packsQuery.refetch();
+      toast('Đã cập nhật ảnh phong cách.');
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Không thể upload ảnh mẫu.');
-    } finally {
-      if (sampleInputRef.current) sampleInputRef.current.value = '';
+      toast(error instanceof Error ? error.message : 'Không thể upload ảnh phong cách.');
+    }
+  }
+
+  async function deleteStylePackImage(styleId: typeof visualStylePresetId, slotId: string) {
+    try {
+      await deletePack.mutateAsync({ styleId, slotId });
+      await packsQuery.refetch();
+      toast('Đã xóa ảnh phong cách.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể xóa ảnh phong cách.');
     }
   }
 
@@ -282,30 +289,13 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
             </div>
             <AiModelSelect className={`${styles.field} ${styles.modelField}`} selectClassName={styles.input} provider={aiProvider} value={aiModel} onChange={(model) => setValue('aiModel', model, { shouldDirty: true, shouldValidate: true })} />
             <input type="hidden" {...register('aiModel')} value={aiModel ?? ''} />
-            <div className={styles.field}>
+            <div className={`${styles.field} ${styles.stylePackField}`}>
               <label htmlFor="visual-style">Phong cách hình ảnh</label>
               <div className={styles.stylePicker}>
                 <select className={styles.input} id="visual-style" {...register('visualStylePresetId')}>
                   {VISUAL_STYLE_IDS.map((style) => <option key={style} value={style}>{style === 'cinematic' ? 'Cinematic (điện ảnh)' : style === 'anime' ? 'Anime' : style === 'watercolor' ? 'Watercolor (màu nước)' : style === 'photorealistic' ? 'Photorealistic (ảnh thực)' : style === 'flat-cartoon' ? 'Flat Cartoon' : 'Strategic Map (2D)'}</option>)}
                 </select>
-                <div className={styles.styleSampleControls}>
-                  <div className={styles.stylePreview} aria-live="polite">
-                    {visualStylePreview ? (
-                      <>
-                        <img className={styles.stylePreviewImage} src={visualStylePreview.src} alt={visualStylePreview.alt} />
-                        <a className={styles.stylePreviewDownload} href={visualStylePreview.src} download={visualStylePreview.filename}>
-                          Tải ảnh
-                        </a>
-                      </>
-                    ) : (
-                      <span className={styles.stylePreviewPlaceholder}>Chưa có ảnh mẫu</span>
-                    )}
-                  </div>
-                  <input ref={sampleInputRef} className={styles.hiddenInput} type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void uploadVisualStyleSample(file); }} />
-                  <Button size="sm" disabled={busy || uploadSample.isPending} busy={uploadSample.isPending} onClick={() => sampleInputRef.current?.click()}>
-                    {visualStylePreview ? 'Thay ảnh mẫu' : 'Upload ảnh mẫu'}
-                  </Button>
-                </div>
+                <StylePackPanel styleId={visualStylePresetId} packs={packsQuery.data} busy={busy || uploadPack.isPending || deletePack.isPending} onUpload={(styleId, slotId, file) => { void uploadStylePackImage(styleId, slotId, file); }} onDelete={(styleId, slotId) => { void deleteStylePackImage(styleId, slotId); }} />
               </div>
             </div>
             <div className={`${styles.field} ${styles.numericConfigField}`}>

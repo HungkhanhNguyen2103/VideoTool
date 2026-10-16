@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreateProjectRequest, ListProjectsQuery } from '../../../contracts/project';
+import type { VisualStyleId } from '../../../contracts/project';
 import * as api from './api';
 
 const PROJECTS_KEY = ['projects'] as const;
@@ -50,5 +51,27 @@ export function useUploadVisualStyleSample() {
   return useMutation({
     mutationFn: ({ styleId, file }: { styleId: import('../../../contracts/project').VisualStyleId; file: File }) => api.uploadVisualStyleSample(styleId, file),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['visual-style-samples'] }),
+  });
+}
+
+const VISUAL_STYLE_PACKS_KEY = ['visual-style-packs'] as const;
+
+export function useVisualStylePacks() {
+  return useQuery({ queryKey: VISUAL_STYLE_PACKS_KEY, queryFn: api.getVisualStylePacks });
+}
+
+export function useUploadVisualStylePackImage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ styleId, slotId, file }: { styleId: VisualStyleId; slotId: string; file: File }) => api.uploadVisualStylePackImage(styleId, slotId, file),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VISUAL_STYLE_PACKS_KEY }),
+  });
+}
+
+export function useDeleteVisualStylePackImage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ styleId, slotId }: { styleId: VisualStyleId; slotId: string }) => api.deleteVisualStylePackImage(styleId, slotId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VISUAL_STYLE_PACKS_KEY }),
   });
 }

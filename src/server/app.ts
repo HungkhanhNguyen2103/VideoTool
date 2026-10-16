@@ -5,7 +5,7 @@ import { errorHandler } from './error-handler';
 import { createProjectRouter } from './modules/project';
 import { jobRouter } from './modules/job';
 import { enqueueJob, getActiveJobByType, getActiveJobDetailsByType } from './modules/job';
-import { configureFileStore, configureVisualStyleSamples, createFileStoreService, fileStoreRouter, visualStyleSamplesRouter } from './modules/file-store';
+import { configureFileStore, configureVisualStylePacks, configureVisualStyleSamples, createFileStoreService, fileStoreRouter, visualStylePacksRouter, visualStyleSamplesRouter } from './modules/file-store';
 import { createScriptCliStatusRouter, createScriptRouter } from './modules/script';
 import { assetRouter, configureAssetModule } from './modules/asset';
 import { configureVideoModule, createVideoRouter } from './modules/video';
@@ -29,6 +29,7 @@ export function createApp(options: AppOptions): Express {
   app.use(express.json({ limit: '1mb' }));
   configureFileStore(options.filesDir);
   configureVisualStyleSamples(options.filesDir);
+  configureVisualStylePacks(options.filesDir);
   configureAssetModule(options.filesDir, async (projectId, sceneId) => {
     if (await getActiveJobByType(projectId, 'generate-depth-map', sceneId)) return;
     await enqueueJob({ type: 'generate-depth-map', projectId, payload: { projectId, sceneId } });
@@ -52,6 +53,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api/project', createVideoRouter({ enqueueJob }));
   app.use('/api/project', createSeoRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
   app.use('/api/visual-style-samples', visualStyleSamplesRouter);
+  app.use('/api/visual-style-packs', visualStylePacksRouter);
   app.use('/api/job', jobRouter);
 
   app.use('/api', (_req, _res, next) => next(new NotFound('Không tìm thấy đường dẫn.')));

@@ -57,7 +57,12 @@ export function createVisualStyleSamplesService(filesDir: string) {
     return entry(next.storedPath, next.originalName, 'shared', next.createdAt);
   }
 
-  return { listSamples, storeSample };
+  async function deleteSample(styleId: VisualStyleId): Promise<void> {
+    const previous = await collection().findOneAndDelete({ _id: styleId });
+    if (previous) await unlink(path.join(filesDir, previous.storedPath)).catch(() => undefined);
+  }
+
+  return { listSamples, storeSample, deleteSample };
 }
 
 let configuredService = createVisualStyleSamplesService('./data/files');
