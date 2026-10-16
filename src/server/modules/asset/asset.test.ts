@@ -465,6 +465,24 @@ describe('asset contracts', () => {
     ]);
   });
 
+  it('exports reference tags from persisted scene plans and omits them for legacy scenes', async () => {
+    const project = await seedProjectWithScenes();
+    const planned = {
+      ...project,
+      scenes: project.scenes.map((scene, index) => index === 0
+        ? { ...scene, shotType: 'wide' as const, lightType: 'interior' as const }
+        : index === 1
+          ? { ...scene, shotType: 'detail' as const, lightType: 'firelight' as const }
+          : scene),
+    };
+
+    const exported = exportScenesJson(planned);
+
+    expect(exported[0]).toEqual(expect.objectContaining({ prompt: 'A door', motionPrompt: '', referenceTags: ['core', 'interior', 'wide'] }));
+    expect(exported[1]).toEqual(expect.objectContaining({ prompt: 'A room', assetType: 'image', referenceTags: ['core', 'night', 'props'] }));
+    expect(exported[2]).not.toHaveProperty('referenceTags');
+  });
+
   it('omits inactive scenes from Flow export without renumbering active scenes', async () => {
     const project = await seedProjectWithScenes();
     await setProjectSceneActive(project.id, 'scene-2', false);
@@ -650,13 +668,21 @@ describe('asset contracts', () => {
 
   it('exports JSON through the route with an attachment filename', async () => {
     const project = await seedProjectWithScenes();
+    await getCollection<ProjectDoc>('projects').updateOne(
+      { _id: project.id },
+      { $set: { 'scenes.0.shotType': 'high-angle', 'scenes.0.lightType': 'night', 'scenes.1.active': false } },
+    );
     const base = await startAssetServer();
 
     const response = await fetch(`${base}/api/project/${project.id}/scenes/export-json`);
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-disposition')).toBe('attachment; filename="scenes-export.json"');
-    expect(await response.json()).toHaveLength(3);
+    const exported = await response.json() as Array<Record<string, unknown>>;
+    expect(exported).toHaveLength(2);
+    expect(exported[0]).toMatchObject({ sceneId: 1, sceneNumber: 1, referenceTags: ['core', 'night', 'wide'] });
+    expect(exported[1]).toMatchObject({ sceneId: 3, sceneNumber: 3 });
+    expect(exported[1]).not.toHaveProperty('referenceTags');
   });
 
   it('imports a ZIP through the route and rejects non-ZIP MIME types', async () => {

@@ -10,6 +10,7 @@ import { expectedAssetType, MIME_BY_EXTENSION, type FlowSceneExport } from './do
 import { probeVideoDuration } from '../../shared/ffprobe';
 import { extractLastFrame } from '../../shared/ffmpeg-frames';
 import { activeScenes, isSceneActive } from '../../../contracts/scene-active';
+import { deriveReferenceTags } from '../../../contracts/visual-style-pack';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
@@ -50,6 +51,10 @@ function slugifyTitle(value: string, sceneNumber: number): string {
 export function exportScenesJson(project: ProjectDetail): FlowSceneExport[] {
   return activeScenes(project.scenes.map((scene, index) => ({ scene, index, active: scene.active }))).map(({ scene, index }) => {
     const sceneNumber = index + 1;
+    const referenceTags = deriveReferenceTags(project.visualStylePresetId, {
+      shotType: scene.shotType ?? null,
+      lightType: scene.lightType ?? null,
+    });
     return {
       sceneId: sceneNumber,
       sceneNumber,
@@ -57,6 +62,7 @@ export function exportScenesJson(project: ProjectDetail): FlowSceneExport[] {
       prompt: scene.visualPrompt,
       assetType: scene.assetType,
       motionPrompt: scene.motionPrompt,
+      ...(referenceTags === undefined ? {} : { referenceTags }),
     };
   });
 }

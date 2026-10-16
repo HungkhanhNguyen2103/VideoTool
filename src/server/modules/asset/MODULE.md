@@ -15,6 +15,7 @@
 ## Flow
 
 - Export scenes as numbered JSON for the external Google Flow tool.
+- Flow scene exports may include `referenceTags` after `motionPrompt`, derived only from the scene's persisted `shotType` and `lightType`. Legacy scenes with neither value omit the field. Non-map styles start with `core`, then add `interior`, `night` (including firelight), `wide` (including high angle), and `props` (detail shots) in that order, filtered to slots defined by the selected style pack. Strategic Map omits the field until its scene families are planned. Export never computes or backfills a shot/light plan.
 - Import Flow's root-level `SCENE_{N}_{anything}.{ext}` ZIP entries and attach stored file IDs to matching scenes.
 - Image MIME mapping is `png -> image/png`, `jpg|jpeg -> image/jpeg`, `webp -> image/webp`; video mapping is `mp4 -> video/mp4`, `mov -> video/quicktime`, `webm -> video/webm`.
 - Asset ZIP uploads are limited to 200 MB and unsupported, malformed, nested, out-of-range, or asset-type-mismatched entries are reported in `skipped[]` without aborting valid entries.

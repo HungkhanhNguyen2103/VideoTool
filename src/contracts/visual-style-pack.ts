@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { VISUAL_STYLE_IDS, type VisualStyleId } from './project';
+import { VISUAL_STYLE_IDS, type LightType, type ShotType, type VisualStyleId } from './project';
 import { VisualStyleSampleSchema } from './visual-style-sample';
 
 export type VisualStylePackSlot = { id: string; label: string; hint: string; prompt: string };
@@ -65,6 +65,22 @@ export const VISUAL_STYLE_PACK_SLOTS: Record<VisualStyleId, readonly VisualStyle
 export const VisualStylePackSlotIdSchema = z.string();
 export function isVisualStylePackSlot(styleId: VisualStyleId, slotId: string): boolean {
   return VISUAL_STYLE_PACK_SLOTS[styleId].some((candidate) => candidate.id === slotId);
+}
+
+export function deriveReferenceTags(
+  styleId: VisualStyleId,
+  scene: { shotType: ShotType | null; lightType: LightType | null },
+): string[] | undefined {
+  if ((scene.shotType === null && scene.lightType === null) || styleId === 'strategic-map') return undefined;
+
+  const candidates = [
+    'core',
+    ...(scene.lightType === 'interior' ? ['interior'] : []),
+    ...(scene.lightType === 'night' || scene.lightType === 'firelight' ? ['night'] : []),
+    ...(scene.shotType === 'wide' || scene.shotType === 'high-angle' ? ['wide'] : []),
+    ...(scene.shotType === 'detail' ? ['props'] : []),
+  ];
+  return [...new Set(candidates)].filter((tag) => isVisualStylePackSlot(styleId, tag));
 }
 
 export const VisualStylePacksSchema = z.partialRecord(z.enum(VISUAL_STYLE_IDS), z.partialRecord(z.string(), VisualStyleSampleSchema));
