@@ -31,6 +31,11 @@ export type ScriptPresetId = (typeof SCRIPT_PRESET_IDS)[number];
 export const VISUAL_STYLE_IDS = ['cinematic', 'anime', 'watercolor', 'photorealistic', 'flat-cartoon', 'strategic-map'] as const;
 export type VisualStyleId = (typeof VISUAL_STYLE_IDS)[number];
 
+export const SHOT_TYPES = ['wide', 'medium', 'close', 'detail', 'high-angle', 'low-angle'] as const;
+export type ShotType = (typeof SHOT_TYPES)[number];
+export const LIGHT_TYPES = ['daylight', 'overcast', 'golden-hour', 'night', 'firelight', 'interior'] as const;
+export type LightType = (typeof LIGHT_TYPES)[number];
+
 export const ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const;
 export type AspectRatio = (typeof ASPECT_RATIOS)[number];
 
@@ -184,6 +189,8 @@ export const SceneSchema = z.object({
   id: z.string(),
   narration: z.string(),
   visualPrompt: z.string(),
+  shotType: z.enum(SHOT_TYPES).nullable().default(null),
+  lightType: z.enum(LIGHT_TYPES).nullable().default(null),
   durationSec: SceneDurationSecSchema,
   active: z.boolean().default(true),
   assetType: z.enum(['image', 'video']).default('image'),
@@ -207,7 +214,7 @@ export const SceneSchema = z.object({
   }).nullable().default(null),
 });
 /** The parser supplies the additive popup-plan default; callers may omit it when constructing legacy-shaped scenes. */
-export type Scene = Omit<z.infer<typeof SceneSchema>, 'popupPlan'> & { popupPlan?: z.infer<typeof PopupPlanSchema> };
+export type Scene = Omit<z.infer<typeof SceneSchema>, 'popupPlan' | 'shotType' | 'lightType'> & { popupPlan?: z.infer<typeof PopupPlanSchema>; shotType?: ShotType | null; lightType?: LightType | null };
 
 export const ProjectSummarySchema = z.object({
   id: z.string(),

@@ -60,6 +60,34 @@ function batch(indexes: number[], styleNote: string, sfxPrompts: Partial<Record<
 }
 
 describe('generateVisualPrompts', () => {
+  it('plans across chapters and inactive scenes, persists only new visual plans, and warns on non-following output', async () => {
+    const project = await projectWithScenes(['', '', 'Manual third', ''], [2, 2]);
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    aiMock.chat
+      .mockResolvedValueOnce(JSON.stringify({ styleNote: 'Style one', prompts: [{ sceneIndex: 1, visualPrompt: 'A wide establishing shot in clear daylight.', sfxPrompt: '', motionPrompt: '' }] }))
+      .mockResolvedValueOnce(JSON.stringify({ styleNote: 'Style two', prompts: [
+        { sceneIndex: 3, visualPrompt: 'Unused third scene.', sfxPrompt: '', motionPrompt: '' },
+        { sceneIndex: 4, visualPrompt: 'A figure stands beside the river.', sfxPrompt: '', motionPrompt: '' },
+      ] }));
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+    const scenes = (await getProject(project.id)).scenes;
+
+    expect(result).toEqual({ updatedScenes: 2, skippedScenes: 1, failedChapters: [], skippedInactive: 1 });
+    expect(scenes[0]).toMatchObject({ shotType: 'wide', lightType: 'daylight' });
+    expect(scenes[1]).toMatchObject({ active: false, shotType: null, lightType: null });
+    expect(scenes[2]).toMatchObject({ visualPrompt: 'Manual third', shotType: null, lightType: null });
+    expect(scenes[3]).toMatchObject({ visualPrompt: 'A figure stands beside the river.', shotType: 'close', lightType: 'daylight' });
+    const second = aiMock.chat.mock.calls[1]![0][1].content as string;
+    expect(second).toContain('Scene 3\nNarration: Three');
+    expect(second).toContain('Required shot: high-angle');
+    expect(second).toContain('Scene 4\nNarration: Four');
+    expect(second).toContain('Required shot: close');
+    expect(job.logs).toContain('Scene 4: prompt may not follow required shot "close" / light "daylight".');
+    expect(job.logs.some((line) => line.includes('Scene 1: prompt may not follow'))).toBe(false);
+  });
+
   it('omits inactive scenes from the prompt and ignores a returned inactive index', async () => {
     const project = await projectWithScenes(['', '', ''], [2, 1]);
     await setProjectSceneActive(project.id, 'scene-2', false);
@@ -109,7 +137,8 @@ describe('generateVisualPrompts', () => {
     const second = aiMock.chat.mock.calls[1]![0][1].content as string;
     expect(first).toContain('This chapter contains exactly 2 scenes. Return exactly 2 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
     expect(first).toContain('Scene 1\nNarration: One');
-    expect(first).toContain('Scene 2\nNarration: Two\nAsset type: image\nExisting visual prompt: Manual second');
+    expect(first).toContain('Scene 2\nNarration: Two\nAsset type: image\nRequired shot: medium');
+    expect(first).toContain('Existing visual prompt: Manual second');
     expect(first).toContain('Existing SFX prompt: Existing SFX');
     expect(first).not.toContain('scene-1');
     expect(second).toContain('Scene 3\nNarration: Three');
@@ -369,6 +398,7 @@ describe('generateVisualPrompts', () => {
 
     expect(result).toEqual({ updatedScenes: 1, skippedScenes: 2, failedChapters: [], skippedInactive: 0 });
     expect((await getProject(project.id)).scenes.map((scene) => scene.visualPrompt)).toEqual(['Manual during AI', 'Generated 2', 'Generated 3']);
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ shotType: null, lightType: null });
   });
 
   it('does not count a same-value manual edit between the job read and atomic write', async () => {

@@ -4,7 +4,7 @@ import { ChapterDocSchema } from '../../../../contracts/script';
 import { loadScriptPreset } from './presets/loader';
 import { loadVisualStylePreset } from './presets/visual-style-loader';
 import { SCRIPT_PRESET_CONFIG } from './presets/config';
-import { buildChapterExpansionPrompt, buildManualScriptPrompt, buildOutlinePrompt, buildRegenerationPrompt, buildScriptPrompt, buildVisualPromptPrompt } from './build-prompt';
+import { buildChapterExpansionPrompt, buildManualScriptPrompt, buildOutlinePrompt, buildRegenerationPrompt, buildScriptPrompt, buildVisualPromptPrompt, LIGHT_PHRASES, SHOT_PHRASES } from './build-prompt';
 import { parseChapterExpansion, parseGeneratedChapters, parseManualScriptDocument, parseRegeneratedParagraphs, parseScriptOutline, parseVisualPromptBatch } from './parse-output';
 
 const project = ProjectDetailSchema.parse({
@@ -155,7 +155,7 @@ describe('script AI prompt boundary', () => {
       project: { ...project, visualStylePresetId: 'anime' },
       chapter,
       styleNote: 'Muted colors',
-      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', assetType: 'video', visualPrompt: 'Existing image', sfxPrompt: 'Existing wind', motionPrompt: 'Slow push-in on the river.' }],
+      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', assetType: 'video', visualPrompt: 'Existing image', sfxPrompt: 'Existing wind', motionPrompt: 'Slow push-in on the river.', shotType: 'detail', lightType: 'firelight' }],
       visualStylePresetId: 'anime',
       coreQuestion: 'Why did the river change?',
       openingHook: 'At dawn, it reversed.',
@@ -163,7 +163,7 @@ describe('script AI prompt boundary', () => {
       previousAvoidRepeating: ['Do not repeat the flood reveal'],
       previousPersistentFacts: ['The bridge is damaged'],
     });
-    expect(result.promptVersion).toBe('visual-prompt-v2/anime@2');
+    expect(result.promptVersion).toBe('visual-prompt-v3/anime@2');
     expect(result.system).toContain(loadScriptPreset('documentary').system);
     expect(result.system).toContain('sfxPrompt must be 2-4 short English Freesound search phrases');
     expect(result.system).toContain('non-speech, non-music ambience and sound effects only');
@@ -185,6 +185,9 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('Existing image');
     expect(result.user).toContain('Existing SFX prompt: Existing wind');
     expect(result.user).toContain('Asset type: video');
+    expect(result.user).toContain(`Required shot: detail — ${SHOT_PHRASES.detail}`);
+    expect(result.user).toContain(`Required light: firelight — ${LIGHT_PHRASES.firelight}`);
+    expect(result.system).toContain('visualPrompt MUST follow both and state them explicitly');
     expect(result.user).toContain('Existing motion prompt: Slow push-in on the river.');
     expect(result.user).toContain('1');
     expect(result.user).not.toContain('internal-id');
@@ -203,7 +206,7 @@ describe('script AI prompt boundary', () => {
       previousAvoidRepeating: [],
       previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe(`visual-prompt-v2/strategic-map@${loadVisualStylePreset('strategic-map' as never).version}`);
+    expect(result.promptVersion).toBe(`visual-prompt-v3/strategic-map@${loadVisualStylePreset('strategic-map' as never).version}`);
     expect(result.user).toContain(loadVisualStylePreset('strategic-map' as never).style);
   });
 

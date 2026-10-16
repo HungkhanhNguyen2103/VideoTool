@@ -51,6 +51,20 @@ describe('scene active field', () => {
   });
 });
 
+describe('scene shot and light plan fields', () => {
+  const scene = { id: 'scene-1', narration: 'Narration', visualPrompt: '', durationSec: 1 };
+
+  it('defaults legacy scenes to null and accepts valid assignments', () => {
+    expect(SceneSchema.parse(scene)).toMatchObject({ shotType: null, lightType: null });
+    expect(SceneSchema.parse({ ...scene, shotType: 'high-angle', lightType: 'golden-hour' })).toMatchObject({ shotType: 'high-angle', lightType: 'golden-hour' });
+  });
+
+  it('rejects unknown shot and light values', () => {
+    expect(SceneSchema.safeParse({ ...scene, shotType: 'aerial' }).success).toBe(false);
+    expect(SceneSchema.safeParse({ ...scene, lightType: 'neon' }).success).toBe(false);
+  });
+});
+
 describe('render snapshot contract', () => {
   const projectDetail = {
     id: 'project-1',

@@ -1,10 +1,11 @@
-import type { ProjectDetail } from '../../../contracts/project';
+import type { LightType, ProjectDetail, ShotType } from '../../../contracts/project';
 import { getAiClient } from '../../shared/ai';
 import { AppError } from '../../shared/errors';
 import { activeScenes, countInactiveScenes, isSceneActive } from '../../../contracts/scene-active';
 import { applyEmptySceneVisualPromptsWithResult, getProject } from '../project';
 import { buildVisualPromptPrompt, type VisualPromptSceneInput } from './ai/build-prompt';
 import { parseVisualPromptBatch } from './ai/parse-output';
+import { planSceneShots } from './shot-plan';
 
 export type VisualPromptJobContext = {
   reportProgress: (percent: number, result?: unknown) => Promise<void>;
@@ -20,6 +21,23 @@ export type VisualPromptJobResult = {
 };
 
 type VisualPromptBatch = ReturnType<typeof parseVisualPromptBatch>;
+
+const SHOT_MENTIONS: Record<ShotType, RegExp> = {
+  wide: /\b(wide|establishing|panoramic|distant)\b/i,
+  medium: /\b(medium|waist.up|mid.shot)\b/i,
+  close: /\b(close.up|close up|tight on)\b/i,
+  detail: /\b(detail|macro|tight (?:shot|view|frame))\b/i,
+  'high-angle': /\b(high.angle|looking down|overhead|bird.s.eye)\b/i,
+  'low-angle': /\b(low.angle|looking up|from below)\b/i,
+};
+const LIGHT_MENTIONS: Record<LightType, RegExp> = {
+  daylight: /\b(daylight|sunlit|sunlight|daytime)\b/i,
+  overcast: /\b(overcast|cloudy|diffuse light|grey sky|gray sky)\b/i,
+  'golden-hour': /\b(golden.hour|sunrise|sunset|dawn|dusk)\b/i,
+  night: /\b(night|moonlit|moonlight|dark)\b/i,
+  firelight: /\b(firelight|fire.lit|torchlight|flames?|warm fire)\b/i,
+  interior: /\b(interior|indoor|lamplight|lantern.light|window light)\b/i,
+};
 
 function chapterScenes(project: ProjectDetail): VisualPromptSceneInput[][] {
   let nextScene = 0;
@@ -71,6 +89,21 @@ export async function generateVisualPrompts(
   const scenesByChapter = chapterScenes(project);
   const client = getAiClient(project.aiProvider, project.aiModel);
   const activeSceneList = activeScenes(project.scenes);
+  const chapterStarts = new Set<number>();
+  let activeOffset = 0;
+  for (const scenes of scenesByChapter) {
+    if (scenes.length > 0) chapterStarts.add(activeOffset);
+    activeOffset += scenes.length;
+  }
+  const shotPlan = planSceneShots(activeSceneList, { chapterStarts });
+  const planBySceneId = new Map(activeSceneList.map((scene, index) => [scene.id, shotPlan[index]!]));
+  for (const scenes of scenesByChapter) {
+    for (const scene of scenes) {
+      const assignment = planBySceneId.get(scene.sceneId)!;
+      scene.shotType = assignment.shotType;
+      scene.lightType = assignment.lightType;
+    }
+  }
   const skippedInactive = countInactiveScenes(project.scenes);
   const inactiveSceneIndexes = new Set(project.scenes.flatMap((scene, index) => isSceneActive(scene) ? [] : [index + 1]));
   const result: VisualPromptJobResult = { updatedScenes: 0, skippedScenes: 0, failedChapters: [], skippedInactive };
@@ -140,9 +173,20 @@ export async function generateVisualPrompts(
 
         const idsByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene.sceneId]));
         const scenesByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene]));
+        for (const item of batch.prompts) {
+          const scene = scenesByIndex.get(item.sceneIndex)!;
+          if (scene.visualPrompt !== '') continue;
+          const shotType = scene.shotType!;
+          const lightType = scene.lightType!;
+          if (!SHOT_MENTIONS[shotType].test(item.visualPrompt) || !LIGHT_MENTIONS[lightType].test(item.visualPrompt)) {
+            await context.appendLog(`Scene ${item.sceneIndex}: prompt may not follow required shot "${shotType}" / light "${lightType}".`);
+          }
+        }
         const updates = batch.prompts.map((item) => ({
           sceneId: idsByIndex.get(item.sceneIndex)!,
           visualPrompt: item.visualPrompt,
+          shotType: scenesByIndex.get(item.sceneIndex)!.shotType,
+          lightType: scenesByIndex.get(item.sceneIndex)!.lightType,
           sfxPrompt: item.sfxPrompt,
           motionPrompt: scenesByIndex.get(item.sceneIndex)?.assetType === 'video' ? item.motionPrompt : '',
         }));

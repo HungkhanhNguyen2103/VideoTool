@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, NameCandidatesSchema, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, SfxVolumeSchema, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema } from '../../../contracts/project';
+import { ASPECT_RATIOS, AI_PROVIDERS, FILM_LOOK_STYLES, LIGHT_TYPES, NameCandidatesSchema, PARALLAX_STYLES, PROJECT_STATUSES, RENDER_ENGINES, SCRIPT_PRESET_IDS, SHOT_TYPES, SfxVolumeSchema, TRANSITION_STYLES, VISUAL_STYLE_IDS, WordTimingsSchema, type LightType, type ShotType } from '../../../contracts/project';
 import { PopupDensitySchema, PopupPlanSchema } from '../../../contracts/popup-analysis';
 import { ChapterDocSchema, ChapterSnapshotSchema, HubrisMotifSchema, OpenLoopSchema } from '../../../contracts/script';
 import { SeoPackageSchema } from '../../../contracts/seo';
@@ -10,6 +10,8 @@ export const SceneDocSchema = z.object({
   id: z.string(),
   narration: z.string(),
   visualPrompt: z.string(),
+  shotType: z.enum(SHOT_TYPES).nullable().default(null),
+  lightType: z.enum(LIGHT_TYPES).nullable().default(null),
   durationSec: SceneDurationSecSchema,
   active: z.boolean().default(true),
   assetType: z.enum(['image', 'video']).default('image'),
@@ -29,7 +31,7 @@ export const SceneDocSchema = z.object({
   depthMap: z.object({ assetFileId: z.string(), fileId: z.string(), score: z.number().finite() }).nullable().default(null),
 });
 /** Mongo reads are normalized by the schema, while legacy-shaped write fixtures may omit this additive field. */
-export type SceneDoc = Omit<z.infer<typeof SceneDocSchema>, 'popupPlan'> & { popupPlan?: z.infer<typeof PopupPlanSchema> };
+export type SceneDoc = Omit<z.infer<typeof SceneDocSchema>, 'popupPlan' | 'shotType' | 'lightType'> & { popupPlan?: z.infer<typeof PopupPlanSchema>; shotType?: ShotType | null; lightType?: LightType | null };
 
 /** The `projects` collection. `docs.ts` is the single source of truth for its shape. */
 export const ProjectDocSchema = z.object({

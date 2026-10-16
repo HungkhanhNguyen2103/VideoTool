@@ -22,6 +22,8 @@ function projectWithScenes(durations: number[], sceneCounts: number[], fps = 24)
       id: `scene-${index + 1}`,
       narration: `Narration ${index + 1}`,
       visualPrompt: '',
+      shotType: null,
+      lightType: null,
       durationSec,
       active: true,
       assetType: 'image' as const,

@@ -1,4 +1,4 @@
-import type { AiProvider, CreateProjectRequest, FilmLookStyle, ListProjectsQuery, ParallaxStyle, ProjectDetail, ProjectStatus, ProjectSummary, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
+import type { AiProvider, CreateProjectRequest, FilmLookStyle, LightType, ListProjectsQuery, ParallaxStyle, ProjectDetail, ProjectStatus, ProjectSummary, ShotType, TransitionStyle, VisualStyleId, WordTimings } from '../../../contracts/project';
 import { PopupDensitySchema, type PopupDensity, type PopupPlan } from '../../../contracts/popup-analysis';
 import { SeoPackageSchema, SeoPatchSchema, type GeneratedSeoSections, type SeoPatch, type SeoSection } from '../../../contracts/seo';
 import { estimateNarrationDurationSec, type ChapterDoc, type ChapterSnapshot, type HubrisMotif, type OpenLoop } from '../../../contracts/script';
@@ -713,6 +713,8 @@ export async function applySceneAssets(
 type EmptyScenePromptUpdate = {
   sceneId: string;
   visualPrompt?: string;
+  shotType?: ShotType;
+  lightType?: LightType;
   sfxPrompt?: string;
   motionPrompt?: string;
 };
@@ -744,10 +746,12 @@ export async function applyEmptySceneVisualPromptsWithResult(
   updates: EmptyScenePromptUpdate[],
 ): Promise<EmptyScenePromptWriteResult> {
   const project = await getProject(projectId);
-  const latest = new Map<string, { visualPrompt?: string; sfxPrompt?: string; motionPrompt?: string }>();
+  const latest = new Map<string, Omit<EmptyScenePromptUpdate, 'sceneId'>>();
   for (const update of updates) {
     const current = latest.get(update.sceneId) ?? {};
     if (update.visualPrompt !== undefined) current.visualPrompt = update.visualPrompt;
+    if (update.shotType !== undefined) current.shotType = update.shotType;
+    if (update.lightType !== undefined) current.lightType = update.lightType;
     if (update.sfxPrompt !== undefined) current.sfxPrompt = update.sfxPrompt;
     if (update.motionPrompt !== undefined) current.motionPrompt = update.motionPrompt;
     latest.set(update.sceneId, current);
@@ -766,6 +770,8 @@ export async function applyEmptySceneVisualPromptsWithResult(
     if (hasPromptValue(update.visualPrompt)) {
       const identifier = `visual${index}`;
       set[`scenes.$[${identifier}].visualPrompt`] = update.visualPrompt;
+      if (update.shotType !== undefined) set[`scenes.$[${identifier}].shotType`] = update.shotType;
+      if (update.lightType !== undefined) set[`scenes.$[${identifier}].lightType`] = update.lightType;
       arrayFilters.push({ [`${identifier}.id`]: sceneId, [`${identifier}.active`]: { $ne: false }, [`${identifier}.visualPrompt`]: '' });
       eligibleClauses.push({ id: sceneId, active: { $ne: false }, visualPrompt: '' });
     }
