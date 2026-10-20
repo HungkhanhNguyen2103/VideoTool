@@ -1,6 +1,6 @@
 # Module: asset
 
-**Purpose:** Orchestrate the Google Flow export/import path for per-scene image/video assets.
+**Purpose:** Orchestrate Google Flow export/import and direct per-scene image/video asset mutations.
 **Owns collection(s):** none; `project` owns scenes and `file-store` owns stored files.
 **May import (via their index.ts only):** project and the shared file-store service; job is reserved for a later generation phase.
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
@@ -17,13 +17,17 @@
 - Export scenes as numbered JSON for the external Google Flow tool.
 - Flow scene exports may include `referenceTags` after `motionPrompt`, derived only from the scene's persisted `shotType` and `lightType`. Legacy scenes with neither value omit the field. Non-map styles start with `core`, then add `interior`, `night` (including firelight), `wide` (including high angle), and `props` (detail shots) in that order, filtered to slots defined by the selected style pack. Strategic Map omits the field until its scene families are planned. Export never computes or backfills a shot/light plan.
 - Import Flow's root-level `SCENE_{N}_{anything}.{ext}` ZIP entries and attach stored file IDs to matching scenes.
+- `POST /api/project/:id/scenes/:sceneId/assets` accepts one or two multipart `files`. The request validates the complete combination before storing anything, probes video before the project write, and applies a clip plus keyframe through one atomic `applySceneAssets` call guarded by the expected project version, scene activity, and scene type. Legacy scenes with no stored `assetType` remain valid image scenes. Image scenes accept exactly one image as `assetFileId`; video scenes accept one clip as `assetFileId`, one image as `videoKeyframeFileId`, or one of each. Images are capped at 25 MB and the request total is capped at 200 MB.
+- `DELETE /api/project/:id/scenes/:sceneId/assets?slot=asset|keyframe` clears one slot. Asset removal also clears `videoTailFileId` and `videoDurationSec`; on image scenes the existing `applySceneAssets` depth-map invalidation clears `depthMap`. Keyframe removal is video-only and changes only `videoKeyframeFileId`. An empty slot is a successful no-op.
 - Image MIME mapping is `png -> image/png`, `jpg|jpeg -> image/jpeg`, `webp -> image/webp`; video mapping is `mp4 -> video/mp4`, `mov -> video/quicktime`, `webm -> video/webm`.
 - Asset ZIP uploads are limited to 200 MB and unsupported, malformed, nested, out-of-range, or asset-type-mismatched entries are reported in `skipped[]` without aborting valid entries.
-- This module currently imports existing files from ZIPs and adjusts asset types/distribution; it has no image/video generation route or worker.
+- Direct upload and ZIP import share the same internal storage/probe/tail-frame helpers. The tolerant ZIP skip behavior is unchanged.
+- Direct upload cleanup deletes every file stored for the request, including an extracted tail frame, if the atomic project mutation fails. Replaced or removed files are deleted only after re-reading the project and confirming that no field named `fileId` or ending in `FileId` still refers to them. This covers scene asset/keyframe/tail/audio/SFX/depth fields plus project render/draft/BGM/logo/custom-style and SEO thumbnail fields. Cleanup failures are warning-only.
+- This module has no image/video generation route or worker.
 
 ## Known pitfalls
 
-- Re-import overwrites a scene reference and leaves the old file orphaned; cleanup is deferred.
+- ZIP re-import still overwrites a scene reference and leaves the old file orphaned. The per-scene upload/delete routes clean up displaced files conservatively.
 - Together AI, voice, and video rendering are out of scope for this phase.
 - `assetUrl` is derived on the client from `FileSummary.storedPath`; it is not stored on scenes and `project` does not import file-store.
 - Integration tests cover mixed ZIP skips, type mismatches, duplicate/re-import replacement, malformed ZIP enumeration/extraction, route validation, the 200 MB Multer limit, and MIME-based preview classification.

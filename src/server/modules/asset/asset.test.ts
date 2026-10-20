@@ -22,7 +22,7 @@ import {
   setProjectSceneActive,
   type ProjectDoc,
 } from '../project';
-import { applyVideoDistribution, configureAssetModule, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './index';
+import { applyVideoDistribution, configureAssetModule, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution, removeSceneAsset, requestDepthMapsForImageScenes, uploadSceneAssets } from './index';
 
 const projectInput = {
   title: 'Asset contract project',
@@ -115,7 +115,221 @@ function zipWithCorruptCentralDirectory(): Buffer {
   return buffer;
 }
 
+function uploadFile(originalname: string, mimetype: string, content = originalname): Express.Multer.File {
+  const buffer = Buffer.from(content);
+  return { fieldname: 'files', originalname, encoding: '7bit', mimetype, size: buffer.byteLength, buffer, destination: '', filename: '', path: '', stream: undefined as never };
+}
+
 describe('asset contracts', () => {
+  it('uploads an image scene asset and requests its depth map', async () => {
+    const project = await seedProjectWithScenes();
+    const requested: string[] = [];
+    configureAssetModule(filesDir, async (_projectId, sceneId) => { requested.push(sceneId); });
+
+    const result = await uploadSceneAssets(project.id, 'scene-1', [uploadFile('still.png', 'image/png')]);
+
+    expect(result).toMatchObject({ sceneId: 'scene-1', updated: { assetFileId: expect.any(String) }, files: [{ originalName: 'still.png' }] });
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ assetFileId: result.updated.assetFileId, depthMap: null });
+    expect(requested).toEqual(['scene-1']);
+  });
+
+  it('uploads a video clip and keyframe atomically, with duration and extracted tail', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 8.25, extractLastFrame: async () => Buffer.from('tail') });
+
+    const result = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('key.png', 'image/png'), uploadFile('clip.mp4', 'video/mp4')]);
+
+    expect(result.updated).toMatchObject({ assetFileId: expect.any(String), videoKeyframeFileId: expect.any(String), videoTailFileId: expect.any(String), videoDurationSec: 8.25 });
+    expect(result.files.map((file) => file.originalName)).toEqual(expect.arrayContaining(['key.png', 'clip.mp4', 'clip.tail.png']));
+    expect((await getProject(project.id)).scenes[1]).toMatchObject(result.updated);
+  });
+
+  it('cleans every newly stored file when the atomic project mutation fails', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, {
+      probeVideoDuration: async () => 2,
+      extractLastFrame: async () => Buffer.from('tail'),
+      applySceneAssets: async () => { throw new Error('conflict'); },
+    });
+
+    await expect(uploadSceneAssets(project.id, 'scene-2', [uploadFile('clip.mp4', 'video/mp4'), uploadFile('key.png', 'image/png')])).rejects.toThrow('conflict');
+    expect(await getCollection('files').countDocuments({ projectId: project.id })).toBe(0);
+  });
+
+  it('rejects a concurrent scene change and cleans the clip and extracted tail', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, {
+      probeVideoDuration: async () => {
+        const current = await getProject(project.id);
+        await setProjectSceneActive(project.id, 'scene-2', false, current.version);
+        return 2;
+      },
+      extractLastFrame: async () => Buffer.from('tail'),
+    });
+
+    await expect(uploadSceneAssets(project.id, 'scene-2', [uploadFile('clip.mp4', 'video/mp4')])).rejects.toMatchObject({ status: 409, code: 'PROJECT_CHANGED' });
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({ active: false, assetFileId: null, videoTailFileId: null });
+    expect(await getCollection('files').countDocuments({ projectId: project.id })).toBe(0);
+  });
+
+  it('replaces only the clip, deletes the old clip and tail, and preserves the keyframe', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 2, extractLastFrame: async () => Buffer.from('old-tail') });
+    const oldClip = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('old.mp4', 'video/mp4')]);
+    const oldKey = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('old-key.png', 'image/png')]);
+    const oldTailId = oldClip.updated.videoTailFileId;
+    if (!oldClip.updated.assetFileId || !oldTailId) throw new Error('Expected stored clip and tail IDs.');
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 3, extractLastFrame: async () => Buffer.from('new-tail') });
+
+    const result = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('new.mp4', 'video/mp4')]);
+    const current = (await getProject(project.id)).scenes[1]!;
+
+    expect(current.videoKeyframeFileId).toBe(oldKey.updated.videoKeyframeFileId);
+    expect(current.assetFileId).toBe(result.updated.assetFileId);
+    expect(await getCollection<{ _id: string }>('files').findOne({ _id: oldClip.updated.assetFileId })).toBeNull();
+    expect(await getCollection<{ _id: string }>('files').findOne({ _id: oldTailId })).toBeNull();
+  });
+
+  it('replaces only the keyframe, deletes the old keyframe, and preserves clip and tail', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 2, extractLastFrame: async () => Buffer.from('tail') });
+    const oldClip = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('old.mp4', 'video/mp4')]);
+    const oldKey = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('old-key.png', 'image/png')]);
+    if (!oldKey.updated.videoKeyframeFileId) throw new Error('Expected stored keyframe ID.');
+
+    const result = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('new-key.png', 'image/png')]);
+    const current = (await getProject(project.id)).scenes[1]!;
+
+    expect(current.assetFileId).toBe(oldClip.updated.assetFileId);
+    expect(current.videoTailFileId).toBe(oldClip.updated.videoTailFileId);
+    expect(current.videoKeyframeFileId).toBe(result.updated.videoKeyframeFileId);
+    expect(await getCollection<{ _id: string }>('files').findOne({ _id: oldKey.updated.videoKeyframeFileId })).toBeNull();
+  });
+
+  it('keeps displaced files for every supported project reference field', async () => {
+    const references: Array<[string, (fileId: string) => Record<string, unknown>]> = [
+      ['render', (fileId) => ({ renderFileId: fileId })],
+      ['draft render', (fileId) => ({ draftRenderFileId: fileId })],
+      ['BGM', (fileId) => ({ bgmFileId: fileId })],
+      ['logo', (fileId) => ({ logoFileId: fileId })],
+      ['custom style', (fileId) => ({ customStyleReferenceFileId: fileId })],
+      ['SEO thumbnail', (fileId) => ({ 'seo.thumbnail.fileId': fileId })],
+      ['scene audio', (fileId) => ({ 'scenes.1.audioFileId': fileId })],
+      ['scene SFX', (fileId) => ({ 'scenes.1.sfxFileId': fileId })],
+      ['word timings', (fileId) => ({ 'scenes.1.wordTimings': { audioFileId: fileId, words: [] } })],
+      ['name analysis', (fileId) => ({ 'scenes.1.nameCandidates': { narrationHash: 'hash', audioFileId: fileId, provider: 'deepseek', model: 'model', generatedAt: '2026-10-20T00:00:00.000Z', candidates: [] } })],
+      ['popup plan', (fileId) => ({ 'scenes.1.popupPlan': { narrationHash: 'hash', audioFileId: fileId, provider: 'deepseek', model: 'model', backend: 'api', density: 'low', generatedAt: '2026-10-20T00:00:00.000Z', needed: false, reason: 'none', popups: [], dropped: [] } })],
+      ['depth source', (fileId) => ({ 'scenes.2.depthMap': { assetFileId: fileId, fileId: 'other-depth-file', score: 1 } })],
+      ['depth image', (fileId) => ({ 'scenes.2.depthMap': { assetFileId: 'other-source-file', fileId, score: 1 } })],
+    ];
+
+    for (const [label, reference] of references) {
+      const project = await seedProjectWithScenes();
+      const first = await uploadSceneAssets(project.id, 'scene-1', [uploadFile(`${label}.png`, 'image/png')]);
+      const sharedId = first.updated.assetFileId!;
+      await getCollection<ProjectDoc>('projects').updateOne({ _id: project.id }, { $set: reference(sharedId) });
+
+      await uploadSceneAssets(project.id, 'scene-1', [uploadFile('replacement.png', 'image/png')]);
+
+      expect(await getCollection<{ _id: string }>('files').findOne({ _id: sharedId }), label).not.toBeNull();
+    }
+  });
+
+  it('deletes asset metadata and image depth but keyframe deletion affects only video keyframes', async () => {
+    const project = await seedProjectWithScenes();
+    const image = await uploadSceneAssets(project.id, 'scene-1', [uploadFile('image.png', 'image/png')]);
+    await getCollection<ProjectDoc>('projects').updateOne({ _id: project.id }, { $set: { 'scenes.0.depthMap': { assetFileId: image.updated.assetFileId, fileId: image.updated.assetFileId, score: 1 } } });
+
+    const removedImage = await removeSceneAsset(project.id, 'scene-1', 'asset');
+    expect(removedImage.updated).toMatchObject({ assetFileId: null, videoTailFileId: null, videoDurationSec: null });
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ assetFileId: null, depthMap: null });
+
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => 2, extractLastFrame: async () => Buffer.from('tail') });
+    const uploaded = await uploadSceneAssets(project.id, 'scene-2', [uploadFile('clip.mp4', 'video/mp4'), uploadFile('key.png', 'image/png')]);
+    const removedKey = await removeSceneAsset(project.id, 'scene-2', 'keyframe');
+    expect(removedKey.updated).toEqual({ videoKeyframeFileId: null });
+    expect((await getProject(project.id)).scenes[1]).toMatchObject({ assetFileId: uploaded.updated.assetFileId, videoTailFileId: uploaded.updated.videoTailFileId, videoKeyframeFileId: null });
+    await expect(removeSceneAsset(project.id, 'scene-1', 'keyframe')).rejects.toMatchObject({ status: 422, code: 'KEYFRAME_REQUIRES_VIDEO' });
+    const versionBeforeNoop = (await getProject(project.id)).version;
+    await expect(removeSceneAsset(project.id, 'scene-1', 'asset')).resolves.toMatchObject({ updated: { assetFileId: null } });
+    expect((await getProject(project.id)).version).toBe(versionBeforeNoop);
+    const versionBeforeKeyframeNoop = (await getProject(project.id)).version;
+    await expect(removeSceneAsset(project.id, 'scene-2', 'keyframe')).resolves.toMatchObject({ updated: { videoKeyframeFileId: null } });
+    expect((await getProject(project.id)).version).toBe(versionBeforeKeyframeNoop);
+  });
+
+  it('rejects invalid combinations and inactive scenes before storing files', async () => {
+    const project = await seedProjectWithScenes();
+    await expect(uploadSceneAssets(project.id, 'scene-1', [])).rejects.toMatchObject({ code: 'FILES_REQUIRED' });
+    await expect(uploadSceneAssets(project.id, 'missing-scene', [uploadFile('still.png', 'image/png')])).rejects.toMatchObject({ status: 404, code: 'not_found' });
+    await expect(uploadSceneAssets(project.id, 'scene-1', [uploadFile('empty.png', 'image/png', '')])).rejects.toMatchObject({ code: 'EMPTY_FILE' });
+    await expect(uploadSceneAssets(project.id, 'scene-1', [uploadFile('clip.mp4', 'video/mp4')])).rejects.toMatchObject({ code: 'IMAGE_SCENE_REQUIRES_IMAGE' });
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    await expect(uploadSceneAssets(project.id, 'scene-2', [uploadFile('a.png', 'image/png'), uploadFile('b.jpg', 'image/jpeg')])).rejects.toMatchObject({ code: 'DUPLICATE_ASSET_KIND' });
+    await expect(uploadSceneAssets(project.id, 'scene-2', [uploadFile('a.mp4', 'video/mp4'), uploadFile('b.webm', 'video/webm')])).rejects.toMatchObject({ code: 'DUPLICATE_ASSET_KIND' });
+    await expect(uploadSceneAssets(project.id, 'scene-2', [uploadFile('fake.png', 'video/mp4')])).rejects.toMatchObject({ code: 'FILE_TYPE_MISMATCH' });
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    await expect(uploadSceneAssets(project.id, 'scene-2', [uploadFile('key.png', 'image/png')])).rejects.toMatchObject({ status: 409, code: 'SCENE_INACTIVE' });
+    await expect(removeSceneAsset(project.id, 'scene-2', 'asset')).rejects.toMatchObject({ status: 409, code: 'SCENE_INACTIVE' });
+    expect(await getCollection('files').countDocuments({ projectId: project.id })).toBe(0);
+  });
+
+  it('cleans a stored clip after probe failure and rejects oversized images before storage', async () => {
+    const project = await seedProjectWithScenes();
+    await patchProjectScene(project.id, 'scene-2', { assetType: 'video' });
+    configureAssetModule(filesDir, undefined, { probeVideoDuration: async () => { throw new Error('bad clip'); } });
+    await expect(uploadSceneAssets(project.id, 'scene-2', [uploadFile('bad.mp4', 'video/mp4')])).rejects.toMatchObject({ status: 422, code: 'VIDEO_PROBE_FAILED', message: 'Không thể đọc thời lượng video.' });
+    await expect(uploadSceneAssets(project.id, 'scene-1', [uploadFile('large.png', 'image/png', 'x'.repeat(25 * 1024 * 1024 + 1))])).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' });
+    expect(await getCollection('files').countDocuments({ projectId: project.id })).toBe(0);
+  });
+
+  it('logs cleanup failures without failing a successful replacement', async () => {
+    const project = await seedProjectWithScenes();
+    const first = await uploadSceneAssets(project.id, 'scene-1', [uploadFile('old.png', 'image/png')]);
+    configureAssetModule(filesDir, undefined, { deleteFile: async () => { throw new Error('locked file'); } });
+
+    await expect(uploadSceneAssets(project.id, 'scene-1', [uploadFile('new.png', 'image/png')])).resolves.toMatchObject({ updated: { assetFileId: expect.any(String) } });
+    expect(await getCollection<{ _id: string }>('files').findOne({ _id: first.updated.assetFileId! })).not.toBeNull();
+  });
+
+  it('serves multipart upload and slot deletion routes with stable errors', async () => {
+    const project = await seedProjectWithScenes();
+    const base = await startAssetServer();
+    const form = new FormData();
+    form.append('files', new Blob(['png'], { type: 'image/png' }), 'still.png');
+    const uploaded = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/assets`, { method: 'POST', body: form });
+    expect(uploaded.status).toBe(200);
+    expect(await uploaded.json()).toMatchObject({ sceneId: 'scene-1', updated: { assetFileId: expect.any(String) } });
+    expect((await fetch(`${base}/api/project/${project.id}/scenes/scene-1/assets?slot=asset`, { method: 'DELETE' })).status).toBe(200);
+    const bad = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/assets?slot=other`, { method: 'DELETE' });
+    expect(bad.status).toBe(422);
+    expect(await bad.json()).toMatchObject({ error: { code: 'validation_error' } });
+
+    const tooMany = new FormData();
+    for (const name of ['a.png', 'b.png', 'c.png']) tooMany.append('files', new Blob(['png'], { type: 'image/png' }), name);
+    const tooManyResponse = await fetch(`${base}/api/project/${project.id}/scenes/scene-1/assets`, { method: 'POST', body: tooMany });
+    expect(tooManyResponse.status).toBe(400);
+    expect(await tooManyResponse.json()).toMatchObject({ error: { code: 'TOO_MANY_FILES' } });
+
+    const missingForm = new FormData();
+    missingForm.append('files', new Blob(['png'], { type: 'image/png' }), 'still.png');
+    const missing = await fetch(`${base}/api/project/${project.id}/scenes/missing-scene/assets`, { method: 'POST', body: missingForm });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ error: { code: 'not_found' } });
+
+    await setProjectSceneActive(project.id, 'scene-2', false);
+    const inactiveForm = new FormData();
+    inactiveForm.append('files', new Blob(['png'], { type: 'image/png' }), 'key.png');
+    const inactive = await fetch(`${base}/api/project/${project.id}/scenes/scene-2/assets`, { method: 'POST', body: inactiveForm });
+    expect(inactive.status).toBe(409);
+    expect(await inactive.json()).toMatchObject({ error: { code: 'SCENE_INACTIVE' } });
+  });
   it('previews video distribution without changing the project', async () => {
     const project = await seedProjectWithScenes();
     await setChapterSceneCounts(project.id, [2, 1]);
@@ -298,6 +512,23 @@ describe('asset contracts', () => {
 
     const loaded = await getProject(project.id);
     expect(loaded.scenes[0]).toMatchObject({ assetType: 'image', assetFileId: null, motionPrompt: '', videoKeyframeFileId: null, videoDurationSec: null });
+  });
+
+  it('uploads an image asset to a legacy scene without a stored asset type', async () => {
+    const project = await createProject(projectInput);
+    await getCollection<{ _id: string }>('projects').updateOne(
+      { _id: project.id },
+      {
+        $set: {
+          scenes: [{ id: 'scene-1', narration: 'Opening', visualPrompt: 'A door', durationSec: 5 }],
+        },
+      },
+    );
+
+    const result = await uploadSceneAssets(project.id, 'scene-1', [uploadFile('legacy.png', 'image/png')]);
+
+    expect(result.updated.assetFileId).toEqual(expect.any(String));
+    expect((await getProject(project.id)).scenes[0]).toMatchObject({ assetType: 'image', assetFileId: result.updated.assetFileId });
   });
 
   it('requires the generated stored path in file summaries', () => {

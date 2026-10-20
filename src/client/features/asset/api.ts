@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FlowSceneExportSchema, ImportAssetsResultSchema, VideoDistributionPreviewSchema, type FlowSceneExport, type ImportAssetsResult, type VideoDistributionPreview } from '../../../contracts/asset';
+import { FlowSceneExportSchema, ImportAssetsResultSchema, SceneAssetsResponseSchema, VideoDistributionPreviewSchema, type FlowSceneExport, type ImportAssetsResult, type SceneAssetSlot, type SceneAssetsResponse, type VideoDistributionPreview } from '../../../contracts/asset';
 import { FileSummarySchema, type FileSummary } from '../../../contracts/file';
 import { AI_PROVIDERS, FILM_LOOK_STYLES, PARALLAX_STYLES, ProjectDetailSchema, RENDER_ENGINES, TRANSITION_STYLES, type FilmLookStyle, type ParallaxStyle, type ProjectDetail, type RenderEngine, type TransitionStyle, type VisualStyleId } from '../../../contracts/project';
 import { ApiError, apiRequest } from '../../shared/api-client';
@@ -378,4 +378,39 @@ export function importAssetsZip(
     form.append('file', file);
     xhr.send(form);
   });
+}
+
+export function uploadSceneAssets(
+  projectId: string,
+  sceneId: string,
+  files: File[],
+  onProgress?: (percent: number) => void,
+): Promise<SceneAssetsResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/assets`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onerror = () => reject(new Error('Không thể tải asset lên.'));
+    xhr.onload = () => {
+      let payload: unknown;
+      try { payload = JSON.parse(xhr.responseText); } catch { payload = null; }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const parsed = ApiErrorBodySchema.safeParse(payload);
+        reject(parsed.success ? new ApiError(parsed.data.error.message, xhr.status, parsed.data.error.code, parsed.data.error.fields) : new Error(`Upload failed (${xhr.status}).`));
+        return;
+      }
+      const parsed = SceneAssetsResponseSchema.safeParse(payload);
+      if (!parsed.success) { reject(new Error('Phản hồi upload asset không hợp lệ.')); return; }
+      resolve(parsed.data);
+    };
+    const form = new FormData();
+    files.forEach((file) => form.append('files', file));
+    xhr.send(form);
+  });
+}
+
+export function removeSceneAsset(projectId: string, sceneId: string, slot: SceneAssetSlot): Promise<SceneAssetsResponse> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/assets?slot=${slot}`, SceneAssetsResponseSchema, { method: 'DELETE' });
 }

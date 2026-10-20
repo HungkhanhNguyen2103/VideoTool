@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { VideoDistributionApplyRequestSchema, VideoDistributionRequestSchema } from '../../../contracts/asset';
+import { SceneAssetSlotSchema, VideoDistributionApplyRequestSchema, VideoDistributionRequestSchema } from '../../../contracts/asset';
 import { getProject, patchProjectScene, setProjectScenesAssetType } from '../project';
 import { AppError, FieldAppError } from '../../shared/errors';
-import { uploadAssetZip } from '../../shared/upload';
-import { applyVideoDistribution, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution, requestDepthMapsForImageScenes } from './service';
+import { uploadAssetZip, uploadSceneAssetFiles } from '../../shared/upload';
+import { applyVideoDistribution, exportScenesJson, fitSceneToClip, importAssetsFromZip, previewVideoDistribution, removeSceneAsset, requestDepthMapsForImageScenes, uploadSceneAssets } from './service';
 
 const PatchSceneSchema = z.object({
   narration: z.string().trim().min(1).max(2000).optional(),
@@ -38,6 +38,16 @@ assetRouter.post('/:id/scenes/import-assets', uploadAssetZip, async (req, res) =
     throw new AppError('File type not supported.', 400, 'INVALID_FILE_TYPE');
   }
   res.json(await importAssetsFromZip(projectId, file.buffer));
+});
+
+assetRouter.post('/:id/scenes/:sceneId/assets', uploadSceneAssetFiles, async (req, res) => {
+  res.json(await uploadSceneAssets(String(req.params.id), String(req.params.sceneId), (req.files as Express.Multer.File[] | undefined) ?? []));
+});
+
+assetRouter.delete('/:id/scenes/:sceneId/assets', async (req, res) => {
+  const parsed = SceneAssetSlotSchema.safeParse(req.query.slot);
+  if (!parsed.success) throw new FieldAppError('Dữ liệu không hợp lệ.', 422, 'validation_error', validationFields(parsed.error));
+  res.json(await removeSceneAsset(String(req.params.id), String(req.params.sceneId), parsed.data));
 });
 
 assetRouter.patch('/:id/scenes/:sceneId', async (req, res) => {

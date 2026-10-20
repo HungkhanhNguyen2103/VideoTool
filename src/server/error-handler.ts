@@ -28,6 +28,14 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     res.status(400).json(body('FILE_TOO_LARGE', 'File vượt quá giới hạn kích thước cho phép.'));
     return;
   }
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_COUNT') {
+    res.status(400).json(body('TOO_MANY_FILES', 'Chỉ được tải tối đa hai tệp.'));
+    return;
+  }
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_UNEXPECTED_FILE') {
+    res.status(400).json(body('INVALID_FILE_FIELD', 'Trường tệp tải lên không hợp lệ.'));
+    return;
+  }
   if (err instanceof AppError) {
     const fields = 'fields' in err ? (err as { fields: { path: string; message: string }[] }).fields : undefined;
     res.status(err.status).json(body(err.code, err.message, fields));

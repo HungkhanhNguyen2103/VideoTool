@@ -6,7 +6,7 @@ import type { z } from 'zod';
 import { AppError, Conflict, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
-import { SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
+import { ProjectDocSchema, SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
 import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
 import { DEFAULT_SCENE_TAIL_SEC, roundDurationSeconds } from '../../../contracts/scene-duration';
@@ -677,10 +677,11 @@ export async function setProjectVisualStylePreset(id: string, visualStylePresetI
 
 export async function applySceneAssets(
   id: string,
-  assetUpdates: Array<{ sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoTailFileId?: string | null; videoDurationSec?: number | null }>,
+  assetUpdates: Array<{ sceneId: string; assetFileId?: string | null; videoKeyframeFileId?: string | null; videoTailFileId?: string | null; videoDurationSec?: number | null }>,
+  options: { expectedVersion?: number; sceneGuards?: Array<{ sceneId: string; assetType: 'image' | 'video' }> } = {},
 ): Promise<ProjectDetail> {
   const project = await getProject(id);
-  const latest = new Map<string, { sceneId: string; assetFileId?: string; videoKeyframeFileId?: string; videoTailFileId?: string | null; videoDurationSec?: number | null }>();
+  const latest = new Map<string, { sceneId: string; assetFileId?: string | null; videoKeyframeFileId?: string | null; videoTailFileId?: string | null; videoDurationSec?: number | null }>();
   for (const update of assetUpdates) latest.set(update.sceneId, { ...latest.get(update.sceneId), ...update });
   if (latest.size === 0) return project;
   for (const sceneId of latest.keys()) {
@@ -689,6 +690,7 @@ export async function applySceneAssets(
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
   const arrayFilters: Record<string, unknown>[] = [];
+  const guardBySceneId = new Map(options.sceneGuards?.map((guard) => [guard.sceneId, guard]) ?? []);
   let index = 0;
   for (const [sceneId, update] of latest) {
     const identifier = `scene${index}`;
@@ -699,15 +701,47 @@ export async function applySceneAssets(
     if (update.videoKeyframeFileId !== undefined) set[`scenes.$[${identifier}].videoKeyframeFileId`] = update.videoKeyframeFileId;
     if (update.videoTailFileId !== undefined) set[`scenes.$[${identifier}].videoTailFileId`] = update.videoTailFileId;
     if (update.videoDurationSec !== undefined) set[`scenes.$[${identifier}].videoDurationSec`] = update.videoDurationSec;
-    arrayFilters.push({ [`${identifier}.id`]: sceneId });
+    const guard = guardBySceneId.get(sceneId);
+    if (!guard) {
+      arrayFilters.push({ [`${identifier}.id`]: sceneId });
+    } else {
+      const arrayGuard: Record<string, unknown> = {
+        [`${identifier}.id`]: sceneId,
+        [`${identifier}.active`]: { $ne: false },
+      };
+      if (guard.assetType === 'image') {
+        arrayGuard.$or = [
+          { [`${identifier}.assetType`]: 'image' },
+          { [`${identifier}.assetType`]: { $exists: false } },
+        ];
+      } else {
+        arrayGuard[`${identifier}.assetType`] = 'video';
+      }
+      arrayFilters.push(arrayGuard);
+    }
     index += 1;
   }
-  await getCollection<ProjectDoc>('projects').updateOne(
-    { _id: id },
+  const filter: Record<string, unknown> = { _id: id };
+  if (options.expectedVersion !== undefined) filter.version = options.expectedVersion;
+  if (guardBySceneId.size > 0) {
+    filter.$and = [...guardBySceneId.values()].map((guard) => ({
+      scenes: {
+        $elemMatch: guard.assetType === 'image'
+          ? { id: guard.sceneId, active: { $ne: false }, $or: [{ assetType: 'image' }, { assetType: { $exists: false } }] }
+          : { id: guard.sceneId, assetType: 'video', active: { $ne: false } },
+      },
+    }));
+  }
+  const updated = await getCollection<ProjectDoc>('projects').findOneAndUpdate(
+    filter,
     { $set: set, $inc: { version: 1 } },
-    { arrayFilters },
+    { arrayFilters, returnDocument: 'after' },
   );
-  return getProject(id);
+  if (!updated) {
+    if (await findProjectById(id)) throw new AppError('Dự án hoặc scene vừa thay đổi, vui lòng thử lại.', 409, 'PROJECT_CHANGED');
+    throw new NotFound('Không tìm thấy dự án.');
+  }
+  return toDetail(ProjectDocSchema.parse(updated));
 }
 
 type EmptyScenePromptUpdate = {

@@ -2,7 +2,7 @@ import { QueryClient, type MutationFunctionContext } from '@tanstack/react-query
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../shared/api-client';
 import type { ProjectDetail } from '../../../contracts/project';
-import { createSceneActiveMutationOptions, sceneDetailQueryKey } from './hooks';
+import { createRemoveSceneAssetMutationOptions, createSceneActiveMutationOptions, createUploadSceneAssetsMutationOptions, sceneDetailQueryKey, sceneFilesQueryKey } from './hooks';
 
 function project(): ProjectDetail {
   return {
@@ -49,5 +49,40 @@ describe('scene activation mutation', () => {
 
     expect(client.getQueryData(sceneDetailQueryKey(original.id))).toEqual(original);
     expect(notify).toHaveBeenCalledWith('Dự án vừa thay đổi hoặc đang xử lý; vui lòng thử lại.');
+  });
+});
+
+describe('scene asset mutations', () => {
+  it('uploads, clears the scene preview, and invalidates project and files', async () => {
+    const client = new QueryClient();
+    const clearPreview = vi.fn();
+    const request = vi.fn().mockResolvedValue({ sceneId: 'scene-1', updated: { assetFileId: 'asset-1' }, files: [] });
+    client.setQueryData(sceneDetailQueryKey('project-1'), project());
+    client.setQueryData(sceneFilesQueryKey('project-1'), []);
+    const options = createUploadSceneAssetsMutationOptions('project-1', client, clearPreview, request);
+    const variables = { sceneId: 'scene-1', files: [new File(['x'], 'x.png')], onProgress: vi.fn() };
+    const context: MutationFunctionContext = { client, meta: undefined };
+    const result = await options.mutationFn?.(variables, context);
+    await options.onSuccess?.(result!, variables, undefined, context);
+    expect(request).toHaveBeenCalledWith('project-1', 'scene-1', variables.files, variables.onProgress);
+    expect(clearPreview).toHaveBeenCalledWith('scene-1');
+    expect(client.getQueryState(sceneDetailQueryKey('project-1'))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(sceneFilesQueryKey('project-1'))?.isInvalidated).toBe(true);
+  });
+
+  it('removes a slot and invalidates both caches', async () => {
+    const client = new QueryClient();
+    const clearPreview = vi.fn();
+    const request = vi.fn().mockResolvedValue({ sceneId: 'scene-1', updated: { assetFileId: null }, files: [] });
+    client.setQueryData(sceneDetailQueryKey('project-1'), project());
+    client.setQueryData(sceneFilesQueryKey('project-1'), []);
+    const options = createRemoveSceneAssetMutationOptions('project-1', client, clearPreview, request);
+    const variables = { sceneId: 'scene-1', slot: 'asset' as const };
+    const context: MutationFunctionContext = { client, meta: undefined };
+    const result = await options.mutationFn?.(variables, context);
+    await options.onSuccess?.(result!, variables, undefined, context);
+    expect(request).toHaveBeenCalledWith('project-1', 'scene-1', 'asset');
+    expect(clearPreview).toHaveBeenCalledWith('scene-1');
+    expect(client.getQueryState(sceneFilesQueryKey('project-1'))?.isInvalidated).toBe(true);
   });
 });

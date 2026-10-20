@@ -2,6 +2,16 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('Studio scene readiness presentation', () => {
+  it('offers per-scene image, clip, combined, and keyframe upload controls', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('Upload clip + keyframe');
+    expect(source).toContain('Xóa asset');
+    expect(source).toContain('Xóa keyframe');
+    expect(source).toContain('sceneUploadProgress');
+    expect(source).toContain('sceneAssetUploadUi');
+    expect(source).toContain('Ảnh giữ khung đầu khi clip ngắn hơn scene.');
+    expect(source).toContain('Video chuyển động dùng làm asset chính của scene.');
+  });
   it('shows the stored popup-plan line in scene details and no legacy analysis action', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
     expect(source).toContain('nameKeywordPopupLine(expandedNamePopup)');
@@ -127,6 +137,14 @@ describe('Studio configuration card structure', () => {
     expect(source).toContain('aria-labelledby="video-controls-title"');
     expect(source).toContain('aria-labelledby="render-controls-title"');
     expect(source).toContain('aria-label="Render engine"');
+  });
+});
+
+describe('Studio scene asset feedback', () => {
+  it('clears upload progress and errors when the selected scene changes', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+
+    expect(source).toContain('useEffect(() => {\n    setSceneAssetError(null);\n    setSceneUploadProgress(null);\n  }, [expandedSceneId]);');
   });
 });
 

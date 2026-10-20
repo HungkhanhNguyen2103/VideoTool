@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import type { ProjectDetail } from '../../../contracts/project';
-import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, analyzeProjectPopups, applyVideoDistribution, editPopupPlan, exportScenesJson, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setPopupDensity, setPopupPlanFlags, setRenderEngine, setSceneActive, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, setVoiceSpeed, splitScenes, uploadProjectLogo, voiceoverSummary } from './api';
+import { AI_PROVIDER_OPTIONS, VISUAL_STYLE_OPTIONS, alignWordTimings, analyzeProjectNameKeywords, analyzeProjectPopups, applyVideoDistribution, editPopupPlan, exportScenesJson, fileUrlForSummary, filesByPurpose, fitSceneToClip, generateAllSfx, generateAllVoiceovers, generateBgm, generateDepthMaps, generateSceneSfx, generateVisualPrompts, getNameKeywordPreviews, isProjectJobActive, missingSceneNumbers, patchScene, previewScene, previewVideoDistribution, recomputeSceneDurations, regenerateVoiceover, removeProjectLogo, removeSceneAsset, renderProject, mediaTypeForMime, selectedRenderEngine, setAiProvider, setFilmLook, setKeywordPopups, setParallax, setPopupDensity, setPopupPlanFlags, setRenderEngine, setSceneActive, setSceneTail, setSfxVolume, setTransitionStyle, setVisualStyle, setVoiceSpeed, splitScenes, uploadProjectLogo, uploadSceneAssets, voiceoverSummary } from './api';
 
 const project = {
   id: 'project-1',
@@ -20,6 +20,44 @@ const projectPayload = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('asset API helpers', () => {
+  it('uploads scene files by XHR with multipart progress and parses stable errors', async () => {
+    const instances: FakeXhr[] = [];
+    class FakeXhr {
+      upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null };
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      status = 200;
+      responseText = JSON.stringify({ sceneId: 'scene-1', updated: { assetFileId: 'asset-1' }, files: [] });
+      method = ''; url = ''; body: FormData | null = null;
+      constructor() { instances.push(this); }
+      open(method: string, url: string) { this.method = method; this.url = url; }
+      send(body: FormData) { this.body = body; }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const progress = vi.fn();
+    const file = new File(['image'], 'still.png', { type: 'image/png' });
+    const pending = uploadSceneAssets('project/1', 'scene/1', [file], progress);
+    instances[0]!.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 2 } as ProgressEvent);
+    instances[0]!.onload?.();
+    await expect(pending).resolves.toMatchObject({ sceneId: 'scene-1' });
+    expect(instances[0]).toMatchObject({ method: 'POST', url: '/api/project/project%2F1/scenes/scene%2F1/assets' });
+    expect(instances[0]!.body?.getAll('files')).toEqual([file]);
+    expect(progress).toHaveBeenCalledWith(50);
+
+    const rejected = uploadSceneAssets('p', 's', [file]);
+    instances[1]!.status = 422;
+    instances[1]!.responseText = JSON.stringify({ error: { code: 'FILE_TYPE_MISMATCH', message: 'Sai loại tệp.' } });
+    instances[1]!.onload?.();
+    await expect(rejected).rejects.toMatchObject({ status: 422, code: 'FILE_TYPE_MISMATCH' });
+    vi.unstubAllGlobals();
+  });
+
+  it('deletes the requested scene asset slot through the exact route', async () => {
+    const payload = { sceneId: 'scene-1', updated: { videoKeyframeFileId: null }, files: [] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(removeSceneAsset('project/1', 'scene/1', 'keyframe')).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project%2F1/scenes/scene%2F1/assets?slot=keyframe', expect.objectContaining({ method: 'DELETE' }));
+  });
   it('parses Flow exports with and without optional reference tags', async () => {
     const payload = [
       { sceneId: 1, sceneNumber: 1, title: 'one', prompt: 'One', assetType: 'image', motionPrompt: '', referenceTags: ['core', 'wide'] },

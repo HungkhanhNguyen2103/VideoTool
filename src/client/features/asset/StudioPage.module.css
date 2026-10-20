@@ -126,6 +126,9 @@
 .detailAsset, .scenePreviewSection { display: grid; gap: .65rem; padding: .75rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--panel-2); }
 .detailAssetHeader, .scenePreviewHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 .detailAssetMedia { display: block; width: 100%; max-height: 18rem; object-fit: contain; border-radius: .45rem; background: var(--input); }
+.sceneAssetActions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.sceneAssetNotice { margin: 0; color: var(--text-2); font-size: .82rem; }
+.sceneAssetError { margin: 0; padding: .5rem .6rem; color: var(--red); border: 1px solid var(--border-2); border-radius: .45rem; background: var(--input); font-size: .82rem; }
 .scenePreviewSection { border-color: var(--amber-border, var(--border)); background: color-mix(in srgb, var(--panel-2) 88%, var(--amber) 12%); }
 .scenePreviewTitle { margin: 0; font-size: 1rem; }
 .scenePreviewHeader .muted { max-width: 42rem; line-height: 1.45; }

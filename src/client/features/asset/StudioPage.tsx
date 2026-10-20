@@ -30,8 +30,9 @@ import { nameKeywordPopupLine } from './name-keyword-ui';
 import { VoiceoverListenPanel } from './VoiceoverListenPanel';
 import { PopupAnalysisCard, type PopupAnalysisSummary } from './components/PopupAnalysisCard';
 import { SceneActiveToggle } from './SceneActiveToggle';
-import { useSetSceneActive } from './hooks';
+import { useRemoveSceneAsset, useSetSceneActive, useUploadSceneAssets } from './hooks';
 import { formatBatchSceneCount, formatSceneActivityHeader, formatSkippedInactiveToast, isSceneToggleDisabled, summarizeSceneActivity } from './scene-activity-ui';
+import { sceneAssetUploadUi } from './scene-asset-upload-ui';
 import styles from './StudioPage.module.css';
 
 const statusTone = { draft: 'muted', script: 'indigo', assets: 'green', rendered: 'green' } as const;
@@ -50,6 +51,8 @@ export function StudioPage() {
   const [draftMotionPrompt, setDraftMotionPrompt] = useState('');
   const [skipped, setSkipped] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [sceneUploadProgress, setSceneUploadProgress] = useState<number | null>(null);
+  const [sceneAssetError, setSceneAssetError] = useState<string | null>(null);
   const [bgmMood, setBgmMood] = useState('');
   const [sceneTailDraft, setSceneTailDraft] = useState('0.2');
   const [sfxVolumeDraft, setSfxVolumeDraft] = useState('0.5');
@@ -78,6 +81,9 @@ export function StudioPage() {
   const scenePreviewsRef = useRef<Record<string, ScenePreviewState>>({});
   const refreshedJobRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sceneAssetInputRef = useRef<HTMLInputElement>(null);
+  const sceneKeyframeInputRef = useRef<HTMLInputElement>(null);
+  const sceneCombinedInputRef = useRef<HTMLInputElement>(null);
   const detailDialogRef = useRef<HTMLDialogElement>(null);
   const renderConfirmDialogRef = useRef<HTMLDialogElement>(null);
   const voiceoverConfirmDialogRef = useRef<HTMLDialogElement>(null);
@@ -129,6 +135,8 @@ export function StudioPage() {
   const expandedNamePopup = expandedPopupPlan?.popups.find((popup) => popup.status === 'kept' && !popup.suppressed && ['person', 'place', 'event'].includes(popup.kind)) ?? null;
   const progress = useJobProgress(jobId, jobReconnectKey);
   const sceneActivationMutation = useSetSceneActive(projectId);
+  const sceneUploadMutation = useUploadSceneAssets(projectId, clearScenePreview);
+  const sceneRemoveMutation = useRemoveSceneAsset(projectId, clearScenePreview);
   const busyTask = useMemo(() => taskFromBusyKey(busy, (sceneId) => {
     const index = scenes.findIndex((scene) => scene.id === sceneId);
     return index >= 0 ? `Scene ${String(index + 1).padStart(2, '0')}` : undefined;
@@ -136,6 +144,8 @@ export function StudioPage() {
   const activeBlockingTask = jobTask ?? busyTask;
   const activeBlockingStartedAt = jobTask ? jobStartedAt : busyStartedAt;
   const studioLocked = !jobLocallyUnlocked && isStudioLocked(busy, jobId, progress);
+  const sceneAssetMutating = sceneUploadMutation.isPending || sceneRemoveMutation.isPending;
+  const expandedAssetUploadUi = expandedScene ? sceneAssetUploadUi(expandedScene, studioLocked, sceneAssetMutating) : null;
   const sceneToggleDisabled = isSceneToggleDisabled({ jobId, progress, busy, mutationPending: sceneActivationMutation.isPending });
   const voiceoverConfirmStartIndex = voiceoverConfirmSceneId ? scenes.findIndex((scene) => scene.id === voiceoverConfirmSceneId) : -1;
   const voiceoverConfirmScenes = voiceoverConfirmStartIndex >= 0 ? scenes.slice(voiceoverConfirmStartIndex) : [];
@@ -195,6 +205,11 @@ export function StudioPage() {
     if (!dialog) return;
     if (expandedSceneId && !dialog.open) dialog.showModal();
     if (!expandedSceneId && dialog.open) dialog.close();
+  }, [expandedSceneId]);
+
+  useEffect(() => {
+    setSceneAssetError(null);
+    setSceneUploadProgress(null);
   }, [expandedSceneId]);
   useEffect(() => {
     const dialog = renderConfirmDialogRef.current;
@@ -325,6 +340,34 @@ export function StudioPage() {
       await refresh();
     } catch (error) { toast(error instanceof Error ? error.message : 'Không thể import ZIP.'); }
     finally { setBusy(null); setUploadProgress(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  }
+
+  async function uploadExpandedSceneAssets(files: File[]): Promise<void> {
+    if (!expandedScene || files.length === 0) return;
+    try {
+      setSceneAssetError(null);
+      setSceneUploadProgress(0);
+      await sceneUploadMutation.mutateAsync({ sceneId: expandedScene.id, files, onProgress: setSceneUploadProgress });
+      toast('Đã cập nhật asset scene.');
+    } catch (error) {
+      setSceneAssetError(error instanceof Error ? error.message : 'Không thể tải asset scene.');
+    } finally {
+      setSceneUploadProgress(null);
+      if (sceneAssetInputRef.current) sceneAssetInputRef.current.value = '';
+      if (sceneKeyframeInputRef.current) sceneKeyframeInputRef.current.value = '';
+      if (sceneCombinedInputRef.current) sceneCombinedInputRef.current.value = '';
+    }
+  }
+
+  async function removeExpandedSceneAsset(slot: 'asset' | 'keyframe'): Promise<void> {
+    if (!expandedScene) return;
+    try {
+      setSceneAssetError(null);
+      await sceneRemoveMutation.mutateAsync({ sceneId: expandedScene.id, slot });
+      toast(slot === 'asset' ? 'Đã xóa asset scene.' : 'Đã xóa keyframe.');
+    } catch (error) {
+      setSceneAssetError(error instanceof Error ? error.message : 'Không thể xóa asset scene.');
+    }
   }
 
   async function patchScene(sceneId: string, body: Parameters<typeof api.patchScene>[2]): Promise<boolean> {
@@ -819,6 +862,13 @@ export function StudioPage() {
             <section className={styles.detailAsset} aria-label="Asset gốc">
               <div className={styles.detailAssetHeader}><span className={styles.label}>Asset gốc</span><span className={styles.muted}>{expandedAssetFile?.originalName ?? 'Chưa có asset'}</span></div>
               {expandedAssetSrc && expandedAssetType === 'video' ? <video className={styles.detailAssetMedia} controls src={expandedAssetSrc} aria-label={`Asset gốc scene ${expandedSceneNumber}`} /> : expandedAssetSrc && expandedAssetType === 'image' ? <img className={styles.detailAssetMedia} src={expandedAssetSrc} alt={`Asset gốc scene ${expandedSceneNumber}`} /> : <span className={styles.placeholder}>Chưa có asset.</span>}
+              <input ref={sceneAssetInputRef} className={styles.hiddenInput} type="file" accept={expandedAssetUploadUi?.assetAccept} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadExpandedSceneAssets([file]); }} />
+              <div className={styles.sceneAssetActions}>
+                <span title={expandedAssetUploadUi?.title}><Button size="sm" variant="amber" title={expandedAssetUploadUi?.title} disabled={expandedAssetUploadUi?.disabled} onClick={() => sceneAssetInputRef.current?.click()}>{expandedAssetUploadUi?.assetLabel}</Button></span>
+                {expandedScene.assetFileId && <span title={expandedAssetUploadUi?.title}><Button size="sm" variant="ghost" title={expandedAssetUploadUi?.title} disabled={expandedAssetUploadUi?.disabled} onClick={() => void removeExpandedSceneAsset('asset')}>Xóa asset</Button></span>}
+              </div>
+              {sceneUploadProgress !== null && <p className={styles.sceneAssetNotice}>Đang upload {sceneUploadProgress}%</p>}
+              {sceneAssetError && <p className={styles.sceneAssetError} role="alert">{sceneAssetError}</p>}
             </section>
             <ScenePreviewSection
               scene={expandedScene}
@@ -832,12 +882,20 @@ export function StudioPage() {
             />
             {expandedScene.assetType === 'video' && <section className={styles.videoFacts} aria-label="Khung hinh video">
               <div className={styles.videoFactsHeader}><span className={styles.label}>Khung hinh video</span><span className={styles.muted}>{expandedReadiness?.messages.join(' · ')}</span></div>
+              <input ref={sceneCombinedInputRef} className={styles.hiddenInput} type="file" accept="image/*,video/*" multiple onChange={(event) => void uploadExpandedSceneAssets(Array.from(event.target.files ?? []))} />
+              <input ref={sceneKeyframeInputRef} className={styles.hiddenInput} type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadExpandedSceneAssets([file]); }} />
+              <div className={styles.sceneAssetActions}>
+                <span title={expandedAssetUploadUi?.title}><Button size="sm" variant="amber" title={expandedAssetUploadUi?.title} disabled={expandedAssetUploadUi?.disabled} onClick={() => sceneCombinedInputRef.current?.click()}>Upload clip + keyframe</Button></span>
+                <span title={expandedAssetUploadUi?.title}><Button size="sm" variant="indigoline" title={expandedAssetUploadUi?.title} disabled={expandedAssetUploadUi?.disabled} onClick={() => sceneKeyframeInputRef.current?.click()}>{expandedAssetUploadUi?.keyframeLabel}</Button></span>
+                {expandedScene.videoKeyframeFileId && <span title={expandedAssetUploadUi?.title}><Button size="sm" variant="ghost" title={expandedAssetUploadUi?.title} disabled={expandedAssetUploadUi?.disabled} onClick={() => void removeExpandedSceneAsset('keyframe')}>Xóa keyframe</Button></span>}
+              </div>
+              <p className={styles.videoDistributionHint}>Chọn một clip, một ảnh keyframe, hoặc cả hai. Hệ thống tự nhận loại tệp, không phụ thuộc thứ tự.</p>
               <div className={styles.videoFactsGrid}>
                 {([['Keyframe', expandedScene.videoKeyframeFileId ?? (expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('image/') ? expandedScene.assetFileId : null)], ['Clip', expandedScene.assetFileId && filesById.get(expandedScene.assetFileId)?.mimeType.startsWith('video/') ? expandedScene.assetFileId : null]] as const).map(([label, fileId]) => {
                   const file = fileId ? filesById.get(fileId) : undefined;
                   const src = file ? api.fileUrlForSummary(file) : null;
                   const mediaType = file ? api.mediaTypeForMime(file.mimeType) : null;
-                  return <div className={styles.videoFact} key={label}><span className={styles.muted}>{label}</span>{src && mediaType === 'image' ? <img className={styles.videoFactPreview} src={src} alt={label} /> : src && mediaType === 'video' ? <video className={styles.videoFactPreview} controls src={src} /> : <span className={styles.videoFactPlaceholder}>Chưa có</span>}</div>;
+                  return <div className={styles.videoFact} key={label}><span className={styles.muted}>{label}</span><span className={styles.videoDistributionHint}>{label === 'Keyframe' ? 'Ảnh giữ khung đầu khi clip ngắn hơn scene.' : 'Video chuyển động dùng làm asset chính của scene.'}</span>{src && mediaType === 'image' ? <img className={styles.videoFactPreview} src={src} alt={label} /> : src && mediaType === 'video' ? <video className={styles.videoFactPreview} controls src={src} /> : <span className={styles.videoFactPlaceholder}>Chưa có</span>}</div>;
                 })}
               </div>
               <p className={styles.videoFactDuration}>Thời lượng scene: {formatDurationSeconds(expandedScene.durationSec)}s ({expandedScene.audioFileId ? 'từ voiceover' : 'ước tính'})</p>

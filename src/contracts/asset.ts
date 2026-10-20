@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FileSummarySchema } from './file';
 
 export const ASSET_TYPES = ['image', 'video'] as const;
 export type AssetType = (typeof ASSET_TYPES)[number];
@@ -37,6 +38,24 @@ export const ImportAssetsResultSchema = z.object({
   skippedInactive: z.number().int().nonnegative(),
 });
 export type ImportAssetsResult = z.infer<typeof ImportAssetsResultSchema>;
+
+export const SceneAssetSlotSchema = z.enum(['asset', 'keyframe']);
+export type SceneAssetSlot = z.infer<typeof SceneAssetSlotSchema>;
+
+export const SceneAssetUpdatedSchema = z.object({
+  assetFileId: z.string().nullable().optional(),
+  videoKeyframeFileId: z.string().nullable().optional(),
+  videoTailFileId: z.string().nullable().optional(),
+  videoDurationSec: z.number().nonnegative().nullable().optional(),
+});
+export type SceneAssetUpdated = z.infer<typeof SceneAssetUpdatedSchema>;
+
+export const SceneAssetsResponseSchema = z.object({
+  sceneId: z.string(),
+  updated: SceneAssetUpdatedSchema,
+  files: z.array(FileSummarySchema),
+});
+export type SceneAssetsResponse = z.infer<typeof SceneAssetsResponseSchema>;
 
 export const FlowSceneExportSchema = z.object({
   sceneId: z.number().int().positive(),
