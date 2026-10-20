@@ -155,7 +155,10 @@ describe('script AI prompt boundary', () => {
       project: { ...project, visualStylePresetId: 'anime' },
       chapter,
       styleNote: 'Muted colors',
-      scenes: [{ sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', assetType: 'video', visualPrompt: 'Existing image', sfxPrompt: 'Existing wind', motionPrompt: 'Slow push-in on the river.', shotType: 'detail', lightType: 'firelight' }],
+      scenes: [
+        { sceneId: 'internal-id', sceneIndex: 1, narration: 'First beat', assetType: 'video', visualPrompt: 'Existing image', sfxPrompt: 'Existing wind', motionPrompt: 'Slow push-in on the river.', shotType: 'detail', lightType: 'firelight' },
+        { sceneId: 'image-id', sceneIndex: 2, narration: 'Still image beat', assetType: 'image', visualPrompt: '', sfxPrompt: '', motionPrompt: '', shotType: 'wide', lightType: 'daylight' },
+      ],
       visualStylePresetId: 'anime',
       coreQuestion: 'Why did the river change?',
       openingHook: 'At dawn, it reversed.',
@@ -163,14 +166,15 @@ describe('script AI prompt boundary', () => {
       previousAvoidRepeating: ['Do not repeat the flood reveal'],
       previousPersistentFacts: ['The bridge is damaged'],
     });
-    expect(result.promptVersion).toBe('visual-prompt-v3/anime@2');
+    expect(result.promptVersion).toBe('visual-prompt-v4/anime@2');
     expect(result.system).toContain(loadScriptPreset('documentary').system);
     expect(result.system).toContain('sfxPrompt must be 2-4 short English Freesound search phrases');
     expect(result.system).toContain('non-speech, non-music ambience and sound effects only');
     expect(result.system).toContain('Do not include human voice, speech, shouting, war cries, crowd chanting, singing, or music');
     expect(result.system).toContain('comma-separated and ordered most important first');
     expect(result.system).toContain('motionPrompt');
-    expect(result.system).toContain("Only write a non-empty motionPrompt when that scene's asset type is video");
+    expect(result.system).toContain('motionPrompt is REQUIRED and non-empty for every video scene');
+    expect(result.system).toContain('for image scenes it must be an empty string');
     expect(result.system).not.toContain('quiet sigh');
     expect(result.user).toContain(`Required visual style (must follow for every scene): ${loadVisualStylePreset('anime').style}`);
     expect(result.user).toContain('Core question: Why did the river change?');
@@ -180,7 +184,9 @@ describe('script AI prompt boundary', () => {
     expect(result.user).toContain('Persistent facts: The bridge is damaged');
     expect(result.user).toContain('Previous style note: Muted colors');
     expect(result.user).toContain('Muted colors');
-    expect(result.user).toContain('This chapter contains exactly 1 scenes. Return exactly 1 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
+    expect(result.user).toContain('This chapter contains exactly 2 scenes. Return exactly 2 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
+    expect(result.user).toContain('Motion prompt required: yes');
+    expect(result.user).toContain('Motion prompt required: no');
     expect(result.user).toContain('First beat');
     expect(result.user).toContain('Existing image');
     expect(result.user).toContain('Existing SFX prompt: Existing wind');
@@ -206,7 +212,7 @@ describe('script AI prompt boundary', () => {
       previousAvoidRepeating: [],
       previousPersistentFacts: [],
     });
-    expect(result.promptVersion).toBe(`visual-prompt-v3/strategic-map@${loadVisualStylePreset('strategic-map' as never).version}`);
+    expect(result.promptVersion).toBe(`visual-prompt-v4/strategic-map@${loadVisualStylePreset('strategic-map' as never).version}`);
     expect(result.user).toContain(loadVisualStylePreset('strategic-map' as never).style);
   });
 

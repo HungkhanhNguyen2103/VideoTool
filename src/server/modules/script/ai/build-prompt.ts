@@ -355,7 +355,7 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
   const scriptPreset = loadScriptPreset(project.scriptPresetId);
   const visualPreset = loadVisualStylePreset(visualStylePresetId);
   return {
-    system: systemMessage(scriptPreset, "Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt, motionPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt must be 2-4 short English Freesound search phrases for non-speech, non-music ambience and sound effects only, comma-separated and ordered most important first. Do not include human voice, speech, shouting, war cries, crowd chanting, singing, or music. If nothing audible adds value to a scene, use an empty string. motionPrompt should be a short English animation instruction of roughly one or two sentences describing a camera move and what the subject does, intended for image-to-video generation. Only write a non-empty motionPrompt when that scene's asset type is video; return an empty string for image scenes. Existing visual prompts, SFX prompts, and motion prompts are references; preserve their intent. " + VISUAL_PROMPT_CONTRACT),
+    system: systemMessage(scriptPreset, "Return one JSON object with styleNote (at most 500 characters) and prompts, an array with exactly one {sceneIndex, visualPrompt, sfxPrompt, motionPrompt} object per input scene. Use positive one-based indexes and non-empty visual prompts. sfxPrompt must be 2-4 short English Freesound search phrases for non-speech, non-music ambience and sound effects only, comma-separated and ordered most important first. Do not include human voice, speech, shouting, war cries, crowd chanting, singing, or music. If nothing audible adds value to a scene, use an empty string. motionPrompt is REQUIRED and non-empty for every video scene; for image scenes it must be an empty string. For video scenes with no existing motion prompt, write a short English animation instruction of roughly one or two sentences describing a camera move and what the subject does, intended for image-to-video generation. Existing visual prompts, SFX prompts, and motion prompts are references; preserve their intent. " + VISUAL_PROMPT_CONTRACT),
     user: [
       `Project title: ${project.title}`,
       `Brief: ${project.brief}`,
@@ -370,9 +370,9 @@ export function buildVisualPromptPrompt(input: VisualPromptPromptInput): BuiltPr
       `Previous style note: ${styleNote.slice(0, 500)}`,
       `This chapter contains exactly ${scenes.length} scenes. Return exactly ${scenes.length} prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.`,
       'Scenes:',
-      ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nAsset type: ${scene.assetType}\nRequired shot: ${scene.shotType ?? 'wide'} — ${SHOT_PHRASES[scene.shotType ?? 'wide']}\nRequired light: ${scene.lightType ?? 'daylight'} — ${LIGHT_PHRASES[scene.lightType ?? 'daylight']}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}\nExisting SFX prompt: ${scene.sfxPrompt || '(none)'}\nExisting motion prompt: ${scene.motionPrompt || '(none)'}`),
+      ...scenes.map((scene) => `Scene ${scene.sceneIndex}\nNarration: ${scene.narration}\nAsset type: ${scene.assetType}\nMotion prompt required: ${scene.assetType === 'video' ? 'yes' : 'no'}\nRequired shot: ${scene.shotType ?? 'wide'} — ${SHOT_PHRASES[scene.shotType ?? 'wide']}\nRequired light: ${scene.lightType ?? 'daylight'} — ${LIGHT_PHRASES[scene.lightType ?? 'daylight']}\nExisting visual prompt: ${scene.visualPrompt || '(none)'}\nExisting SFX prompt: ${scene.sfxPrompt || '(none)'}\nExisting motion prompt: ${scene.motionPrompt || '(none)'}`),
     ].join('\n\n'),
-    promptVersion: `visual-prompt-v3/${visualPreset.id}@${visualPreset.version}`,
+    promptVersion: `visual-prompt-v4/${visualPreset.id}@${visualPreset.version}`,
   };
 }
 

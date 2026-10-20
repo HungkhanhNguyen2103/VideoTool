@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { formatBatchSceneCount, formatSkippedInactiveToast, isSceneToggleDisabled, summarizeSceneActivity } from './scene-activity-ui';
+import { formatBatchSceneCount, formatMissingVideoMotionPromptNotice, formatSkippedInactiveToast, isSceneToggleDisabled, missingVideoMotionPromptSceneNumbers, summarizeSceneActivity } from './scene-activity-ui';
 
 describe('Studio scene activity summaries', () => {
+  it('lists active video scenes with missing or whitespace motion prompts using original numbering', () => {
+    expect(missingVideoMotionPromptSceneNumbers([
+      { assetType: 'video', motionPrompt: '' },
+      { assetType: 'image', motionPrompt: '   ' },
+      { active: true, assetType: 'video', motionPrompt: '   ' },
+      { active: false, assetType: 'video', motionPrompt: '' },
+      { assetType: 'video', motionPrompt: 'Slow push-in.' },
+    ])).toEqual([1, 3]);
+    expect(missingVideoMotionPromptSceneNumbers([
+      { assetType: 'image', motionPrompt: '' },
+      { active: false, assetType: 'video', motionPrompt: ' ' },
+      { assetType: 'video', motionPrompt: 'Camera move.' },
+    ])).toEqual([]);
+  });
+
+  it('formats the non-blocking Flow warning for one or several missing scenes', () => {
+    expect(formatMissingVideoMotionPromptNotice([])).toBeNull();
+    expect(formatMissingVideoMotionPromptNotice([136])).toBe('Scene 136 là video nhưng chưa có motion prompt; Runner sẽ từ chối.');
+    expect(formatMissingVideoMotionPromptNotice([2, 5])).toBe('Các scene 2, 5 là video nhưng chưa có motion prompt; Runner sẽ từ chối.');
+  });
+
   it('counts active scenes and duration while reporting inactive scenes separately', () => {
     expect(summarizeSceneActivity([
       { durationSec: 3 },

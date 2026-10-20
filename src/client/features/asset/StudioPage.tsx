@@ -31,7 +31,7 @@ import { VoiceoverListenPanel } from './VoiceoverListenPanel';
 import { PopupAnalysisCard, type PopupAnalysisSummary } from './components/PopupAnalysisCard';
 import { SceneActiveToggle } from './SceneActiveToggle';
 import { useRemoveSceneAsset, useSetSceneActive, useUploadSceneAssets } from './hooks';
-import { formatBatchSceneCount, formatSceneActivityHeader, formatSkippedInactiveToast, isSceneToggleDisabled, summarizeSceneActivity } from './scene-activity-ui';
+import { formatBatchSceneCount, formatMissingVideoMotionPromptNotice, formatSceneActivityHeader, formatSkippedInactiveToast, isSceneToggleDisabled, missingVideoMotionPromptSceneNumbers, summarizeSceneActivity } from './scene-activity-ui';
 import { sceneAssetUploadUi } from './scene-asset-upload-ui';
 import styles from './StudioPage.module.css';
 
@@ -98,6 +98,8 @@ export function StudioPage() {
     retry: false,
   });
   const scenes = project?.scenes ?? [];
+  const missingVideoMotionPromptScenes = missingVideoMotionPromptSceneNumbers(scenes);
+  const motionPromptWarning = formatMissingVideoMotionPromptNotice(missingVideoMotionPromptScenes);
   const files = filesQuery.data ?? [];
   const filesById = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);
   const voiceoverAudioUrls = useMemo(() => Object.fromEntries(scenes.flatMap((scene) => {
@@ -704,6 +706,7 @@ export function StudioPage() {
             {api.VISUAL_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
+        {motionPromptWarning && <p className={styles.warning} role="status">{motionPromptWarning}</p>}
         <div className={styles.actions}>
           <Button size="sm" disabled={studioLocked} onClick={() => void copyJson()}>Copy JSON · {formatBatchSceneCount(scenes)}</Button>
           <Button size="sm" disabled={studioLocked} onClick={() => void downloadJson()}>Export JSON · {formatBatchSceneCount(scenes)}</Button>

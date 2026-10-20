@@ -98,6 +98,22 @@ describe('Studio scene readiness presentation', () => {
   });
 });
 
+describe('Studio missing motion prompt warning', () => {
+  it('shows a non-blocking notice before the JSON export actions', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    const noticeIndex = source.indexOf('{motionPromptWarning && <p className={styles.warning} role="status">');
+    const copyIndex = source.indexOf('Copy JSON');
+    const exportIndex = source.indexOf('Export JSON');
+
+    expect(noticeIndex).toBeGreaterThan(-1);
+    expect(noticeIndex).toBeLessThan(copyIndex);
+    expect(copyIndex).toBeLessThan(exportIndex);
+    expect(source).toContain('formatMissingVideoMotionPromptNotice(missingVideoMotionPromptScenes)');
+    expect(source).toContain('<Button size="sm" disabled={studioLocked} onClick={() => void copyJson()}>');
+    expect(source).toContain('<Button size="sm" disabled={studioLocked} onClick={() => void downloadJson()}>');
+  });
+});
+
 describe('Studio inactive scene controls', () => {
   it('shows activity totals, active-only batch counts, switches, retained scene details, and render freshness', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');

@@ -39,6 +39,23 @@ const LIGHT_MENTIONS: Record<LightType, RegExp> = {
   interior: /\b(interior|indoor|lamplight|lantern.light|window light)\b/i,
 };
 
+const DEFAULT_MOTION_PROMPTS_BY_SHOT_TYPE: Record<ShotType, string> = {
+  wide: 'Slow push-in as the full setting comes into view and distant figures begin to move.',
+  medium: 'Gentle push-in as the central figures shift position and react to one another.',
+  close: "Gentle push-in as the subject's expression changes subtly.",
+  detail: 'Very slow push-in across the key object as its surface catches the light.',
+  'high-angle': 'Slow tilt down as the view reveals the figures and ground below.',
+  'low-angle': 'Slow tilt up as the subject rises into view against the surrounding setting.',
+};
+
+function missingMotionPromptSceneIndexes(batch: VisualPromptBatch, scenes: readonly VisualPromptSceneInput[]): number[] {
+  const promptsByIndex = new Map(batch.prompts.map((prompt) => [prompt.sceneIndex, prompt]));
+  return scenes.flatMap((scene) => {
+    if (scene.assetType !== 'video' || scene.motionPrompt?.trim()) return [];
+    return promptsByIndex.get(scene.sceneIndex)?.motionPrompt.trim() ? [] : [scene.sceneIndex];
+  });
+}
+
 function chapterScenes(project: ProjectDetail): VisualPromptSceneInput[][] {
   let nextScene = 0;
   const chapters = project.chapters.map((chapter) => {
@@ -110,10 +127,11 @@ export async function generateVisualPrompts(
   let styleNote = excerpt(activeSceneList);
   let updatedSfxPrompts = 0;
   let updatedMotionPrompts = 0;
+  let defaultMotionPrompts = 0;
   let cancelled = false;
 
   if (activeSceneList.length === 0) {
-    await context.appendLog(`Không có scene nào đang bật để tạo visual prompt; skippedInactive: ${skippedInactive}.`);
+    await context.appendLog(`Không có scene nào đang bật để tạo visual prompt; skippedInactive: ${skippedInactive}, defaultMotionPrompts: ${defaultMotionPrompts}.`);
     await context.reportProgress(100, result);
     return result;
   }
@@ -128,7 +146,7 @@ export async function generateVisualPrompts(
       continue;
     }
     const prefilledVisual = scenes.filter((scene) => scene.visualPrompt !== '').length;
-    const fullyPrefilled = scenes.filter((scene) => scene.visualPrompt !== '' && scene.sfxPrompt !== '' && (scene.assetType !== 'video' || scene.motionPrompt !== '')).length;
+    const fullyPrefilled = scenes.filter((scene) => scene.visualPrompt !== '' && scene.sfxPrompt !== '' && (scene.assetType !== 'video' || Boolean(scene.motionPrompt?.trim()))).length;
     result.skippedScenes += prefilledVisual;
 
     if (fullyPrefilled === scenes.length) {
@@ -149,6 +167,7 @@ export async function generateVisualPrompts(
         });
         let batch: VisualPromptBatch | undefined;
         let retryError = '';
+        let defaultMotionPromptSceneIndexes: number[] = [];
         for (let attempt = 0; attempt < 2; attempt += 1) {
           if (await context.isCancelled()) { cancelled = true; break; }
           const user = retryError ? `${prompt.user}\n\nValidation error: ${retryError} Return corrected JSON for exactly the supplied sceneIndex values.` : prompt.user;
@@ -158,9 +177,17 @@ export async function generateVisualPrompts(
           ]);
           if (await context.isCancelled()) { cancelled = true; break; }
           try {
-            batch = parseVisualPromptBatch(raw);
-            batch.prompts = batch.prompts.filter((prompt) => !inactiveSceneIndexes.has(prompt.sceneIndex));
-            validateIndexes(batch, scenes);
+            const parsedBatch = parseVisualPromptBatch(raw);
+            parsedBatch.prompts = parsedBatch.prompts.filter((prompt) => !inactiveSceneIndexes.has(prompt.sceneIndex));
+            validateIndexes(parsedBatch, scenes);
+            const missingMotionIndexes = missingMotionPromptSceneIndexes(parsedBatch, scenes);
+            if (missingMotionIndexes.length > 0) {
+              if (attempt === 0) throw new AppError(`Missing motionPrompt for video scenes: ${missingMotionIndexes.join(', ')}.`, 422, 'SCRIPT_PARSE_ERROR');
+              batch = parsedBatch;
+              defaultMotionPromptSceneIndexes = missingMotionIndexes;
+              break;
+            }
+            batch = parsedBatch;
             break;
           } catch (error) {
             if (!validationError(error) || attempt === 1) throw error;
@@ -173,6 +200,14 @@ export async function generateVisualPrompts(
 
         const idsByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene.sceneId]));
         const scenesByIndex = new Map(scenes.map((scene) => [scene.sceneIndex, scene]));
+        for (const sceneIndex of defaultMotionPromptSceneIndexes) {
+          const scene = scenesByIndex.get(sceneIndex);
+          const item = batch.prompts.find((prompt) => prompt.sceneIndex === sceneIndex);
+          if (!scene || scene.assetType !== 'video' || scene.motionPrompt?.trim() || !item || item.motionPrompt.trim() !== '') continue;
+          item.motionPrompt = DEFAULT_MOTION_PROMPTS_BY_SHOT_TYPE[scene.shotType!];
+          defaultMotionPrompts += 1;
+          await context.appendLog(`Scene ${sceneIndex}: motion prompt missing after retry; default used.`);
+        }
         for (const item of batch.prompts) {
           const scene = scenesByIndex.get(item.sceneIndex)!;
           if (scene.visualPrompt !== '') continue;
@@ -210,6 +245,6 @@ export async function generateVisualPrompts(
     await context.reportProgress(Math.round(((chapterIndex + 1) / project.chapters.length) * 100), result);
   }
 
-  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${updatedSfxPrompts} SFX prompts added, ${updatedMotionPrompts} motion prompts added, ${result.skippedScenes} skipped, skippedInactive: ${skippedInactive}, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}.`);
+  await context.appendLog(`Visual prompts ${cancelled ? 'cancelled' : 'finished'}: ${result.updatedScenes} updated, ${updatedSfxPrompts} SFX prompts added, ${updatedMotionPrompts} motion prompts added, ${result.skippedScenes} skipped, skippedInactive: ${skippedInactive}, ${result.failedChapters.length} failed chapters${result.failedChapters.length ? ` (${result.failedChapters.join(', ')})` : ''}, defaultMotionPrompts: ${defaultMotionPrompts}.`);
   return result;
 }

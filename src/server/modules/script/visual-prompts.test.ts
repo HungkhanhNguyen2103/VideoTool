@@ -34,10 +34,10 @@ async function projectWithScenes(
 ) {
   const project = await createProject(projectInput);
   await replaceProjectChapters(project.id, [
-    { id: 'chapter-1', no: 1, title: 'First', paragraphs: ['One', 'Two', 'Three', 'Four'].slice(0, counts[0]), status: 'approved', scenesCount: counts[0], durationSec: counts[0] * 20 },
-    { id: 'chapter-2', no: 2, title: 'Second', paragraphs: ['One', 'Two', 'Three', 'Four'].slice(counts[0], counts[0] + counts[1]), status: 'approved', scenesCount: counts[1], durationSec: counts[1] * 20 },
+    { id: 'chapter-1', no: 1, title: 'First', paragraphs: ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'].slice(0, counts[0]), status: 'approved', scenesCount: counts[0], durationSec: counts[0] * 20 },
+    { id: 'chapter-2', no: 2, title: 'Second', paragraphs: ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'].slice(counts[0], counts[0] + counts[1]), status: 'approved', scenesCount: counts[1], durationSec: counts[1] * 20 },
   ], null);
-  await replaceProjectScenes(project.id, ['One', 'Two', 'Three', 'Four'].slice(0, counts[0] + counts[1]).map((narration, index) => ({
+  await replaceProjectScenes(project.id, ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'].slice(0, counts[0] + counts[1]).map((narration, index) => ({
     id: `scene-${index + 1}`, narration, visualPrompt: prompts[index]!, durationSec: 20,
     assetType: assetTypes[index] ?? 'image', assetFileId: null, audioFileId: null, sfxPrompt: sfxPrompts[index] ?? '', motionPrompt: motionPrompts[index] ?? '', sfxFileId: null,
   })), 'assets');
@@ -119,6 +119,7 @@ describe('generateVisualPrompts', () => {
     expect(aiMock.chat).not.toHaveBeenCalled();
     expect(job.progress).toEqual([100]);
     expect(job.logs.join('\n').toLocaleLowerCase('vi')).toContain('không có scene nào đang bật');
+    expect(job.logs[0]).toContain('defaultMotionPrompts: 0');
   });
 
   it('sends complete global-index chapters, preserves manual prompts, and carries the prior style note', async () => {
@@ -137,7 +138,7 @@ describe('generateVisualPrompts', () => {
     const second = aiMock.chat.mock.calls[1]![0][1].content as string;
     expect(first).toContain('This chapter contains exactly 2 scenes. Return exactly 2 prompt objects, one for every supplied sceneIndex. Echo each supplied sceneIndex exactly; do not invent, omit, duplicate, or renumber indexes.');
     expect(first).toContain('Scene 1\nNarration: One');
-    expect(first).toContain('Scene 2\nNarration: Two\nAsset type: image\nRequired shot: medium');
+    expect(first).toContain('Scene 2\nNarration: Two\nAsset type: image\nMotion prompt required: no\nRequired shot: medium');
     expect(first).toContain('Existing visual prompt: Manual second');
     expect(first).toContain('Existing SFX prompt: Existing SFX');
     expect(first).not.toContain('scene-1');
@@ -177,7 +178,7 @@ describe('generateVisualPrompts', () => {
     expect(job.logs).toEqual([
       'Chapter 1: all visual and SFX prompts already filled; skipped.',
       'Chapter 2: all visual and SFX prompts already filled; skipped.',
-      'Visual prompts finished: 0 updated, 0 SFX prompts added, 0 motion prompts added, 3 skipped, skippedInactive: 0, 0 failed chapters.',
+      'Visual prompts finished: 0 updated, 0 SFX prompts added, 0 motion prompts added, 3 skipped, skippedInactive: 0, 0 failed chapters, defaultMotionPrompts: 0.',
     ]);
   });
 
@@ -195,6 +196,109 @@ describe('generateVisualPrompts', () => {
     expect(job.logs).toContain('Chapter 1: 0 visual prompts added; 0 SFX prompts added; 1 motion prompts added; 2 already filled.');
     expect(job.logs.at(-1)).toContain('1 motion prompts added');
     expect((await getProject(project.id)).scenes.map((scene) => scene.motionPrompt)).toEqual(['Camera slowly pushes in as the engineer turns the prototype toward the lens.', '', '']);
+  });
+
+  it('retries once when an empty stored video motion prompt is omitted, then saves the correction', async () => {
+    const project = await projectWithScenes([''], [1, 0], [''], ['video'], ['']);
+    aiMock.chat.mockResolvedValueOnce(batch([1], 'First answer'))
+      .mockResolvedValueOnce(batch([1], 'Corrected answer', {}, { 1: 'Camera slowly follows the boat as it turns downstream.' }));
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+
+    expect(result).toEqual({ updatedScenes: 1, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
+    expect(aiMock.chat).toHaveBeenCalledTimes(2);
+    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Validation error: Missing motionPrompt for video scenes: 1.');
+    expect(job.logs).toContain('Chapter 1: invalid visual prompt batch; retrying once (Missing motionPrompt for video scenes: 1.).');
+    expect(job.logs.at(-1)).toContain('defaultMotionPrompts: 0');
+    expect((await getProject(project.id)).scenes[0]?.motionPrompt).toBe('Camera slowly follows the boat as it turns downstream.');
+  });
+
+  it('runs the two-chapter inactive, prefilled, video-retry, and fallback flow end to end', async () => {
+    const project = await projectWithScenes(
+      ['Inactive visual', '', 'Existing visual', '', ''],
+      [2, 3],
+      ['Inactive SFX', '', 'Existing SFX', '', ''],
+      ['image', 'video', 'image', 'video', 'image'],
+      ['', '', '', '', ''],
+    );
+    await setProjectSceneActive(project.id, 'scene-1', false);
+    aiMock.chat
+      .mockResolvedValueOnce(batch([2], 'First chapter first answer'))
+      .mockResolvedValueOnce(batch([2], 'First chapter corrected answer', {}, { 2: 'Camera follows the boat downstream.' }))
+      .mockResolvedValueOnce(batch([3, 4, 5], 'Second chapter first answer', {}, { 3: 'Image prompts never store motion.', 4: '', 5: 'Image prompts remain empty.' }))
+      .mockResolvedValueOnce(batch([3, 4, 5], 'Second chapter retry', {}, { 3: 'Still ignored for the image.', 4: '', 5: 'Still ignored for the image.' }));
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+    const scenes = (await getProject(project.id)).scenes;
+
+    expect(result).toEqual({ updatedScenes: 3, skippedScenes: 1, failedChapters: [], skippedInactive: 1 });
+    expect(aiMock.chat).toHaveBeenCalledTimes(4);
+    expect(aiMock.chat.mock.calls[1]![0][1].content).toContain('Validation error: Missing motionPrompt for video scenes: 2.');
+    expect(aiMock.chat.mock.calls[3]![0][1].content).toContain('Validation error: Missing motionPrompt for video scenes: 4.');
+    expect(scenes[0]).toMatchObject({ active: false, visualPrompt: 'Inactive visual', motionPrompt: '' });
+    expect(scenes[1]?.motionPrompt).toBe('Camera follows the boat downstream.');
+    expect(scenes[2]).toMatchObject({ visualPrompt: 'Existing visual', motionPrompt: '' });
+    expect(scenes[3]?.motionPrompt).toBe("Gentle push-in as the subject's expression changes subtly.");
+    expect(scenes[4]).toMatchObject({ visualPrompt: 'Generated 5', motionPrompt: '' });
+    expect(job.logs).toContain('Scene 4: motion prompt missing after retry; default used.');
+    expect(job.logs.at(-1)).toContain('defaultMotionPrompts: 1');
+    expect(job.logs.at(-1)).toContain('0 failed chapters, defaultMotionPrompts: 1.');
+    expect(job.logs.at(-1)).toContain('3 updated, 3 SFX prompts added, 2 motion prompts added');
+  });
+
+  it('uses each shot-specific fallback after the second missing video motion response', async () => {
+    const project = await projectWithScenes(Array(7).fill(''), [7, 0], Array(7).fill(''), Array(7).fill('video'), Array(7).fill(''));
+    const indexes = [1, 2, 3, 4, 5, 6, 7];
+    aiMock.chat.mockResolvedValueOnce(batch(indexes, 'First answer')).mockResolvedValueOnce(batch(indexes, 'Retry answer'));
+    const job = context();
+
+    const result = await generateVisualPrompts(project.id, job);
+    const saved = (await getProject(project.id)).scenes;
+
+    expect(result).toEqual({ updatedScenes: 7, skippedScenes: 0, failedChapters: [], skippedInactive: 0 });
+    expect(saved.map((scene) => scene.shotType)).toEqual(['wide', 'medium', 'close', 'wide', 'detail', 'low-angle', 'high-angle']);
+    expect(saved.map((scene) => scene.motionPrompt)).toEqual([
+      'Slow push-in as the full setting comes into view and distant figures begin to move.',
+      'Gentle push-in as the central figures shift position and react to one another.',
+      "Gentle push-in as the subject's expression changes subtly.",
+      'Slow push-in as the full setting comes into view and distant figures begin to move.',
+      'Very slow push-in across the key object as its surface catches the light.',
+      'Slow tilt up as the subject rises into view against the surrounding setting.',
+      'Slow tilt down as the view reveals the figures and ground below.',
+    ]);
+    expect(job.logs.filter((line) => line.includes('motion prompt missing after retry; default used.'))).toHaveLength(7);
+    expect(job.logs.at(-1)).toContain('defaultMotionPrompts: 7');
+  });
+
+  it('requires a retry for stored whitespace but preserves an existing video motion prompt', async () => {
+    const whitespaceProject = await projectWithScenes([''], [1, 0], [''], ['video'], ['   ']);
+    aiMock.chat.mockResolvedValueOnce(batch([1], 'Missing')).mockResolvedValueOnce(batch([1], 'Still missing'));
+
+    await generateVisualPrompts(whitespaceProject.id, context());
+
+    expect((await getProject(whitespaceProject.id)).scenes[0]?.motionPrompt).toBe('Slow push-in as the full setting comes into view and distant figures begin to move.');
+
+    const populatedProject = await projectWithScenes([''], [1, 0], ['Existing SFX'], ['video'], ['Keep this stored motion.']);
+    aiMock.chat.mockReset();
+    aiMock.chat.mockResolvedValueOnce(batch([1], 'Keep stored', {}, { 1: '' }));
+    const job = context();
+
+    await generateVisualPrompts(populatedProject.id, job);
+
+    expect(aiMock.chat).toHaveBeenCalledTimes(1);
+    expect(job.logs.some((line) => line.includes('retrying once'))).toBe(false);
+    expect((await getProject(populatedProject.id)).scenes[0]?.motionPrompt).toBe('Keep this stored motion.');
+  });
+
+  it('ignores a returned motion prompt for image scenes', async () => {
+    const project = await projectWithScenes([''], [1, 0], [''], ['image'], ['']);
+    aiMock.chat.mockResolvedValueOnce(batch([1], 'Image style', {}, { 1: 'This must not be saved for a still image.' }));
+
+    await generateVisualPrompts(project.id, context());
+
+    expect((await getProject(project.id)).scenes[0]?.motionPrompt).toBe('');
   });
 
   it('returns motion prompt write IDs without clobbering a manual motion edit', async () => {
@@ -221,7 +325,7 @@ describe('generateVisualPrompts', () => {
     expect((await getProject(project.id)).scenes.every((scene) => scene.sfxPrompt === '')).toBe(true);
     expect(job.logs).toContain('Chapter 1: 2 visual prompts added; 0 SFX prompts added; 0 motion prompts added; 0 already filled.');
     expect(job.logs).toContain('Chapter 2: 1 visual prompts added; 0 SFX prompts added; 0 motion prompts added; 0 already filled.');
-    expect(job.logs.at(-1)).toBe('Visual prompts finished: 3 updated, 0 SFX prompts added, 0 motion prompts added, 0 skipped, skippedInactive: 0, 0 failed chapters.');
+    expect(job.logs.at(-1)).toBe('Visual prompts finished: 3 updated, 0 SFX prompts added, 0 motion prompts added, 0 skipped, skippedInactive: 0, 0 failed chapters, defaultMotionPrompts: 0.');
   });
 
   it('forwards the selected style and script continuity, using only the previous chapter for later context', async () => {

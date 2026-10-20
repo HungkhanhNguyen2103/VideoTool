@@ -9,6 +9,23 @@ export type SceneActivitySummary = {
   activeDurationSec: number;
 };
 
+export type MotionPromptWarningScene = SceneActivationState & {
+  assetType: 'image' | 'video';
+  motionPrompt?: string | null;
+};
+
+export function missingVideoMotionPromptSceneNumbers(scenes: readonly MotionPromptWarningScene[]): number[] {
+  return scenes.flatMap((scene, index) =>
+    scene.active !== false && scene.assetType === 'video' && !scene.motionPrompt?.trim() ? [index + 1] : [],
+  );
+}
+
+export function formatMissingVideoMotionPromptNotice(sceneNumbers: readonly number[]): string | null {
+  if (sceneNumbers.length === 0) return null;
+  if (sceneNumbers.length === 1) return `Scene ${sceneNumbers[0]} là video nhưng chưa có motion prompt; Runner sẽ từ chối.`;
+  return `Các scene ${sceneNumbers.join(', ')} là video nhưng chưa có motion prompt; Runner sẽ từ chối.`;
+}
+
 export function summarizeSceneActivity(scenes: readonly SceneWithDuration[]): SceneActivitySummary {
   const active = activeScenes(scenes);
   return {

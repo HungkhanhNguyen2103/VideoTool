@@ -765,7 +765,7 @@ function hasPromptValue(value: string | undefined): value is string {
 }
 
 function isEmptyMotionPrompt(value: string | undefined): boolean {
-  return value === undefined || value === '';
+  return value === undefined || value.trim() === '';
 }
 
 export async function applyEmptySceneVisualPrompts(
@@ -821,9 +821,9 @@ export async function applyEmptySceneVisualPromptsWithResult(
       arrayFilters.push({
         [`${identifier}.id`]: sceneId,
         [`${identifier}.active`]: { $ne: false },
-        $or: [{ [`${identifier}.motionPrompt`]: '' }, { [`${identifier}.motionPrompt`]: { $exists: false } }],
+        $or: [{ [`${identifier}.motionPrompt`]: { $regex: /^\s*$/ } }, { [`${identifier}.motionPrompt`]: { $exists: false } }],
       });
-      eligibleClauses.push({ id: sceneId, active: { $ne: false }, $or: [{ motionPrompt: '' }, { motionPrompt: { $exists: false } }] });
+      eligibleClauses.push({ id: sceneId, active: { $ne: false }, $or: [{ motionPrompt: { $regex: /^\s*$/ } }, { motionPrompt: { $exists: false } }] });
     }
   }
   if (eligibleClauses.length === 0) return { project, updatedSceneIds: [], updatedSfxPromptSceneIds: [], updatedMotionPromptSceneIds: [] };

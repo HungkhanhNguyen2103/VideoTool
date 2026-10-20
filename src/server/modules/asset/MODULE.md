@@ -31,7 +31,7 @@
 - Together AI, voice, and video rendering are out of scope for this phase.
 - `assetUrl` is derived on the client from `FileSummary.storedPath`; it is not stored on scenes and `project` does not import file-store.
 - Integration tests cover mixed ZIP skips, type mismatches, duplicate/re-import replacement, malformed ZIP enumeration/extraction, route validation, the 200 MB Multer limit, and MIME-based preview classification.
-- The Studio client uses `FileSummary.storedPath` for previews, XHR upload progress, and no DOM test dependency; browser rendering remains an acceptance check. It selects media elements by stored MIME and flags a scene/file type mismatch. Visual-prompt generation is queued through the script API, and its button stays disabled while the current project job is queued or running, including before the first progress event.
+- The Studio client uses `FileSummary.storedPath` for previews, XHR upload progress, and no DOM test dependency; browser rendering remains an acceptance check. It selects media elements by stored MIME and flags a scene/file type mismatch. Visual-prompt generation is queued through the script API, and its button stays disabled while the current project job is queued or running, including before the first progress event. Before Copy JSON and Export JSON, Studio shows a non-blocking warning with original scene numbers for active video scenes whose motion prompt is blank or whitespace; the warning does not disable either export action.
 - `FlowSceneExport` is canonicalized in `contracts/asset.ts` so the client shares the route shape without importing this server module.
 
 ## Inactive scenes — Task 98 Part A
