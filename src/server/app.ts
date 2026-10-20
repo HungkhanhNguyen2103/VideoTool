@@ -19,6 +19,8 @@ export type AppOptions = {
   remotionPublicDir?: string;
   /** Optional Remotion concurrency override; undefined keeps Remotion's default. */
   remotionConcurrency?: number;
+  /** H.264 constant rate factor for Remotion; defaults to 22. */
+  remotionCrf?: number;
   /** Absolute path of the built SPA (dist/client). null = do not serve it (development). */
   clientDir: string | null;
 };
@@ -34,7 +36,7 @@ export function createApp(options: AppOptions): Express {
     if (await getActiveJobByType(projectId, 'generate-depth-map', sceneId)) return;
     await enqueueJob({ type: 'generate-depth-map', projectId, payload: { projectId, sceneId } });
   });
-  configureVideoModule(options.filesDir, options.remotionPublicDir, options.remotionConcurrency);
+  configureVideoModule(options.filesDir, options.remotionPublicDir, options.remotionConcurrency, options.remotionCrf);
   configureSeoModule(options.filesDir);
 
   app.get('/api/health', async (_req, res) => {

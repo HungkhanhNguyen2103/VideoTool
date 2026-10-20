@@ -1,10 +1,12 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
+import { open, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { FileDocSchema } from './docs';
+import * as fileStoreRepo from './repo';
 import { deleteFileById, findFileById, insertFile, listFilesByProjectId } from './repo';
 import { newId } from '../../shared/ids';
 import type { FileDoc } from './docs';
@@ -16,6 +18,11 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import AdmZip from 'adm-zip';
 import { ProjectDocSchema } from '../project/docs';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 
 let filesDir: string;
 let service: ReturnType<typeof createFileStoreService>;
@@ -68,6 +75,7 @@ describe('file-store schema and repository', () => {
   }
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     const current = server;
     server = null;
     if (current) await new Promise<void>((resolve) => current.close(() => resolve()));
@@ -115,9 +123,89 @@ describe('file-store schema and repository', () => {
     expect(readFileSync(path.join(filesDir, doc!.storedPath))).toEqual(Buffer.from('png'));
   });
 
+  it('moves a file from a path into the store and records its size without reading it into memory', async () => {
+    const sourcePath = path.join(filesDir, 'render-source.mp4');
+    await writeFile(sourcePath, 'small render');
+    vi.mocked(readFile).mockClear();
+
+    const summary = await service.storeFileFromPath({ projectId: 'project-1', originalName: 'render.mp4', mimeType: 'video/mp4', sourcePath, purpose: 'render' });
+
+    expect(existsSync(sourcePath)).toBe(false);
+    expect(readFileSync(path.join(filesDir, summary.storedPath), 'utf8')).toBe('small render');
+    expect(summary).toMatchObject({ projectId: 'project-1', originalName: 'render.mp4', mimeType: 'video/mp4', ext: 'mp4', sizeBytes: 12, purpose: 'render' });
+    expect(summary.storedPath).toBe(`${summary.id}.mp4`);
+    expect(await findFileById(summary.id)).toMatchObject({ _id: summary.id, sizeBytes: 12, storedPath: summary.storedPath, purpose: 'render' });
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects zero-byte source files before storing them', async () => {
+    const sourcePath = path.join(filesDir, 'empty.mp4');
+    await writeFile(sourcePath, '');
+
+    await expect(service.storeFileFromPath({ projectId: 'project-1', originalName: 'empty.mp4', mimeType: 'video/mp4', sourcePath, purpose: 'render' })).rejects.toThrow(/empty|zero/i);
+
+    expect(existsSync(sourcePath)).toBe(true);
+    expect(await listFilesByProjectId('project-1')).toHaveLength(0);
+  });
+
+  it('streams the source into the store when rename fails with EXDEV', async () => {
+    const sourcePath = path.join(filesDir, 'cross-volume.mp4');
+    await writeFile(sourcePath, 'cross-volume render');
+    const rename = vi.fn(async () => { throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' }); });
+    const crossVolumeStore = createFileStoreService(filesDir, { rename });
+
+    const summary = await crossVolumeStore.storeFileFromPath({ projectId: 'project-1', originalName: 'cross-volume.mp4', mimeType: 'video/mp4', sourcePath, purpose: 'render' });
+
+    expect(rename).toHaveBeenCalledOnce();
+    expect(existsSync(sourcePath)).toBe(false);
+    expect(readFileSync(path.join(filesDir, summary.storedPath), 'utf8')).toBe('cross-volume render');
+  });
+
+  it('restores the source file and rethrows when file metadata insertion fails', async () => {
+    const sourcePath = path.join(filesDir, 'db-failure.mp4');
+    await writeFile(sourcePath, 'render bytes');
+    const failure = new Error('database unavailable');
+    const insertSpy = vi.spyOn(fileStoreRepo, 'insertFile').mockRejectedValueOnce(failure);
+
+    await expect(service.storeFileFromPath({ projectId: 'project-1', originalName: 'db-failure.mp4', mimeType: 'video/mp4', sourcePath, purpose: 'render' })).rejects.toBe(failure);
+
+    expect(insertSpy).toHaveBeenCalledOnce();
+    expect(existsSync(sourcePath)).toBe(true);
+    expect(readFileSync(sourcePath, 'utf8')).toBe('render bytes');
+    expect(await readdir(filesDir)).toEqual(['db-failure.mp4']);
+  });
+
+  it.skipIf(!process.env.RUN_LARGE_FILE_TESTS)('stores a sparse 2.5 GiB file using only its filesystem path', async () => {
+    const sourcePath = path.join(filesDir, 'large-sparse-render.mp4');
+    const file = await open(sourcePath, 'w');
+    await file.truncate(2.5 * 1024 ** 3);
+    await file.close();
+    vi.mocked(readFile).mockClear();
+
+    const summary = await service.storeFileFromPath({ projectId: 'project-1', originalName: 'large-render.mp4', mimeType: 'video/mp4', sourcePath, purpose: 'render' });
+
+    expect(summary.sizeBytes).toBe(2.5 * 1024 ** 3);
+    expect(existsSync(sourcePath)).toBe(false);
+    expect(readFile).not.toHaveBeenCalled();
+    expect((await stat(path.join(filesDir, summary.storedPath))).size).toBe(summary.sizeBytes);
+    await service.deleteFile(summary.id);
+  });
+
   it('stores a render draft purpose for generated preview files', async () => {
     const summary = await service.storeFile({ projectId: 'project-1', originalName: 'render-draft.mp4', mimeType: 'video/mp4', buffer: Buffer.from('draft'), purpose: 'render-draft' });
     expect(summary).toMatchObject({ purpose: 'render-draft', originalName: 'render-draft.mp4', mimeType: 'video/mp4' });
+  });
+
+  it('serves render files through the streaming static route with byte-range support', async () => {
+    const stored = await service.storeFile({ projectId: 'project-1', originalName: 'render.mp4', mimeType: 'video/mp4', buffer: Buffer.from('0123456789'), purpose: 'render' });
+    const base = await startServer();
+
+    const response = await fetch(`${base}/files/${stored.storedPath}`, { headers: { Range: 'bytes=2-5' } });
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get('accept-ranges')).toBe('bytes');
+    expect(response.headers.get('content-range')).toBe('bytes 2-5/10');
+    expect(await response.text()).toBe('2345');
   });
 
   it('deletes final, draft, and logo files when deleting a project', async () => {

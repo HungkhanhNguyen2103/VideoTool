@@ -15,14 +15,16 @@
 
 ## Flow
 - Routes validate project ownership and upload MIME/size, then call the injected file-store service.
+- Files under `FILES_DIR` are served by `express.static` at `/files`; the Express `send` dependency streams files and supports byte ranges for media playback and downloads.
 - `GET /api/visual-style-packs` lists all six styles and their uploaded slots, with the legacy `core` fallback. `PUT /api/visual-style-packs/:styleId/:slotId` replaces one image; `DELETE` on the same path removes it. Uploads accept JPEG, PNG, or WebP using the existing 100 MB limit.
 - `GET /api/visual-style-samples` and `PUT /api/visual-style-samples/:styleId` are deprecated but remain available for older clients.
 - Repository methods only query the `files` collection.
 - ZIP import validates scenes and delegates replacement to the project module; it replaces, never merges, scenes.
 
 ## Service surface
-- `createFileStoreService(filesDir)` injects the disk root for production and isolated tests; `deleteProjectFiles` removes owned render metadata and disk files during project deletion.
+- `createFileStoreService(filesDir, options?)` injects the disk root for production and isolated tests; `options.rename` can replace `fs/promises.rename` for cross-volume tests. `deleteProjectFiles` removes owned render metadata and disk files during project deletion.
 - `storeFile` writes a generated `{id}.{ext}` path before inserting metadata; `deleteFile` tolerates missing disk files.
+- `storeFileFromPath` stats a non-empty source and moves it into the generated `{id}.{ext}` path without buffering the file. On `EXDEV`, it streams the source into the store and removes the source after a successful copy; if metadata insertion fails, it restores the source path (renaming back or streaming across devices) and rethrows the database error. Task 104 deliberately restores instead of deleting the stored copy so the video service can preserve a finished render under `render-failed/` after a metadata failure.
 
 ## Known pitfalls
 - There is no garbage collection for orphaned files after partial failures or project deletion; defer to Phase 6+.

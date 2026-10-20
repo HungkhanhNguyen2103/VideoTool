@@ -49,7 +49,7 @@ export function createWorkerLoop(options: WorkerLoopOptions) {
 async function main(): Promise<void> {
   const config = loadConfig();
   await connectDb(config.MONGODB_URI, config.MONGODB_DB);
-  configureVideoModule(config.FILES_DIR, config.REMOTION_PUBLIC_DIR, config.REMOTION_CONCURRENCY);
+  configureVideoModule(config.FILES_DIR, config.REMOTION_PUBLIC_DIR, config.REMOTION_CONCURRENCY, config.REMOTION_CRF);
   logger.info('worker started');
 
   const { jobHandlers } = await import('./registry');

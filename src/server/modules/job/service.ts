@@ -1,5 +1,6 @@
 import { JobSummarySchema, type JobSummary } from '../../../contracts/job';
 import { Conflict, NotFound } from '../../shared/errors';
+import { logger } from '../../shared/logger';
 import { newId } from '../../shared/ids';
 import type { JobDoc } from './docs';
 import {
@@ -7,6 +8,7 @@ import {
   appendJobLog,
   findJobById,
   findActiveJobByType,
+  heartbeatJob,
   insertJob,
   markCancelled,
   markDone,
@@ -15,6 +17,9 @@ import {
   requestCancel,
   updateProgress,
 } from './repo';
+
+export const JOB_LEASE_STALE_MS = 5 * 60 * 1_000;
+export const JOB_HEARTBEAT_INTERVAL_MS = 60 * 1_000;
 
 export type JobContext = {
   reportProgress: (pct: number, result?: unknown) => Promise<void>;
@@ -110,7 +115,7 @@ export function computeBackoffMs(attempts: number): number {
 }
 
 export async function recoverStaleJobs(): Promise<number> {
-  return recoverStaleJobDocs(Date.now() - 5 * 60 * 1_000);
+  return recoverStaleJobDocs(Date.now() - JOB_LEASE_STALE_MS);
 }
 
 export async function claimAndRun(handlers: Record<string, JobHandler>, lockedBy: string): Promise<boolean> {
@@ -132,6 +137,11 @@ export async function claimAndRun(handlers: Record<string, JobHandler>, lockedBy
     isCancelled: async () => (await findJobById(job._id))?.cancelRequested ?? false,
     appendLog: async (message) => appendJobLog(job._id, message),
   };
+  const heartbeat = setInterval(() => {
+    void heartbeatJob(job._id, lockedBy).then((renewed) => {
+      if (!renewed) logger.warn(`Worker lease is no longer owned for job ${job._id}.`);
+    }).catch((error) => logger.warn(`Could not renew worker lease for job ${job._id}.`, error));
+  }, JOB_HEARTBEAT_INTERVAL_MS);
   try {
     const result = await handler(job, context);
     if (await context.isCancelled()) await markCancelled(job._id);
@@ -140,6 +150,8 @@ export async function claimAndRun(handlers: Record<string, JobHandler>, lockedBy
     const message = error instanceof Error ? error.message : String(error);
     const willRetry = job.attempts < job.maxAttempts;
     await markFailed(job._id, message, { willRetry, nextRunAt: new Date(Date.now() + computeBackoffMs(job.attempts)) });
+  } finally {
+    clearInterval(heartbeat);
   }
   return true;
 }

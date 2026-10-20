@@ -1,4 +1,6 @@
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { FileSummarySchema, type FilePurpose, type FileSummary } from '../../../contracts/file';
 import { NotFound } from '../../shared/errors';
@@ -13,6 +15,12 @@ export type StoreFileParams = {
   buffer: Buffer;
   purpose: FilePurpose;
   extension?: string;
+};
+
+export type StoreFileFromPathParams = Omit<StoreFileParams, 'buffer'> & { sourcePath: string };
+
+export type FileStoreServiceOptions = {
+  rename?: typeof rename;
 };
 
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -37,7 +45,9 @@ function summaryOf(doc: FileDoc): FileSummary {
   return FileSummarySchema.parse({ ...doc, id: doc._id, createdAt: doc.createdAt.toISOString() });
 }
 
-export function createFileStoreService(filesDir: string) {
+export function createFileStoreService(filesDir: string, options: FileStoreServiceOptions = {}) {
+  const renameFile = options.rename ?? rename;
+
   async function storeFile(params: StoreFileParams): Promise<FileSummary> {
     await mkdir(filesDir, { recursive: true });
     const id = newId();
@@ -56,6 +66,60 @@ export function createFileStoreService(filesDir: string) {
       createdAt: new Date(),
     };
     await insertFile(doc);
+    return summaryOf(doc);
+  }
+
+  async function storeFileFromPath(params: StoreFileFromPathParams): Promise<FileSummary> {
+    const sourceStats = await stat(params.sourcePath);
+    if (sourceStats.size === 0) throw new Error('Cannot store an empty file.');
+
+    await mkdir(filesDir, { recursive: true });
+    const id = newId();
+    const ext = params.extension ?? extensionFor(params.originalName, params.mimeType);
+    const storedPath = `${id}.${ext}`;
+    const destinationPath = path.join(filesDir, storedPath);
+
+    try {
+      await renameFile(params.sourcePath, destinationPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
+
+      try {
+        await pipeline(createReadStream(params.sourcePath), createWriteStream(destinationPath));
+        await unlink(params.sourcePath);
+      } catch (copyError) {
+        await unlink(destinationPath).catch(() => undefined);
+        throw copyError;
+      }
+    }
+
+    const doc: FileDoc = {
+      _id: id,
+      projectId: params.projectId,
+      originalName: params.originalName,
+      mimeType: params.mimeType,
+      ext,
+      sizeBytes: sourceStats.size,
+      purpose: params.purpose,
+      storedPath,
+      createdAt: new Date(),
+    };
+    try {
+      await insertFile(doc);
+    } catch (error) {
+      try {
+        await renameFile(destinationPath, params.sourcePath);
+      } catch (rollbackError) {
+        if ((rollbackError as NodeJS.ErrnoException).code !== 'EXDEV') throw rollbackError;
+        try {
+          await pipeline(createReadStream(destinationPath), createWriteStream(params.sourcePath));
+          await unlink(destinationPath);
+        } catch (copyError) {
+          throw new AggregateError([error, copyError], 'File metadata insertion failed and the source file could not be restored.');
+        }
+      }
+      throw error;
+    }
     return summaryOf(doc);
   }
 
@@ -88,5 +152,5 @@ export function createFileStoreService(filesDir: string) {
     return { absolutePath: path.join(filesDir, doc.storedPath), mimeType: doc.mimeType, purpose: doc.purpose };
   }
 
-  return { storeFile, deleteFile, deleteProjectFiles, listProjectFiles, resolveFilePath };
+  return { storeFile, storeFileFromPath, deleteFile, deleteProjectFiles, listProjectFiles, resolveFilePath };
 }

@@ -3,6 +3,9 @@ import { BGM_VOLUME, SFX_VOLUME } from '../../../contracts/video';
 import { frameAlignedDurationSec, secondsToFrames } from '../../../contracts/frame-math';
 export { BGM_VOLUME, BGM_VOLUME_NUMBER, SFX_VOLUME, SFX_VOLUME_NUMBER } from '../../../contracts/video';
 
+export const FFMPEG_H264_CRF = 22;
+export const FFMPEG_H264_PRESET = 'medium';
+
 export type SceneRenderInputs = {
   assetType: Scene['assetType'];
   videoPath: string;
@@ -42,7 +45,7 @@ export function buildSceneArguments(input: SceneRenderInputs): string[] {
   else args.push('-f', 'lavfi', '-t', String(durationSec), '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
   args.push(
     '-filter_complex', buildSceneFilterGraph(input), '-map', '[v]', '-map', '[a]',
-    '-t', String(durationSec), '-r', String(input.fps), '-frames:v', String(frameCount), '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+    '-t', String(durationSec), '-r', String(input.fps), '-frames:v', String(frameCount), '-c:v', 'libx264', '-crf', String(FFMPEG_H264_CRF), '-preset', FFMPEG_H264_PRESET, '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-shortest', input.outputPath,
   );
   return args;

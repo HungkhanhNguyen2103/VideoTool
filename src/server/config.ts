@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { AI_PROVIDERS } from '../contracts/project';
 
+export const REMOTION_H264_CRF = 22;
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -12,6 +14,7 @@ const EnvSchema = z.object({
   CLAUDE_CLI_MAX_OUTPUT_BYTES: z.coerce.number().int().positive().max(100_000_000).default(2_000_000),
   REMOTION_PUBLIC_DIR: z.string().min(1).default('./data/remotion-public'),
   REMOTION_CONCURRENCY: z.preprocess((value) => value === '' ? undefined : value, z.coerce.number().int().positive().optional()),
+  REMOTION_CRF: z.preprocess((value) => value === '' ? undefined : value, z.coerce.number().int().min(0).max(51).catch(REMOTION_H264_CRF).default(REMOTION_H264_CRF)),
   WORKER_POLL_MS: z.coerce.number().int().min(100).default(2000),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   DEEPSEEK_API_KEY: z.string().default(''),

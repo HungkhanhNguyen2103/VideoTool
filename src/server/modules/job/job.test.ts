@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JOB_STATUSES, JobSummarySchema } from '../../../contracts/job';
 import { JobDocSchema } from './docs';
 import { JOB_INDEXES } from './indexes';
@@ -99,6 +99,21 @@ describe('job repository', () => {
     expect((await findJobById(job._id))?.logs).toEqual(['first', 'second']);
   });
 
+  it('bounds persisted log entries and individual UTF-8 messages', async () => {
+    const job = makeJob();
+    await insertJob(job);
+    const oversized = 'á'.repeat(5_000);
+    await appendJobLog(job._id, oversized);
+    const bounded = (await findJobById(job._id))!.logs[0]!;
+    expect(Buffer.byteLength(bounded)).toBeLessThanOrEqual(8_192);
+    expect(bounded.endsWith('…')).toBe(true);
+    for (let index = 0; index < 1_002; index += 1) await appendJobLog(job._id, `line-${index}`);
+
+    const logs = (await findJobById(job._id))!.logs;
+    expect(logs).toHaveLength(1_000);
+    expect(logs[0]).toBe('line-2');
+  });
+
   it('claims the oldest eligible queued job and returns null when empty', async () => {
     const older = makeJob({ runAt: new Date(Date.now() - 2_000) });
     const newer = makeJob({ runAt: new Date(Date.now() - 1_000) });
@@ -197,6 +212,30 @@ describe('job service', () => {
     expect(handled).toBe(true);
     expect(seen).toEqual([0]);
     expect(await getJob(job.id)).toMatchObject({ status: 'done', progress: 100, result: { ok: true } });
+  });
+
+  it('renews the worker lease while a long-running handler is active', async () => {
+    vi.useFakeTimers();
+    try {
+      const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+      let signalStarted!: () => void;
+      let release!: () => void;
+      const started = new Promise<void>((resolve) => { signalStarted = resolve; });
+      const blocked = new Promise<void>((resolve) => { release = resolve; });
+      const running = claimAndRun({ example: async () => { signalStarted(); await blocked; return { ok: true }; } }, 'worker-a');
+      await started;
+      const before = (await findJobById(job.id))!.lockedAt!.getTime();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      const after = (await findJobById(job.id))!.lockedAt!.getTime();
+      expect(after).toBeGreaterThan(before);
+      expect(await recoverStaleJobs(Date.now() - 5 * 60_000)).toBe(0);
+      release();
+      await running;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('exposes appendLog in the handler context', async () => {

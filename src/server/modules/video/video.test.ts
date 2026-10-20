@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -38,7 +39,8 @@ import {
 } from '../project';
 import * as projectIndex from '../project';
 import { createFileStoreService } from '../file-store';
-import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, SFX_VOLUME, BGM_VOLUME } from './docs';
+import * as fileStoreRepo from '../file-store/repo';
+import { buildBgmFilterGraph, buildConcatArguments, buildSceneArguments, buildSceneFilterGraph, FFMPEG_H264_CRF, FFMPEG_H264_PRESET, SFX_VOLUME, BGM_VOLUME } from './docs';
 import { FfmpegRenderer, getVideoRenderer, RemotionRenderer } from './index';
 import * as videoIndex from './index';
 import { alignProjectWordTimings, assertProjectRenderReady, autoAnalyzeProjectNameKeywordsIfStale, configureVideoModule, generateProjectBgm, generateProjectDepthMaps, generateProjectSfx, generateProjectVoiceovers, generateSceneSfx, generateSceneVoiceover, recomputeProjectSceneDurations, renderFullProject, renderScenePreviewBuffer } from './index';
@@ -47,6 +49,7 @@ import type { NameKeywordAnalysisSummary } from './name-keyword-service';
 import { analyzeProjectPopups } from './popup-analysis-service';
 import { enqueueJob as insertJob } from '../job';
 import { jobHandlers } from '../../../worker/registry';
+import { ensureBrowser } from '@remotion/renderer';
 
 const mocks = vi.hoisted(() => ({
   synthesize: vi.fn(),
@@ -74,6 +77,15 @@ const ffprobeAvailable = spawnSync(ffprobePath, ['-version'], { stdio: 'ignore' 
 const binarySkipReason = !ffmpegAvailable && !ffprobeAvailable
   ? `missing FFmpeg (${ffmpegPath}) and ffprobe (${ffprobePath})`
   : !ffmpegAvailable ? `missing FFmpeg (${ffmpegPath})` : !ffprobeAvailable ? `missing ffprobe (${ffprobePath})` : '';
+
+function createPathRenderer(contents: Buffer) {
+  const renderFullVideo = vi.fn(async (...args: unknown[]) => {
+    const options = args[3] as { outputPath: string };
+    await writeFile(options.outputPath, contents);
+    return { sizeBytes: contents.byteLength };
+  });
+  return { renderScenePreview: vi.fn(), renderFullVideo };
+}
 
 const projectInput = {
   title: 'Video mutation project',
@@ -415,6 +427,10 @@ describe('video renderer builders', () => {
     expect(args).toContain('scene.png');
     expect(args).toContain('voice.wav');
     expect(args).toContain('wind.mp3');
+    expect(args).toContain('-crf');
+    expect(args[args.indexOf('-crf') + 1]).toBe(String(FFMPEG_H264_CRF));
+    expect(args).toContain('-preset');
+    expect(args[args.indexOf('-preset') + 1]).toBe(FFMPEG_H264_PRESET);
     expect(args).not.toContain('-stream_loop');
     const silentArgs = buildSceneArguments({ assetType: 'image', videoPath: 'scene.png', outputPath: 'silent.mp4', durationSec: 5, width: 1920, height: 1080, fps: 30 });
     expect(silentArgs.join(' ')).toContain('anullsrc');
@@ -987,19 +1003,24 @@ describe('video orchestration services', () => {
 
   it('stores rendered output and updates the project final file/status', async () => {
     const project = await seedProject();
-    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('mp4')) };
+    const renderer = createPathRenderer(Buffer.from('mp4'));
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
     const reportProgress = vi.fn();
+    const logs: string[] = [];
 
-    await renderFullProject(project.id, async () => undefined, reportProgress);
+    await renderFullProject(project.id, async (line) => { logs.push(line); }, reportProgress);
 
     const updated = await getProject(project.id);
     expect(updated).toMatchObject({ status: 'rendered', renderFileId: expect.any(String) });
     expect(updated.renderedActiveSceneIds).toEqual(['scene-1']);
     const files = await createFileStoreService(filesDir).listProjectFiles(project.id);
-    expect(files).toContainEqual(expect.objectContaining({ purpose: 'render', mimeType: 'video/mp4' }));
+    const renderFile = files.find((file) => file.purpose === 'render');
+    expect(renderFile).toMatchObject({ purpose: 'render', mimeType: 'video/mp4' });
     expect(renderer.renderFullVideo).toHaveBeenCalledOnce();
-    expect(renderer.renderFullVideo).toHaveBeenCalledWith(expect.anything(), expect.any(Function), reportProgress, { originalSceneNumbers: [1], originalSceneCount: 1 });
+    expect(logs[0]).toContain('Dự tính dung lượng render:');
+    const renderOptions = renderer.renderFullVideo.mock.calls[0]?.[3] as { outputPath: string };
+    expect(renderOptions).toMatchObject({ outputPath: expect.any(String) });
+    expect(existsSync(path.dirname(renderOptions.outputPath))).toBe(false);
   });
 
   it('renders only active scenes and snapshots the ordered ids from the same active timeline', async () => {
@@ -1009,18 +1030,20 @@ describe('video orchestration services', () => {
       { id: 'scene-2', narration: 'Inactive middle', visualPrompt: '', durationSec: 9, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, active: false },
       { id: 'scene-3', narration: 'Last', visualPrompt: '', durationSec: 2, assetType: 'image', assetFileId: 'asset-3', audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
     ]);
-    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('mp4')) };
+    const renderer = createPathRenderer(Buffer.from('mp4'));
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
     const setFinalRender = vi.spyOn(projectIndex, 'setProjectRenderFile');
 
     await renderFullProject(project.id, async () => undefined, async () => undefined);
 
     const [renderProject, , , renderOptions] = renderer.renderFullVideo.mock.calls[0]!;
-    const renderedScenes = renderProject.scenes as Scene[];
+    const renderedScenes = (renderProject as { scenes: Scene[] }).scenes;
     expect(renderedScenes.map((scene) => scene.id)).toEqual(['scene-1', 'scene-3']);
     expect(renderedScenes.reduce((sum, scene) => sum + scene.durationSec, 0)).toBe(3);
-    expect(renderOptions).toEqual({ originalSceneNumbers: [1, 3], originalSceneCount: 3 });
-    expect(setFinalRender).toHaveBeenCalledWith(project.id, expect.any(String), ['scene-1', 'scene-3']);
+    expect(renderOptions).toMatchObject({ outputPath: expect.any(String), originalSceneNumbers: [1, 3], originalSceneCount: 3 });
+    expect(existsSync(path.dirname((renderOptions as { outputPath: string }).outputPath))).toBe(false);
+    const renderFile = (await createFileStoreService(filesDir).listProjectFiles(project.id)).find((file) => file.purpose === 'render');
+    expect(setFinalRender).toHaveBeenCalledWith(project.id, renderFile!.id, ['scene-1', 'scene-3']);
     expect((await getProject(project.id)).renderedActiveSceneIds).toEqual(['scene-1', 'scene-3']);
   });
 
@@ -1031,7 +1054,7 @@ describe('video orchestration services', () => {
       { id: 'scene-2', narration: 'Inactive', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null, active: false },
       { id: 'scene-3', narration: 'Missing asset', visualPrompt: '', durationSec: 1, assetType: 'image', assetFileId: null, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null },
     ]);
-    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('mp4')) };
+    const renderer = createPathRenderer(Buffer.from('mp4'));
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
 
     await expect(renderFullProject(project.id, async () => undefined, async () => undefined))
@@ -1048,7 +1071,7 @@ describe('video orchestration services', () => {
     ]);
     await setProjectRenderFile(project.id, 'existing-final-render', ['scene-1']);
     await setProjectRenderEngine(project.id, 'remotion');
-    const renderer = { renderScenePreview: vi.fn(), renderFullVideo: vi.fn().mockResolvedValue(Buffer.from('draft-mp4')) };
+    const renderer = createPathRenderer(Buffer.from('draft-mp4'));
     vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
     const setFinalRender = vi.spyOn(projectIndex, 'setProjectRenderFile');
 
@@ -1058,9 +1081,81 @@ describe('video orchestration services', () => {
     expect(updated).toMatchObject({ status: 'rendered', renderFileId: 'existing-final-render', renderedActiveSceneIds: ['scene-1'], draftRenderFileId: expect.any(String) });
     expect(await createFileStoreService(filesDir).listProjectFiles(project.id)).toContainEqual(expect.objectContaining({ purpose: 'render-draft', originalName: 'render-draft.mp4' }));
     const [renderProject, , , renderOptions] = renderer.renderFullVideo.mock.calls[0]!;
-    expect((renderProject.scenes as Scene[]).map((scene) => scene.id)).toEqual(['scene-1', 'scene-3']);
-    expect(renderOptions).toEqual({ draft: true, originalSceneNumbers: [1, 3], originalSceneCount: 3 });
+    expect((renderProject as { scenes: Scene[] }).scenes.map((scene) => scene.id)).toEqual(['scene-1', 'scene-3']);
+    expect(renderOptions).toMatchObject({ outputPath: expect.any(String), draft: true, originalSceneNumbers: [1, 3], originalSceneCount: 3 });
+    expect(existsSync(path.dirname((renderOptions as { outputPath: string }).outputPath))).toBe(false);
     expect(setFinalRender).not.toHaveBeenCalled();
+  });
+
+  it('keeps a completed render and rethrows the storage error when file metadata insertion fails', async () => {
+    const project = await seedProject();
+    const renderedBytes = Buffer.from('rendered mp4');
+    const renderer = createPathRenderer(renderedBytes);
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+    const storageError = new Error('database unavailable');
+    const insertSpy = vi.spyOn(fileStoreRepo, 'insertFile').mockRejectedValueOnce(storageError);
+    const logs: string[] = [];
+    const appendLog = vi.fn(async (message: string) => { logs.push(message); });
+
+    await expect(renderFullProject(project.id, appendLog, async () => undefined)).rejects.toBe(storageError);
+
+    expect(insertSpy).toHaveBeenCalledOnce();
+    const retainedLog = logs.find((message) => message.startsWith('Render đã xong nhưng lưu thất bại; file giữ tại: '));
+    expect(retainedLog).toBeDefined();
+    const retainedPath = retainedLog!.slice('Render đã xong nhưng lưu thất bại; file giữ tại: '.length);
+    expect(path.isAbsolute(retainedPath)).toBe(true);
+    expect(await readFile(retainedPath)).toEqual(renderedBytes);
+    const renderOptions = renderer.renderFullVideo.mock.calls[0]?.[3] as { outputPath: string };
+    expect(existsSync(path.dirname(renderOptions.outputPath))).toBe(false);
+    expect(path.relative(path.dirname(filesDir), retainedPath).split(path.sep)[0]).toBe('render-failed');
+    expect(await readdir(path.dirname(retainedPath))).toEqual(['render.mp4']);
+    expect(existsSync(path.dirname(renderOptions.outputPath))).toBe(false);
+    expect((await getProject(project.id)).renderFileId).toBeNull();
+    await rm(path.dirname(retainedPath), { recursive: true, force: true });
+  });
+
+  it('removes partial output when rendering fails before completion', async () => {
+    const project = await seedProject();
+    const renderError = new Error('renderer failed');
+    let outputPath = '';
+    const renderer = {
+      renderScenePreview: vi.fn(),
+      renderFullVideo: vi.fn(async (...args: unknown[]) => {
+        outputPath = (args[3] as { outputPath: string }).outputPath;
+        await writeFile(outputPath, 'partial output');
+        throw renderError;
+      }),
+    };
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(renderer);
+    const appendLog = vi.fn(async () => undefined);
+
+    await expect(renderFullProject(project.id, appendLog, async () => undefined)).rejects.toBe(renderError);
+
+    expect(outputPath).not.toBe('');
+    expect(existsSync(outputPath)).toBe(false);
+    expect(existsSync(path.dirname(outputPath))).toBe(false);
+    expect(appendLog).not.toHaveBeenCalledWith(expect.stringContaining('file giữ tại'));
+    expect((await getProject(project.id)).renderFileId).toBeNull();
+  });
+
+  it.each([false, true])('logs the stored render id and path when project metadata linking fails (draft: %s)', async (draft) => {
+    const project = await seedProject();
+    if (draft) await setProjectRenderEngine(project.id, 'remotion');
+    const renderedBytes = Buffer.from('rendered mp4');
+    vi.spyOn(videoIndex, 'getVideoRenderer').mockReturnValue(createPathRenderer(renderedBytes));
+    const linkError = new Error('project database unavailable');
+    const setRenderFile = vi.spyOn(projectIndex, draft ? 'setProjectDraftRenderFile' : 'setProjectRenderFile').mockRejectedValueOnce(linkError);
+    const logs: string[] = [];
+
+    await expect(renderFullProject(project.id, async (message) => { logs.push(message); }, async () => undefined, draft ? { draft: true } : undefined)).rejects.toBe(linkError);
+
+    const renderFile = (await createFileStoreService(filesDir).listProjectFiles(project.id)).find((file) => file.purpose === (draft ? 'render-draft' : 'render'));
+    expect(renderFile).toBeDefined();
+    const storedPath = path.join(filesDir, renderFile!.storedPath);
+    expect(await readFile(storedPath)).toEqual(renderedBytes);
+    expect(logs).toContain(`Render đã lưu thành công nhưng chưa gắn vào dự án; mã tệp: ${renderFile!.id}; đường dẫn: ${storedPath}`);
+    expect(setRenderFile).toHaveBeenCalledOnce();
+    expect((await getProject(project.id)).renderFileId).toBeNull();
   });
 });
 
@@ -1736,8 +1831,8 @@ describe('video routes and worker handlers', () => {
   it('passes one configured Remotion public directory into both web and worker startup', async () => {
     const appSource = await readFile('src/server/app.ts', 'utf8');
     const workerSource = await readFile('src/worker/main.ts', 'utf8');
-    expect(appSource).toContain('configureVideoModule(options.filesDir, options.remotionPublicDir, options.remotionConcurrency)');
-    expect(workerSource).toContain('configureVideoModule(config.FILES_DIR, config.REMOTION_PUBLIC_DIR, config.REMOTION_CONCURRENCY)');
+    expect(appSource).toContain('configureVideoModule(options.filesDir, options.remotionPublicDir, options.remotionConcurrency, options.remotionCrf)');
+    expect(workerSource).toContain('configureVideoModule(config.FILES_DIR, config.REMOTION_PUBLIC_DIR, config.REMOTION_CONCURRENCY, config.REMOTION_CRF)');
   });
 
   it('enqueues project voiceover and render jobs with the project payload', async () => {
@@ -1892,14 +1987,13 @@ describe('real FFmpeg integration', () => {
     const progress: number[] = [];
     const renderLogs: string[] = [];
     const activeProject = { ...latest, scenes: activeScenes(latest.scenes) };
-    const full = await renderer.renderFullVideo(activeProject, async (message) => { renderLogs.push(message); }, async (percent) => { progress.push(percent); }, { originalSceneNumbers: [1, 3], originalSceneCount: 3 });
+    const fullPath = path.join(filesDir, 'active-scenes-with-bgm.mp4');
+    const full = await renderer.renderFullVideo(activeProject, async (message) => { renderLogs.push(message); }, async (percent) => { progress.push(percent); }, { outputPath: fullPath, originalSceneNumbers: [1, 3], originalSceneCount: 3 });
 
     expect(preview.byteLength).toBeGreaterThan(100);
-    expect(full.byteLength).toBeGreaterThan(100);
+    expect(full.sizeBytes).toBeGreaterThan(100);
     expect(progress).toEqual([45, 90, 100]);
     expect(renderLogs.filter((line) => line.startsWith('Rendering scene'))).toEqual(['Rendering scene 1/3…', 'Rendering scene 3/3…']);
-    const fullPath = path.join(filesDir, 'active-scenes-with-bgm.mp4');
-    await writeFile(fullPath, full);
     const fullDuration = spawnSync(ffprobePath, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', fullPath], { encoding: 'utf8' });
     expect(fullDuration.status).toBe(0);
     expect(Number.parseFloat(fullDuration.stdout.trim())).toBeCloseTo(3, 1);
@@ -1920,4 +2014,71 @@ describe('real FFmpeg integration', () => {
       await releaseRenderLock();
     }
   });
+});
+
+describe('real Remotion full-render acceptance', () => {
+  it('renders one second, stores it through the path API, and serves it with HTTP Range', async (context) => {
+    try {
+      const browserStatus = await Promise.race([
+        ensureBrowser(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Chromium probe timed out')), 5_000)),
+      ]);
+      if (browserStatus.type === 'no-browser' || browserStatus.type === 'version-mismatch') {
+        context.skip(`Chromium unavailable: ${browserStatus.type}`);
+        return;
+      }
+    } catch (error) {
+      context.skip(`Chromium unavailable or unlaunchable: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+
+    const remotionDir = await mkdtemp(path.join(tmpdir(), 'video-tool-real-remotion-'));
+    const releaseRenderLock = await acquireRenderResourceLock();
+    let acceptanceServer: Server | null = null;
+    try {
+      const store = createFileStoreService(filesDir);
+      const project = await createProject(projectInput);
+      const replacement = await store.storeFile({
+        projectId: project.id,
+        originalName: 'fixture.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+        purpose: 'reference',
+      });
+      await replaceProjectScenes(project.id, [{
+        id: 'scene-1', narration: 'One second', visualPrompt: 'Simple image', durationSec: 1,
+        assetType: 'image', assetFileId: replacement.id, audioFileId: null, sfxPrompt: '', motionPrompt: '', sfxFileId: null,
+      }]);
+      await setProjectRenderEngine(project.id, 'remotion');
+      configureVideoModule(filesDir, remotionDir);
+      const renderLogs: string[] = [];
+      await renderFullProject(project.id, async (message) => { renderLogs.push(message); }, async () => undefined);
+
+      const renderedProject = await getProject(project.id);
+      const renderFile = (await store.listProjectFiles(project.id)).find((file) => file.id === renderedProject.renderFileId);
+      expect(renderFile).toMatchObject({ purpose: 'render', mimeType: 'video/mp4' });
+      const renderedPath = path.join(filesDir, renderFile!.storedPath);
+      const renderedStats = await stat(renderedPath);
+      expect(renderedStats.size).toBeGreaterThan(0);
+      expect(renderLogs.some((line) => line.startsWith('Dự tính dung lượng render:'))).toBe(true);
+      expect(renderLogs.some((line) => line.includes(`output ${(renderedStats.size / (1024 * 1024)).toFixed(2)} MB`))).toBe(true);
+
+      const app = createApp({ filesDir, clientDir: null });
+      acceptanceServer = app.listen(0);
+      await new Promise<void>((resolve) => acceptanceServer!.once('listening', resolve));
+      const address = acceptanceServer.address() as AddressInfo;
+      const response = await fetch(`http://127.0.0.1:${address.port}/files/${renderFile!.storedPath}`);
+      expect(response.status).toBe(200);
+      expect(Number(response.headers.get('content-length'))).toBe(renderedStats.size);
+      await response.body?.cancel();
+      const ranged = await fetch(`http://127.0.0.1:${address.port}/files/${renderFile!.storedPath}`, { headers: { Range: 'bytes=0-15' } });
+      expect(ranged.status).toBe(206);
+      expect(ranged.headers.get('content-range')).toBe(`bytes 0-15/${renderedStats.size}`);
+      expect((await ranged.arrayBuffer()).byteLength).toBe(16);
+    } finally {
+      if (acceptanceServer) await new Promise<void>((resolve) => acceptanceServer!.close(() => resolve()));
+      await releaseRenderLock();
+      await rm(remotionDir, { recursive: true, force: true });
+    }
+  }, 180_000);
 });

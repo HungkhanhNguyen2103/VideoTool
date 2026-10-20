@@ -14,20 +14,32 @@ import { configureLogoService } from './logo-service';
 import { configureSceneDurationService } from './scene-duration-service';
 import type { RenderVideoOptions } from './ffmpeg-renderer';
 import { activeScenes, countInactiveScenes } from '../../../contracts/scene-active';
+import { mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import path from 'node:path';
+import { REMOTION_H264_CRF } from '../../config';
+import { formatGiB, estimateRenderDiskUsage, inspectRenderDiskSpace, probeRenderDiskSpace } from './render-disk-preflight';
 
 let storeFile = createFileStoreService('./data/files').storeFile;
+let storeFileFromPath = createFileStoreService('./data/files').storeFileFromPath;
+let listProjectFiles = createFileStoreService('./data/files').listProjectFiles;
 let resolveFilePath = createFileStoreService('./data/files').resolveFilePath;
+let configuredFilesDir = './data/files';
+let configuredRemotionPublicDir = './data/remotion-public';
 
-export function configureVideoModule(filesDir: string, remotionPublicDir = './data/remotion-public', remotionConcurrency?: number): void {
+export function configureVideoModule(filesDir: string, remotionPublicDir = './data/remotion-public', remotionConcurrency?: number, remotionCrf = REMOTION_H264_CRF): void {
+  configuredFilesDir = filesDir;
+  configuredRemotionPublicDir = remotionPublicDir;
   const store = createFileStoreService(filesDir);
   storeFile = store.storeFile;
+  storeFileFromPath = store.storeFileFromPath;
+  listProjectFiles = store.listProjectFiles;
   resolveFilePath = store.resolveFilePath;
   configureVideoTts(filesDir);
   configureWordTimingService(filesDir);
   configureDepthMapService(filesDir);
   configureLogoService(filesDir);
   configureSceneDurationService(filesDir);
-  configureVideoRenderer(filesDir, remotionPublicDir, remotionConcurrency);
+  configureVideoRenderer(filesDir, remotionPublicDir, remotionConcurrency, remotionCrf);
 }
 
 export { generateProjectVoiceovers, generateSceneVoiceover };
@@ -197,7 +209,7 @@ export async function generateProjectBgm(projectId: string, mood: string): Promi
   await setProjectBgm(projectId, normalizedMood, stored.id);
 }
 
-export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<void> {
+export async function renderFullProject(projectId: string, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: { draft?: boolean }): Promise<void> {
   const project = await getProject(projectId);
   assertProjectRenderReady(project);
   const renderEntries = activeScenes(project.scenes.map((scene, originalIndex) => ({ scene, originalIndex, active: scene.active })));
@@ -207,18 +219,116 @@ export async function renderFullProject(projectId: string, appendLog: (message: 
   const draft = options?.draft === true;
   if (draft && renderProject.renderEngine === 'ffmpeg') throw new AppError('Draft render is available only with Remotion.', 422, 'DRAFT_REQUIRES_REMOTION');
   const renderer = getVideoRenderer(renderProject.renderEngine);
-  const output = draft
-    ? await renderer.renderFullVideo(renderProject, appendLog, reportProgress, { draft: true, originalSceneNumbers, originalSceneCount: project.scenes.length })
-    : await renderer.renderFullVideo(renderProject, appendLog, reportProgress, { originalSceneNumbers, originalSceneCount: project.scenes.length });
-  const stored = await storeFile({
-    projectId,
-    originalName: draft ? 'render-draft.mp4' : 'render.mp4',
-    mimeType: 'video/mp4',
-    buffer: output,
-    purpose: draft ? 'render-draft' : 'render',
+  const safeProjectId = projectId.replace(/[^A-Za-z0-9_-]/g, '_');
+  const renderParent = path.dirname(path.resolve(configuredFilesDir));
+  await mkdir(renderParent, { recursive: true });
+  const filesPath = path.resolve(configuredFilesDir);
+  const stagePath = path.resolve(configuredRemotionPublicDir);
+  const [renderVolume, storeVolume, stageVolume] = await Promise.all([
+    probeRenderDiskSpace(renderParent),
+    probeRenderDiskSpace(filesPath),
+    renderProject.renderEngine === 'remotion' ? probeRenderDiskSpace(stagePath) : Promise.resolve(null),
+  ]);
+  const projectFiles = await listProjectFiles(projectId);
+  const fileSizes = new Map(projectFiles.map((file) => [file.id, file.sizeBytes]));
+  const referencedFileIds = [
+    ...renderScenes.flatMap((scene) => [scene.assetFileId, scene.videoKeyframeFileId, scene.depthMap?.fileId, scene.audioFileId, scene.sfxFileId]),
+    project.bgmFileId,
+    project.logoFileId,
+  ].filter((fileId): fileId is string => Boolean(fileId));
+  const mediaAssetBytes = referencedFileIds.reduce((total, fileId) => total + (fileSizes.get(fileId) ?? 0), 0);
+  const normalizedSfxBytes = renderScenes.reduce((total, scene) => {
+    if (!scene.sfxFileId) return total;
+    const sourceBytes = fileSizes.get(scene.sfxFileId) ?? 0;
+    const pcmBytes = scene.durationSec * 48_000 * 2 * 2;
+    return total + Math.max(sourceBytes * 10, pcmBytes);
+  }, 0);
+  const diskUsage = estimateRenderDiskUsage({
+    durationSeconds: renderScenes.reduce((total, scene) => total + scene.durationSec, 0),
+    mediaAssetBytes,
+    normalizedSfxBytes,
+    engine: renderProject.renderEngine,
+    hasBgm: Boolean(project.bgmFileId),
+    renderAndStoreShareVolume: renderVolume.device === storeVolume.device,
+    renderAndStageShareVolume: renderVolume.device === stageVolume?.device,
   });
-  if (draft) await setProjectDraftRenderFile(projectId, stored.id);
-  else await setProjectRenderFile(projectId, stored.id, renderScenes.map((scene) => scene.id));
+  const diskRequirements = [
+    { path: renderParent, label: 'Render và file tạm', requiredBytes: diskUsage.renderVolumeRequiredBytes },
+    ...(diskUsage.remotionStageVolumeRequiredBytes > 0 ? [{ path: stagePath, label: 'Media Remotion', requiredBytes: diskUsage.remotionStageVolumeRequiredBytes }] : []),
+    ...(diskUsage.storeCopyVolumeRequiredBytes > 0 ? [{ path: filesPath, label: 'Bản sao lưu file khi khác ổ (EXDEV)', requiredBytes: diskUsage.storeCopyVolumeRequiredBytes }] : []),
+  ];
+  const probedVolumes = new Map([
+    [path.resolve(renderParent), renderVolume],
+    [filesPath, storeVolume],
+    ...(stageVolume ? [[stagePath, stageVolume] as const] : []),
+  ]);
+  const diskCheck = await inspectRenderDiskSpace(diskRequirements, async (directory) => {
+    return probedVolumes.get(path.resolve(directory)) ?? probeRenderDiskSpace(directory);
+  });
+  const diskLog = `Dự tính dung lượng render: đầu ra ${formatGiB(diskUsage.outputBytes)} GiB, media ${formatGiB(mediaAssetBytes)} GiB, SFX chuẩn hóa ${formatGiB(normalizedSfxBytes)} GiB; ${diskCheck.volumes.map((volume) => `${volume.path} cần ${formatGiB(volume.requiredBytes)} GiB, còn ${formatGiB(volume.availableBytes)} GiB`).join('; ')}.`;
+  try {
+    await appendLog(diskLog);
+  } catch (error) {
+    logger.warn(`Could not append render disk estimate for project ${projectId}.`, error);
+  }
+  if (diskCheck.insufficient[0]) throw diskCheck.insufficient[0].error;
+  const tempDirectory = await mkdtemp(path.join(renderParent, `video-tool-render-${safeProjectId}-`));
+  const outputPath = path.join(tempDirectory, draft ? 'render-draft.mp4' : 'render.mp4');
+  let keepTempDirectory = false;
+  try {
+    const renderOptions: RenderVideoOptions = {
+      outputPath,
+      ...(draft ? { draft: true } : {}),
+      originalSceneNumbers,
+      originalSceneCount: project.scenes.length,
+    };
+    await renderer.renderFullVideo(renderProject, appendLog, reportProgress, renderOptions);
+    let stored;
+    try {
+      stored = await storeFileFromPath({
+        projectId,
+        originalName: draft ? 'render-draft.mp4' : 'render.mp4',
+        mimeType: 'video/mp4',
+        sourcePath: outputPath,
+        purpose: draft ? 'render-draft' : 'render',
+      });
+    } catch (storageError) {
+      const failedRoot = path.join(renderParent, 'render-failed');
+      let retainedPath = outputPath;
+      let failedDirectory: string | undefined;
+      try {
+        await mkdir(failedRoot, { recursive: true });
+        failedDirectory = await mkdtemp(path.join(failedRoot, `${safeProjectId}-${Date.now()}-`));
+        retainedPath = path.join(failedDirectory, 'render.mp4');
+        await rename(outputPath, retainedPath);
+      } catch (preserveError) {
+        keepTempDirectory = true;
+        if (failedDirectory) await rm(failedDirectory, { recursive: true, force: true }).catch(() => undefined);
+        retainedPath = outputPath;
+        logger.error(`Could not retain completed render for project ${projectId}.`, preserveError);
+      }
+      try {
+        await appendLog(`Render đã xong nhưng lưu thất bại; file giữ tại: ${retainedPath}`);
+      } catch (logError) {
+        logger.warn(`Could not append render-storage failure path for project ${projectId}.`, logError);
+      }
+      throw storageError;
+    }
+    try {
+      if (draft) await setProjectDraftRenderFile(projectId, stored.id);
+      else await setProjectRenderFile(projectId, stored.id, renderScenes.map((scene) => scene.id));
+    } catch (linkError) {
+      const storedPath = path.join(path.resolve(configuredFilesDir), stored.storedPath);
+      try {
+        await appendLog(`Render đã lưu thành công nhưng chưa gắn vào dự án; mã tệp: ${stored.id}; đường dẫn: ${storedPath}`);
+      } catch (logError) {
+        logger.warn(`Could not append project-link failure path for render file ${stored.id}.`, logError);
+      }
+      throw linkError;
+    }
+  } finally {
+    if (!keepTempDirectory) await rm(tempDirectory, { recursive: true, force: true });
+  }
 }
 
 export async function renderScenePreviewBuffer(projectId: string, sceneId: string): Promise<Buffer> {

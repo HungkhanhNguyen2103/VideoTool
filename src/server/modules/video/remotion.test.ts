@@ -1,4 +1,4 @@
-import { mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as os from 'node:os';
 import path from 'node:path';
@@ -19,6 +19,11 @@ import type { RenderMediaOptions } from '@remotion/renderer';
 import type { BundleOptions } from '@remotion/bundler';
 import type { Scene } from '../../../contracts/project';
 import { hashNarration } from '../../../contracts/name-keywords';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 
 const renderResourceLock = path.join(tmpdir(), 'video-tool-render-resource.lock');
 
@@ -542,7 +547,7 @@ describe('Remotion renderer orchestration', () => {
       const logs: string[] = [];
 
       await expect(renderer.renderScenePreview(project, scene)).rejects.toMatchObject({ code: 'REMOTION_RENDER_FAILED', status: 502 });
-      await expect(renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined)).rejects.toMatchObject({ code: 'REMOTION_RENDER_FAILED', status: 502 });
+      await expect(renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { outputPath: path.join(sourceDir, 'full.mp4') })).rejects.toMatchObject({ code: 'REMOTION_RENDER_FAILED', status: 502 });
 
       expect(bundle).toHaveBeenCalledOnce();
       expect(selectComposition).toHaveBeenCalled();
@@ -583,7 +588,7 @@ describe('Remotion renderer orchestration', () => {
         if (message.includes('progress')) throw new Error('log write failed');
       });
 
-      await expect(renderer.renderFullVideo(project, appendLog, async () => undefined)).rejects.toMatchObject({ code: 'REMOTION_RENDER_FAILED', status: 502 });
+      await expect(renderer.renderFullVideo(project, appendLog, async () => undefined, { outputPath: path.join(sourceDir, 'full.mp4') })).rejects.toMatchObject({ code: 'REMOTION_RENDER_FAILED', status: 502 });
       expect(appendLog).toHaveBeenCalledWith(expect.stringMatching(/^Remotion render progress 50% \(elapsed .* frames\/s/));
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
@@ -601,15 +606,17 @@ describe('Remotion renderer orchestration', () => {
       const selectComposition = vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 });
       const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
         options.onProgress?.({ renderedFrames: 15, encodedFrames: 15, encodedDoneIn: 1, renderedDoneIn: 1, renderEstimatedTime: 1, progress: 0.5, stitchStage: 'encoding' });
+        await writeFile(options.outputLocation!, 'mp4');
         return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
       });
-      const renderer = new RemotionRenderer({ resolver, bundle, selectComposition, renderMedia, readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')) });
+      const renderer = new RemotionRenderer({ resolver, bundle, selectComposition, renderMedia });
       const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
       const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, scenes: [scene] } as never;
       const progress: number[] = [];
 
-      await expect(renderer.renderFullVideo(project, async () => undefined, async (percent) => { progress.push(percent); })).resolves.toEqual(Buffer.from('mp4'));
+      await expect(renderer.renderFullVideo(project, async () => undefined, async (percent) => { progress.push(percent); }, { outputPath: path.join(bundleDir, 'full.mp4') })).resolves.toEqual({ sizeBytes: 3 });
 
+      expect(renderMedia.mock.calls[0]?.[0].crf).toBe(22);
       expect(progress).toEqual([10, 15, 55, 100]);
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
@@ -628,23 +635,25 @@ describe('Remotion renderer orchestration', () => {
       const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
         options.onProgress?.({ renderedFrames: 3, encodedFrames: 3, encodedDoneIn: 1, renderedDoneIn: 1, renderEstimatedTime: 9, progress: 0.1, stitchStage: 'encoding' });
         options.onProgress?.({ renderedFrames: 30, encodedFrames: 30, encodedDoneIn: 2, renderedDoneIn: 2, renderEstimatedTime: 0, progress: 1, stitchStage: 'muxing' });
+        await writeFile(options.outputLocation!, Buffer.alloc(2 * 1024 * 1024));
         return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
       });
-      const renderer = new RemotionRenderer({ resolver, bundle, selectComposition, renderMedia, readFile: vi.fn().mockResolvedValue(Buffer.alloc(2 * 1024 * 1024)) });
+      const renderer = new RemotionRenderer({ resolver, bundle, selectComposition, renderMedia });
       const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
       const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'off', scenes: [scene] } as never;
       const logs: string[] = [];
       const appendLog = async (message: string) => { logs.push(message); };
 
-      await renderer.renderFullVideo(project, appendLog, async () => undefined);
-      await renderer.renderFullVideo(project, appendLog, async () => undefined);
+      const outputPath = path.join(bundleDir, 'full.mp4');
+      await renderer.renderFullVideo(project, appendLog, async () => undefined, { outputPath });
+      await renderer.renderFullVideo(project, appendLog, async () => undefined, { outputPath });
 
       expect(logs.some((message) => message.includes('Remotion bundle') && message.includes('time'))).toBe(true);
       expect(logs.some((message) => message.includes('bundle cached'))).toBe(true);
       expect(logs.some((message) => message.includes('Remotion staging') && message.includes('time'))).toBe(true);
       expect(logs.some((message) => message.includes('selectComposition') && message.includes('time'))).toBe(true);
       expect(logs.some((message) => message.includes('renderMedia') && message.includes('time'))).toBe(true);
-      expect(logs.some((message) => message.includes('read output') && message.includes('time'))).toBe(true);
+      expect(logs.some((message) => message.includes('read output') && message.includes('time'))).toBe(false);
       expect(logs.some((message) => message.includes('Remotion total') && message.includes('time'))).toBe(true);
       expect(logs.some((message) => message.includes('free memory at start'))).toBe(true);
       const progress = logs.find((message) => message.includes('Remotion render progress 10%'));
@@ -653,6 +662,42 @@ describe('Remotion renderer orchestration', () => {
       expect(logs.some((message) => message.startsWith('Remotion render done: 30 frames in') && message.includes('scenes 1 (video 0, depth 0)') && message.includes('output 2.00 MB'))).toBe(true);
       expect(logs.some((message) => message.includes('concurrency default'))).toBe(true);
       expect(bundle).toHaveBeenCalledOnce();
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes full Remotion renders to the caller path without reading or deleting the output and passes the configured CRF', async () => {
+    const sourceDir = await mkdtemp(path.join(tmpdir(), 'remotion-direct-output-source-'));
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'remotion-direct-output-bundle-'));
+    const outputPath = path.join(sourceDir, 'final.mp4');
+    try {
+      await writeFile(path.join(sourceDir, 'image.png'), 'image');
+      const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
+        await writeFile(options.outputLocation!, Buffer.from('large render output'));
+        return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
+      });
+      const renderer = new RemotionRenderer({
+        resolver,
+        bundle: vi.fn().mockResolvedValue(bundleDir),
+        selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 }),
+        renderMedia,
+        remotionCrf: 28,
+      });
+      const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1 } as never;
+      const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, scenes: [scene] } as never;
+      const logs: string[] = [];
+
+      vi.mocked(readFile).mockClear();
+      await expect(renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { outputPath })).resolves.toEqual({ sizeBytes: 19 });
+
+      expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ codec: 'h264', crf: 28, outputLocation: outputPath });
+      expect((await stat(outputPath)).size).toBe(19);
+      expect(vi.mocked(readFile)).not.toHaveBeenCalledWith(outputPath);
+      expect(await readdir(path.join(bundleDir, 'public', 'renders'))).toHaveLength(0);
+      expect(logs.filter((message) => message === 'Remotion H.264 CRF: 28.')).toHaveLength(1);
     } finally {
       await rm(sourceDir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });
@@ -674,6 +719,7 @@ describe('Remotion renderer orchestration', () => {
         for (const renderedFrames of [15, 30, 45, 60]) {
           options.onProgress?.({ renderedFrames, encodedFrames: renderedFrames, encodedDoneIn: 4200, renderedDoneIn: 2400, renderEstimatedTime: 0, progress: renderedFrames / 60, stitchStage: 'encoding' });
         }
+        await writeFile(options.outputLocation!, 'mp4');
         return {
           buffer: null,
           slowestFrames: [{ frame: 59, time: 812 }, { frame: 2, time: 740 }],
@@ -685,7 +731,6 @@ describe('Remotion renderer orchestration', () => {
         bundle: vi.fn().mockResolvedValue(bundleDir),
         selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 60 }),
         renderMedia,
-        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
       });
       const project = {
         id: 'project-1',
@@ -702,7 +747,7 @@ describe('Remotion renderer orchestration', () => {
       } as never;
       const logs: string[] = [];
 
-      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { originalSceneNumbers: [1, 3] });
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { outputPath: path.join(bundleDir, 'diagnostics.mp4'), originalSceneNumbers: [1, 3] });
 
       expect(logs).toContain('Remotion frame rendering: 2.40s.');
       expect(logs).toContain('Remotion encoding/stitching: 4.20s.');
@@ -723,18 +768,17 @@ describe('Remotion renderer orchestration', () => {
     try {
       await writeFile(path.join(sourceDir, 'image.png'), 'image');
       const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
-      const renderMedia = vi.fn(async (_options: RenderMediaOptions) => { void _options; return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => { await writeFile(options.outputLocation!, 'mp4'); return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
       const renderer = new RemotionRenderer({
         resolver,
         bundle: vi.fn().mockResolvedValue(bundleDir),
         selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 }),
         renderMedia,
-        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
       });
       const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: null } as never;
       const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
 
-      await renderer.renderFullVideo(project, async () => undefined, async () => undefined);
+      await renderer.renderFullVideo(project, async () => undefined, async () => undefined, { outputPath: path.join(bundleDir, 'image.mp4') });
 
       expect(renderMedia.mock.calls[0]?.[0]).not.toHaveProperty('concurrency');
     } finally {
@@ -754,19 +798,18 @@ describe('Remotion renderer orchestration', () => {
         mimeType: 'image/png',
         purpose: fileId === 'depth-1' ? 'depth' as const : 'reference' as const,
       });
-      const renderMedia = vi.fn(async (_options: RenderMediaOptions) => { void _options; return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => { await writeFile(options.outputLocation!, 'mp4'); return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
       const renderer = new RemotionRenderer({
         resolver,
         bundle: vi.fn().mockResolvedValue(bundleDir),
         selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 }),
         renderMedia,
-        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
       });
       const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.99 } } as never;
       const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
       const logs: string[] = [];
 
-      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined);
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { outputPath: path.join(bundleDir, 'depth.mp4') });
 
       expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ concurrency: 1 });
       expect(logs).toContain('Remotion concurrency 1: depth scenes present.');
@@ -782,20 +825,19 @@ describe('Remotion renderer orchestration', () => {
     try {
       await writeFile(path.join(sourceDir, 'image.png'), 'image');
       const resolver = async () => ({ absolutePath: path.join(sourceDir, 'image.png'), mimeType: 'image/png', purpose: 'reference' as const });
-      const renderMedia = vi.fn(async (_options: RenderMediaOptions) => { void _options; return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
+      const renderMedia = vi.fn(async (options: RenderMediaOptions) => { await writeFile(options.outputLocation!, 'mp4'); return { buffer: null, slowestFrames: [], contentType: 'video/mp4' }; });
       const renderer = new RemotionRenderer({
         resolver,
         remotionConcurrency: 999999,
         bundle: vi.fn().mockResolvedValue(bundleDir),
         selectComposition: vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 }),
         renderMedia,
-        readFile: vi.fn().mockResolvedValue(Buffer.from('mp4')),
       });
       const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: null } as never;
       const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
       const logs: string[] = [];
 
-      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined);
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { outputPath: path.join(bundleDir, 'concurrency.mp4') });
 
       expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ concurrency: os.cpus().length });
       expect(logs).toContain(`Remotion env override ${os.cpus().length}.`);
@@ -814,14 +856,15 @@ describe('Remotion renderer orchestration', () => {
       const selectComposition = vi.fn().mockResolvedValue({ id: 'VideoComposition', width: 1920, height: 1080, fps: 30, durationInFrames: 30 });
       const renderMedia = vi.fn(async (options: RenderMediaOptions) => {
         options.onProgress?.({ renderedFrames: 15, encodedFrames: 15, encodedDoneIn: 1, renderedDoneIn: 1, renderEstimatedTime: 0, progress: 1, stitchStage: 'muxing' });
+        await writeFile(options.outputLocation!, 'draft');
         return { buffer: null, slowestFrames: [], contentType: 'video/mp4' };
       });
-      const renderer = new RemotionRenderer({ resolver, bundle: vi.fn().mockResolvedValue(bundleDir), selectComposition, renderMedia, readFile: vi.fn().mockResolvedValue(Buffer.from('draft')) });
+      const renderer = new RemotionRenderer({ resolver, bundle: vi.fn().mockResolvedValue(bundleDir), selectComposition, renderMedia });
       const scene = { id: 'scene-1', assetType: 'image', assetFileId: 'asset-1', audioFileId: null, sfxFileId: null, durationSec: 1, depthMap: { assetFileId: 'asset-1', fileId: 'depth-1', score: 0.99 } } as never;
       const project = { id: 'project-1', renderSettings: { fps: 30, width: 1920, height: 1080 }, bgmFileId: null, keywordPopupsEnabled: true, parallax: 'auto', scenes: [scene] } as never;
       const logs: string[] = [];
 
-      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { draft: true });
+      await renderer.renderFullVideo(project, async (message) => { logs.push(message); }, async () => undefined, { outputPath: path.join(bundleDir, 'draft.mp4'), draft: true });
 
       expect(renderMedia.mock.calls[0]?.[0]).toMatchObject({ scale: 0.5 });
       expect(renderMedia.mock.calls[0]?.[0]).not.toHaveProperty('everyNthFrame');

@@ -14,6 +14,7 @@ describe('loadConfig', () => {
       CLAUDE_CLI_MAX_OUTPUT_BYTES: 2_000_000,
       WORKER_POLL_MS: 2000,
       AI_REQUEST_TIMEOUT_MS: 120000,
+      REMOTION_CRF: 22,
       NODE_ENV: 'development',
       TTS_API_URL: 'http://127.0.0.1:8000/api/tts',
       TTS_DEFAULT_VOICE: 'Truc Ly',
@@ -43,6 +44,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ REMOTION_CONCURRENCY: '0' })).toThrowError(ConfigError);
     expect(() => loadConfig({ REMOTION_CONCURRENCY: '1.5' })).toThrowError(ConfigError);
     expect(() => loadConfig({ REMOTION_CONCURRENCY: 'not-a-number' })).toThrowError(ConfigError);
+  });
+
+  it('uses the Remotion H.264 CRF default for missing or invalid overrides', () => {
+    expect(loadConfig({ REMOTION_CRF: '28' }).REMOTION_CRF).toBe(28);
+    expect(loadConfig({ REMOTION_CRF: '' }).REMOTION_CRF).toBe(22);
+    expect(loadConfig({ REMOTION_CRF: '52' }).REMOTION_CRF).toBe(22);
+    expect(loadConfig({ REMOTION_CRF: 'not-a-number' }).REMOTION_CRF).toBe(22);
   });
 
   it('accepts explicit Claude CLI settings and rejects non-positive limits', () => {

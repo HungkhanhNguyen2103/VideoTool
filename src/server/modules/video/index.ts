@@ -6,21 +6,23 @@ import { configureRemotionBundle, resetRemotionBundleCache } from './remotion-bu
 let filesDir = './data/files';
 let remotionPublicDir = './data/remotion-public';
 let configuredRemotionConcurrency: number | undefined;
+let configuredRemotionCrf: number | undefined;
 let ffmpegRenderer: FfmpegRenderer | null = null;
 let remotionRenderer: RemotionRenderer | null = null;
 
-export function configureVideoRenderer(directory: string, bundleDirectory = remotionPublicDir, remotionConcurrency?: number): void {
+export function configureVideoRenderer(directory: string, bundleDirectory = remotionPublicDir, remotionConcurrency?: number, remotionCrf?: number): void {
   filesDir = directory;
   remotionPublicDir = bundleDirectory;
   ffmpegRenderer = null;
   remotionRenderer = null;
   configureRemotionBundle(bundleDirectory);
   configuredRemotionConcurrency = remotionConcurrency;
+  configuredRemotionCrf = remotionCrf;
   resetRemotionBundleCache();
 }
 
 export function getVideoRenderer(engine: RenderEngine): VideoRenderer {
-  if (engine === 'remotion') return remotionRenderer ??= new RemotionRenderer({ filesDir, remotionConcurrency: configuredRemotionConcurrency });
+  if (engine === 'remotion') return remotionRenderer ??= new RemotionRenderer({ filesDir, remotionConcurrency: configuredRemotionConcurrency, remotionCrf: configuredRemotionCrf });
   return ffmpegRenderer ??= new FfmpegRenderer({ filesDir });
 }
 

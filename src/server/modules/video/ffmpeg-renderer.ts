@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -10,10 +10,10 @@ import { normalizeSfxForRender } from './sfx-audio';
 
 export interface VideoRenderer {
   renderScenePreview(project: ProjectDetail, scene: Scene): Promise<Buffer>;
-  renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<Buffer>;
+  renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options: RenderVideoOptions): Promise<{ sizeBytes: number }>;
 }
 
-export type RenderVideoOptions = { draft?: boolean; originalSceneNumbers?: readonly number[]; originalSceneCount?: number };
+export type RenderVideoOptions = { outputPath: string; draft?: boolean; originalSceneNumbers?: readonly number[]; originalSceneCount?: number };
 
 type RendererOptions = {
   filesDir?: string;
@@ -82,13 +82,14 @@ export class FfmpegRenderer implements VideoRenderer {
     }
   }
 
-  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options?: RenderVideoOptions): Promise<Buffer> {
-    const directory = await mkdtemp(path.join(tmpdir(), 'video-tool-render-'));
+  async renderFullVideo(project: ProjectDetail, appendLog: (message: string) => Promise<void>, reportProgress: (percent: number) => Promise<void>, options: RenderVideoOptions): Promise<{ sizeBytes: number }> {
+    await mkdir(path.dirname(options.outputPath), { recursive: true });
+    const directory = await mkdtemp(path.join(path.dirname(options.outputPath), '.video-tool-render-'));
     try {
       const segmentPaths: string[] = [];
       for (const [index, scene] of project.scenes.entries()) {
-        const sceneNumber = options?.originalSceneNumbers?.[index] ?? index + 1;
-        const sceneCount = options?.originalSceneCount ?? project.scenes.length;
+        const sceneNumber = options.originalSceneNumbers?.[index] ?? index + 1;
+        const sceneCount = options.originalSceneCount ?? project.scenes.length;
         await appendLog(`Rendering scene ${sceneNumber}/${sceneCount}…`);
         const filename = `segment-${String(index + 1).padStart(4, '0')}.mp4`;
         await this.renderSegment(project, scene, directory, filename, appendLog);
@@ -98,19 +99,17 @@ export class FfmpegRenderer implements VideoRenderer {
       const listPath = path.join(directory, 'segments.txt');
       const concatPath = path.join(directory, 'concat.mp4');
       await writeFile(listPath, segmentPaths.map(quoteConcatPath).join('\n'));
-      await runProcess(this.ffmpegPath, buildConcatArguments(listPath, concatPath), appendLog);
       if (!project.bgmFileId) {
-        const output = await readFile(concatPath);
+        await runProcess(this.ffmpegPath, buildConcatArguments(listPath, options.outputPath), appendLog);
         await reportProgress(100);
-        return output;
+        return { sizeBytes: (await stat(options.outputPath)).size };
       }
+      await runProcess(this.ffmpegPath, buildConcatArguments(listPath, concatPath), appendLog);
       const bgm = await this.resolveFilePath(project.id, project.bgmFileId);
-      const outputPath = path.join(directory, 'final.mp4');
       const totalDuration = framesToSeconds(totalSceneFrames(project.scenes.map((scene) => scene.durationSec), project.renderSettings.fps), project.renderSettings.fps);
-      await runProcess(this.ffmpegPath, buildBgmArguments(concatPath, bgm.absolutePath, outputPath, totalDuration), appendLog);
-      const output = await readFile(outputPath);
+      await runProcess(this.ffmpegPath, buildBgmArguments(concatPath, bgm.absolutePath, options.outputPath, totalDuration), appendLog);
       await reportProgress(100);
-      return output;
+      return { sizeBytes: (await stat(options.outputPath)).size };
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

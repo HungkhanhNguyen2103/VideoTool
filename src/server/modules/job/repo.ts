@@ -3,6 +3,9 @@ import type { JobDoc } from './docs';
 
 const jobs = () => getCollection<JobDoc>('jobs');
 
+export const MAX_JOB_LOG_ENTRIES = 1_000;
+export const MAX_JOB_LOG_ENTRY_BYTES = 8_192;
+
 export async function insertJob(doc: JobDoc): Promise<void> {
   await jobs().insertOne(doc);
 }
@@ -16,7 +19,18 @@ export async function findActiveJobByType(projectId: string, type: string, scene
 }
 
 export async function appendJobLog(id: string, message: string): Promise<void> {
-  await jobs().updateOne({ _id: id }, { $push: { logs: message }, $set: { updatedAt: new Date() } });
+  const bytes = Buffer.from(message);
+  let boundedMessage = message;
+  if (bytes.byteLength > MAX_JOB_LOG_ENTRY_BYTES) {
+    const suffix = '…';
+    let prefix = bytes.subarray(0, MAX_JOB_LOG_ENTRY_BYTES - Buffer.byteLength(suffix)).toString('utf8');
+    while (Buffer.byteLength(prefix) + Buffer.byteLength(suffix) > MAX_JOB_LOG_ENTRY_BYTES) prefix = prefix.slice(0, -1);
+    boundedMessage = `${prefix}${suffix}`;
+  }
+  await jobs().updateOne(
+    { _id: id },
+    { $push: { logs: { $each: [boundedMessage], $slice: -MAX_JOB_LOG_ENTRIES } }, $set: { updatedAt: new Date() } },
+  );
 }
 
 export async function claimNextJob(lockedBy: string): Promise<JobDoc | null> {
@@ -38,6 +52,15 @@ export async function updateProgress(id: string, progress: number, result?: unkn
   };
   if (result !== undefined) $set.result = result;
   await jobs().updateOne({ _id: id, status: 'running' }, { $set });
+}
+
+export async function heartbeatJob(id: string, lockedBy: string): Promise<boolean> {
+  const now = new Date();
+  const result = await jobs().updateOne(
+    { _id: id, status: 'running', lockedBy },
+    { $set: { lockedAt: now, updatedAt: now } },
+  );
+  return result.modifiedCount === 1;
 }
 
 export async function markDone(id: string, result: unknown): Promise<void> {

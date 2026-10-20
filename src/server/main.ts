@@ -14,6 +14,7 @@ async function main(): Promise<void> {
     filesDir: path.resolve(config.FILES_DIR),
     remotionPublicDir: path.resolve(config.REMOTION_PUBLIC_DIR),
     remotionConcurrency: config.REMOTION_CONCURRENCY,
+    remotionCrf: config.REMOTION_CRF,
     clientDir: config.NODE_ENV === 'production' ? path.resolve('dist/client') : null,
   });
   const server = app.listen(config.PORT, () => {
