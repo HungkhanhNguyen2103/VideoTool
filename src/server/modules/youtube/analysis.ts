@@ -53,6 +53,34 @@ export function getVideoRanking(videos: readonly YoutubeVideoStats[], now = new 
   };
 }
 
+export type YoutubeVideoChannelComparison = {
+  videoViewsPerDay: number | null;
+  medianViewsPerDay: number | null;
+  viewsSampleSize: number;
+  videoAverageViewPercentage: number | null;
+  medianAverageViewPercentage: number | null;
+  averageViewSampleSize: number;
+};
+
+export function compareVideoToChannelMedian(video: YoutubeVideoStats, channelVideos: readonly YoutubeVideoStats[], now = new Date(), window = '28d'): YoutubeVideoChannelComparison {
+  const views = channelVideos.flatMap((row) => {
+    const value = getViewsPerDay(row, now);
+    return value === null ? [] : [value];
+  });
+  const averageViewPercentages = channelVideos.flatMap((row) => {
+    const value = metric(row, window, 'averageViewPercentage') ?? metric(row, 'lifetime', 'averageViewPercentage');
+    return value === null ? [] : [value];
+  });
+  return {
+    videoViewsPerDay: getViewsPerDay(video, now),
+    medianViewsPerDay: median(views),
+    viewsSampleSize: views.length,
+    videoAverageViewPercentage: metric(video, window, 'averageViewPercentage') ?? metric(video, 'lifetime', 'averageViewPercentage'),
+    medianAverageViewPercentage: median(averageViewPercentages),
+    averageViewSampleSize: averageViewPercentages.length,
+  };
+}
+
 export type RetentionDropSegment = { startSec: number; endSec: number; dropRatio: number; dropPercent: number };
 
 export function getRetentionDropSegments(curve: YoutubeRetentionCurve, durationSec: number): { earlyDrop: boolean; segments: RetentionDropSegment[] } {
@@ -193,41 +221,46 @@ export function buildChannelTrend(daily: readonly YoutubeChannelDaily[], now = n
 
 type PartnerTierThreshold = { subscribers: number; longWatchHours: number; shortViews: number };
 type PartnerProgramThresholds = { entryTier: PartnerTierThreshold; ads: PartnerTierThreshold };
-type PartnerTierProgress = PartnerTierThreshold & { publicLongWatchHours: number; publicShortViews: number; subscribersProgress: number; watchHoursProgress: number; shortViewsProgress: number; eligible: boolean };
+type PartnerTierProgress = PartnerTierThreshold & { publicLongWatchHours: number | null; publicShortViews: number | null; subscribersProgress: number | null; watchHoursProgress: number | null; shortViewsProgress: number | null; eligible: boolean };
 export type YoutubeChannelHealth = {
   subscribers: number | null;
-  publicLongWatchHours365d: number;
-  publicShortViews90d: number;
-  publicUploads90d: number;
+  publicLongWatchHours365d: number | null;
+  publicShortViews90d: number | null;
+  publicUploads90d: number | null;
   current: { entryTier: PartnerTierProgress; ads: PartnerTierProgress };
   from2027_02_01: { entryTier: PartnerTierProgress; ads: PartnerTierProgress };
   note: 'mốc tham khảo, kiểm tra lại trên YouTube Studio';
 };
 
-function progress(actual: number, required: number): number {
+function progress(actual: number | null, required: number): number | null {
+  if (actual === null) return null;
   return Math.max(0, Math.min(1, actual / required));
 }
 
-function tierProgress(threshold: PartnerTierThreshold, subscribers: number | null, hours: number, shortViews: number): PartnerTierProgress {
-  const currentSubscribers = subscribers ?? 0;
+function tierProgress(threshold: PartnerTierThreshold, subscribers: number | null, hours: number | null, shortViews: number | null): PartnerTierProgress {
   return {
     ...threshold,
     publicLongWatchHours: hours,
     publicShortViews: shortViews,
-    subscribersProgress: progress(currentSubscribers, threshold.subscribers),
+    subscribersProgress: progress(subscribers, threshold.subscribers),
     watchHoursProgress: progress(hours, threshold.longWatchHours),
     shortViewsProgress: progress(shortViews, threshold.shortViews),
-    eligible: currentSubscribers >= threshold.subscribers && (hours >= threshold.longWatchHours || shortViews >= threshold.shortViews),
+    eligible: subscribers !== null && subscribers >= threshold.subscribers && ((hours !== null && hours >= threshold.longWatchHours) || (shortViews !== null && shortViews >= threshold.shortViews)),
   };
 }
 
-export function buildChannelHealth(input: { subscriberCount: number | null; videos: readonly YoutubeVideoStats[]; now?: Date }): YoutubeChannelHealth {
+export function buildChannelHealth(input: { subscriberCount: number | null; videos: readonly YoutubeVideoStats[]; dataSynced?: boolean; now?: Date }): YoutubeChannelHealth {
   const now = input.now ?? new Date();
   const since90d = now.getTime() - 90 * 86_400_000;
   const publicVideos = input.videos.filter((video) => video.privacy === 'public' && video.publishedAt);
-  const longHours = publicVideos.filter((video) => !video.isShort).reduce((sum, video) => sum + (metric(video, '365d', 'estimatedMinutesWatched') ?? 0), 0) / 60;
-  const shortsViews = publicVideos.filter((video) => video.isShort && new Date(video.publishedAt!).getTime() >= since90d).reduce((sum, video) => sum + (metric(video, '90d', 'views') ?? 0), 0);
-  const uploads = publicVideos.filter((video) => new Date(video.publishedAt!).getTime() >= since90d).length;
+  const dataSynced = input.dataSynced ?? true;
+  const longVideos = publicVideos.filter((video) => !video.isShort);
+  const recentShorts = publicVideos.filter((video) => video.isShort && new Date(video.publishedAt!).getTime() >= since90d);
+  const longMetrics = longVideos.map((video) => metric(video, '365d', 'estimatedMinutesWatched'));
+  const shortMetrics = recentShorts.map((video) => metric(video, '90d', 'views'));
+  const longHours = !dataSynced ? null : longVideos.length === 0 ? 0 : longMetrics.some((value) => value === null) ? null : longMetrics.reduce<number>((sum, value) => sum + value!, 0) / 60;
+  const shortsViews = !dataSynced ? null : recentShorts.length === 0 ? 0 : shortMetrics.some((value) => value === null) ? null : shortMetrics.reduce<number>((sum, value) => sum + value!, 0);
+  const uploads = dataSynced ? publicVideos.filter((video) => new Date(video.publishedAt!).getTime() >= since90d).length : null;
   const progressFor = (thresholds: PartnerProgramThresholds) => ({
     entryTier: tierProgress(thresholds.entryTier, input.subscriberCount, longHours, shortsViews),
     ads: tierProgress(thresholds.ads, input.subscriberCount, longHours, shortsViews),

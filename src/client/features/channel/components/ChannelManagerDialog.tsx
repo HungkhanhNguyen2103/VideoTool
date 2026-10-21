@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Channel, CreateChannelRequest } from '../../../../contracts/channel';
 import { PUBLISH_SCHEDULE_STARTER_WINDOWS, type PublishSchedule } from '../../../../contracts/channel-schedule';
 import { Button } from '../../../shared/ui/Button';
+import { ChannelYoutubeControls } from '../../youtube/components/ChannelYoutubeControls';
 import { channelEditorInput, channelScheduleEditor, formatChannelLinks, starterScheduleEditor } from '../channel-helpers';
 import { useChannels, useCreateChannel, useDeleteChannel, useUpdateChannel } from '../hooks';
 import styles from './ChannelManagerDialog.module.css';
@@ -190,6 +191,7 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
                 <article className={`${styles.channelItem} ${editingId === channel.id ? styles.selected : ''}`} key={channel.id}>
                   <div className={styles.channelName}><strong>{channel.name}</strong>{channel.handle && <span>{channel.handle}</span>}</div>
                   {channel.tagline && <p>{channel.tagline}</p>}
+                  <ChannelYoutubeControls channel={channel} />
                   <div className={styles.itemActions}>
                     <Button size="sm" onClick={() => editChannel(channel)} disabled={busy}>Sửa</Button>
                     <Button size="sm" variant="red" onClick={() => setPendingDelete(channel)} disabled={busy}>Xóa</Button>

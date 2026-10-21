@@ -4,10 +4,12 @@ import type { Config } from '../../config';
 import { getChannel } from '../channel';
 import { AppError, NotFound } from '../../shared/errors';
 import type { JobSummary } from '../../../contracts/job';
+import { YoutubeVideoStatsSchema, type YoutubeVideoStats } from '../../../contracts/youtube';
 import { countVideoDocs, findCredential, listVideoDocs } from './repo';
+import type { YoutubeVideoDoc } from './docs';
 import { assertYoutubeConfigured, assertYoutubeQuotaAllowsSync, beginYoutubeOauth, completeYoutubeOauth, disconnectYoutube, discardYoutubeOauthState, getYoutubeConnection, selectYoutubeChannel } from './service';
 import { clearYoutubeAccessToken, getYoutubeAccessToken } from './sync';
-import { buildChannelHealth, buildChannelTrend, buildVideoCohorts, getRetentionDropSegments, getVideoRanking, YOUTUBE_PARTNER_PROGRAM_THRESHOLDS } from './analysis';
+import { buildChannelHealth, buildChannelTrend, buildVideoCohorts, compareVideoToChannelMedian, getRetentionDropSegments, getVideoRanking, YOUTUBE_PARTNER_PROGRAM_THRESHOLDS } from './analysis';
 import { getSuggestedYoutubeLinks } from './link-service';
 import { generateYoutubeReview, getYoutubeReview } from './review-service';
 import { getYoutubeRetention, getStoredChannelDaily } from './analytics-service';
@@ -18,13 +20,29 @@ type GetActiveYoutubeJob = (projectId: string, type: string) => Promise<JobSumma
 
 const DisconnectSchema = z.object({ deleteSyncedData: z.boolean().default(false) }).strict();
 
+function toPublicVideoStats(video: YoutubeVideoDoc): YoutubeVideoStats {
+  return YoutubeVideoStatsSchema.parse({
+    videoId: video.videoId,
+    title: video.title,
+    publishedAt: video.publishedAt,
+    durationSec: video.durationSec,
+    isShort: video.isShort,
+    privacy: video.privacy,
+    viewCount: video.viewCount,
+    likeCount: video.likeCount,
+    commentCount: video.commentCount,
+    fetchedAt: video.fetchedAt,
+    analytics: video.analytics,
+  });
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
 
 function callbackPage(message: string, success: boolean): string {
   const safeMessage = escapeHtml(message);
-  return `<!doctype html><html lang="vi"><meta charset="utf-8"><title>YouTube</title><body style="font:16px system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem;background:#111;color:#eee"><h1>${success ? 'Đã kết nối' : 'Không thể kết nối'}</h1><p>${safeMessage}</p><button onclick="window.close()">Đóng cửa sổ</button><script>if(window.opener){window.opener.postMessage({type:'youtube-oauth-finished'},location.origin);window.close()}</script></body></html>`;
+  return `<!doctype html><html lang="vi"><meta charset="utf-8"><title>YouTube</title><body style="font:16px system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem;background:#111;color:#eee"><h1>${success ? 'Đã kết nối' : 'Không thể kết nối'}</h1><p>${safeMessage}</p><button onclick="window.close()">Đóng cửa sổ</button> <a href="/" style="color:#ffd36a">Quay lại Video Tool</a><script>if(window.opener){window.opener.postMessage({type:'youtube-oauth-finished',success:${success}},location.origin);window.close()}</script></body></html>`;
 }
 
 function choicePage(profileId: string, selectionId: string, options: { youtubeChannelId: string; title: string; handle?: string }[]): string {
@@ -113,6 +131,12 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
     res.status(201).json({ jobId: job.id });
   });
 
+  router.get('/channels/:channelId/sync-job', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const active = await options.getActiveJob(req.params.channelId, 'youtube-sync');
+    res.json({ jobId: active?.id ?? null });
+  });
+
   router.get('/channels/:channelId/overview', async (req, res) => {
     await getChannel(req.params.channelId);
     const connection = await getYoutubeConnection(req.params.channelId, options.config);
@@ -135,11 +159,12 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
     res.json({
       connection, daily, videoCount: videos.length, synced: videos.length > 0,
       trend: buildChannelTrend(daily),
-      health: buildChannelHealth({ subscriberCount: credential?.subscriberCount ?? null, videos }),
+      health: buildChannelHealth({ subscriberCount: credential?.subscriberCount ?? null, videos, dataSynced: Boolean(connection.lastSyncAt) }),
       thresholds: YOUTUBE_PARTNER_PROGRAM_THRESHOLDS,
       rankings: getVideoRanking(videos),
       cohorts: buildVideoCohorts(cohortRows, timezone),
       channelReview,
+      analyticsStatus: credential?.lastSyncReport ?? {},
     });
   });
 
@@ -170,8 +195,11 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
       return typeof left === 'number' && typeof right === 'number' ? right - left : String(right ?? '').localeCompare(String(left ?? ''));
     });
     const linked = await listProjects({});
-    const linkedByVideo = new Map(linked.filter((project) => project.channelId === req.params.channelId && project.youtubeVideoId).map((project) => [project.youtubeVideoId!, { id: project.id, title: project.title }]));
-    res.json(sorted.map((video) => ({ ...video, ranking: Object.fromEntries([...rankMaps.entries()].map(([key, map]) => [key, map.get(video.videoId) ?? null])), linkedProject: linkedByVideo.get(video.videoId) ?? null })));
+    const linkedByVideo = new Map(await Promise.all(linked.filter((project) => project.channelId === req.params.channelId && project.youtubeVideoId).map(async (summary) => {
+      const project = await getProject(summary.id);
+      return [project.youtubeVideoId!, { id: project.id, title: project.title, scriptPresetId: project.scriptPresetId, visualStylePresetId: project.visualStylePresetId }] as const;
+    })));
+    res.json(sorted.map((video) => ({ ...toPublicVideoStats(video), ranking: Object.fromEntries([...rankMaps.entries()].map(([key, map]) => [key, map.get(video.videoId) ?? null])), linkedProject: linkedByVideo.get(video.videoId) ?? null })));
   });
 
   router.get('/videos/:channelId/:videoId', async (req, res) => {
@@ -180,12 +208,14 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
     if (!credential?.youtubeChannelId) throw new NotFound('Không tìm thấy video đã đồng bộ.');
     const video = (await listVideoDocs(req.params.channelId, { videoId: req.params.videoId, removed: { $ne: true } }))[0];
     if (!video) throw new NotFound('Không tìm thấy video đã đồng bộ.');
-    const retention = await getYoutubeRetention(req.params.channelId, video, await getYoutubeAccessToken(req.params.channelId, options.fetcher, options.config), options.fetcher);
+    const channelVideos = await listVideoDocs(req.params.channelId, { removed: { $ne: true } });
+    const channelComparison = compareVideoToChannelMedian(video, channelVideos);
+    const retention = await getYoutubeRetention(req.params.channelId, video, () => getYoutubeAccessToken(req.params.channelId, options.fetcher, options.config), options.fetcher);
     const linked = (await listProjects({})).find((project) => project.channelId === req.params.channelId && project.youtubeVideoId === video.videoId);
     const linkedProject = linked ? await getProject(linked.id) : null;
     const dropSegments = retention.curve ? getRetentionDropSegments(retention.curve, video.durationSec) : null;
     const review = await getYoutubeReview(req.params.channelId, 'video', video.videoId);
-    res.json({ ...video, retentionCurve: retention.curve, retentionUnavailableReason: retention.reason, dropSegments, linkedProject: linkedProject ? { id: linkedProject.id, title: linkedProject.title, scriptPresetId: linkedProject.scriptPresetId, visualStylePresetId: linkedProject.visualStylePresetId } : null, review });
+    res.json({ ...toPublicVideoStats(video), retentionCurve: retention.curve, retentionUnavailableReason: retention.reason, dropSegments, channelComparison, linkedProject: linkedProject ? { id: linkedProject.id, title: linkedProject.title, scriptPresetId: linkedProject.scriptPresetId, visualStylePresetId: linkedProject.visualStylePresetId } : null, review });
   });
 
   router.get('/channels/:channelId/suggested-links', async (req, res) => {

@@ -131,11 +131,12 @@ async function queryRetention(video: YoutubeVideoStats, accessToken: string, fet
   }).sort((a, b) => a.ratio - b.ratio);
 }
 
-export async function getYoutubeRetention(profileId: string, video: YoutubeVideoStats, accessToken: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<{ curve: YoutubeRetentionCurve | null; reason?: string }> {
+export async function getYoutubeRetention(profileId: string, video: YoutubeVideoStats, accessToken: string | (() => Promise<string>), fetcher: typeof fetch = fetch, now = new Date()): Promise<{ curve: YoutubeRetentionCurve | null; reason?: string }> {
   const cached = await findRetention(profileId, video.videoId);
   if (cached && now.getTime() - cached.fetchedAt.getTime() < RETENTION_CACHE_MS) return cached.curve.length ? { curve: cached.curve } : { curve: null, reason: 'YouTube Analytics không trả đường giữ chân cho video này.' };
   try {
-    const curve = await queryRetention(video, accessToken, fetcher, now);
+    const token = typeof accessToken === 'function' ? await accessToken() : accessToken;
+    const curve = await queryRetention(video, token, fetcher, now);
     await upsertRetention(YoutubeRetentionDocSchema.parse({ _id: `${profileId}:${video.videoId}`, channelProfileId: profileId, videoId: video.videoId, fetchedAt: now, curve }));
     return curve.length ? { curve } : { curve: null, reason: 'YouTube Analytics không trả đường giữ chân cho video này.' };
   } catch (error) {

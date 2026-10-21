@@ -4,7 +4,7 @@ import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import type { YoutubeVideoStats } from '../../../contracts/youtube';
 import { findRetention } from './repo';
-import { getStoredChannelDaily, syncYoutubeAnalytics } from './analytics-service';
+import { getStoredChannelDaily, getYoutubeRetention, syncYoutubeAnalytics } from './analytics-service';
 
 type TestDoc = Document & { _id: string; [key: string]: unknown };
 const sampleVideo: YoutubeVideoStats = {
@@ -59,6 +59,8 @@ describe('YouTube Analytics REST sync', () => {
     const video = await getCollection<TestDoc>('youtubeVideos').findOne({ _id: 'profile-1:video-1' });
     expect(video?.analytics).toMatchObject({ '28d': { views: 80, averageViewPercentage: 42, averageViewDurationSec: 90 } });
     expect((await findRetention('profile-1', 'video-1'))?.curve).toEqual([{ ratio: 0, watchRatio: 1 }, { ratio: 0.25, watchRatio: 0.5 }]);
+    const cachedRetention = await getYoutubeRetention('profile-1', sampleVideo, async () => { throw new Error('Cached retention should not need a token.'); }, fetcher, new Date('2026-10-21T00:00:00.000Z'));
+    expect(cachedRetention.curve).toEqual([{ ratio: 0, watchRatio: 1 }, { ratio: 0.25, watchRatio: 0.5 }]);
     expect(urls.every((url) => !/impressions|ClickThroughRate|estimatedRevenue/i.test(url))).toBe(true);
   });
 });

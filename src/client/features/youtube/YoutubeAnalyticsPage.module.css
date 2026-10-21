@@ -1,0 +1,119 @@
+.page { display: grid; gap: 1rem; min-width: 0; }
+.pageHeader, .panelHeading, .drawerHeader { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: .8rem; }
+.pageHeader { padding: 1.1rem 1.2rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--panel); }
+.pageHeader h1 { margin: .15rem 0; font-size: 1.35rem; }
+.pageHeader p { margin: .25rem 0 0; color: var(--text-3); font-size: .8rem; }
+.eyebrow { margin: 0; color: var(--amber-text); font: 700 .65rem var(--mono); letter-spacing: .08em; }
+.channelSelect, .videoToolbar label, .projectSelect { display: grid; gap: .3rem; color: var(--text-2); font-size: .72rem; font-weight: 700; }
+.channelSelect { min-width: min(16rem, 100%); }
+.channelSelect select, .videoToolbar input, .videoToolbar select, .projectSelect select { min-width: 0; min-height: 36px; padding: .4rem .55rem; border: 1px solid var(--border-2); border-radius: .45rem; color: var(--text); background: var(--input); font: inherit; }
+.panel, .emptyState, .loading, .errorBox { min-width: 0; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--panel); }
+.panel { display: grid; gap: .8rem; }
+.panelHeading { align-items: center; }
+.panelHeading h2 { margin: 0; font-size: .98rem; }
+.panelHeading p { margin: .25rem 0 0; color: var(--text-3); font-size: .75rem; }
+.syncMeta { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1rem; color: var(--text-3); font-size: .73rem; }
+.syncMeta strong { color: var(--amber-text); }
+.partialNotice { display: grid; gap: .25rem; padding: .65rem .8rem; border: 1px solid var(--amber-bd); border-radius: .55rem; color: var(--amber-text); background: var(--amber-bg); font-size: .75rem; }
+.partialNotice p { margin: 0; color: var(--text-2); }
+.trendTiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; }
+.trendTile { display: grid; gap: .2rem; min-width: 0; padding: .7rem .8rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); }
+.trendTile > span { color: var(--text-3); font-size: .7rem; }
+.trendTile strong { overflow-wrap: anywhere; font-size: 1.3rem; }
+.trendTile small { color: var(--text-3); font-size: .68rem; }
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+.warning { margin: 0; color: var(--amber-text); font-size: .75rem; }
+.chartGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+.chart { display: grid; gap: .45rem; min-width: 0; margin: 0; padding: .75rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); }
+.chart figcaption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .3rem; font-size: .75rem; }
+.chart figcaption span, .chartSummary { color: var(--text-3); font-size: .65rem; }
+.chart svg { width: 100%; height: 7rem; overflow: visible; }
+.chartAxis { stroke: var(--border-2); stroke-width: 1; }
+.chartLine, .retentionLine { fill: none; stroke: var(--amber); stroke-width: 2.4; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.chartSummary { display: flex; justify-content: space-between; gap: .4rem; }
+.emptyInline { margin: 0; color: var(--text-3); font-size: .76rem; }
+.thresholdColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.thresholdColumn { display: grid; align-content: start; gap: .65rem; min-width: 0; padding: .75rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--panel-2); }
+.thresholdColumn > h3 { margin: 0; font-size: .88rem; }
+.thresholdTier { display: grid; gap: .45rem; min-width: 0; padding: .65rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--panel); }
+.thresholdSources { display: flex; flex-wrap: wrap; gap: .25rem .5rem; color: var(--text-3); font-size: .72rem; }
+.thresholdSources a { color: var(--amber-text); }
+.thresholdTier h4 { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .35rem; margin: 0; font-size: .74rem; }
+.eligible { color: var(--green); font-size: .64rem; }
+.progressMetric { display: grid; gap: .2rem; }
+.progressMetric > div { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; color: var(--text-2); font-size: .67rem; }
+.progressMetric small { color: var(--text-3); font-size: .62rem; text-align: right; }
+.progressMetric progress { width: 100%; height: .4rem; accent-color: var(--amber); }
+.checkedDate { color: var(--text-3); font-size: .68rem; }
+.referenceNote { margin: 0; color: var(--text-3); font-size: .68rem; line-height: 1.45; }
+.videoToolbar { display: grid; grid-template-columns: minmax(12rem, 2fr) repeat(3, minmax(8rem, 1fr)); gap: .55rem; }
+.tableWrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: .55rem; }
+.videoTable, .cohortTable { width: 100%; border-collapse: collapse; font-size: .72rem; }
+.videoTable { min-width: 1000px; }
+.cohortTable { min-width: 660px; }
+.videoTable th, .videoTable td, .cohortTable th, .cohortTable td { padding: .6rem .65rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.videoTable th, .cohortTable th { position: sticky; top: 0; color: var(--text-2); background: var(--panel-2); font-size: .66rem; white-space: nowrap; }
+.videoTable tr:last-child td, .cohortTable tr:last-child td { border-bottom: 0; }
+.videoTable td:first-child { min-width: 18rem; max-width: 30rem; }
+.videoTable td:first-child small, .videoTable td:last-child small { display: block; margin-top: .25rem; color: var(--text-3); }
+.videoTitle { padding: 0; border: 0; color: var(--amber-text); background: transparent; font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+.videoTitle:hover { text-decoration: underline; }
+.videoTitle:focus-visible, .suggestionActions button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.smallSample { display: block; width: fit-content; margin-top: .25rem; padding: .12rem .38rem; border: 1px solid var(--amber-bd); border-radius: 999px; color: var(--amber-text); background: var(--amber-bg); font-size: .62rem; }
+.muted { color: var(--text-3); }
+.suggestionList { display: grid; gap: .5rem; }
+.suggestion { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; padding: .7rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); }
+.suggestion > div:first-child { display: grid; gap: .2rem; min-width: 0; overflow-wrap: anywhere; font-size: .73rem; }
+.suggestion span { color: var(--text-2); }
+.suggestion small { color: var(--text-3); font-size: .66rem; }
+.suggestionActions { display: flex; gap: .4rem; flex: none; }
+.message { margin: 0; color: var(--green); font-size: .74rem; }
+.error { margin: 0; color: var(--red); font-size: .74rem; }
+.reviewBlock { display: grid; gap: .6rem; min-width: 0; }
+.reviewBlock h3, .reviewBlock h4 { margin: 0; font-size: .8rem; }
+.reviewBlock > .panelHeading h3 { font-size: .9rem; }
+.reviewBlock ul { display: grid; gap: .35rem; margin: .4rem 0 0; padding-left: 1rem; color: var(--text-2); font-size: .72rem; line-height: 1.45; }
+.reviewColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.reviewColumns > div { min-width: 0; padding: .65rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--panel-2); }
+.loading, .errorBox { color: var(--text-2); font-size: .8rem; }
+.errorBox { display: grid; gap: .5rem; border-color: var(--red-bd); }
+.emptyState h2 { margin: 0; font-size: 1rem; }
+.emptyState p { color: var(--text-2); font-size: .8rem; }
+.drawerOverlay { position: fixed; z-index: 1000; inset: 0; display: flex; justify-content: flex-end; }
+.drawerBackdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgb(3 5 14 / 72%); cursor: default; }
+.drawer { position: relative; display: grid; align-content: start; gap: .85rem; width: min(40rem, 94vw); height: 100%; margin: 0; padding: 1rem; overflow: auto; border: 1px solid var(--border-2); border-radius: .7rem 0 0 .7rem; color: var(--text); background: var(--panel); box-shadow: 0 0 2rem rgb(0 0 0 / 40%); }
+.drawerHeader { align-items: flex-start; }
+.drawerHeader h2 { max-width: 30rem; margin: .15rem 0 0; font-size: 1rem; overflow-wrap: anywhere; }
+.detailStats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.detailStats article { display: grid; gap: .2rem; min-width: 0; padding: .6rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--panel-2); }
+.detailStats span { color: var(--text-3); font-size: .65rem; }
+.detailStats strong { overflow-wrap: anywhere; font-size: .85rem; }
+.detailSection { display: grid; gap: .5rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+.detailSection h3 { margin: 0; font-size: .83rem; }
+.retentionChart { width: 100%; height: 7rem; padding: .4rem; border-radius: .45rem; background: var(--panel-2); }
+.dropDot { fill: var(--red); stroke: var(--panel); stroke-width: 1; }
+.dropList { display: grid; gap: .25rem; margin: 0; padding-left: 1.1rem; color: var(--text-2); font-size: .69rem; }
+.projectSelect { max-width: 100%; }
+.positive, .message { color: var(--green); }
+.negative, .error { color: var(--red); }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (max-width: 1100px) {
+  .videoToolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .thresholdColumns, .chartGrid, .reviewColumns { grid-template-columns: 1fr; }
+  .trendTiles { grid-template-columns: 1fr; }
+  .trendTile { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .trendTile small { grid-column: 1 / -1; }
+  .suggestion { flex-direction: column; }
+  .suggestionActions { width: 100%; }
+  .suggestionActions > button { flex: 1; }
+}
+@media (max-width: 520px) {
+  .pageHeader { align-items: stretch; }
+  .videoToolbar { grid-template-columns: 1fr; }
+  .detailStats { grid-template-columns: 1fr 1fr; }
+  .drawer { width: 100%; border-radius: 0; }
+}

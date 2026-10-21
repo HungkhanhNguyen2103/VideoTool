@@ -57,9 +57,12 @@ export function Layout() {
             <div className="label">Dự án đang mở</div>
             <h1>{currentProject ? currentProject.title : 'Chưa mở dự án nào'}</h1>
           </div>
-          <div className={`${styles.chip} ${styles.chipMeta}`}>
-            <Icon name="pin" />
-            <span>{currentProject ? projectDetailMeta(currentProject) : '—'}</span>
+          <div className={styles.projectHeadActions}>
+            {currentProject?.channelId && <Link className={styles.analyticsLink} to={`/channels/${encodeURIComponent(currentProject.channelId)}/analytics`}>Phân tích kênh</Link>}
+            <div className={`${styles.chip} ${styles.chipMeta}`}>
+              <Icon name="pin" />
+              <span>{currentProject ? projectDetailMeta(currentProject) : '—'}</span>
+            </div>
           </div>
         </header>
 

@@ -118,6 +118,8 @@
   font-size: 13px;
   color: var(--amber-text);
 }
+.projectHeadActions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: .6rem; }
+.analyticsLink { color: var(--amber-text); font-size: .78rem; font-weight: 700; }
 
 .tabs {
   display: flex;

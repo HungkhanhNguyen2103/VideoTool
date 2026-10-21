@@ -4,6 +4,7 @@ import {
   buildChannelHealth,
   buildChannelTrend,
   buildVideoCohorts,
+  compareVideoToChannelMedian,
   getRetentionDropSegments,
   getVideoRanking,
   getViewsPerDay,
@@ -33,6 +34,18 @@ describe('YouTube analytics calculations', () => {
     expect(rows.viewsPerDay.map((row) => row.videoId)).toEqual(['b', 'a']);
     expect(rows.averageViewPercentage.map((row) => row.videoId)).toEqual(['a', 'b']);
     expect(rows.clickThroughRate).toEqual([]);
+  });
+
+  it('compares each video to the same channel median without fabricating unavailable measurements', () => {
+    const today = new Date('2026-10-21T00:00:00.000Z');
+    const selected = video({ videoId: 'selected', publishedAt: '2026-10-21T00:00:00.000Z', viewCount: 40, analytics: { '28d': { averageViewPercentage: 35 } } });
+    const comparison = compareVideoToChannelMedian(selected, [
+      selected,
+      video({ videoId: 'middle', publishedAt: '2026-10-19T00:00:00.000Z', viewCount: 100, analytics: { '28d': { averageViewPercentage: 50 } } }),
+      video({ videoId: 'top', publishedAt: '2026-10-19T00:00:00.000Z', viewCount: 200, analytics: { '28d': { averageViewPercentage: 70 } } }),
+    ], today);
+    expect(comparison).toMatchObject({ videoViewsPerDay: 40, medianViewsPerDay: 50, viewsSampleSize: 3, videoAverageViewPercentage: 35, medianAverageViewPercentage: 50, averageViewSampleSize: 3 });
+    expect(compareVideoToChannelMedian(video({ videoId: 'no-data', analytics: {} }), [], today)).toMatchObject({ medianViewsPerDay: null, medianAverageViewPercentage: null, viewsSampleSize: 0, averageViewSampleSize: 0 });
   });
 
   it('measures the steepest retention segments and early drops from actual ratios', () => {
@@ -90,5 +103,10 @@ describe('YouTube analytics calculations', () => {
     expect(atThreshold.current.ads.eligible).toBe(true);
     expect(atThreshold.current.ads.publicLongWatchHours).toBe(4000);
     expect('revenue' in atThreshold).toBe(false);
+
+    const unavailable = buildChannelHealth({ subscriberCount: null, videos: [video({ videoId: 'unknown', analytics: {} })], dataSynced: true, now: new Date('2026-10-21T00:00:00.000Z') });
+    expect(unavailable.publicLongWatchHours365d).toBeNull();
+    expect(unavailable.current.ads.watchHoursProgress).toBeNull();
+    expect(unavailable.current.ads.subscribersProgress).toBeNull();
   });
 });
