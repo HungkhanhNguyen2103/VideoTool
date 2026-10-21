@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { normalizeHashtags } from './seo';
 import { PublishScheduleSchema } from './channel-schedule';
+import { YoutubeConnectionSummarySchema } from './youtube';
 
 export { PublishScheduleSchema } from './channel-schedule';
 export type { PublishSchedule } from './channel-schedule';
@@ -29,6 +30,7 @@ export const ChannelSchema = z.object({
   aiDisclosureText: z.string().max(500).optional(),
   thumbnailTemplate: z.string().max(4000).optional(),
   publishSchedule: PublishScheduleSchema.nullable().catch(null).default(null),
+  youtube: YoutubeConnectionSummarySchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 }).strict();

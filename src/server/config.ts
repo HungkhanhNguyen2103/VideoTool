@@ -32,6 +32,9 @@ const EnvSchema = z.object({
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
   FREESOUND_API_KEY: z.string().default(''),
+  GOOGLE_OAUTH_CLIENT_ID: z.string().default(''),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().default(''),
+  YOUTUBE_TOKEN_ENCRYPTION_KEY: z.string().default(''),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

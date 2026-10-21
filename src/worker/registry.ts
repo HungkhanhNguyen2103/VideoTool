@@ -7,6 +7,7 @@ import { alignProjectWordTimings, analyzeProjectPopups, autoAnalyzeProjectPopups
 import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
 import { isSceneActive } from '../contracts/scene-active';
+import { syncYoutubeChannel } from '../server/modules/youtube';
 
 function projectIdFrom(job: { payload: unknown }): string {
   const projectId = (job.payload as { projectId?: unknown } | null)?.projectId;
@@ -83,6 +84,13 @@ const handleGenerateSeo: JobHandler = async (job, context) => {
   await generateSeoPackage(projectIdFrom(job), sections, context);
 };
 
+const handleYoutubeSync: JobHandler = async (job, context) => {
+  if (await context.isCancelled()) return;
+  const payload = job.payload as { channelProfileId?: unknown };
+  const profileId = typeof payload.channelProfileId === 'string' ? payload.channelProfileId : job.projectId;
+  return syncYoutubeChannel(profileId, context);
+};
+
 const handleGenerateScriptWithLogging: JobHandler = async (job, context) => {
   try {
     await handleGenerateScript(job, context);
@@ -112,4 +120,5 @@ export const jobHandlers: Record<string, JobHandler> = {
   'generate-depth-map': handleGenerateDepthMap,
   'render-full-video': handleRenderFullVideo,
   'generate-seo': handleGenerateSeo,
+  'youtube-sync': handleYoutubeSync,
 };

@@ -16,6 +16,7 @@ async function main(): Promise<void> {
     remotionConcurrency: config.REMOTION_CONCURRENCY,
     remotionCrf: config.REMOTION_CRF,
     clientDir: config.NODE_ENV === 'production' ? path.resolve('dist/client') : null,
+    youtubeConfig: config,
   });
   const server = app.listen(config.PORT, () => {
     logger.info(`web listening on http://localhost:${config.PORT} (${config.NODE_ENV})`);

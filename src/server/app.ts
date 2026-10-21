@@ -12,6 +12,8 @@ import { configureVideoModule, createVideoRouter } from './modules/video';
 import { configureSeoModule, createSeoRouter } from './modules/seo';
 import { NotFound } from './shared/errors';
 import { assertChannelExists, createChannelRouter } from './modules/channel';
+import { createYoutubeRouter, getYoutubeConnection } from './modules/youtube';
+import { loadConfig, type Config } from './config';
 
 export type AppOptions = {
   /** Absolute directory served under /files. */
@@ -24,12 +26,14 @@ export type AppOptions = {
   remotionCrf?: number;
   /** Absolute path of the built SPA (dist/client). null = do not serve it (development). */
   clientDir: string | null;
+  youtubeConfig?: Config;
 };
 
 export function createApp(options: AppOptions): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: false }));
   configureFileStore(options.filesDir);
   configureVisualStyleSamples(options.filesDir);
   configureVisualStylePacks(options.filesDir);
@@ -50,7 +54,9 @@ export function createApp(options: AppOptions): Express {
     beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId, project.logoFileId, project.seo.thumbnail.fileId]),
     assertChannelExists,
   }));
-  app.use('/api/channels', createChannelRouter());
+  const youtubeConfig = options.youtubeConfig ?? loadConfig();
+  app.use('/api/channels', createChannelRouter({ getYoutubeConnection: (channelId) => getYoutubeConnection(channelId, youtubeConfig) }));
+  app.use('/api/youtube', createYoutubeRouter({ config: youtubeConfig, enqueueJob, getActiveJob: getActiveJobByType }));
   app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobDetailsByType }));
   app.use('/api/script', createScriptCliStatusRouter());
   app.use('/api/project', fileStoreRouter);

@@ -1,0 +1,147 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import type { Config } from '../../config';
+import { getChannel } from '../channel';
+import { AppError, NotFound } from '../../shared/errors';
+import type { JobSummary } from '../../../contracts/job';
+import { countVideoDocs, findCredential, listChannelDaily, listVideoDocs } from './repo';
+import { assertYoutubeConfigured, assertYoutubeQuotaAllowsSync, beginYoutubeOauth, completeYoutubeOauth, disconnectYoutube, discardYoutubeOauthState, getYoutubeConnection, selectYoutubeChannel } from './service';
+import { clearYoutubeAccessToken } from './sync';
+
+type EnqueueYoutubeJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
+type GetActiveYoutubeJob = (projectId: string, type: string) => Promise<JobSummary | null>;
+
+const DisconnectSchema = z.object({ deleteSyncedData: z.boolean().default(false) }).strict();
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
+}
+
+function callbackPage(message: string, success: boolean): string {
+  const safeMessage = escapeHtml(message);
+  return `<!doctype html><html lang="vi"><meta charset="utf-8"><title>YouTube</title><body style="font:16px system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem;background:#111;color:#eee"><h1>${success ? 'Đã kết nối' : 'Không thể kết nối'}</h1><p>${safeMessage}</p><button onclick="window.close()">Đóng cửa sổ</button><script>if(window.opener){window.opener.postMessage({type:'youtube-oauth-finished'},location.origin);window.close()}</script></body></html>`;
+}
+
+function choicePage(profileId: string, selectionId: string, options: { youtubeChannelId: string; title: string; handle?: string }[]): string {
+  const action = `/api/youtube/oauth/select/${encodeURIComponent(profileId)}`;
+  const rows = options.map((option, index) => `<label style="display:block;padding:1rem;border:1px solid #555;margin:.5rem 0"><input type="radio" name="youtubeChannelId" value="${escapeHtml(option.youtubeChannelId)}" ${index === 0 ? 'checked' : ''}> ${escapeHtml(option.title)} ${option.handle ? `(${escapeHtml(option.handle)})` : ''}</label>`).join('');
+  return `<!doctype html><html lang="vi"><meta charset="utf-8"><title>Chọn kênh YouTube</title><body style="font:16px system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem;background:#111;color:#eee"><h1>Chọn kênh YouTube</h1><p>Tài khoản Google có nhiều kênh. Chọn kênh sẽ gắn với hồ sơ Video Tool này.</p><form method="post" action="${action}"><input type="hidden" name="selectionId" value="${escapeHtml(selectionId)}">${rows}<button type="submit">Xác nhận kênh</button></form></body></html>`;
+}
+
+export function createYoutubeRouter(options: { config: Config; enqueueJob: EnqueueYoutubeJob; getActiveJob: GetActiveYoutubeJob; fetcher?: typeof fetch }): Router {
+  const router = Router();
+
+  router.post('/connect/:channelId', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const host = String(req.headers.host ?? '').split(':')[0]?.toLowerCase();
+    const redirectHost = host === '127.0.0.1' ? '127.0.0.1' : 'localhost';
+    res.json({ authorizationUrl: beginYoutubeOauth(req.params.channelId, options.config, redirectHost) });
+  });
+
+  router.get('/oauth/callback', async (req, res) => {
+    const host = String(req.headers.host ?? '').split(':')[0]?.toLowerCase();
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      res.status(400).type('html').send(callbackPage('Hãy mở Video Tool từ localhost rồi thử kết nối lại.', false));
+      return;
+    }
+    if (typeof req.query.error === 'string') {
+      discardYoutubeOauthState(typeof req.query.state === 'string' ? req.query.state : undefined);
+      res.status(400).type('html').send(callbackPage('Google đã hủy hoặc từ chối quyền đọc YouTube.', false));
+      return;
+    }
+    try {
+      const result = await completeYoutubeOauth({
+        state: typeof req.query.state === 'string' ? req.query.state : undefined,
+        code: typeof req.query.code === 'string' ? req.query.code : undefined,
+        callbackHost: host,
+        config: options.config,
+        fetcher: options.fetcher,
+      });
+      if (!result.selected && result.selectionId) {
+        res.type('html').send(choicePage(result.profileId, result.selectionId, result.channelOptions));
+        return;
+      }
+      res.type('html').send(callbackPage('Kênh đã được liên kết. Bạn có thể quay lại Video Tool.', true));
+    } catch (error) {
+      const message = error instanceof AppError ? error.message : 'Không thể hoàn tất kết nối YouTube. Hãy thử lại.';
+      res.status(error instanceof AppError ? error.status : 502).type('html').send(callbackPage(message, false));
+    }
+  });
+
+  router.post('/oauth/select/:channelId', async (req, res) => {
+    const form = z.object({ youtubeChannelId: z.string().min(1), selectionId: z.string().min(1) }).safeParse({
+      youtubeChannelId: req.body?.youtubeChannelId,
+      selectionId: req.body?.selectionId,
+    });
+    if (!form.success) throw new AppError('Chọn một kênh YouTube rồi thử lại.', 400, 'YOUTUBE_CHANNEL_CHOICE_INVALID');
+    try {
+      await selectYoutubeChannel(req.params.channelId, form.data.youtubeChannelId, form.data.selectionId, options.config);
+      res.type('html').send(callbackPage('Kênh đã được liên kết. Bạn có thể quay lại Video Tool.', true));
+    } catch (error) {
+      const message = error instanceof AppError ? error.message : 'Không thể gắn kênh YouTube đã chọn.';
+      res.status(error instanceof AppError ? error.status : 502).type('html').send(callbackPage(message, false));
+    }
+  });
+
+  router.get('/connection/:channelId', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json(await getYoutubeConnection(req.params.channelId, options.config));
+  });
+
+  router.post('/disconnect/:channelId', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const body = DisconnectSchema.parse(req.body ?? {});
+    await disconnectYoutube(req.params.channelId, options.config, body.deleteSyncedData, options.fetcher);
+    clearYoutubeAccessToken(req.params.channelId);
+    res.status(204).end();
+  });
+
+  router.post('/sync/:channelId', async (req, res) => {
+    assertYoutubeConfigured(options.config);
+    await getChannel(req.params.channelId);
+    const connection = await getYoutubeConnection(req.params.channelId, options.config);
+    if (!connection.connected) throw new AppError('Cần kết nối YouTube trước khi đồng bộ.', 409, 'YOUTUBE_NOT_CONNECTED');
+    await assertYoutubeQuotaAllowsSync(req.params.channelId, options.config, await countVideoDocs(req.params.channelId));
+    const active = await options.getActiveJob(req.params.channelId, 'youtube-sync');
+    if (active) { res.status(200).json({ jobId: active.id }); return; }
+    const job = await options.enqueueJob({ type: 'youtube-sync', projectId: req.params.channelId, payload: { channelProfileId: req.params.channelId }, maxAttempts: 1 });
+    res.status(201).json({ jobId: job.id });
+  });
+
+  router.get('/channels/:channelId/overview', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const connection = await getYoutubeConnection(req.params.channelId, options.config);
+    if (!connection.connected) throw new AppError('Kết nối kênh YouTube rồi đồng bộ để xem số liệu.', 409, 'YOUTUBE_NOT_CONNECTED');
+    const [daily, videos] = await Promise.all([listChannelDaily(req.params.channelId), listVideoDocs(req.params.channelId, { removed: { $ne: true } })]);
+    res.json({ connection, daily, videoCount: videos.length, synced: videos.length > 0 });
+  });
+
+  router.get('/channels/:channelId/videos', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const videos = await listVideoDocs(req.params.channelId, { removed: { $ne: true } });
+    const sort = typeof req.query.sort === 'string' ? req.query.sort : 'publishedAt';
+    const allowed = new Set(['publishedAt', 'viewCount', 'durationSec', 'title']);
+    if (!allowed.has(sort)) throw new AppError('Cách sắp xếp video không hợp lệ.', 400, 'YOUTUBE_SORT_INVALID');
+    const sorted = [...videos].sort((a, b) => {
+      const left = a[sort as keyof typeof a]; const right = b[sort as keyof typeof b];
+      return typeof left === 'number' && typeof right === 'number' ? right - left : String(right ?? '').localeCompare(String(left ?? ''));
+    });
+    res.json(sorted);
+  });
+
+  router.get('/videos/:channelId/:videoId', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const credential = await findCredential(req.params.channelId);
+    if (!credential?.youtubeChannelId) throw new NotFound('Không tìm thấy video đã đồng bộ.');
+    const video = (await listVideoDocs(req.params.channelId, { videoId: req.params.videoId, removed: { $ne: true } }))[0];
+    if (!video) throw new NotFound('Không tìm thấy video đã đồng bộ.');
+    res.json({ ...video, retentionCurve: null, retentionUnavailableReason: 'Chưa đồng bộ dữ liệu giữ chân người xem.' });
+  });
+
+  router.get('/channels/:channelId/suggested-links', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json([]);
+  });
+
+  return router;
+}

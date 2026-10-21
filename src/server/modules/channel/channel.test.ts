@@ -7,6 +7,7 @@ import type { Server } from 'node:http';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createApp } from '../../app';
+import { loadConfig } from '../../config';
 
 const projectInput = {
   title: 'Assigned project',
@@ -47,7 +48,7 @@ afterAll(async () => {
 });
 
 async function startApi(): Promise<string> {
-  const app = createApp({ filesDir, clientDir: null });
+  const app = createApp({ filesDir, clientDir: null, youtubeConfig: loadConfig({}) });
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
   return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
 }
@@ -66,6 +67,8 @@ describe('channel CRUD routes', () => {
     expect(createdResponse.status).toBe(201);
     const created = await createdResponse.json();
     expect(created).toMatchObject({ name: 'Lịch Sử', handle: '@lichsu213', defaultHashtags: ['#LichSu'], publishSchedule: null });
+    expect(created.youtube).toMatchObject({ connected: false, youtubeChannelId: null, setupConfigured: false });
+    expect(JSON.stringify(created.youtube)).not.toMatch(/access_token|refresh_token|client_secret/i);
 
     expect(await (await fetch(`${base}/api/channels`)).json()).toMatchObject([{ id: created.id, name: 'Lịch Sử' }]);
     expect(await (await fetch(`${base}/api/channels/${created.id}`)).json()).toMatchObject({ id: created.id, descriptionFooter: '' });
