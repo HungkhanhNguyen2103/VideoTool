@@ -11,6 +11,7 @@ import { assetRouter, configureAssetModule } from './modules/asset';
 import { configureVideoModule, createVideoRouter } from './modules/video';
 import { configureSeoModule, createSeoRouter } from './modules/seo';
 import { NotFound } from './shared/errors';
+import { assertChannelExists, createChannelRouter } from './modules/channel';
 
 export type AppOptions = {
   /** Absolute directory served under /files. */
@@ -47,7 +48,9 @@ export function createApp(options: AppOptions): Express {
   const fileStore = createFileStoreService(options.filesDir);
   app.use('/api/project', createProjectRouter({
     beforeDelete: async (project) => fileStore.deleteProjectFiles(project.id, [project.renderFileId, project.draftRenderFileId, project.logoFileId, project.seo.thumbnail.fileId]),
+    assertChannelExists,
   }));
+  app.use('/api/channels', createChannelRouter());
   app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobDetailsByType }));
   app.use('/api/script', createScriptCliStatusRouter());
   app.use('/api/project', fileStoreRouter);

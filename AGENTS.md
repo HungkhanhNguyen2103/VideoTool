@@ -10,6 +10,8 @@ Data lives in **MongoDB**. Binary files (images, audio, video) live on disk; the
 
 ## Status
 
+- Task 108 adds reusable YouTube channel profiles, channel assignment in New Project and SEO, project reference-count protection on deletion, and strict channel/project contracts with legacy `channelId: null` reads. Focused coverage: 30 files passed, 1 skipped; 138 tests passed. Full suite with the installed MongoDB 8.0 binary: 108 files passed, 1 skipped; 1,312 tests passed, 1 skipped. Typecheck and lint pass; build passes with the existing Vite chunk-size warning. Isolated API acceptance verified create, duplicate-project assignment, persisted read/version increment, and `CHANNEL_IN_USE` delete rejection. Browser UI acceptance is unverified because no browser surface was available. ZIP import replaces scenes only and leaves channel assignment unchanged. See `docs/superpowers/tasks/task-108-report.md`.
+
 - Task 107 Blender spike completes the 21-second Tower Bridge scene with Blender 5.2.2 LTS and RTX 3050 Laptop GPU. Eevee 16-sample full passes rendered 630 frames at 720×1280 in 308 s (median 0.40 s/frame, p95 0.70) and 1080×1920 in 464.2 s (median 0.70, p95 0.91); H.264 encoding added 8.7 s and 19.0 s. Peak sampled NVIDIA memory was 2,592 MiB at 720p and 1,867 MiB at 1080p. 92-second median estimates: 18.4 min at 720p and 32.3 min at 1080p. Repeated frame pixels match; PNG file hashes vary only in Date/RenderTime metadata. Typecheck, lint, and build pass; the build retains the existing Vite chunk-size warning. The ignored comparison sheet and visual scores are documented in `docs/superpowers/tasks/task-107-report.md`; Blender is viable as a renderer, while scene parity remains low (overall 2/5). See that untracked report for details.
 
 - Task 104 streams final and draft render output through `storeFileFromPath`, applies named H.264 CRF 22 defaults, preflights output/staging/intermediate disk space, renews job leases every 60s, and bounds logs to 1,000 entries of 8 KiB. Focused video/file-store/job suites: 22 files, 307 passed (includes the opt-in sparse 2.5 GiB test); full suite: 102 files passed, 1 skipped, 1,293 tests passed, 1 skipped. Typecheck, lint, and build pass with the existing Vite chunk warning. A disposable one-second Remotion render stored 4,922 bytes and served via `/files` (200) and Range (206, 16 bytes); synthetic 900-scene staging copied 900 × 1 KiB and serialized 251,938-byte props. Real >2 GiB and 1-hour renders are unverified; in-flight render cancellation, the worker's 10s forced shutdown, and concurrent disk reservations remain risks. See `docs/superpowers/tasks/task-104-report.md`.
@@ -311,12 +313,12 @@ video-tool/
 ├── data/files/<projectId>/        assets/<sceneId>.<kind>.<ext>, output/<renderId>.mp4   (gitignored)
 └── src/
     ├── contracts/                 zod schemas + types shared by server AND client (API request/response)
-    │   └── common.ts project.ts script.ts asset.ts video.ts job.ts
+    │   └── common.ts project.ts channel.ts script.ts asset.ts video.ts job.ts
     ├── server/
     │   ├── main.ts app.ts config.ts error-handler.ts
     │   ├── db/                    client.ts (MongoClient, getCollection<T>), ensure-indexes.ts (calls each module's indexes.ts explicitly)
     │   ├── modules/               business modules, see section 5
-    │   │   ├── project/  script/  asset/  video/  job/
+    │   │   ├── project/  script/  asset/  video/  job/  seo/  channel/
     │   └── shared/                no business logic, never imports modules/
     │       ├── ai-clients/        generate-json.ts generate-image.ts tts.ts providers/
     │       ├── claude-cli/        bounded Claude Code CLI runner + fixture
@@ -327,7 +329,7 @@ video-tool/
     │   ├── index.html main.tsx
     │   ├── styles/tokens.css      design tokens (CSS variables), copied from the prototypes' :root block
     │   ├── app/                   App.tsx router.tsx Layout.tsx, pages/ (ComingSoonPage, etc.)
-    │   ├── features/              project/ script/ asset/ video/   (same names as server modules)
+    │   ├── features/              project/ script/ asset/ video/ seo/ channel/   (same names as server modules)
     │   │   └── project/           api.ts hooks.ts store.ts ProjectInitPage.tsx components/
     │   │   └── <other feature>/   api.ts hooks.ts <Feature>Page.tsx components/
     │   └── shared/                api-client.ts, hooks/use-job-progress.ts (SSE), ui/
@@ -360,6 +362,7 @@ Extra files per module:
 | Module | Responsibility | Owns collection | May import |
 |---|---|---|---|
 | project | project CRUD, scene model (scenes embedded in project doc), optimistic lock | `projects` | none |
+| channel | reusable YouTube channel profiles; project reference counts go through `project/index.ts` | `channels` | project |
 | job | generic queue: enqueue, claim, progress, cancel, recover stuck jobs. No business logic | `jobs` | none |
 | script | AI script generation from brief + preset, run history | `script_runs` | project |
 | asset | per-scene assets via jobs, stale detection, retry | `assets` | project, job |
@@ -373,6 +376,7 @@ script -> project <- asset -> job
                       ^         ^
                       +-- video-+
 seo -> project
+channel -> project
 ```
 
 Direction is one-way, no cycles. `job` never imports asset/video; `worker/registry.ts` is the only place that knows both.

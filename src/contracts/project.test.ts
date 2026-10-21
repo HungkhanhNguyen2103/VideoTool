@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CreateProjectRequestSchema, ProjectDetailSchema, SceneSchema } from './project';
+import { ProjectSummarySchema } from './project';
 
 const validCreateInput = {
   title: 'Contract project',
@@ -39,6 +40,22 @@ describe('voice speed project field', () => {
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 0.75 })).toThrow();
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 1.31 })).toThrow();
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, voiceSpeed: 1.11 })).toThrow();
+  });
+});
+
+describe('project channel field', () => {
+  it('defaults new, legacy detail, and legacy summary payloads to no channel', () => {
+    expect(CreateProjectRequestSchema.parse(validCreateInput).channelId).toBeNull();
+    const legacyDetail = {
+      id: 'project-1', title: 'Project', status: 'draft', language: 'vi', brief: '', referencesText: '',
+      scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: null, voiceId: null,
+      renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: [], version: 1,
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    };
+    expect(ProjectDetailSchema.parse(legacyDetail).channelId).toBeNull();
+    expect(ProjectSummarySchema.parse({ id: 'project-1', title: 'Project', status: 'draft', scenesCount: null, durationSec: null, updatedAt: '2026-10-21T00:00:00.000Z' }).channelId).toBeNull();
+    expect(CreateProjectRequestSchema.parse({ ...validCreateInput, channelId: 'channel-1' }).channelId).toBe('channel-1');
+    expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, channelId: '' })).toThrow();
   });
 });
 

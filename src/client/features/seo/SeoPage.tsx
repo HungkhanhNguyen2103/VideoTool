@@ -17,12 +17,18 @@ import { PinnedCommentPanel } from './components/PinnedCommentPanel';
 import { ThumbnailPanel } from './components/ThumbnailPanel';
 import { ManualSeoPanel } from './components/ManualSeoPanel';
 import { PublishPanel } from './components/PublishPanel';
+import { ChannelManagerDialog } from '../channel/components/ChannelManagerDialog';
+import { HISTORY_CHANNEL_PREFILL } from '../channel/channel-helpers';
+import { useChannels } from '../channel/hooks';
+import { useSetProjectChannel } from '../project/hooks';
 import styles from './SeoPage.module.css';
 
 export function SeoPage() {
   const { projectId = '' } = useParams();
   const { project: projectQuery, files: filesQuery } = useSeoProject(projectId);
   const project = projectQuery.data;
+  const channelsQuery = useChannels();
+  const setChannelMutation = useSetProjectChannel();
   const { draft, saveState, update, flush } = useSeoDraft(projectId, project?.seo);
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
   const [busy, setBusy] = useState<string | null>(null);
@@ -30,6 +36,8 @@ export function SeoPage() {
   const [manualPrompt, setManualPrompt] = useState('');
   const [manualRaw, setManualRaw] = useState('');
   const [manualError, setManualError] = useState<string | null>(null);
+  const [manageChannels, setManageChannels] = useState(false);
+  const [channelPrefill, setChannelPrefill] = useState<typeof HISTORY_CHANNEL_PREFILL | null>(null);
   const progress = useJobProgress(jobId);
   const seo = draft ?? project?.seo;
   const files = filesQuery.data ?? [];
@@ -141,14 +149,45 @@ export function SeoPage() {
     } catch (error) { toast(error instanceof Error ? error.message : 'Không thể tải gói đăng.'); }
   }
 
+  async function assignChannel(channelId: string | null) {
+    if (!project || channelId === project.channelId) return;
+    try {
+      await setChannelMutation.mutateAsync({ projectId: project.id, channelId });
+      toast('Đã cập nhật kênh của dự án.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Không thể cập nhật kênh.');
+    }
+  }
+
   if (projectQuery.isLoading) return <div className={styles.loading}>Đang tải gói SEO…</div>;
   if (projectQuery.error || !project || !seo) return <div className={styles.errorBox}>Không thể tải dữ liệu SEO.</div>;
-  if (project.chapters.length === 0) return <main className={styles.page}><section className={styles.emptyState}><h1>SEO &amp; Đóng Gói Kênh</h1><p>Dự án chưa có chương. Hãy quay lại tab 2 để tạo và duyệt kịch bản trước.</p></section></main>;
+
+  const pageHeader = <header className={styles.header}><div><p className={styles.eyebrow}>BƯỚC 4 · ĐÓNG GÓI VIDEO</p><h1>SEO &amp; Đóng Gói Kênh</h1><p className={styles.muted}>Tạo một gói đăng YouTube hấp dẫn nhưng trung thực với nội dung video.</p></div><span className={styles.saveState}>{saveStateLabel(saveState)}</span></header>;
+  const channelSection = <section className={`${styles.channelSection} ${styles.panel}`} aria-labelledby="seo-channel-title">
+    <div className={styles.panelHead}>
+      <div><h2 id="seo-channel-title">Kênh</h2><p className={styles.muted}>Chọn hồ sơ kênh dùng cho gói đăng của dự án.</p></div>
+      <div className={styles.channelActions}>
+        <Button size="sm" onClick={() => setManageChannels(true)}>Quản lý kênh</Button>
+        <Button size="sm" onClick={() => { setChannelPrefill(HISTORY_CHANNEL_PREFILL); setManageChannels(true); }}>Dùng mẫu Lịch Sử Không Khô</Button>
+      </div>
+    </div>
+    <label className={styles.channelSelect} htmlFor="seo-channel-select">Kênh của dự án
+      <select id="seo-channel-select" className={styles.input} value={project.channelId ?? ''} disabled={channelsQuery.isLoading || setChannelMutation.isPending} onChange={(event) => void assignChannel(event.target.value || null)}>
+        <option value="">Chưa chọn kênh</option>
+        {(channelsQuery.data ?? []).map((channel) => <option key={channel.id} value={channel.id}>{channel.name}{channel.handle ? ` · ${channel.handle}` : ''}</option>)}
+      </select>
+    </label>
+    {channelsQuery.error && <p className={styles.error}>Không tải được danh sách kênh.</p>}
+  </section>;
+  const channelDialog = <ChannelManagerDialog open={manageChannels} prefill={channelPrefill} onPrefillConsumed={() => setChannelPrefill(null)} onClose={() => setManageChannels(false)} />;
+
+  if (project.chapters.length === 0) return <main className={styles.page}>{pageHeader}{channelSection}<section className={styles.emptyState}><h2>Chưa có chương</h2><p>Dự án chưa có chương. Hãy quay lại tab 2 để tạo và duyệt kịch bản trước.</p></section>{channelDialog}</main>;
 
   const readyDisplay = buildSeoDisplay({ ...project, seo });
   const controlsBusy = Boolean(busy || activeJob);
   return <main className={styles.page}>
-    <header className={styles.header}><div><p className={styles.eyebrow}>BƯỚC 4 · ĐÓNG GÓI VIDEO</p><h1>SEO &amp; Đóng Gói Kênh</h1><p className={styles.muted}>Tạo một gói đăng YouTube hấp dẫn nhưng trung thực với nội dung video.</p></div><span className={styles.saveState}>{saveStateLabel(saveState)}</span></header>
+    {pageHeader}
+    {channelSection}
     <Toolbar mode={mode} provider={project.aiProvider} model={project.aiModel} busy={controlsBusy} sections={allSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider, aiModelForProviderChange(provider, project.aiProvider, project.aiModel))} onModelChange={(model) => void changeModel(model)} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
     {activeJob && <div className={styles.jobProgress} role="status"><span>Đang tạo gói SEO…</span><progress value={progress?.progress ?? 0} max={100} /> <span>{progress?.progress ?? 0}%</span></div>}
     {readyDisplay.unsupportedFacts.length > 0 && <aside className={styles.factWarning}><strong>Kiểm tra số liệu</strong><ul>{readyDisplay.unsupportedFacts.map((fact) => <li key={fact}>Số liệu “{fact}” chưa thấy trong dữ liệu nguồn. Đây là cảnh báo, không chặn.</li>)}</ul></aside>}
@@ -162,5 +201,6 @@ export function SeoPage() {
     </div>
     <PublishPanel project={{ ...project, seo }} thumbnailFile={thumbnailFile} renderFile={renderFile} onCopy={() => void copyPackage()} onDownload={() => void downloadPackage()} />
     <div className={styles.flush}><Button size="sm" onClick={() => void flush()} disabled={saveState !== 'error'}>Thử lưu lại</Button></div>
+    {channelDialog}
   </main>;
 }

@@ -27,6 +27,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).visualStylePresetId).toBe('cinematic');
   });
 
+  it('defaults legacy project documents to no assigned channel', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).channelId).toBeNull();
+  });
+
   it('keeps keyword pop-ups enabled for legacy project documents', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).keywordPopupsEnabled).toBe(true);
   });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { deleteVisualStylePackImage, getVisualStylePacks, getVisualStyleSamples, uploadVisualStylePackImage, uploadVisualStyleSample } from './api';
+import { deleteVisualStylePackImage, getVisualStylePacks, getVisualStyleSamples, setProjectChannel, uploadVisualStylePackImage, uploadVisualStyleSample } from './api';
 import { resolveVisualStylePreview } from './visual-style-preview';
 
 afterEach(() => vi.restoreAllMocks());
@@ -51,5 +51,21 @@ describe('visual style pack API helpers', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(body, { status: 400 }));
     await expect(uploadVisualStylePackImage('anime', 'core', new File(['bad'], 'bad.pdf'))).rejects.toMatchObject({ code: 'INVALID_FILE_TYPE', message: 'Sai định dạng.' });
     await expect(deleteVisualStylePackImage('anime', 'core')).rejects.toMatchObject({ code: 'INVALID_FILE_TYPE', message: 'Sai định dạng.' });
+  });
+});
+
+describe('project channel API', () => {
+  it('assigns or clears the channel through the dedicated project route', async () => {
+    const project = {
+      id: 'project-1', title: 'Project', status: 'draft', language: 'vi', brief: '', referencesText: '',
+      scriptPresetId: 'documentary', targetDurationSec: 60, chapterCount: null, voiceId: null,
+      renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, scenes: [], version: 2,
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ...project, channelId: 'channel-1' }), { status: 200 }));
+    await expect(setProjectChannel('project-1', 'channel-1')).resolves.toMatchObject({ channelId: 'channel-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/project/project-1/channel', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ channelId: 'channel-1' }),
+    }));
   });
 });

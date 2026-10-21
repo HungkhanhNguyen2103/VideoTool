@@ -6,6 +6,7 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
+- Project `channelId` is additive and defaults to `null` on legacy reads. The project module owns the reference, validates non-null ids through the injected `assertChannelExists` callback, and exposes `setProjectChannel` plus `countProjectsByChannelId` to the channel module through `index.ts`. Assignment increments `version` once; duplication preserves the channel id.
 - Scenes have an additive `active` flag defaulting to `true` in both the contract and Mongo document schemas, so legacy documents remain active. `contracts/scene-active.ts` is the shared definition; toggling through `setProjectSceneActive` uses a version-guarded atomic write, preserves every other scene field, and recomputes chapter duration summaries from active scenes. Idempotent toggles do not increment the version. Project-list scene counts and durations also include active scenes only.
 - `_id` is a ULID string, never an ObjectId.
 - `titleSearch` is always `normalizeTitle(title)` (title-search.ts): NFD, strip diacritics, `đ`->`d`, lowercase. Kept in sync on create and duplicate; if `title` is ever updated in place, `titleSearch` must be recomputed in the same write.
@@ -41,6 +42,8 @@
 ## Flow
 - The create-project client form shows the shared five-slot style reference pack for the selected `visualStylePresetId`; the pack library is owned by file-store and is not copied into or sent with project creation. The bundled cinematic image is a display fallback for an empty `core` slot.
 - `POST /api/project` -> `routes.ts` parses the body with `CreateProjectRequestSchema` (validation + Vietnamese messages live in `contracts/project.ts`, copied from `docs/prototypes/khoi-tao-du-an/app.js`) -> `service.createProject` builds the `ProjectDoc` and inserts it -> `service.toDetail` shapes the response (`ProjectDetail`, dates as ISO strings).
+- `POST /api/project` and `PATCH /api/project/:id/channel` validate non-null channel ids through the router's injected `assertChannelExists`; `setProjectChannel` performs the versioned project-owned write. Channel deletion uses `countProjectsByChannelId` to guard references.
+- Project detail and summary mappers expose `channelId: null` for legacy documents. `duplicateProject` copies the channel id. `ProjectImportSeedSchema` omits `channelId`; the `/import-zip` route only replaces scenes and leaves project-level channel assignment untouched.
 - `GET /api/project` -> `ListProjectsQuerySchema` (optional `q`, `status`) -> `repo.listProjectSummaries` runs an aggregation: `$match` (status + accent-insensitive `titleSearch` regex, query escaped by `escapeRegex`), `$sort` by `updatedAt desc`, `$limit` 200, `$project` computing `scenesCount`/`durationSec` (duration sum rounded to two decimal places).
 - `GET /api/project/:id` -> `service.getProject` -> `NotFound` (404) if missing.
 - `POST /api/project/:id/duplicate` -> `service.duplicateProject`: loads the source doc, clones it under a new id/title/timestamps, clears scene asset references, resets `version`, and applies the `rendered -> assets` status rule.

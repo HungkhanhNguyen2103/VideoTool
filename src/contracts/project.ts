@@ -74,6 +74,7 @@ export const CreateProjectRequestBase = z.object({
   targetDurationSec: z.number(),
   chapterCount: z.number().nullable(),
   voiceId: z.string().nullable(),
+  channelId: z.string().min(1).nullable().default(null),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
   aiModel: z.string().optional(),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),
@@ -219,6 +220,7 @@ export type Scene = Omit<z.infer<typeof SceneSchema>, 'popupPlan' | 'shotType' |
 export const ProjectSummarySchema = z.object({
   id: z.string(),
   title: z.string(),
+  channelId: z.string().min(1).nullable().default(null),
   status: z.enum(PROJECT_STATUSES),
   scenesCount: z.number().int().nonnegative().nullable(),
   durationSec: SceneDurationSecSchema.nullable(),
@@ -229,6 +231,7 @@ export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
 export const ProjectDetailSchema = z.object({
   id: z.string(),
   title: z.string(),
+  channelId: z.string().min(1).nullable().default(null),
   status: z.enum(PROJECT_STATUSES),
   language: z.enum(['vi', 'en']),
   brief: z.string(),
@@ -270,6 +273,9 @@ export const ProjectDetailSchema = z.object({
   updatedAt: z.string(),
 });
 export type ProjectDetail = z.infer<typeof ProjectDetailSchema>;
+
+export const SetProjectChannelRequestSchema = z.object({ channelId: z.string().min(1).nullable() }).strict();
+export type SetProjectChannelRequest = z.infer<typeof SetProjectChannelRequestSchema>;
 
 export const ListProjectsQuerySchema = z.object({
   q: z.string().trim().min(1).optional(),

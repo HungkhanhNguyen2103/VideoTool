@@ -19,6 +19,7 @@ function toSummary(row: ProjectSummaryRow): ProjectSummary {
     id: row._id,
     title: row.title,
     status: row.status,
+    channelId: row.channelId ?? null,
     scenesCount: row.scenesCount,
     durationSec: row.durationSec,
     updatedAt: row.updatedAt.toISOString(),
@@ -30,6 +31,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     id: doc._id,
     title: doc.title,
     status: doc.status,
+    channelId: doc.channelId,
     language: doc.language,
     brief: doc.brief,
     referencesText: doc.referencesText,
@@ -112,6 +114,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     targetDurationSec: input.targetDurationSec,
     chapterCount: input.chapterCount,
     voiceId: input.voiceId,
+    channelId: input.channelId ?? null,
     aiProvider,
     ...(input.aiModel === undefined ? {} : { aiModel: input.aiModel }),
     renderEngine: input.renderEngine ?? 'ffmpeg',
@@ -667,6 +670,15 @@ export async function setProjectAiProvider(id: string, aiProvider: AiProvider, a
     throw new AppError(`Model ${selectedModel} không còn khả dụng hoặc không thuộc ${aiProvider}; hãy chọn model khác.`, 422, 'AI_MODEL_UNAVAILABLE');
   }
   await updateProject(id, { aiProvider, aiModel: selectedModel });
+  return getProject(id);
+}
+
+export async function countProjectsByChannelId(channelId: string): Promise<number> {
+  return getCollection<ProjectDoc>('projects').countDocuments({ channelId });
+}
+
+export async function setProjectChannel(id: string, channelId: string | null): Promise<ProjectDetail> {
+  await updateProject(id, { channelId });
   return getProject(id);
 }
 

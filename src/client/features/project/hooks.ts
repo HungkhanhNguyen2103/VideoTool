@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreateProjectRequest, ListProjectsQuery } from '../../../contracts/project';
 import type { VisualStyleId } from '../../../contracts/project';
 import * as api from './api';
+import { invalidateChannelMutationQueries } from '../channel/hooks';
 
 const PROJECTS_KEY = ['projects'] as const;
 const projectKey = (id: string) => ['projects', 'detail', id] as const;
@@ -40,6 +41,14 @@ export function useDuplicateProject() {
 export function useDeleteProject() {
   const invalidate = useInvalidateProjects();
   return useMutation({ mutationFn: (id: string) => api.deleteProject(id), onSuccess: invalidate });
+}
+
+export function useSetProjectChannel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, channelId }: { projectId: string; channelId: string | null }) => api.setProjectChannel(projectId, channelId),
+    onSuccess: (_project, { projectId }) => invalidateChannelMutationQueries(queryClient, projectId),
+  });
 }
 
 export function useVisualStyleSamples() {

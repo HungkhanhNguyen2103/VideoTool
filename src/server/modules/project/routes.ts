@@ -1,10 +1,12 @@
 import { Router } from 'express';
-import { CreateProjectRequestSchema, ListProjectsQuerySchema } from '../../../contracts/project';
+import { CreateProjectRequestSchema, ListProjectsQuerySchema, SetProjectChannelRequestSchema } from '../../../contracts/project';
 import * as service from './service';
+import { NotFound } from '../../shared/errors';
 
 export type ProjectDeleteHook = (project: Pick<Awaited<ReturnType<typeof service.getProject>>, 'id' | 'renderFileId' | 'draftRenderFileId' | 'logoFileId' | 'seo'>) => Promise<void>;
+export type AssertChannelExists = (channelId: string) => Promise<void>;
 
-export function createProjectRouter(options: { beforeDelete?: ProjectDeleteHook } = {}): Router {
+export function createProjectRouter(options: { beforeDelete?: ProjectDeleteHook; assertChannelExists?: AssertChannelExists } = {}): Router {
   const router = Router();
 
   router.get('/', async (req, res) => {
@@ -17,7 +19,14 @@ export function createProjectRouter(options: { beforeDelete?: ProjectDeleteHook 
 
   router.post('/', async (req, res) => {
     const input = CreateProjectRequestSchema.parse(req.body);
+    if (input.channelId) await (options.assertChannelExists ?? (async () => { throw new NotFound('Không tìm thấy kênh.'); }))(input.channelId);
     res.status(201).json(await service.createProject(input));
+  });
+
+  router.patch('/:id/channel', async (req, res) => {
+    const { channelId } = SetProjectChannelRequestSchema.parse(req.body);
+    if (channelId !== null) await (options.assertChannelExists ?? (async () => { throw new NotFound('Không tìm thấy kênh.'); }))(channelId);
+    res.json(await service.setProjectChannel(req.params.id, channelId));
   });
 
   router.get('/:id', async (req, res) => {

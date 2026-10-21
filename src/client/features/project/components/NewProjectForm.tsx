@@ -20,6 +20,8 @@ import { useCreateProject, useDeleteVisualStylePackImage, useUploadVisualStylePa
 import { useProjectUiStore } from '../store';
 import { appendReferenceText, isReferenceFile, mergeProjectPrefill, readReferenceText } from '../reference-import';
 import { StylePackPanel } from './StylePackPanel';
+import { useChannels } from '../../channel/hooks';
+import { readLastUsedChannelId, writeLastUsedChannelId } from '../../channel/channel-helpers';
 import styles from './NewProjectForm.module.css';
 
 const DEFAULT_VALUES: CreateProjectRequest = {
@@ -32,6 +34,7 @@ const DEFAULT_VALUES: CreateProjectRequest = {
   targetDurationSec: 180,
   chapterCount: null,
   voiceId: null,
+  channelId: null,
   aiProvider: 'deepseek',
   aiModel: 'deepseek-chat',
   renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 },
@@ -58,6 +61,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   const packsQuery = useVisualStylePacks();
   const uploadPack = useUploadVisualStylePackImage();
   const deletePack = useDeleteVisualStylePackImage();
+  const channelsQuery = useChannels();
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
 
@@ -78,6 +82,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   });
 
   const brief = watch('brief');
+  const selectedChannelId = watch('channelId');
   const targetDurationSec = watch('targetDurationSec');
   const visualStylePresetId = watch('visualStylePresetId') ?? 'cinematic';
   const aiProvider = watch('aiProvider') ?? 'deepseek';
@@ -86,6 +91,12 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   const width = watch('renderSettings.width');
   const height = watch('renderSettings.height');
   const busy = createProject.isPending;
+
+  useEffect(() => {
+    const lastUsedChannelId = readLastUsedChannelId();
+    if (!lastUsedChannelId || !channelsQuery.data?.some((channel) => channel.id === lastUsedChannelId)) return;
+    if (selectedChannelId === null) setValue('channelId', lastUsedChannelId);
+  }, [channelsQuery.data, selectedChannelId, setValue]);
 
   useEffect(() => {
     if (!prefill) return;
@@ -215,6 +226,28 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
                 <option value="en">English</option>
               </select>
             </div>
+          </div>
+        </fieldset>
+
+        <fieldset className={styles.section}>
+          <legend className={`label ${styles.legend}`}>Kênh</legend>
+          <div className={`${styles.field} ${styles.channelField}`}>
+            <label htmlFor="project-channel">Kênh <span className={styles.optional}>(tùy chọn)</span></label>
+            <select
+              className={styles.input}
+              id="project-channel"
+              disabled={busy || channelsQuery.isLoading}
+              {...register('channelId', { setValueAs: (value: string) => value || null })}
+              onChange={(event) => {
+                const channelId = event.target.value || null;
+                setValue('channelId', channelId, { shouldDirty: true, shouldValidate: true });
+                writeLastUsedChannelId(channelId);
+              }}
+            >
+              <option value="">Chưa chọn kênh</option>
+              {(channelsQuery.data ?? []).map((channel) => <option key={channel.id} value={channel.id}>{channel.name}{channel.handle ? ` · ${channel.handle}` : ''}</option>)}
+            </select>
+            {channelsQuery.error && <p className={styles.fieldError}>Không tải được danh sách kênh. Dự án có thể tạo mà chưa gán kênh.</p>}
           </div>
         </fieldset>
 

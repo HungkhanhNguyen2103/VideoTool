@@ -25,6 +25,10 @@ export function getProject(id: string) {
   return apiRequest(`/api/project/${id}`, ProjectDetailSchema);
 }
 
+export function setProjectChannel(id: string, channelId: string | null) {
+  return apiRequest(`/api/project/${encodeURIComponent(id)}/channel`, ProjectDetailSchema, { method: 'PATCH', body: { channelId } });
+}
+
 export function duplicateProject(id: string) {
   return apiRequest(`/api/project/${id}/duplicate`, ProjectDetailSchema, { method: 'POST' });
 }

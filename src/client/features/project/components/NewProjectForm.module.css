@@ -222,6 +222,7 @@
 }
 .hiddenInput { display: none; }
 .stylePackField { grid-column: 1 / -1; }
+.channelField { max-width: 36rem; }
 
 .formActions {
   display: flex;
