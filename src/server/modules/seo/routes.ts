@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SEO_SECTIONS, SeoPatchSchema, type SeoSection } from '../../../contracts/seo';
 import { AppError } from '../../shared/errors';
 import { uploadThumbnail } from '../../shared/upload';
-import { applyGeneratedSeoSections, getProject, patchProjectSeo } from '../project';
+import { applyGeneratedSeoSections, getProject, listChosenSeoTitlesByChannel, patchProjectSeo } from '../project';
 import { buildSeoPrompt } from './ai/build-prompt';
 import { parseSeoOutput, SeoAiOutputError } from './ai/parse-output';
 import { getSeoChannel, mergeGeneratedChannelDefaults } from './service';
@@ -59,6 +59,14 @@ export function createSeoRouter(options: { enqueueJob: EnqueueSeoJob; getActiveJ
     const channel = await getSeoChannel(project);
     const prompt = buildSeoPrompt(project, sections, channel);
     res.json({ prompt: `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`, promptVersion: prompt.promptVersion });
+  });
+
+  router.get('/:id/seo/channel-titles', async (req, res) => {
+    const project = await getProject(req.params.id);
+    const titles = project.channelId
+      ? await listChosenSeoTitlesByChannel(project.channelId, project.id)
+      : [];
+    res.json({ titles });
   });
 
   router.post('/:id/seo/manual-import', async (req, res) => {

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { normalizeHashtags } from './seo';
+import { PublishScheduleSchema } from './channel-schedule';
+
+export { PublishScheduleSchema } from './channel-schedule';
+export type { PublishSchedule } from './channel-schedule';
 
 export const CHANNEL_LANGUAGES = ['vi', 'en'] as const;
 export const CHANNEL_DEFAULT_HASHTAGS_MAX_COUNT = 5;
@@ -24,7 +28,7 @@ export const ChannelSchema = z.object({
   descriptionFooter: z.string().max(1500).default(''),
   aiDisclosureText: z.string().max(500).optional(),
   thumbnailTemplate: z.string().max(4000).optional(),
-  publishSchedule: z.unknown().nullable().default(null),
+  publishSchedule: PublishScheduleSchema.nullable().catch(null).default(null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 }).strict();
@@ -41,7 +45,7 @@ const ChannelInputFields = {
   descriptionFooter: z.string().max(1500).default(''),
   aiDisclosureText: z.string().max(500).optional(),
   thumbnailTemplate: z.string().max(4000).optional(),
-  publishSchedule: z.unknown().nullable().default(null),
+  publishSchedule: PublishScheduleSchema.nullable().default(null),
 };
 
 export const CreateChannelRequestSchema = z.object(ChannelInputFields).strict();
@@ -58,7 +62,7 @@ export const UpdateChannelRequestSchema = z.object({
   descriptionFooter: z.string().max(1500).optional(),
   aiDisclosureText: z.string().max(500).optional(),
   thumbnailTemplate: z.string().max(4000).optional(),
-  publishSchedule: z.unknown().nullable().optional(),
+  publishSchedule: PublishScheduleSchema.nullable().optional(),
 }).strict();
 export type UpdateChannelRequest = z.input<typeof UpdateChannelRequestSchema>;
 

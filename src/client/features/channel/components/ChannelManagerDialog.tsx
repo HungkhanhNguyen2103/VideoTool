@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Channel, CreateChannelRequest } from '../../../../contracts/channel';
+import { PUBLISH_SCHEDULE_STARTER_WINDOWS, type PublishSchedule } from '../../../../contracts/channel-schedule';
 import { Button } from '../../../shared/ui/Button';
-import { channelEditorInput, formatChannelLinks } from '../channel-helpers';
+import { channelEditorInput, channelScheduleEditor, formatChannelLinks, starterScheduleEditor } from '../channel-helpers';
 import { useChannels, useCreateChannel, useDeleteChannel, useUpdateChannel } from '../hooks';
 import styles from './ChannelManagerDialog.module.css';
 
@@ -16,6 +17,9 @@ type ChannelEditor = {
   descriptionFooter: string;
   aiDisclosureText: string;
   thumbnailTemplate: string;
+  publishTimezone: string;
+  publishSlots: PublishSchedule['slots'];
+  publishNotes: string;
 };
 
 type ChannelEditorPrefill = Partial<Pick<Channel, 'name' | 'handle' | 'tagline' | 'language'>>;
@@ -23,7 +27,20 @@ type ChannelEditorPrefill = Partial<Pick<Channel, 'name' | 'handle' | 'tagline' 
 const EMPTY_EDITOR: ChannelEditor = {
   name: '', handle: '', tagline: '', description: '', language: 'vi', linksText: '',
   defaultHashtagsText: '', descriptionFooter: '', aiDisclosureText: '', thumbnailTemplate: '',
+  publishTimezone: 'Asia/Ho_Chi_Minh', publishSlots: [], publishNotes: '',
 };
+
+const WEEKDAYS = [
+  { value: 0, label: 'Chủ nhật' },
+  { value: 1, label: 'Thứ Hai' },
+  { value: 2, label: 'Thứ Ba' },
+  { value: 3, label: 'Thứ Tư' },
+  { value: 4, label: 'Thứ Năm' },
+  { value: 5, label: 'Thứ Sáu' },
+  { value: 6, label: 'Thứ Bảy' },
+] as const;
+
+const COMMON_TIMEZONES = ['Asia/Ho_Chi_Minh', 'Asia/Bangkok', 'Asia/Tokyo', 'Europe/London', 'America/New_York', 'UTC'] as const;
 
 function editorFromChannel(channel: Channel): ChannelEditor {
   return {
@@ -37,6 +54,9 @@ function editorFromChannel(channel: Channel): ChannelEditor {
     descriptionFooter: channel.descriptionFooter,
     aiDisclosureText: channel.aiDisclosureText ?? '',
     thumbnailTemplate: channel.thumbnailTemplate ?? '',
+    publishTimezone: channelScheduleEditor(channel.publishSchedule).timezone,
+    publishSlots: channelScheduleEditor(channel.publishSchedule).slots,
+    publishNotes: channelScheduleEditor(channel.publishSchedule).notes,
   };
 }
 
@@ -128,6 +148,23 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
     setEditor((current) => ({ ...current, [key]: value }));
   }
 
+  function updatePublishSlot(index: number, patch: Partial<PublishSchedule['slots'][number]>) {
+    setEditor((current) => ({
+      ...current,
+      publishSlots: current.publishSlots.map((slot, slotIndex) => slotIndex === index ? { ...slot, ...patch } : slot),
+    }));
+  }
+
+  function applyStarterSchedule() {
+    const starter = starterScheduleEditor();
+    setEditor((current) => ({
+      ...current,
+      publishTimezone: starter.timezone,
+      publishSlots: starter.slots,
+      publishNotes: starter.notes,
+    }));
+  }
+
   return (
     <dialog
       ref={dialogRef}
@@ -187,6 +224,39 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
                 <label className={styles.field}>Đoạn chân mô tả<textarea maxLength={1500} value={editor.descriptionFooter} onChange={(event) => updateEditor('descriptionFooter', event.target.value)} /></label>
                 <label className={styles.field}>Dòng công bố AI (không bắt buộc)<textarea maxLength={500} value={editor.aiDisclosureText} onChange={(event) => updateEditor('aiDisclosureText', event.target.value)} /></label>
                 <label className={styles.field}>Mẫu bố cục thumbnail<textarea maxLength={4000} value={editor.thumbnailTemplate} onChange={(event) => updateEditor('thumbnailTemplate', event.target.value)} /></label>
+                <fieldset className={styles.scheduleSection}>
+                  <legend>Lịch đăng gợi ý</legend>
+                  <label className={styles.field}>Múi giờ IANA
+                    <input list="channel-publish-timezones" value={editor.publishTimezone} onChange={(event) => updateEditor('publishTimezone', event.target.value)} placeholder="Asia/Ho_Chi_Minh" />
+                    <datalist id="channel-publish-timezones">{COMMON_TIMEZONES.map((timezone) => <option value={timezone} key={timezone} />)}</datalist>
+                  </label>
+                  <p className={styles.scheduleHint}>Gợi ý, chưa kiểm chứng; hãy chỉnh theo số liệu YouTube Studio của kênh. Mẫu: video dài {PUBLISH_SCHEDULE_STARTER_WINDOWS.long}, video ngắn {PUBLISH_SCHEDULE_STARTER_WINDOWS.short}.</p>
+                  <div className={styles.slotRows}>
+                    {editor.publishSlots.map((slot, index) => (
+                      <div className={styles.slotRow} key={`${index}-${slot.weekday}-${slot.time}-${slot.kind}`}>
+                        <label className={styles.field}>Thứ
+                          <select aria-label={`Thứ của khung giờ ${index + 1}`} value={slot.weekday} onChange={(event) => updatePublishSlot(index, { weekday: Number(event.target.value) })}>
+                            {WEEKDAYS.map((day) => <option value={day.value} key={day.value}>{day.label}</option>)}
+                          </select>
+                        </label>
+                        <label className={styles.field}>Giờ
+                          <input aria-label={`Giờ của khung giờ ${index + 1}`} type="time" step={60} value={slot.time} onChange={(event) => updatePublishSlot(index, { time: event.target.value })} />
+                        </label>
+                        <label className={styles.field}>Loại video
+                          <select aria-label={`Loại video của khung giờ ${index + 1}`} value={slot.kind} onChange={(event) => updatePublishSlot(index, { kind: event.target.value as 'long' | 'short' })}>
+                            <option value="long">Dài</option><option value="short">Ngắn</option>
+                          </select>
+                        </label>
+                        <Button type="button" size="sm" onClick={() => updateEditor('publishSlots', editor.publishSlots.filter((_item, slotIndex) => slotIndex !== index))}>Xóa</Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className={styles.actions}>
+                    <Button type="button" size="sm" onClick={() => updateEditor('publishSlots', [...editor.publishSlots, { weekday: 1, time: '09:00', kind: 'long' }])} disabled={editor.publishSlots.length >= 14}>Thêm khung giờ</Button>
+                    <Button type="button" size="sm" onClick={applyStarterSchedule}>Dùng gợi ý ban đầu (giả thuyết)</Button>
+                  </div>
+                  <label className={styles.field}>Ghi chú lịch đăng<textarea maxLength={500} value={editor.publishNotes} onChange={(event) => updateEditor('publishNotes', event.target.value)} /></label>
+                </fieldset>
                 <div className={styles.actions}>
                   {editingId && <Button type="button" onClick={startNew} disabled={busy}>Hủy sửa</Button>}
                   <Button type="submit" disabled={busy || channelsQuery.isLoading}>{busy ? 'Đang lưu…' : editingId ? 'Lưu thay đổi' : 'Tạo kênh'}</Button>

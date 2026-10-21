@@ -49,4 +49,26 @@ describe('channel contracts', () => {
     expect(() => ChannelSchema.parse({ ...persisted, unknown: true })).toThrow();
     expect(UpdateChannelRequestSchema.parse({ handle: null })).toEqual({ handle: null });
   });
+
+  it('validates schedule input and degrades malformed legacy schedules to null on reads', () => {
+    const schedule = {
+      timezone: 'Asia/Ho_Chi_Minh',
+      slots: [{ weekday: 2, time: '20:00', kind: 'long' }],
+      notes: 'Ưu tiên video dài.',
+    };
+    expect(CreateChannelRequestSchema.parse({ name: 'History', publishSchedule: schedule }).publishSchedule).toEqual(schedule);
+    expect(() => CreateChannelRequestSchema.parse({ name: 'History', publishSchedule: {
+      ...schedule,
+      slots: [schedule.slots[0], schedule.slots[0]],
+    } })).toThrow();
+    expect(() => CreateChannelRequestSchema.parse({ name: 'History', publishSchedule: { ...schedule, extra: true } })).toThrow();
+    expect(() => UpdateChannelRequestSchema.parse({ publishSchedule: { ...schedule, timezone: 'Mars/Olympus' } })).toThrow();
+
+    const persisted = {
+      id: 'channel-1', name: 'History', language: 'vi', links: [], defaultHashtags: [], descriptionFooter: '',
+      publishSchedule: { corrupt: true },
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    };
+    expect(ChannelSchema.parse(persisted).publishSchedule).toBeNull();
+  });
 });

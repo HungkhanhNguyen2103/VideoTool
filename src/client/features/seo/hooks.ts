@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { SeoPackage, SeoPatch } from '../../../contracts/seo';
+import { channelTitlesQueryKey, invalidateChannelTitlesQuery } from '../channel/hooks';
 import * as api from './api';
 import type { SaveState } from './seo-view';
 
@@ -8,6 +9,18 @@ export function useSeoProject(projectId: string) {
   const project = useQuery({ queryKey: ['projects', 'detail', projectId], queryFn: () => api.getSeoProject(projectId), enabled: Boolean(projectId) });
   const files = useQuery({ queryKey: ['project-files', projectId], queryFn: () => api.listSeoFiles(projectId), enabled: Boolean(projectId) });
   return { project, files };
+}
+
+export function useChannelTitles(projectId: string, channelId: string | null | undefined) {
+  return useQuery({
+    queryKey: channelTitlesQueryKey(projectId),
+    queryFn: () => api.getSeoChannelTitles(projectId),
+    enabled: Boolean(projectId && channelId),
+  });
+}
+
+export async function invalidateChannelTitlesOnSeoPatch(queryClient: Pick<QueryClient, 'invalidateQueries'>, patch: SeoPatch): Promise<void> {
+  if (Object.hasOwn(patch, 'chosenTitleId')) await invalidateChannelTitlesQuery(queryClient);
 }
 
 function mergeSeo(previous: SeoPackage, patch: SeoPatch): SeoPackage {
@@ -19,6 +32,7 @@ function mergeSeo(previous: SeoPackage, patch: SeoPatch): SeoPackage {
 }
 
 export function useSeoDraft(projectId: string, initialSeo: SeoPackage | undefined) {
+  const queryClient = useQueryClient();
   const [draft, setDraft] = useState<SeoPackage | undefined>(initialSeo);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const pendingRef = useRef<SeoPatch>({});
@@ -42,6 +56,7 @@ export function useSeoDraft(projectId: string, initialSeo: SeoPackage | undefine
     setSaveState('saving');
     try {
       const saved = await api.patchSeo(projectId, patch);
+      await invalidateChannelTitlesOnSeoPatch(queryClient, patch);
       if (Object.keys(pendingRef.current).length === 0) {
         draftRef.current = saved.seo;
         setDraft(saved.seo);

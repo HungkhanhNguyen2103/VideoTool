@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { createProject, duplicateProject, getProject, listProjects, setProjectChannel } from './index';
+import { createProject, duplicateProject, getProject, listChosenSeoTitlesByChannel, listProjects, setProjectChannel } from './index';
 import { ProjectDocSchema, type ProjectDoc } from './docs';
 import { countProjectsByChannelId } from './index';
 
@@ -61,5 +61,35 @@ describe('project channel ownership', () => {
     const duplicate = await duplicateProject(project.id);
     expect(duplicate.channelId).toBe('channel-1');
     expect(await countProjectsByChannelId('channel-1')).toBe(2);
+  });
+
+  it('returns only other projects’ chosen title text for the requested channel', async () => {
+    const current = await createProject({ ...projectInput, channelId: 'channel-1' });
+    const other = await createProject({ ...projectInput, title: 'Other project', channelId: 'channel-1' });
+    const differentChannel = await createProject({ ...projectInput, title: 'Different channel', channelId: 'channel-2' });
+    const unchosen = await createProject({ ...projectInput, title: 'No chosen title', channelId: 'channel-1' });
+    const collection = getCollection<ProjectDoc>('projects');
+    await collection.updateOne({ _id: current.id }, { $set: {
+      'seo.titles': [{ id: 'current-title', text: 'Current title', angle: 'curiosity' }],
+      'seo.chosenTitleId': 'current-title',
+    } });
+    await collection.updateOne({ _id: other.id }, { $set: {
+      'seo.titles': [
+        { id: 'other-title', text: 'Other chosen title', angle: 'curiosity' },
+        { id: 'other-unselected', text: 'Unselected title', angle: 'number' },
+      ],
+      'seo.chosenTitleId': 'other-title',
+    } });
+    await collection.updateOne({ _id: differentChannel.id }, { $set: {
+      'seo.titles': [{ id: 'different-title', text: 'Different channel title', angle: 'curiosity' }],
+      'seo.chosenTitleId': 'different-title',
+    } });
+    await collection.updateOne({ _id: unchosen.id }, { $set: {
+      'seo.titles': [{ id: 'available-title', text: 'Available but not chosen', angle: 'curiosity' }],
+      'seo.chosenTitleId': null,
+    } });
+
+    expect(await listChosenSeoTitlesByChannel('channel-1', current.id)).toEqual(['Other chosen title']);
+    expect(await listChosenSeoTitlesByChannel('channel-1', 'missing-project')).toEqual(['Current title', 'Other chosen title']);
   });
 });

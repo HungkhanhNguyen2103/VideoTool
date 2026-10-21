@@ -8,7 +8,7 @@ import type { Server } from 'node:http';
 import { getCollection } from '../../db/client';
 import { errorHandler } from '../../error-handler';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { createProject, getProject, replaceProjectChapters, setProjectChannel } from '../project';
+import { createProject, getProject, patchProjectSeo, replaceProjectChapters, setProjectChannel } from '../project';
 import { createChannel } from '../channel';
 import { createFileStoreService } from '../file-store';
 import { configureSeoModule, createSeoRouter } from './routes';
@@ -150,6 +150,29 @@ describe('SEO routes and thumbnail files', () => {
     const missingPrompt = await fetch(`${base}/api/project/${missing.id}/seo/manual-prompt?sections=tags`);
     expect(missingPrompt.status).toBe(200);
     expect((await missingPrompt.json()).prompt).not.toContain('Channel:');
+  });
+
+  it('returns only other projects’ chosen titles on the assigned channel', async () => {
+    const current = await projectWithChapter();
+    const other = await projectWithChapter();
+    const differentChannel = await projectWithChapter();
+    const unassigned = await projectWithChapter();
+    const channel = await createChannel({ name: 'Title comparison channel' });
+    const otherChannel = await createChannel({ name: 'Other title channel' });
+    await setProjectChannel(current.id, channel.id);
+    await setProjectChannel(other.id, channel.id);
+    await setProjectChannel(differentChannel.id, otherChannel.id);
+    await patchProjectSeo(current.id, { titles: [{ id: 'current', text: 'Current title', angle: 'curiosity' }], chosenTitleId: 'current' });
+    await patchProjectSeo(other.id, { titles: [{ id: 'other', text: 'Other chosen title', angle: 'curiosity' }], chosenTitleId: 'other' });
+    await patchProjectSeo(differentChannel.id, { titles: [{ id: 'different', text: 'Other channel title', angle: 'curiosity' }], chosenTitleId: 'different' });
+
+    const base = await startSeoServer();
+    const response = await fetch(`${base}/api/project/${current.id}/seo/channel-titles`);
+    const unassignedResponse = await fetch(`${base}/api/project/${unassigned.id}/seo/channel-titles`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ titles: ['Other chosen title'] });
+    expect(await unassignedResponse.json()).toEqual({ titles: [] });
   });
 
   it('rejects unknown body fields and unknown section values', async () => {

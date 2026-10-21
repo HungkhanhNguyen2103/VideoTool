@@ -6,4 +6,5 @@ export async function ensureProjectIndexes(): Promise<void> {
   const col = getCollection<ProjectDoc>('projects');
   await col.createIndex({ updatedAt: -1 });
   await col.createIndex({ status: 1, updatedAt: -1 });
+  await col.createIndex({ channelId: 1 });
 }

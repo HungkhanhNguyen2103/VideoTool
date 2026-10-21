@@ -10,7 +10,7 @@
 - Channel API documents are strict and contain only the profile fields in `contracts/channel.ts`; Mongo documents add only `_id`, `schemaVersion`, and `nameSearch`.
 - `nameSearch` is trimmed, accent-stripped, `đ`-normalized, whitespace-collapsed, and lowercased. A unique index enforces case-insensitive name uniqueness; service checks return `409 CHANNEL_NAME_TAKEN` before insert/update.
 - `defaultHashtags` are normalized through the shared SEO hashtag normalizer and capped at five values. Profile links accept only HTTP or HTTPS URLs.
-- `publishSchedule` is stored as an optional nullable placeholder with a `null` default for legacy-safe reads.
+- `publishSchedule` is a strict nullable schedule (`timezone`, up to 14 unique weekday/time/kind slots, and notes). API and Mongo reads degrade missing or malformed legacy values to `null`. Timezone validation uses `Intl`; schedule suggestions skip nonexistent spring-forward wall times and choose the first occurrence of ambiguous fall-back times.
 - Channel deletion calls `project.countProjectsByChannelId` through the public project index. The channel module never reads the `projects` collection directly; a referenced channel returns `409 CHANNEL_IN_USE` with the project count.
 - The project module remains import-free. `assertChannelExists` is injected into the project router from the public channel API and is used for create and assignment requests.
 - `GET`, `POST`, `GET/:id`, `PATCH/:id`, and `DELETE/:id` are mounted under `/api/channels` by `app.ts`.
@@ -21,9 +21,9 @@
 
 - `features/channel/api.ts` and `hooks.ts` own channel list and CRUD requests; successful channel writes invalidate the channel query.
 - The create-project form remembers its last selected channel in local storage when available. The SEO page owns the project's channel selection through the project mutation and invalidates channel, project-detail, and project-list queries.
-- Channel management uses a native `<dialog>`. The history-channel template only prefills the editor and never saves automatically.
+- Channel management uses a native `<dialog>`. The history-channel template only prefills the editor and never saves automatically. Schedule edits are included only when the user saves the channel; the starter preset only changes local form state and is labeled as an unverified suggestion based on the channel's YouTube Studio data.
 
 ## Known gaps
 
-- `publishSchedule` and `thumbnailTemplate` are persisted for later SEO tasks; only the template is editable in this task, and schedule rules/UI are reserved for Task 110.
+- Suggested upload windows and lead time are not validated against YouTube performance data; the UI marks them as unverified hints.
 - Browser acceptance is recorded in the Task 108 report; any unavailable step is explicitly marked unverified there.

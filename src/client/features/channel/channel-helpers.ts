@@ -1,4 +1,6 @@
 import type { Channel, CreateChannelRequest } from '../../../contracts/channel';
+import { PUBLISH_SCHEDULE_STARTER, type PublishSchedule } from '../../../contracts/channel-schedule';
+import { PublishScheduleSchema } from '../../../contracts/channel';
 
 export const HISTORY_CHANNEL_PREFILL = {
   name: 'Lịch Sử Không Khô',
@@ -8,6 +10,22 @@ export const HISTORY_CHANNEL_PREFILL = {
 } as const;
 
 const LAST_USED_CHANNEL_KEY = 'video-tool:last-used-channel-id';
+
+export type ChannelScheduleEditor = { timezone: string; slots: PublishSchedule['slots']; notes: string };
+
+export function channelScheduleEditor(schedule: PublishSchedule | null | undefined): ChannelScheduleEditor {
+  return schedule
+    ? { timezone: schedule.timezone, slots: schedule.slots.map((slot) => ({ ...slot })), notes: schedule.notes }
+    : { timezone: 'Asia/Ho_Chi_Minh', slots: [], notes: '' };
+}
+
+export function scheduleFromEditor(value: ChannelScheduleEditor): PublishSchedule {
+  return PublishScheduleSchema.parse({ timezone: value.timezone.trim(), slots: value.slots, notes: value.notes });
+}
+
+export function starterScheduleEditor(): ChannelScheduleEditor {
+  return channelScheduleEditor(PUBLISH_SCHEDULE_STARTER);
+}
 
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -65,6 +83,9 @@ export function channelEditorInput(value: {
   descriptionFooter: string;
   aiDisclosureText: string;
   thumbnailTemplate: string;
+  publishTimezone: string;
+  publishSlots: PublishSchedule['slots'];
+  publishNotes: string;
 }): CreateChannelRequest {
   return {
     name: value.name.trim(),
@@ -77,5 +98,6 @@ export function channelEditorInput(value: {
     descriptionFooter: value.descriptionFooter,
     ...(value.aiDisclosureText.trim() ? { aiDisclosureText: value.aiDisclosureText } : {}),
     ...(value.thumbnailTemplate.trim() ? { thumbnailTemplate: value.thumbnailTemplate } : {}),
+    publishSchedule: scheduleFromEditor({ timezone: value.publishTimezone, slots: value.publishSlots, notes: value.publishNotes }),
   };
 }

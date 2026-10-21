@@ -7,7 +7,7 @@ import { AppError, Conflict, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
 import { getCollection } from '../../db/client';
 import { ProjectDocSchema, SceneDocSchema, type ProjectDoc, type SceneDoc } from './docs';
-import { deleteProjectById, findProjectById, insertProject, listProjectSummaries, type ProjectSummaryRow } from './repo';
+import { deleteProjectById, findProjectById, insertProject, listChosenSeoTitleTexts, listProjectSummaries, type ProjectSummaryRow } from './repo';
 import { normalizeTitle } from './title-search';
 import { DEFAULT_SCENE_TAIL_SEC, roundDurationSeconds } from '../../../contracts/scene-duration';
 import { DEFAULT_VOICE_SPEED, VoiceSpeedSchema } from '../../../contracts/voiceover';
@@ -678,6 +678,10 @@ export async function setProjectAiProvider(id: string, aiProvider: AiProvider, a
 
 export async function countProjectsByChannelId(channelId: string): Promise<number> {
   return getCollection<ProjectDoc>('projects').countDocuments({ channelId });
+}
+
+export async function listChosenSeoTitlesByChannel(channelId: string, excludeProjectId: string): Promise<string[]> {
+  return listChosenSeoTitleTexts(channelId, excludeProjectId);
 }
 
 export async function setProjectChannel(id: string, channelId: string | null): Promise<ProjectDetail> {

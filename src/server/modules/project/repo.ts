@@ -71,3 +71,35 @@ export async function listProjectSummaries(filter: ListProjectsFilter): Promise<
     ])
     .toArray();
 }
+
+export async function listChosenSeoTitleTexts(channelId: string, excludeProjectId: string): Promise<string[]> {
+  const rows = await collection()
+    .aggregate<{ title: string }>([
+      { $match: { channelId, _id: { $ne: excludeProjectId }, 'seo.chosenTitleId': { $type: 'string' } } },
+      {
+        $project: {
+          _id: 0,
+          title: {
+            $let: {
+              vars: {
+                chosen: {
+                  $first: {
+                    $filter: {
+                      input: { $ifNull: ['$seo.titles', []] },
+                      as: 'title',
+                      cond: { $eq: ['$$title.id', '$seo.chosenTitleId'] },
+                    },
+                  },
+                },
+              },
+              in: '$$chosen.text',
+            },
+          },
+        },
+      },
+      { $match: { title: { $type: 'string', $ne: '' } } },
+      { $sort: { title: 1 } },
+    ])
+    .toArray();
+  return rows.map((row) => row.title);
+}

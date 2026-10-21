@@ -22,6 +22,11 @@
 .field input, .field select, .field textarea { width: 100%; min-width: 0; padding: .5rem .6rem; border: 1px solid var(--border-2); border-radius: .45rem; background: var(--input); color: var(--text); font: inherit; font-size: .82rem; }
 .field textarea { min-height: 4rem; resize: vertical; }
 .field:nth-of-type(6) textarea, .field:nth-of-type(8) textarea, .field:nth-of-type(9) textarea { min-height: 5.2rem; }
+.scheduleSection { display: grid; gap: .65rem; min-width: 0; margin: .25rem 0; padding: .75rem; border: 1px solid var(--border); border-radius: .55rem; }
+.scheduleSection legend { padding: 0 .35rem; color: var(--text); font-size: .84rem; font-weight: 750; }
+.scheduleHint { margin: 0; color: var(--amber-text); font-size: .73rem; line-height: 1.45; }
+.slotRows { display: grid; gap: .5rem; }
+.slotRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, .8fr) auto; align-items: end; gap: .45rem; }
 .actions { justify-content: flex-end; flex-wrap: wrap; }
 .deletePrompt { display: grid; gap: .7rem; }
 .deletePrompt h3, .deletePrompt p { margin: 0; }
@@ -35,3 +40,4 @@
   .channelList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 480px) { .channelList { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .slotRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .slotRow > button { justify-self: end; } }

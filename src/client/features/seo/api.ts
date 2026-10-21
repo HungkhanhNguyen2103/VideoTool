@@ -9,6 +9,7 @@ import { ApiErrorBodySchema } from '../../../contracts/common';
 const JobResponseSchema = z.object({ jobId: z.string() });
 const ManualPromptResponseSchema = z.object({ prompt: z.string(), promptVersion: z.string() });
 const FileListSchema = z.array(FileSummarySchema);
+const ChannelTitlesResponseSchema = z.object({ titles: z.array(z.string()) }).strict();
 
 export function getSeoProject(projectId: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}`, ProjectDetailSchema);
@@ -16,6 +17,11 @@ export function getSeoProject(projectId: string): Promise<ProjectDetail> {
 
 export function listSeoFiles(projectId: string): Promise<FileSummary[]> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/files`, FileListSchema);
+}
+
+export async function getSeoChannelTitles(projectId: string): Promise<string[]> {
+  const response = await apiRequest(`/api/project/${encodeURIComponent(projectId)}/seo/channel-titles`, ChannelTitlesResponseSchema);
+  return response.titles;
 }
 
 export function generateSeo(projectId: string, sections: SeoSection[] = [...SEO_SECTIONS]): Promise<{ jobId: string }> {

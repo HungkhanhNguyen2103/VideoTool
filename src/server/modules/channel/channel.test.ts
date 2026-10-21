@@ -111,4 +111,16 @@ describe('channel CRUD routes', () => {
     expect(await cleared.json()).toMatchObject({ channelId: null, version: project.version + 1 });
     expect((await fetch(`${base}/api/channels/${channel.id}`, json('DELETE'))).status).toBe(204);
   });
+
+  it('reads a channel with malformed legacy schedule data as a null schedule', async () => {
+    const base = await startApi();
+    const response = await fetch(`${base}/api/channels`, json('POST', { name: 'Legacy schedule' }));
+    const channel = await response.json();
+    await getCollection('channels').updateOne({ _id: channel.id }, { $set: { publishSchedule: { corrupt: true } } });
+
+    const read = await fetch(`${base}/api/channels/${channel.id}`);
+
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({ id: channel.id, publishSchedule: null });
+  });
 });

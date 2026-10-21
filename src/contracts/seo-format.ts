@@ -3,6 +3,8 @@ import type { ProjectDetail } from './project';
 import { secondsToFrames } from './frame-math';
 import { activeScenes } from './scene-active';
 import { parseSourceReferences } from './seo-sources';
+import { formatSlotLabel, nextPublishSlots, PUBLISH_LEAD_HOURS_MAX, PUBLISH_LEAD_HOURS_MIN } from './channel-schedule';
+import { findDuplicateTitle } from './seo-duplicates';
 import {
   SEO_DESCRIPTION_MAX_CHARS,
   SEO_HASHTAGS_MAX_COUNT,
@@ -250,12 +252,13 @@ export function findUnsupportedFacts(texts: readonly string[], sourceText: strin
   return unsupported;
 }
 
-export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'chapter-timestamps' | 'video' | 'channel' | 'sources' | 'ai-content' | 'description-length';
+export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'chapter-timestamps' | 'video' | 'channel' | 'sources' | 'ai-content' | 'description-length' | 'schedule' | 'duplicate-title';
 export type PublishChecklistItem = { key: PublishChecklistKey; label: string; done: boolean; detail: string; warning?: boolean; reminder?: true };
 export type PublishThumbnailFile = { id: string; mimeType: string; sizeBytes: number };
+export type PublishPackageContext = { now?: Date; otherChannelTitles?: readonly string[] };
 
 /** Build the warn-only publish checklist from the project package and optional file metadata. */
-export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: PublishThumbnailFile, channel?: Channel): PublishChecklistItem[] {
+export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: PublishThumbnailFile, channel?: Channel, context?: PublishPackageContext): PublishChecklistItem[] {
   const seo = project.seo;
   const title = seo.titles.find((item) => item.id === seo.chosenTitleId);
   const tags = tagBudget(seo.tags);
@@ -270,6 +273,22 @@ export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: Pu
   const parsedSources = parseSourceReferences(project.referencesText);
   const hasAssignedChannel = Boolean(channel && channel.id === project.channelId);
   const hasDescriptionIntro = seo.descriptionIntro.trim().length > 0;
+  const assignedChannel = hasAssignedChannel ? channel : undefined;
+  const schedule = assignedChannel?.publishSchedule;
+  const hasLongSchedule = Boolean(schedule?.slots.some((slot) => slot.kind === 'long'));
+  const nearestLongSlot = schedule && context?.now
+    ? nextPublishSlots(schedule, context.now, 'long', 1)[0]
+    : undefined;
+  const scheduleDetail = !assignedChannel || !schedule
+    ? 'Kênh chưa có lịch đăng; đặt lịch trong Quản lý kênh nếu muốn.'
+    : !hasLongSchedule
+      ? 'Lịch hiện tại chưa có khung giờ cho video dài.'
+      : nearestLongSlot
+        ? `Slot gần nhất: ${formatSlotLabel(nearestLongSlot, schedule.timezone)} (${schedule.timezone}).`
+        : 'Kênh đã có lịch đăng; thời điểm gần nhất chưa được tính.';
+  const duplicateTitles = title && context?.otherChannelTitles !== undefined
+    ? findDuplicateTitle(title.text, context.otherChannelTitles)
+    : null;
   return [
     ...(chapterWarnings.length > 0 ? [{ key: 'chapter-timestamps' as const, label: 'M\u1ed1c ch\u01b0\u01a1ng', done: true, warning: true, detail: chapterWarnings.join(' ') }] : []),
     { key: 'title', label: 'Đã chọn tiêu đề', done: Boolean(title && titleStatus(title.text).length <= SEO_TITLE_MAX_CHARS), detail: title?.text ?? 'Chưa chọn tiêu đề.' },
@@ -280,13 +299,21 @@ export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: Pu
     { key: 'thumbnail', label: 'Thumbnail hợp lệ', done: thumbnailOk, detail: thumbnailOk ? 'PNG/JPEG, trong giới hạn.' : 'Cần thumbnail PNG/JPEG không quá 2 MB.' },
     { key: 'video', label: 'Video đã render', done: Boolean(project.renderFileId), detail: project.renderFileId ? 'Đã có file render.' : 'Chưa render video cuối.' },
     { key: 'channel', label: 'Đã chọn kênh', done: hasAssignedChannel, warning: !hasAssignedChannel, detail: hasAssignedChannel ? channel!.name : 'Chưa gán kênh cho dự án.' },
+    { key: 'schedule', label: 'Lịch đăng gợi ý', done: false, reminder: true, detail: scheduleDetail },
+    ...(duplicateTitles === null ? [] : [{
+      key: 'duplicate-title' as const,
+      label: 'Tiêu đề trên cùng kênh',
+      done: duplicateTitles.length === 0,
+      warning: duplicateTitles.length > 0,
+      detail: duplicateTitles.length > 0 ? `Tiêu đề trùng hoặc gần giống: ${duplicateTitles.join(' · ')}` : 'Không trùng tiêu đề đã chọn trên kênh này.',
+    }]),
     { key: 'sources', label: 'Nguồn tham khảo', done: parsedSources.length > 0 && !description.trimmed.includes('sources'), warning: parsedSources.length === 0, detail: parsedSources.length > 0 ? `${parsedSources.length} nguồn có URL hợp lệ.` : 'referencesText chưa có URL HTTP/HTTPS nào trong dòng nguồn có số thứ tự.' },
     { key: 'ai-content', label: 'Khai báo nội dung AI/tổng hợp', done: false, reminder: true, detail: 'Trả lời câu hỏi nội dung bị thay đổi/tổng hợp trong bước tải lên của YouTube nếu video có cảnh hoặc giọng thật được tạo bằng AI. Đây là quy tắc của YouTube; bạn tự quyết định theo nội dung video.' },
     ...(description.trimmed.length > 0 || description.overLimit ? [{ key: 'description-length' as const, label: 'Độ dài mô tả', done: false, warning: true, detail: description.overLimit ? 'Mô tả vẫn vượt giới hạn sau khi bỏ các khối nguồn và từ khóa có thể cắt.' : `Đã bỏ khối ${description.trimmed.join(' rồi ')} để giữ mô tả trong giới hạn.` }] : []),
   ];
 }
 
-export function buildPackageMarkdown(project: ProjectDetail, channel?: Channel): string {
+export function buildPackageMarkdown(project: ProjectDetail, channel?: Channel, context?: PublishPackageContext): string {
   const seo = project.seo;
   const title = seo.titles.find((item) => item.id === seo.chosenTitleId)?.text ?? '';
   const idea = seo.thumbnail.ideas.find((item) => item.id === seo.thumbnail.chosenIdeaId);
@@ -295,9 +322,21 @@ export function buildPackageMarkdown(project: ProjectDetail, channel?: Channel):
   const channelSection = assignedChannel
     ? [`## Kênh\n${assignedChannel.name}${assignedChannel.handle ? `\n${assignedChannel.handle}` : ''}${assignedChannel.links.length ? `\n${assignedChannel.links.map(({ label, url }) => `${label}: ${url}`).join('\n')}` : ''}`]
     : [];
+  const schedule = assignedChannel?.publishSchedule;
+  const nextSlots = schedule && context?.now
+    ? nextPublishSlots(schedule, context.now, 'long', 3)
+    : [];
+  const scheduleSection = schedule && nextSlots.length > 0
+    ? [[
+      `## Lịch đăng gợi ý\nMúi giờ: ${schedule.timezone}`,
+      ...nextSlots.map((slot, index) => `${index + 1}. ${formatSlotLabel(slot, schedule.timezone)}`),
+      `gợi ý, chưa kiểm chứng: tải video lên ở chế độ không công khai hoặc đặt lịch trước khoảng ${PUBLISH_LEAD_HOURS_MIN}–${PUBLISH_LEAD_HOURS_MAX} giờ để YouTube xử lý và kiểm tra bản quyền xong.`,
+    ].join('\n')]
+    : [];
   return [
     ['# Gói đăng YouTube', `Ngày tạo gói: ${project.updatedAt}`].join('\n'),
     ...channelSection,
+    ...scheduleSection,
     ['## Tiêu đề', title || '(chưa chọn)'].join('\n'),
     ['## Mô tả', assembleDescription(seo, project, assignedChannel)].join('\n'),
     ['## Tags', seo.tags.join(', ')].join('\n'),

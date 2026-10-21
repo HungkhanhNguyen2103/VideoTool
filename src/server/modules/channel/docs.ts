@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CHANNEL_LANGUAGES, CHANNEL_DEFAULT_HASHTAGS_MAX_COUNT } from '../../../contracts/channel';
+import { CHANNEL_LANGUAGES, CHANNEL_DEFAULT_HASHTAGS_MAX_COUNT, PublishScheduleSchema } from '../../../contracts/channel';
 import { normalizeHashtags } from '../../../contracts/seo';
 
 const channelFields = {
@@ -14,7 +14,7 @@ const channelFields = {
   descriptionFooter: z.string().max(1500).default(''),
   aiDisclosureText: z.string().max(500).optional(),
   thumbnailTemplate: z.string().max(4000).optional(),
-  publishSchedule: z.unknown().nullable().default(null),
+  publishSchedule: PublishScheduleSchema.nullable().catch(null).default(null),
 };
 
 /** The `channels` collection. `docs.ts` owns the persisted shape. */

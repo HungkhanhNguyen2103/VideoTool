@@ -6,7 +6,7 @@ import { buildPackageMarkdown, slugifyPackageTitle } from '../../../contracts/se
 import { Button } from '../../shared/ui/Button';
 import { toast } from '../../shared/ui/toast-store';
 import { useJobProgress } from '../../shared/hooks/use-job-progress';
-import { useSeoDraft, useSeoProject } from './hooks';
+import { useChannelTitles, useSeoDraft, useSeoProject } from './hooks';
 import * as api from './api';
 import { buildSeoDisplay, AI_PROVIDER_LABELS, saveStateLabel } from './seo-view';
 import { Toolbar } from './components/Toolbar';
@@ -29,7 +29,9 @@ export function SeoPage() {
   const project = projectQuery.data;
   const channelsQuery = useChannels();
   const channelQuery = useChannel(project?.channelId);
+  const channelTitlesQuery = useChannelTitles(projectId, project?.channelId);
   const channel = channelQuery.data;
+  const now = useMemo(() => new Date(), []);
   const setChannelMutation = useSetProjectChannel();
   const { draft, saveState, update, flush } = useSeoDraft(projectId, project?.seo);
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
@@ -134,7 +136,7 @@ export function SeoPage() {
 
   async function copyPackage() {
     if (!project || !seo) return;
-    try { await flush(); await navigator.clipboard.writeText(buildPackageMarkdown({ ...project, seo }, channel)); toast('Đã sao chép toàn bộ gói đăng.'); }
+    try { await flush(); await navigator.clipboard.writeText(buildPackageMarkdown({ ...project, seo }, channel, { now })); toast('Đã sao chép toàn bộ gói đăng.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể sao chép gói đăng.'); }
   }
 
@@ -143,7 +145,7 @@ export function SeoPage() {
     try {
       await flush();
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob([buildPackageMarkdown({ ...project, seo }, channel)], { type: 'text/markdown;charset=utf-8' }));
+      link.href = URL.createObjectURL(new Blob([buildPackageMarkdown({ ...project, seo }, channel, { now })], { type: 'text/markdown;charset=utf-8' }));
       link.download = `${slugifyPackageTitle(seo.titles.find((title) => title.id === seo.chosenTitleId)?.text ?? project.title)}.md`;
       link.click();
       URL.revokeObjectURL(link.href);
@@ -201,7 +203,7 @@ export function SeoPage() {
       <PinnedCommentPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['pinnedComment'])} onFlush={() => void flush()} />
       <ThumbnailPanel seo={seo} thumbnailFile={thumbnailFile} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['thumbnail'])} onUpload={(file) => void uploadThumbnail(file)} onRemove={() => void removeThumbnail()} />
     </div>
-    <PublishPanel project={{ ...project, seo }} thumbnailFile={thumbnailFile} renderFile={renderFile} channel={channel} onCopy={() => void copyPackage()} onDownload={() => void downloadPackage()} />
+    <PublishPanel project={{ ...project, seo }} thumbnailFile={thumbnailFile} renderFile={renderFile} channel={channel} otherChannelTitles={channelTitlesQuery.data} now={now} onCopy={() => void copyPackage()} onDownload={() => void downloadPackage()} />
     <div className={styles.flush}><Button size="sm" onClick={() => void flush()} disabled={saveState !== 'error'}>Thử lưu lại</Button></div>
     {channelDialog}
   </main>;

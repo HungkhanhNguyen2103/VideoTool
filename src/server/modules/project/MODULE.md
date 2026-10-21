@@ -6,7 +6,7 @@
 **Public API:** only what `index.ts` exports. Nothing else in this module may be imported from outside.
 
 ## Invariants
-- Project `channelId` is additive and defaults to `null` on legacy reads. The project module owns the reference, validates non-null ids through the injected `assertChannelExists` callback, and exposes `setProjectChannel` plus `countProjectsByChannelId` to the channel module through `index.ts`. Assignment increments `version` once; duplication preserves the channel id.
+- Project `channelId` is additive and defaults to `null` on legacy reads. The project module owns the reference, validates non-null ids through the injected `assertChannelExists` callback, and exposes `setProjectChannel` plus `countProjectsByChannelId` to the channel module through `index.ts`. Assignment increments `version` once; duplication preserves the channel id. `listChosenSeoTitlesByChannel` returns only each other same-channel project's chosen title text, excluding the current project; its aggregation projects no other fields.
 - Scenes have an additive `active` flag defaulting to `true` in both the contract and Mongo document schemas, so legacy documents remain active. `contracts/scene-active.ts` is the shared definition; toggling through `setProjectSceneActive` uses a version-guarded atomic write, preserves every other scene field, and recomputes chapter duration summaries from active scenes. Idempotent toggles do not increment the version. Project-list scene counts and durations also include active scenes only.
 - `_id` is a ULID string, never an ObjectId.
 - `titleSearch` is always `normalizeTitle(title)` (title-search.ts): NFD, strip diacritics, `đ`->`d`, lowercase. Kept in sync on create and duplicate; if `title` is ever updated in place, `titleSearch` must be recomputed in the same write.
@@ -46,6 +46,7 @@
 - Project detail and summary mappers expose `channelId: null` for legacy documents. `duplicateProject` copies the channel id. `ProjectImportSeedSchema` omits `channelId`; the `/import-zip` route only replaces scenes and leaves project-level channel assignment untouched.
 - `GET /api/project` -> `ListProjectsQuerySchema` (optional `q`, `status`) -> `repo.listProjectSummaries` runs an aggregation: `$match` (status + accent-insensitive `titleSearch` regex, query escaped by `escapeRegex`), `$sort` by `updatedAt desc`, `$limit` 200, `$project` computing `scenesCount`/`durationSec` (duration sum rounded to two decimal places).
 - `GET /api/project/:id` -> `service.getProject` -> `NotFound` (404) if missing.
+- The SEO router calls the project public API for chosen titles by channel; the project module does not import SEO or channel. A `{ channelId: 1 }` index supports this lookup.
 - `POST /api/project/:id/duplicate` -> `service.duplicateProject`: loads the source doc, clones it under a new id/title/timestamps, clears scene asset references, resets `version`, and applies the `rendered -> assets` status rule.
 - `DELETE /api/project/:id` -> `service.deleteProject` -> `NotFound` (404) if nothing was deleted.
 

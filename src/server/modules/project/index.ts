@@ -10,6 +10,7 @@ export {
   deleteProject,
   duplicateProject,
   getProject,
+  listChosenSeoTitlesByChannel,
   getProjectHistory,
   listProjects,
   applySceneAssets,

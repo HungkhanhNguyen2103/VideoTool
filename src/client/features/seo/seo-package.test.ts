@@ -38,9 +38,12 @@ describe('SEO publish package helpers', () => {
     const value = { ...project(), channelId: channel.id, referencesText: '[1] Source: https://example.org/source' };
     const checklist = buildPublishChecklist(value, undefined, channel);
     const reminder = checklist.find((item) => item.key === 'ai-content');
-    expect(checklist.filter((item) => item.key !== 'ai-content').every((item) => item.done)).toBe(true);
+    const schedule = checklist.find((item) => item.key === 'schedule');
+    expect(checklist.filter((item) => item.key !== 'ai-content' && item.key !== 'schedule').every((item) => item.done)).toBe(true);
     expect(reminder).toMatchObject({ done: false, reminder: true, label: 'Khai báo nội dung AI/tổng hợp' });
     expect(reminder?.warning).toBeUndefined();
+    expect(schedule).toMatchObject({ done: false, reminder: true });
+    expect(schedule?.warning).toBeUndefined();
   });
 
   it('reports each missing publish requirement without blocking edits', () => {
@@ -53,8 +56,36 @@ describe('SEO publish package helpers', () => {
     value.seo.thumbnail.fileId = null;
     value.renderFileId = null;
     expect(buildPublishChecklist(value).filter((item) => !item.done).map((item) => item.key)).toEqual([
-      'title', 'description', 'tags', 'hashtag', 'pinnedComment', 'thumbnail', 'video', 'channel', 'sources', 'ai-content',
+      'title', 'description', 'tags', 'hashtag', 'pinnedComment', 'thumbnail', 'video', 'channel', 'schedule', 'sources', 'ai-content',
     ]);
+  });
+
+  it('shows the nearest long-video schedule as a neutral reminder', () => {
+    const value = { ...project(), channelId: channel.id };
+    const scheduled = {
+      ...channel,
+      publishSchedule: {
+        timezone: 'Asia/Ho_Chi_Minh',
+        slots: [{ weekday: 2, time: '20:00', kind: 'long' as const }],
+        notes: '',
+      },
+    };
+
+    const schedule = buildPublishChecklist(value, undefined, scheduled, { now: new Date('2026-10-20T12:00:00.000Z') })
+      .find((item) => item.key === 'schedule');
+
+    expect(schedule).toMatchObject({ done: false, reminder: true, detail: 'Slot gần nhất: Thứ Ba 20/10/2026 20:00 (Asia/Ho_Chi_Minh).' });
+    expect(schedule?.warning).toBeUndefined();
+  });
+
+  it('warns about a chosen title that overlaps another chosen title on the same channel', () => {
+    const value = { ...project(), channelId: channel.id };
+    const duplicate = buildPublishChecklist(value, undefined, channel, {
+      otherChannelTitles: ['Điện Biên Phủ năm 1954: câu chuyện phía sau'],
+    }).find((item) => item.key === 'duplicate-title');
+
+    expect(duplicate).toMatchObject({ done: false, warning: true });
+    expect(duplicate?.detail).toContain('Điện Biên Phủ năm 1954: câu chuyện phía sau');
   });
 
   it('does not mark description complete when only chapters and hashtags are assembled', () => {
@@ -89,6 +120,7 @@ describe('SEO publish package helpers', () => {
     expect(markdown).toContain('Điện Biên Phủ năm 1954');
     expect(markdown).toContain('#DienBienPhu');
     expect(markdown).toContain('Bẫy hoàn hảo');
+    expect(markdown).not.toContain('Lịch đăng gợi ý');
     expect(slugifyPackageTitle('Điện Biên Phủ: Một thế trận!')).toBe('dien-bien-phu-mot-the-tran');
   });
 
@@ -101,6 +133,27 @@ describe('SEO publish package helpers', () => {
     expect(markdown).toContain('Trang chủ: https://example.org/channel');
     expect(markdown).toContain('Nguồn tham khảo:\n1. Source: https://example.org/source');
     expect(markdown).toContain('Theo dõi kênh.');
+  });
+
+  it('exports the next three suggested long-video slots with timezone and hint-only lead time', () => {
+    const value = { ...project(), channelId: channel.id };
+    const scheduled = { ...channel, publishSchedule: {
+      timezone: 'Asia/Ho_Chi_Minh',
+      slots: [
+        { weekday: 2, time: '20:00', kind: 'long' as const },
+        { weekday: 5, time: '20:00', kind: 'long' as const },
+        { weekday: 0, time: '20:00', kind: 'long' as const },
+      ],
+      notes: '',
+    } };
+    const markdown = buildPackageMarkdown(value, scheduled, { now: new Date('2026-10-18T16:00:00.000Z') });
+
+    expect(markdown).toContain('## Lịch đăng gợi ý\nMúi giờ: Asia/Ho_Chi_Minh');
+    expect(markdown).toContain('1. Thứ Ba 20/10/2026 20:00');
+    expect(markdown).toContain('2. Thứ Sáu 23/10/2026 20:00');
+    expect(markdown).toContain('3. Chủ nhật 25/10/2026 20:00');
+    expect(markdown).toContain('2–4 giờ');
+    expect(markdown).toContain('gợi ý, chưa kiểm chứng');
   });
 
   it('warns when sources have no numbered HTTP URL or description blocks were trimmed', () => {

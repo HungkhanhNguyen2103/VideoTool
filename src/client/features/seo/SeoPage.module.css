@@ -72,5 +72,16 @@
 .checkWarning { color: var(--amber-text, var(--amber)); border-color: var(--amber-border, var(--border)); background: var(--amber-bg, transparent); }
 .checkWarning small { color: var(--text-2); }
 .publishLinks { display: flex; flex-wrap: wrap; gap: 1rem; }
+.publishSchedule { display: grid; gap: .65rem; min-width: 0; padding: .85rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .6rem; }
+.publishScheduleHead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
+.publishScheduleHead h3 { margin: 0; font-size: .9rem; }
+.publishScheduleHead > span { color: var(--text-3); font-size: .72rem; }
+.publishSchedule > p { margin: 0; }
+.publishSlots, .publishWorkflow { display: grid; gap: .45rem; margin: 0; padding-left: 1.25rem; }
+.publishSlot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; color: var(--text-2); font-size: .82rem; }
+.copyFallback { display: grid; gap: .35rem; padding: .65rem; border: 1px solid var(--border-2); border-radius: .5rem; background: var(--input); }
+.copyFallback p { margin: 0; color: var(--text-2); font-size: .8rem; }
+.copyFallback input { width: 100%; min-width: 0; padding: .4rem .5rem; background: var(--panel); border: 1px solid var(--border-2); border-radius: .4rem; color: var(--text); font: inherit; }
+.publishWorkflow { color: var(--text-2); font-size: .8rem; line-height: 1.5; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .ideaGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .header { align-items: flex-start; flex-direction: column; } .providerHint { width: 100%; margin-left: 0; } .ideaGrid { grid-template-columns: 1fr; } .toolbar .field { flex: 1 1 8rem; } .toolbar .modelSelect { flex-basis: 100%; } }
