@@ -80,6 +80,8 @@ describe('ProjectDocSchema visual style compatibility', () => {
       descriptionKeywords: '',
       tags: [],
       hashtags: [],
+      shorts: [],
+      longVideoUrl: '',
       pinnedComment: '',
       thumbnail: { ideas: [], chosenIdeaId: null, fileId: null },
       generatedBy: null,

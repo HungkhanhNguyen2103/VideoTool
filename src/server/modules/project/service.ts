@@ -13,6 +13,7 @@ import { DEFAULT_SCENE_TAIL_SEC, roundDurationSeconds } from '../../../contracts
 import { DEFAULT_VOICE_SPEED, VoiceSpeedSchema } from '../../../contracts/voiceover';
 import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
 import { activeScenes, isSceneActive } from '../../../contracts/scene-active';
+import { pickShortsWindows, sameShortsWindowFields } from '../../../contracts/seo-shorts';
 
 function toSummary(row: ProjectSummaryRow): ProjectSummary {
   return {
@@ -497,6 +498,12 @@ export async function setProjectLogo(id: string, logoFileId: string | null): Pro
 export async function patchProjectSeo(id: string, patch: SeoPatch): Promise<ProjectDetail> {
   const parsed = SeoPatchSchema.parse(patch);
   const current = await getProject(id);
+  if (parsed.shorts !== undefined) {
+    const windows = pickShortsWindows(current).windows;
+    if (!sameShortsWindowFields(parsed.shorts, current.seo.shorts) || !sameShortsWindowFields(parsed.shorts, windows)) {
+      throw new AppError('Không thể thay đổi mã hoặc mốc cắt của gói Shorts; hãy tạo lại gói theo các mốc hiện tại.', 422, 'SEO_SHORTS_WINDOWS_MISMATCH');
+    }
+  }
   SeoPackageSchema.parse({
     ...current.seo,
     ...parsed,
@@ -541,6 +548,7 @@ export async function applyGeneratedSeoSections(
       : null;
     fields['seo.thumbnail.fileId'] = current.seo.thumbnail.fileId;
   }
+  if (requested.has('shorts')) fields['seo.shorts'] = candidate.shorts;
   await updateSeoFields(id, fields);
   return getProject(id);
 }

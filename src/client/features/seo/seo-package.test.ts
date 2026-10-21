@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { emptySeoPackage } from '../../../contracts/seo';
 import type { ProjectDetail } from '../../../contracts/project';
 import type { Channel } from '../../../contracts/channel';
-import { buildPackageMarkdown, buildPublishChecklist, slugifyPackageTitle } from '../../../contracts/seo-format';
+import { pickShortsWindows } from '../../../contracts/seo-shorts';
+import { buildPackageMarkdown, buildPublishChecklist, slugifyPackageTitle, substituteLongVideoUrl } from '../../../contracts/seo-format';
 
 function project(): ProjectDetail {
   return {
@@ -26,6 +27,22 @@ function project(): ProjectDetail {
     scenes: [],
     renderSettings: { aspect: '16:9', width: 1280, height: 720, fps: 24 },
   } as unknown as ProjectDetail;
+}
+
+function projectWithShorts() {
+  const value = project();
+  value.scenes = [1, 2, 3].map((number) => ({ id: `scene-${number}`, narration: `Narration ${number}`, visualPrompt: '', durationSec: 10, active: true })) as unknown as ProjectDetail['scenes'];
+  value.chapters = [{ id: 'chapter-1', no: 1, title: 'Mở đầu', paragraphs: [], status: 'approved', scenesCount: 3, durationSec: 30, role: 'climax' }] as unknown as ProjectDetail['chapters'];
+  const window = pickShortsWindows(value).windows[0]!;
+  value.seo.shorts = [{
+    ...window,
+    hookLine: 'Mốc quyết định bắt đầu ở đây.',
+    title: 'Một quyết định thay đổi tất cả',
+    caption: 'Xem bản đầy đủ: {LONG_VIDEO_URL}',
+    hashtags: ['#Shorts', '#LichSu'],
+    reason: 'Đoạn này mở ra bước ngoặt.',
+  }];
+  return value;
 }
 
 const channel: Channel = {
@@ -121,7 +138,57 @@ describe('SEO publish package helpers', () => {
     expect(markdown).toContain('#DienBienPhu');
     expect(markdown).toContain('Bẫy hoàn hảo');
     expect(markdown).not.toContain('Lịch đăng gợi ý');
+    expect(markdown).not.toContain('## Gói Shorts');
     expect(slugifyPackageTitle('Điện Biên Phủ: Một thế trận!')).toBe('dien-bien-phu-mot-the-tran');
+  });
+
+  it('exports a Shorts block with substituted caption and a manual-cut note', () => {
+    const value = projectWithShorts();
+    value.seo.longVideoUrl = 'https://example.org/full-video';
+    const markdown = buildPackageMarkdown(value);
+    expect(markdown).toContain('## Gói Shorts');
+    expect(markdown).toContain('0:00–0:30 · Chương 1');
+    expect(markdown).toContain('Hook: Mốc quyết định bắt đầu ở đây.');
+    expect(markdown).toContain('Tiêu đề: Một quyết định thay đổi tất cả');
+    expect(markdown).toContain('Xem bản đầy đủ: https://example.org/full-video');
+    expect(markdown).toContain('Hashtags: #Shorts #LichSu');
+    expect(markdown).toContain('Lý do: Đoạn này mở ra bước ngoặt.');
+    expect(markdown).toContain('Cắt và dựng video dọc thực hiện thủ công.');
+    expect(markdown).not.toContain('{LONG_VIDEO_URL}');
+  });
+
+  it('marks Shorts as an optional reminder, a no-window completion, and warns for unresolved or stale content', () => {
+    const noWindows = buildPublishChecklist(project()).find((item) => item.key === 'shorts');
+    expect(noWindows).toMatchObject({ done: true, detail: 'Video không có đoạn 30–55 giây phù hợp.' });
+
+    const eligible = projectWithShorts();
+    eligible.seo.shorts = [];
+    const reminder = buildPublishChecklist(eligible).find((item) => item.key === 'shorts');
+    expect(reminder).toMatchObject({ done: false, reminder: true });
+    expect(reminder?.warning).toBeUndefined();
+
+    eligible.seo.shorts = [{ ...projectWithShorts().seo.shorts[0]!, caption: 'Xem thêm {LONG_VIDEO_URL}' }];
+    eligible.seo.longVideoUrl = 'https://example.org/full';
+    const complete = buildPublishChecklist(eligible).find((item) => item.key === 'shorts');
+    expect(complete).toMatchObject({ done: true, detail: 'Gói Shorts đã có nội dung cho các mốc cắt hiện tại.' });
+    expect(complete?.warning).toBeUndefined();
+
+    eligible.seo.longVideoUrl = '';
+    const unresolved = buildPublishChecklist(eligible).find((item) => item.key === 'shorts');
+    expect(unresolved).toMatchObject({ done: true, warning: true });
+    expect(unresolved?.detail).toContain('{LONG_VIDEO_URL}');
+
+    eligible.seo.longVideoUrl = 'https://example.org/video';
+    eligible.seo.shorts = [{ ...eligible.seo.shorts[0]!, id: 'short-old' }];
+    const stale = buildPublishChecklist(eligible).find((item) => item.key === 'shorts');
+    expect(stale).toMatchObject({ done: true, warning: true });
+    expect(stale?.detail).toContain('Mốc cắt có thể đã cũ');
+  });
+
+  it('substitutes all long-video placeholders only when a URL is supplied', () => {
+    const text = 'Watch {LONG_VIDEO_URL} and share {LONG_VIDEO_URL}';
+    expect(substituteLongVideoUrl(text, 'https://example.org/full')).toBe('Watch https://example.org/full and share https://example.org/full');
+    expect(substituteLongVideoUrl(text, '')).toBe(text);
   });
 
   it('exports the assigned channel and channel-aware assembled description', () => {

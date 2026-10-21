@@ -77,6 +77,8 @@ const emptySeo: SeoPackage = {
   hashtags: [],
   pinnedComment: '',
   thumbnail: { ideas: [], chosenIdeaId: null, fileId: null },
+  shorts: [],
+  longVideoUrl: '',
   generatedBy: null,
 };
 

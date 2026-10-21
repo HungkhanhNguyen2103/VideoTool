@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_SECTIONS = ['titles', 'description', 'tags', 'pinnedComment', 'thumbnail'] as const;
+export const SEO_SECTIONS = ['titles', 'description', 'tags', 'pinnedComment', 'thumbnail', 'shorts'] as const;
 export type SeoSection = (typeof SEO_SECTIONS)[number];
 
 // YouTube limits checked on 2026-10-02 against the platform's upload guidance; keep these
@@ -16,6 +16,13 @@ export const SEO_DESCRIPTION_HINT_MAX_WORDS = 300;
 export const SEO_TAGS_MAX_CHARS = 500;
 export const SEO_HASHTAGS_MAX_COUNT = 15;
 export const SEO_HASHTAGS_VISIBLE_COUNT = 3;
+export const SEO_SHORTS_MAX_COUNT = 3;
+export const SEO_SHORTS_HASHTAGS_MAX_COUNT = 5;
+export const SEO_SHORTS_HOOK_MAX_CHARS = 200;
+export const SEO_SHORTS_TITLE_MAX_CHARS = 100;
+export const SEO_SHORTS_CAPTION_MAX_CHARS = 500;
+export const SEO_SHORTS_REASON_MAX_CHARS = 300;
+export const SEO_LONG_VIDEO_URL_MAX_CHARS = 500;
 export const SEO_THUMBNAIL_WIDTH = 1280;
 export const SEO_THUMBNAIL_HEIGHT = 720;
 export const SEO_THUMBNAIL_MIN_WIDTH = 640;
@@ -89,6 +96,44 @@ export function normalizeHashtags(values: readonly string[], tags: readonly stri
     .slice(0, SEO_HASHTAGS_MAX_COUNT);
 }
 
+/** Canonicalize a Shorts hashtag list, reserving one of its five slots for #Shorts. */
+export function ensureShortsHashtag(values: readonly string[]): string[] {
+  const normalized = normalizeHashtags(values);
+  const shortsIndex = normalized.findIndex((value) => comparable(value) === 'shorts');
+  const others = normalized.filter((value) => comparable(value) !== 'shorts').slice(0, SEO_SHORTS_HASHTAGS_MAX_COUNT - 1);
+  if (shortsIndex < 0 || shortsIndex >= SEO_SHORTS_HASHTAGS_MAX_COUNT) return [...others, '#Shorts'];
+
+  const insertionIndex = Math.min(shortsIndex, others.length);
+  return [...others.slice(0, insertionIndex), '#Shorts', ...others.slice(insertionIndex)];
+}
+
+const ShortsHashtagsSchema = z.array(z.string()).max(SEO_SHORTS_HASHTAGS_MAX_COUNT).transform(ensureShortsHashtag);
+
+export const SeoShortSchema = z.object({
+  id: z.string().min(1),
+  startSec: z.number().finite().nonnegative(),
+  endSec: z.number().finite().positive(),
+  chapterNo: z.number().int(),
+  hookLine: z.string().max(SEO_SHORTS_HOOK_MAX_CHARS),
+  title: z.string().max(SEO_SHORTS_TITLE_MAX_CHARS),
+  caption: z.string().max(SEO_SHORTS_CAPTION_MAX_CHARS),
+  hashtags: ShortsHashtagsSchema,
+  reason: z.string().max(SEO_SHORTS_REASON_MAX_CHARS),
+}).strict().superRefine((value, ctx) => {
+  if (value.endSec <= value.startSec) ctx.addIssue({ code: 'custom', path: ['endSec'], message: 'Thời điểm kết thúc phải sau thời điểm bắt đầu.' });
+});
+export type SeoShort = z.infer<typeof SeoShortSchema>;
+
+function isHttpUrlOrEmpty(value: string): boolean {
+  if (!value) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 const SeoPackageObjectSchema = z.object({
   titles: z.array(TitleOptionSchema).default([]),
   chosenTitleId: z.string().nullable().default(null),
@@ -98,6 +143,8 @@ const SeoPackageObjectSchema = z.object({
   hashtags: z.array(z.string().regex(/^#[A-Z][A-Za-z0-9]*$/, 'Hashtag phải bắt đầu bằng #, không có khoảng trắng và dùng CamelCase.')).max(SEO_HASHTAGS_MAX_COUNT).default([]),
   pinnedComment: z.string().default(''),
   thumbnail: SeoThumbnailSchema.default({ ideas: [], chosenIdeaId: null, fileId: null }),
+  shorts: z.array(SeoShortSchema).max(SEO_SHORTS_MAX_COUNT).default([]),
+  longVideoUrl: z.string().max(SEO_LONG_VIDEO_URL_MAX_CHARS).refine(isHttpUrlOrEmpty, 'URL video dài phải bắt đầu bằng http:// hoặc https://.').default(''),
   generatedBy: SeoGeneratedBySchema.nullable().default(null),
 }).strict().superRefine((value, ctx) => {
   const seen = new Set<string>();
@@ -122,11 +169,13 @@ export const SeoPatchSchema = z.object({
   hashtags: z.array(z.string()).max(SEO_HASHTAGS_MAX_COUNT).optional(),
   pinnedComment: z.string().optional(),
   thumbnail: SeoThumbnailSchema.optional(),
+  shorts: z.array(SeoShortSchema).max(SEO_SHORTS_MAX_COUNT).optional(),
+  longVideoUrl: z.string().max(SEO_LONG_VIDEO_URL_MAX_CHARS).refine(isHttpUrlOrEmpty, 'URL video dài phải bắt đầu bằng http:// hoặc https://.').optional(),
   generatedBy: SeoGeneratedBySchema.nullable().optional(),
 }).strict();
 export type SeoPatch = z.input<typeof SeoPatchSchema>;
 
-export type GeneratedSeoSections = Partial<Pick<SeoPackage, 'titles' | 'descriptionIntro' | 'descriptionKeywords' | 'tags' | 'hashtags' | 'pinnedComment' | 'thumbnail'>> & {
+export type GeneratedSeoSections = Partial<Pick<SeoPackage, 'titles' | 'descriptionIntro' | 'descriptionKeywords' | 'tags' | 'hashtags' | 'pinnedComment' | 'thumbnail' | 'shorts'>> & {
   generatedBy: SeoGeneratedBy;
 };
 

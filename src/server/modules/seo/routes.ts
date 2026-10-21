@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { SEO_SECTIONS, SeoPatchSchema, type SeoSection } from '../../../contracts/seo';
+import { pickShortsWindows } from '../../../contracts/seo-shorts';
 import { AppError } from '../../shared/errors';
 import { uploadThumbnail } from '../../shared/upload';
 import { applyGeneratedSeoSections, getProject, listChosenSeoTitlesByChannel, patchProjectSeo } from '../project';
-import { buildSeoPrompt } from './ai/build-prompt';
-import { parseSeoOutput, SeoAiOutputError } from './ai/parse-output';
-import { getSeoChannel, mergeGeneratedChannelDefaults } from './service';
+import { buildSeoPrompt, buildShortsPrompt } from './ai/build-prompt';
+import { parseSeoOutput, parseShortsOutput, SeoAiOutputError } from './ai/parse-output';
+import { getSeoChannel, mergeGeneratedChannelDefaults, mergeGeneratedShortsChannelDefaults } from './service';
 import { configureThumbnailService, removeProjectThumbnail, replaceProjectThumbnail, THUMBNAIL_MIME_TYPES } from './thumbnail-service';
 
 type EnqueueSeoJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
@@ -20,10 +21,20 @@ function allSections(): SeoSection[] {
   return [...SEO_SECTIONS];
 }
 
+function manualDefaultSections(): SeoSection[] {
+  return SEO_SECTIONS.filter((section) => section !== 'shorts');
+}
+
 function parseSectionsQuery(value: unknown): SeoSection[] {
-  if (value === undefined) return allSections();
+  if (value === undefined) return manualDefaultSections();
   if (typeof value !== 'string') throw new AppError('sections phải là chuỗi phân tách bằng dấu phẩy.', 400, 'validation_error');
   return SeoSectionsSchema.parse(value.split(','));
+}
+
+function assertManualSections(sections: readonly SeoSection[]): void {
+  if (sections.includes('shorts') && sections.length !== 1) {
+    throw new AppError('Gói Shorts cần tạo riêng ở chế độ thủ công.', 422, 'SHORTS_MANUAL_STANDALONE');
+  }
 }
 
 function translateManualParseError(error: unknown): never {
@@ -55,9 +66,12 @@ export function createSeoRouter(options: { enqueueJob: EnqueueSeoJob; getActiveJ
 
   router.get('/:id/seo/manual-prompt', async (req, res) => {
     const sections = parseSectionsQuery(req.query.sections);
+    assertManualSections(sections);
     const project = await getProject(req.params.id);
     const channel = await getSeoChannel(project);
-    const prompt = buildSeoPrompt(project, sections, channel);
+    const prompt = sections.includes('shorts')
+      ? buildShortsPrompt(project, pickShortsWindows(project).windows, channel)
+      : buildSeoPrompt(project, sections, channel);
     res.json({ prompt: `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`, promptVersion: prompt.promptVersion });
   });
 
@@ -71,16 +85,22 @@ export function createSeoRouter(options: { enqueueJob: EnqueueSeoJob; getActiveJ
 
   router.post('/:id/seo/manual-import', async (req, res) => {
     const body = ManualImportSchema.parse(req.body);
+    assertManualSections(body.sections);
     const project = await getProject(req.params.id);
-    let parsed: ReturnType<typeof parseSeoOutput>;
+    const channel = await getSeoChannel(project);
+    let parsed: ReturnType<typeof parseSeoOutput> | ReturnType<typeof parseShortsOutput>;
     try {
-      parsed = parseSeoOutput(body.raw, body.sections);
+      parsed = body.sections.includes('shorts')
+        ? parseShortsOutput(body.raw, pickShortsWindows(project).windows)
+        : parseSeoOutput(body.raw, body.sections);
     } catch (error) {
       translateManualParseError(error);
     }
-    const channel = await getSeoChannel(project);
+    const channelMerged = body.sections.includes('shorts')
+      ? mergeGeneratedShortsChannelDefaults(parsed as ReturnType<typeof parseShortsOutput>, channel)
+      : mergeGeneratedChannelDefaults(body.sections, parsed as ReturnType<typeof parseSeoOutput>, channel);
     const saved = await applyGeneratedSeoSections(project.id, body.sections, {
-      ...mergeGeneratedChannelDefaults(body.sections, parsed, channel),
+      ...channelMerged,
       generatedBy: { provider: 'manual', model: 'Dán thủ công', promptVersion: 'manual', generatedAt: new Date().toISOString() },
     });
     res.json(saved);

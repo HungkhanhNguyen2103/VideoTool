@@ -21,10 +21,10 @@ vi.mock('../project', () => ({
 }));
 vi.mock('../channel', () => ({ getChannel: mocks.getChannel }));
 
-import { buildSeoPrompt } from './ai/build-prompt';
-import { parseSeoOutput, SeoAiOutputError } from './ai/parse-output';
-import { loadSeoPreset } from './ai/presets/loader';
-import { generateSeoPackage } from './service';
+import { buildSeoPrompt, buildShortsPrompt } from './ai/build-prompt';
+import { parseSeoOutput, parseShortsOutput, SeoAiOutputError } from './ai/parse-output';
+import { loadSeoPreset, loadSeoShortsPreset } from './ai/presets/loader';
+import { generateSeoPackage, mergeGeneratedShortsChannelDefaults } from './service';
 
 const project = ProjectDetailSchema.parse({
   id: 'project-1',
@@ -95,6 +95,15 @@ const context = () => ({
   appendLog: vi.fn(async () => undefined),
 });
 
+function projectWithShortWindow() {
+  const sourceScene = project.scenes[0]!;
+  return {
+    ...project,
+    scenes: [1, 2, 3, 4].map((number) => ({ ...sourceScene, id: `short-scene-${number}`, narration: `Narration for short scene ${number}.`, durationSec: 10, active: true })),
+    chapters: [{ ...project.chapters[0]!, id: 'chapter-short', no: 1, title: 'Bước ngoặt', role: 'climax' as const, scenesCount: 4, durationSec: 40 }],
+  };
+}
+
 describe('SEO AI generation', () => {
   beforeEach(() => {
     mocks.chat.mockReset();
@@ -150,6 +159,76 @@ describe('SEO AI generation', () => {
   it('keeps the system prompt identical when an assigned channel has an empty thumbnail override', () => {
     const assignedProject = { ...project, channelId: channel.id };
     expect(buildSeoPrompt(assignedProject, ['thumbnail'], channel).system).toBe(buildSeoPrompt(project, ['thumbnail']).system);
+  });
+
+  it('loads the independent versioned Shorts preset and builds a timecode-free channel-aware prompt', () => {
+    const preset = loadSeoShortsPreset();
+    const assignedProject = { ...project, channelId: channel.id };
+    const window = { id: 'short-scene-1', startSec: 0, endSec: 30, chapterNo: 1, sceneIds: ['scene-1'], sceneStartIndex: 0, sceneEndIndex: 0 };
+    const prompt = buildShortsPrompt(assignedProject, [window], channel);
+
+    expect(preset).toMatchObject({ id: 'seo-shorts', version: 1 });
+    expect(prompt.promptVersion).toBe('seo-shorts-prompt-v1/seo-shorts@1');
+    expect(prompt.system).toContain('first 2 seconds');
+    expect(prompt.system).toContain('Do not invent');
+    expect(prompt.user).toContain('window_id: short-scene-1');
+    expect(prompt.user).toContain('chapter title: Mở đầu');
+    expect(prompt.user).toContain('duration: 30 seconds');
+    expect(prompt.user).toContain('Mở đầu dài của chương một.');
+    expect(prompt.user).toContain('Default hashtags: ["#LichSu","#SuViet"]');
+    expect(prompt.user).not.toContain('startSec');
+    expect(prompt.user).not.toContain('00:00');
+    expect(prompt.jsonSchema).toMatchObject({ type: 'object' });
+  });
+
+  it('parses Shorts by exact window id and joins deterministic timing data in window order', () => {
+    const windows = [
+      { id: 'short-a', startSec: 0, endSec: 30, chapterNo: 1, sceneIds: ['scene-1'], sceneStartIndex: 0, sceneEndIndex: 0 },
+      { id: 'short-b', startSec: 30, endSec: 60, chapterNo: 2, sceneIds: ['scene-2'], sceneStartIndex: 1, sceneEndIndex: 1 },
+    ];
+    const raw = JSON.stringify({ shorts: [
+      { window_id: 'short-b', hook_line: 'B', title: 'Title B', caption: 'Caption B', hashtags: ['#History'], reason: 'B reason' },
+      { window_id: 'short-a', hook_line: 'A', title: 'Title A', caption: 'Caption A', hashtags: ['#History'], reason: 'A reason' },
+    ] });
+    const parsed = parseShortsOutput(raw, windows);
+    expect(parsed.shorts.map((short) => [short.id, short.startSec, short.endSec, short.chapterNo])).toEqual([
+      ['short-a', 0, 30, 1], ['short-b', 30, 60, 2],
+    ]);
+    expect(parsed.shorts[0]?.hashtags).toEqual(['#History', '#Shorts']);
+  });
+
+  it('merges channel defaults into Shorts hashtags and still reserves #Shorts within five', () => {
+    const merged = mergeGeneratedShortsChannelDefaults({ shorts: [{
+      id: 'short-a', startSec: 0, endSec: 30, chapterNo: 1, hookLine: '', title: '', caption: '',
+      hashtags: ['#AiOne', '#AiTwo', '#AiThree', '#AiFour', '#AiFive'], reason: '',
+    }] }, channel);
+    expect(merged.shorts?.[0]?.hashtags).toEqual(['#AiOne', '#AiTwo', '#AiThree', '#LichSu', '#Shorts']);
+  });
+
+  it('keeps #Shorts when channel defaults push it beyond the fifth merged hashtag', () => {
+    const merged = mergeGeneratedShortsChannelDefaults({ shorts: [{
+      id: 'short-a', startSec: 0, endSec: 30, chapterNo: 1, hookLine: '', title: '', caption: '',
+      hashtags: ['#AiOne', '#AiTwo', '#AiThree', '#AiFour', '#Shorts'], reason: '',
+    }] }, channel);
+    expect(merged.shorts?.[0]?.hashtags).toEqual(['#AiOne', '#AiTwo', '#AiThree', '#LichSu', '#Shorts']);
+  });
+
+  it.each([
+    ['missing', [{ window_id: 'short-a', hook_line: 'A', title: 'A', caption: 'A', hashtags: [], reason: 'A' }]],
+    ['extra', [
+      { window_id: 'short-a', hook_line: 'A', title: 'A', caption: 'A', hashtags: [], reason: 'A' },
+      { window_id: 'short-b', hook_line: 'B', title: 'B', caption: 'B', hashtags: [], reason: 'B' },
+      { window_id: 'short-c', hook_line: 'C', title: 'C', caption: 'C', hashtags: [], reason: 'C' },
+    ]],
+    ['duplicate', [
+      { window_id: 'short-a', hook_line: 'A', title: 'A', caption: 'A', hashtags: [], reason: 'A' },
+      { window_id: 'short-a', hook_line: 'A2', title: 'A2', caption: 'A2', hashtags: [], reason: 'A2' },
+    ]],
+  ])('rejects %s window ids in Shorts output', (_label, shorts) => {
+    expect(() => parseShortsOutput(JSON.stringify({ shorts }), [
+      { id: 'short-a', startSec: 0, endSec: 30, chapterNo: 1, sceneIds: ['scene-1'], sceneStartIndex: 0, sceneEndIndex: 0 },
+      { id: 'short-b', startSec: 30, endSec: 60, chapterNo: 2, sceneIds: ['scene-2'], sceneStartIndex: 1, sceneEndIndex: 1 },
+    ])).toThrow(SeoAiOutputError);
   });
 
   it('uses active scenes only for the SEO duration and opening excerpt', () => {
@@ -249,6 +328,57 @@ describe('SEO AI generation', () => {
 
     expect(mocks.chat).toHaveBeenCalledTimes(2);
     expect(mocks.applyGeneratedSeoSections).not.toHaveBeenCalled();
+  });
+
+  it('generates Shorts in a separate AI call and keeps main-call prompt metadata', async () => {
+    const eligible = projectWithShortWindow();
+    mocks.getProject.mockResolvedValue(eligible);
+    mocks.chat.mockResolvedValueOnce(JSON.stringify({ titles: [{ text: 'A title', angle: 'curiosity' }] }))
+      .mockResolvedValueOnce(JSON.stringify({ shorts: [{ window_id: 'short-short-scene-1', hook_line: 'A hook', title: 'Short title', caption: 'Watch {LONG_VIDEO_URL}', hashtags: ['#History'], reason: 'A reason' }] }));
+
+    await generateSeoPackage(project.id, ['titles', 'shorts'], context());
+
+    expect(mocks.chat).toHaveBeenCalledTimes(2);
+    expect(mocks.chat.mock.calls[0]?.[0][1].content).toContain('Requested sections: titles');
+    expect(mocks.chat.mock.calls[0]?.[0][1].content).not.toContain('window_id');
+    expect(mocks.chat.mock.calls[1]?.[0][1].content).toContain('window_id: short-short-scene-1');
+    expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledWith(eligible.id, ['titles', 'shorts'], expect.objectContaining({
+      titles: [{ id: 'title-1', text: 'A title', angle: 'curiosity' }],
+      shorts: [expect.objectContaining({ id: 'short-short-scene-1', startSec: 0, endSec: 40, chapterNo: 1, hashtags: ['#History', '#Shorts'] })],
+      generatedBy: expect.objectContaining({ promptVersion: 'seo-prompt-v1/seo-documentary@8' }),
+    }));
+  });
+
+  it.each([
+    ['missing', JSON.stringify({ shorts: [] })],
+    ['extra', JSON.stringify({ shorts: [
+      { window_id: 'short-short-scene-1', hook_line: 'A', title: 'A', caption: 'A', hashtags: [], reason: 'A' },
+      { window_id: 'short-unexpected', hook_line: 'B', title: 'B', caption: 'B', hashtags: [], reason: 'B' },
+    ] })],
+    ['duplicate', JSON.stringify({ shorts: [
+      { window_id: 'short-short-scene-1', hook_line: 'A', title: 'A', caption: 'A', hashtags: [], reason: 'A' },
+      { window_id: 'short-short-scene-1', hook_line: 'B', title: 'B', caption: 'B', hashtags: [], reason: 'B' },
+    ] })],
+  ])('retries %s window ID mismatch once and then writes nothing', async (_label, invalidOutput) => {
+    mocks.getProject.mockResolvedValue(projectWithShortWindow());
+    mocks.chat.mockResolvedValue(invalidOutput);
+
+    await expect(generateSeoPackage(project.id, ['shorts'], context())).rejects.toMatchObject({ status: 502, code: 'SEO_AI_OUTPUT_INVALID' });
+
+    expect(mocks.chat).toHaveBeenCalledTimes(2);
+    expect(mocks.chat.mock.calls[1]?.[0][1].content).toContain('Validation error:');
+    expect(mocks.applyGeneratedSeoSections).not.toHaveBeenCalled();
+  });
+
+  it('stores an empty Shorts section without constructing or calling an AI client when no windows qualify', async () => {
+    await generateSeoPackage(project.id, ['shorts'], context());
+
+    expect(mocks.getAiClient).not.toHaveBeenCalled();
+    expect(mocks.chat).not.toHaveBeenCalled();
+    expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledWith(project.id, ['shorts'], expect.objectContaining({
+      shorts: [],
+      generatedBy: expect.objectContaining({ promptVersion: 'seo-shorts-prompt-v1/seo-shorts@1' }),
+    }));
   });
 
   it('supports the complete section set as the default selection', () => {

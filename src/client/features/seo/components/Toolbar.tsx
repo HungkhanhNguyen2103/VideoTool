@@ -45,7 +45,7 @@ export function Toolbar({ mode, provider, model, busy, sections, hasRaw, onModeC
         <>
           <Button onClick={onLoadPrompt} disabled={busy} busy={busy}>Sao chép prompt</Button>
           <Button onClick={onImport} disabled={busy || !hasRaw} title={!hasRaw ? 'Dán JSON trước.' : undefined}>Nhập JSON</Button>
-          <span className={styles.toolbarHint}>Các phần: {sections.length}/5</span>
+          <span className={styles.toolbarHint}>Các phần: {sections.length}/6</span>
         </>
       )}
       <span className={styles.providerHint}>{mode === 'automatic' ? `Sinh bằng ${AI_PROVIDER_LABELS[provider]}` : 'Tự dán JSON từ AI bất kỳ'}</span>

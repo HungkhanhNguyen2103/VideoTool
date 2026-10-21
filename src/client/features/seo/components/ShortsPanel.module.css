@@ -1,0 +1,25 @@
+.panel { display: grid; gap: .8rem; min-width: 0; padding: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; }
+.panelHead { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.panelHead h2 { margin: 0; font-size: .95rem; }
+.panelHead p { margin: .3rem 0 0; }
+.muted, .counter { color: var(--text-3); font-size: .8rem; }
+.field { display: grid; gap: .35rem; min-width: 0; color: var(--text-2); font-size: .8rem; font-weight: 700; }
+.input, .textarea { width: 100%; min-width: 0; padding: .55rem .65rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .5rem; color: var(--text); font: inherit; font-weight: 400; }
+.textarea { min-height: 6rem; resize: vertical; line-height: 1.5; }
+.counter { margin-top: -.5rem; }
+.list { display: grid; gap: .75rem; }
+.card { display: grid; gap: .55rem; min-width: 0; padding: .8rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .6rem; }
+.cardHead { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
+.cardHead h3 { margin: 0; font-size: .85rem; }
+.cardHead span { color: var(--amber-text); font-size: .72rem; }
+.excerpt, .hook, .preview, .note { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.excerpt { padding: .6rem; white-space: pre-wrap; background: var(--input); border-radius: .45rem; color: var(--text-2); font-size: .8rem; }
+.hook, .preview { color: var(--text-2); font-size: .8rem; }
+.preview mark { padding: 0 .12rem; background: var(--amber-bg); color: var(--amber-text); }
+.warning { margin: 0; color: var(--amber-text); font-size: .8rem; }
+.empty { margin: 0; color: var(--text-3); }
+.note { padding: .65rem .75rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: .5rem; color: var(--text-2); font-size: .8rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .45rem; }
+.fallback { display: grid; gap: .35rem; padding: .65rem; border: 1px solid var(--border-2); border-radius: .5rem; background: var(--input); }
+.fallback p { margin: 0; color: var(--text-2); font-size: .8rem; }
+@media (max-width: 600px) { .panelHead, .cardHead { align-items: flex-start; flex-direction: column; } }

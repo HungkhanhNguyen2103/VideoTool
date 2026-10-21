@@ -2,12 +2,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { SeoPackage } from '../../../contracts/seo';
 import { closeTestMongo, resetTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { getCollection } from '../../db/client';
+import { pickShortsWindows } from '../../../contracts/seo-shorts';
 import {
   applyGeneratedSeoSections,
   createProject,
   duplicateProject,
   getProject,
   patchProjectSeo,
+  replaceProjectChapters,
+  replaceProjectScenes,
 } from './service';
 import type { ProjectDoc } from './docs';
 
@@ -38,6 +41,8 @@ function packageWithContent(): SeoPackage {
     hashtags: ['#DienBienPhu'],
     pinnedComment: 'Bạn nghĩ gì về chiến lược này?',
     thumbnail: { ideas: [idea], chosenIdeaId: idea.id, fileId: 'thumbnail-1' },
+    shorts: [],
+    longVideoUrl: '',
     generatedBy,
   };
 }
@@ -64,6 +69,8 @@ describe('SEO project storage', () => {
       hashtags: [],
       pinnedComment: '',
       thumbnail: { ideas: [], chosenIdeaId: null, fileId: null },
+      shorts: [],
+      longVideoUrl: '',
       generatedBy: null,
     });
   });
@@ -159,5 +166,36 @@ describe('SEO project storage', () => {
     const project = await createProject(projectInput);
 
     await expect(patchProjectSeo(project.id, { unknown: 'nope' } as never)).rejects.toThrow();
+  });
+
+  it('writes generated Shorts and permits content edits only for the current deterministic windows', async () => {
+    const project = await createProject(projectInput);
+    await replaceProjectScenes(project.id, [1, 2, 3, 4].map((number) => ({ id: `scene-${number}`, narration: `Narration ${number}.`, visualPrompt: '', durationSec: 10 })));
+    await replaceProjectChapters(project.id, [{
+      id: 'chapter-1', no: 1, title: 'Bước ngoặt', paragraphs: [], status: 'approved', scenesCount: 4, durationSec: 40, role: 'climax',
+    }], null);
+    const current = await getProject(project.id);
+    const window = pickShortsWindows(current).windows[0]!;
+    const generatedShort = {
+      id: window.id, startSec: window.startSec, endSec: window.endSec, chapterNo: window.chapterNo,
+      hookLine: 'Hook', title: 'Title', caption: 'Caption', hashtags: ['#shorts'], reason: 'Reason',
+    };
+
+    const generated = await applyGeneratedSeoSections(project.id, ['shorts'], { shorts: [generatedShort], generatedBy });
+    expect(generated.seo.shorts[0]?.hashtags).toEqual(['#Shorts']);
+
+    const edited = await patchProjectSeo(project.id, { shorts: [{ ...generated.seo.shorts[0]!, title: 'Edited title' }] });
+    expect(edited.seo.shorts[0]?.title).toBe('Edited title');
+    for (const altered of [
+      { ...edited.seo.shorts[0]!, id: 'short-forged' },
+      { ...edited.seo.shorts[0]!, startSec: edited.seo.shorts[0]!.startSec + 1 },
+      { ...edited.seo.shorts[0]!, endSec: edited.seo.shorts[0]!.endSec - 1 },
+      { ...edited.seo.shorts[0]!, chapterNo: 99 },
+    ]) {
+      await expect(patchProjectSeo(project.id, { shorts: [altered] })).rejects.toMatchObject({ status: 422, code: 'SEO_SHORTS_WINDOWS_MISMATCH' });
+    }
+    await replaceProjectScenes(project.id, current.scenes.map((scene, index) => ({ ...scene, durationSec: index === 0 ? 9 : scene.durationSec })));
+    await expect(patchProjectSeo(project.id, { shorts: [{ ...edited.seo.shorts[0]!, title: 'Stale window' }] }))
+      .rejects.toMatchObject({ status: 422, code: 'SEO_SHORTS_WINDOWS_MISMATCH' });
   });
 });

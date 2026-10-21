@@ -28,7 +28,7 @@ export function generateSeo(projectId: string, sections: SeoSection[] = [...SEO_
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/seo/generate`, JobResponseSchema, { method: 'POST', body: { sections } });
 }
 
-export function getSeoManualPrompt(projectId: string, sections: SeoSection[] = [...SEO_SECTIONS]): Promise<{ prompt: string; promptVersion: string }> {
+export function getSeoManualPrompt(projectId: string, sections: SeoSection[] = [...SEO_SECTIONS.filter((section) => section !== 'shorts')]): Promise<{ prompt: string; promptVersion: string }> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}/seo/manual-prompt`, ManualPromptResponseSchema, {
     query: { sections: sections.join(',') },
   });

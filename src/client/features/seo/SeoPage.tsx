@@ -17,6 +17,7 @@ import { PinnedCommentPanel } from './components/PinnedCommentPanel';
 import { ThumbnailPanel } from './components/ThumbnailPanel';
 import { ManualSeoPanel } from './components/ManualSeoPanel';
 import { PublishPanel } from './components/PublishPanel';
+import { ShortsPanel } from './components/ShortsPanel';
 import { ChannelManagerDialog } from '../channel/components/ChannelManagerDialog';
 import { HISTORY_CHANNEL_PREFILL } from '../channel/channel-helpers';
 import { useChannel, useChannels } from '../channel/hooks';
@@ -35,6 +36,7 @@ export function SeoPage() {
   const setChannelMutation = useSetProjectChannel();
   const { draft, saveState, update, flush } = useSeoDraft(projectId, project?.seo);
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
+  const [manualShortsOnly, setManualShortsOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [manualPrompt, setManualPrompt] = useState('');
@@ -49,6 +51,7 @@ export function SeoPage() {
   const renderFile = project?.renderFileId ? files.find((file) => file.id === project.renderFileId) : undefined;
   const activeJob = progress !== null && ['queued', 'running'].includes(progress.status);
   const allSections = useMemo<SeoSection[]>(() => [...SEO_SECTIONS], []);
+  const manualSections = useMemo<SeoSection[]>(() => manualShortsOnly ? ['shorts'] : allSections.filter((section) => section !== 'shorts'), [allSections, manualShortsOnly]);
 
   useEffect(() => {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status)) return;
@@ -71,6 +74,7 @@ export function SeoPage() {
       if (section === 'description') return Boolean(seo && (seo.descriptionIntro.trim() || seo.descriptionKeywords.trim()));
       if (section === 'tags') return Boolean(seo?.tags.length || seo?.hashtags.length);
       if (section === 'pinnedComment') return Boolean(seo?.pinnedComment.trim());
+      if (section === 'shorts') return Boolean(seo?.shorts.length);
       return Boolean(seo?.thumbnail.ideas.length);
     });
     if (hasContent && !window.confirm('Phần này đã có nội dung. Tạo lại sẽ thay thế nội dung phần đã chọn, tiếp tục?')) return;
@@ -99,11 +103,11 @@ export function SeoPage() {
     finally { setBusy(null); }
   }
 
-  async function loadManualPrompt() {
+  async function loadManualPrompt(sections: SeoSection[] = manualSections) {
     if (!project) return;
     try {
       setBusy('prompt');
-      const result = await api.getSeoManualPrompt(project.id, allSections);
+      const result = await api.getSeoManualPrompt(project.id, sections);
       setManualPrompt(result.prompt);
       await navigator.clipboard.writeText(result.prompt);
       toast('Đã sao chép prompt. Dán prompt vào AI bất kỳ rồi dán JSON kết quả vào ô bên dưới.');
@@ -111,9 +115,9 @@ export function SeoPage() {
     finally { setBusy(null); }
   }
 
-  async function importManual() {
+  async function importManual(sections: SeoSection[] = manualSections) {
     if (!project || !manualRaw.trim()) return;
-    try { setBusy('import'); setManualError(null); await api.importSeo(project.id, manualRaw, allSections); await refresh(); toast('Đã nhập gói SEO thủ công.'); }
+    try { setBusy('import'); setManualError(null); await api.importSeo(project.id, manualRaw, sections); await refresh(); toast('Đã nhập gói SEO thủ công.'); }
     catch (error) { const message = error instanceof Error ? error.message : 'Không thể nhập JSON.'; setManualError(message); toast(message); }
     finally { setBusy(null); }
   }
@@ -192,10 +196,10 @@ export function SeoPage() {
   return <main className={styles.page}>
     {pageHeader}
     {channelSection}
-    <Toolbar mode={mode} provider={project.aiProvider} model={project.aiModel} busy={controlsBusy} sections={allSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider, aiModelForProviderChange(provider, project.aiProvider, project.aiModel))} onModelChange={(model) => void changeModel(model)} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
+    <Toolbar mode={mode} provider={project.aiProvider} model={project.aiModel} busy={controlsBusy} sections={manualSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider, aiModelForProviderChange(provider, project.aiProvider, project.aiModel))} onModelChange={(model) => void changeModel(model)} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
     {activeJob && <div className={styles.jobProgress} role="status"><span>Đang tạo gói SEO…</span><progress value={progress?.progress ?? 0} max={100} /> <span>{progress?.progress ?? 0}%</span></div>}
     {readyDisplay.unsupportedFacts.length > 0 && <aside className={styles.factWarning}><strong>Kiểm tra số liệu</strong><ul>{readyDisplay.unsupportedFacts.map((fact) => <li key={fact}>Số liệu “{fact}” chưa thấy trong dữ liệu nguồn. Đây là cảnh báo, không chặn.</li>)}</ul></aside>}
-    {mode === 'manual' && <ManualSeoPanel prompt={manualPrompt} raw={manualRaw} error={manualError} busy={controlsBusy} sections={allSections} onRawChange={setManualRaw} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />}
+    {mode === 'manual' && <ManualSeoPanel prompt={manualPrompt} raw={manualRaw} error={manualError} busy={controlsBusy} sections={manualSections} shortsOnly={manualShortsOnly} onShortsOnlyChange={setManualShortsOnly} onRawChange={setManualRaw} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />}
     <div className={styles.grid}>
       <TitlesPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['titles'])} onFlush={() => void flush()} />
       <DescriptionPanel project={project} seo={seo} description={readyDisplay.description} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['description'])} onFlush={() => void flush()} />
@@ -203,6 +207,12 @@ export function SeoPage() {
       <PinnedCommentPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['pinnedComment'])} onFlush={() => void flush()} />
       <ThumbnailPanel seo={seo} thumbnailFile={thumbnailFile} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['thumbnail'])} onUpload={(file) => void uploadThumbnail(file)} onRemove={() => void removeThumbnail()} />
     </div>
+    <ShortsPanel project={{ ...project, seo }} busy={controlsBusy} onPatch={update} onRegenerate={() => {
+      if (mode === 'manual') {
+        setManualShortsOnly(true);
+        void loadManualPrompt(['shorts']);
+      } else void generate(['shorts']);
+    }} onFlush={() => void flush()} />
     <PublishPanel project={{ ...project, seo }} thumbnailFile={thumbnailFile} renderFile={renderFile} channel={channel} otherChannelTitles={channelTitlesQuery.data} now={now} onCopy={() => void copyPackage()} onDownload={() => void downloadPackage()} />
     <div className={styles.flush}><Button size="sm" onClick={() => void flush()} disabled={saveState !== 'error'}>Thử lưu lại</Button></div>
     {channelDialog}

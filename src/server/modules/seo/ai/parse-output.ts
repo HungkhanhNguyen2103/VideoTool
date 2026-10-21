@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { SEO_DESCRIPTION_KEYWORDS_MAX_CHARS, SEO_DESCRIPTION_MAX_CHARS, SEO_HASHTAGS_MAX_COUNT, SEO_TITLE_MAX_CHARS, normalizeHashtags, type GeneratedSeoSections, type SeoSection } from '../../../../contracts/seo';
+import { SEO_DESCRIPTION_KEYWORDS_MAX_CHARS, SEO_DESCRIPTION_MAX_CHARS, SEO_HASHTAGS_MAX_COUNT, SEO_TITLE_MAX_CHARS, ensureShortsHashtag, normalizeHashtags, type GeneratedSeoSections, type SeoSection, type SeoShort } from '../../../../contracts/seo';
+import type { ShortsWindow } from '../../../../contracts/seo-shorts';
 import { AppError } from '../../../shared/errors';
-import { SeoAiOutputSchema, type SeoAiOutput } from './output-schema';
+import { SeoAiOutputSchema, SeoAiShortsOutputSchema, type SeoAiOutput } from './output-schema';
 
 export class SeoAiOutputError extends AppError {
   constructor(detail: string) {
@@ -29,9 +30,10 @@ function describeZodError(error: z.ZodError): string {
 function requireSection(output: SeoAiOutput, section: SeoSection): void {
   const present = section === 'titles' ? output.titles !== undefined
     : section === 'description' ? output.description_intro !== undefined
-      : section === 'tags' ? output.tags !== undefined && output.hashtags !== undefined
-        : section === 'pinnedComment' ? output.pinned_comment !== undefined
-          : output.thumbnail !== undefined;
+        : section === 'tags' ? output.tags !== undefined && output.hashtags !== undefined
+          : section === 'pinnedComment' ? output.pinned_comment !== undefined
+            : section === 'shorts' ? false
+              : output.thumbnail !== undefined;
   if (!present) throw new SeoAiOutputError(`root: missing requested section ${section}`);
 }
 
@@ -85,4 +87,34 @@ export function parseSeoOutput(raw: string, sections: readonly SeoSection[]): Om
   const requested = [...new Set(sections)];
   for (const section of requested) requireSection(parsed.data, section);
   return normalizeOutput(parsed.data, requested);
+}
+
+export function parseShortsOutput(raw: string, windows: readonly ShortsWindow[]): { shorts: SeoShort[] } {
+  const value = parseJson(raw);
+  const parsed = SeoAiShortsOutputSchema.safeParse(value);
+  if (!parsed.success) throw new SeoAiOutputError(describeZodError(parsed.error));
+  const expected = windows.map((window) => window.id);
+  const actual = parsed.data.shorts.map((short) => short.window_id);
+  const actualSet = new Set(actual);
+  if (actual.length !== expected.length || actualSet.size !== actual.length || expected.some((id) => !actualSet.has(id)) || actual.some((id) => !expected.includes(id))) {
+    throw new SeoAiOutputError('root: shorts window IDs must exactly match the supplied windows once each');
+  }
+
+  const byId = new Map(parsed.data.shorts.map((short) => [short.window_id, short]));
+  return {
+    shorts: windows.map((window) => {
+      const content = byId.get(window.id)!;
+      return {
+        id: window.id,
+        startSec: window.startSec,
+        endSec: window.endSec,
+        chapterNo: window.chapterNo,
+        hookLine: content.hook_line.trim(),
+        title: content.title.trim(),
+        caption: content.caption.trim(),
+        hashtags: ensureShortsHashtag(content.hashtags),
+        reason: content.reason.trim(),
+      };
+    }),
+  };
 }

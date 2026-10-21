@@ -11,6 +11,7 @@ vi.mock('../server/modules/video', () => ({ generateProjectVoiceovers: mocks.gen
 vi.mock('../server/shared/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: mocks.loggerError } }));
 import { jobHandlers } from './registry';
 import { AiRequestError } from '../server/shared/ai/errors';
+import { SEO_SECTIONS } from '../contracts/seo';
 
 describe('worker poll loop', () => {
   it('recovers each tick and drains until no job remains', async () => {
@@ -198,6 +199,17 @@ describe('SEO job registration', () => {
       cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, context);
     expect(mocks.generateSeoPackage).toHaveBeenCalledWith('project-2', ['titles', 'tags'], context);
+  });
+
+  it('defaults SEO jobs to every shared section including Shorts', async () => {
+    mocks.generateSeoPackage.mockReset().mockResolvedValue(undefined);
+    const context = { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() };
+    await jobHandlers['generate-seo']!({
+      _id: 'job-seo-default', schemaVersion: 1, type: 'generate-seo', projectId: 'project-1', payload: { projectId: 'project-1' }, status: 'running',
+      attempts: 1, maxAttempts: 3, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(), progress: 0, result: null,
+      error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, context);
+    expect(mocks.generateSeoPackage).toHaveBeenCalledWith('project-1', [...SEO_SECTIONS], context);
   });
 
   it('does not start SEO generation when the job is already cancelled', async () => {

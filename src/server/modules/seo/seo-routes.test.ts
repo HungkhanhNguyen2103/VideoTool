@@ -2,13 +2,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { SEO_SECTIONS } from '../../../contracts/seo';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { getCollection } from '../../db/client';
 import { errorHandler } from '../../error-handler';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { createProject, getProject, patchProjectSeo, replaceProjectChapters, setProjectChannel } from '../project';
+import { applyGeneratedSeoSections, createProject, getProject, patchProjectSeo, replaceProjectChapters, replaceProjectScenes, setProjectChannel } from '../project';
+import { pickShortsWindows } from '../../../contracts/seo-shorts';
 import { createChannel } from '../channel';
 import { createFileStoreService } from '../file-store';
 import { configureSeoModule, createSeoRouter } from './routes';
@@ -115,6 +117,71 @@ describe('SEO routes and thumbnail files', () => {
     const invalid = await fetch(`${base}/api/project/${project.id}/seo/manual-import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: '{', sections: ['titles'] }) });
     expect(invalid.status).toBe(422);
     expect(await invalid.json()).toMatchObject({ error: { code: 'SEO_PARSE_ERROR', message: expect.stringContaining('JSON của gói SEO không hợp lệ') } });
+  });
+
+  it('requests every shared SEO section by default, including Shorts', async () => {
+    const project = await projectWithChapter();
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-default' });
+    const base = await startSeoServer(enqueueJob);
+    const response = await fetch(`${base}/api/project/${project.id}/seo/generate`, { method: 'POST' });
+
+    expect(response.status).toBe(201);
+    expect(enqueueJob).toHaveBeenCalledWith({
+      type: 'generate-seo',
+      projectId: project.id,
+      payload: { projectId: project.id, sections: [...SEO_SECTIONS] },
+    });
+  });
+
+  it('keeps manual Shorts standalone and allows an empty import when no candidate windows qualify', async () => {
+    const project = await projectWithChapter();
+    const base = await startSeoServer();
+
+    const defaultPrompt = await fetch(`${base}/api/project/${project.id}/seo/manual-prompt`);
+    expect(defaultPrompt.status).toBe(200);
+    expect((await defaultPrompt.json()).prompt).toContain('Requested sections: titles, description, tags, pinnedComment, thumbnail');
+
+    const mixedPrompt = await fetch(`${base}/api/project/${project.id}/seo/manual-prompt?sections=shorts,titles`);
+    expect(mixedPrompt.status).toBe(422);
+    expect(await mixedPrompt.json()).toMatchObject({ error: { message: 'Gói Shorts cần tạo riêng ở chế độ thủ công.' } });
+
+    const shortsPrompt = await fetch(`${base}/api/project/${project.id}/seo/manual-prompt?sections=shorts`);
+    expect(shortsPrompt.status).toBe(200);
+    expect(await shortsPrompt.json()).toMatchObject({ promptVersion: 'seo-shorts-prompt-v1/seo-shorts@1', prompt: expect.stringContaining('No eligible windows') });
+
+    const mixedImport = await fetch(`${base}/api/project/${project.id}/seo/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ raw: '{"shorts":[]}', sections: ['shorts', 'tags'] }),
+    });
+    expect(mixedImport.status).toBe(422);
+    expect(await mixedImport.json()).toMatchObject({ error: { message: 'Gói Shorts cần tạo riêng ở chế độ thủ công.' } });
+
+    const imported = await fetch(`${base}/api/project/${project.id}/seo/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ raw: '{"shorts":[]}', sections: ['shorts'] }),
+    });
+    expect(imported.status).toBe(200);
+    expect((await imported.json()).seo).toMatchObject({ shorts: [], generatedBy: { provider: 'manual' } });
+  });
+
+  it('rejects a PATCH that changes deterministic Shorts ids or time fields', async () => {
+    const project = await projectWithChapter();
+    await replaceProjectScenes(project.id, [1, 2, 3, 4].map((number) => ({ id: `scene-${number}`, narration: `Narration ${number}.`, visualPrompt: '', durationSec: 10 })));
+    await replaceProjectChapters(project.id, [{ id: 'chapter-1', no: 1, title: 'Bước ngoặt', paragraphs: [], status: 'approved', scenesCount: 4, durationSec: 40, role: 'climax' }], null);
+    const current = await getProject(project.id);
+    const window = pickShortsWindows(current).windows[0]!;
+    await applyGeneratedSeoSections(project.id, ['shorts'], {
+      shorts: [{ id: window.id, startSec: window.startSec, endSec: window.endSec, chapterNo: window.chapterNo, hookLine: 'Hook', title: 'Title', caption: 'Caption', hashtags: ['#Shorts'], reason: 'Reason' }],
+      generatedBy: { provider: 'manual', model: 'manual', promptVersion: 'manual', generatedAt: new Date().toISOString() },
+    });
+    const base = await startSeoServer();
+    const response = await fetch(`${base}/api/project/${project.id}/seo`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ shorts: [{ id: window.id, startSec: window.startSec + 1, endSec: window.endSec, chapterNo: window.chapterNo, hookLine: 'Hook', title: 'Edited', caption: 'Caption', hashtags: ['#Shorts'], reason: 'Reason' }] }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: 'SEO_SHORTS_WINDOWS_MISMATCH' } });
   });
 
   it('uses an assigned channel in manual prompts, merges its hashtags on import, and tolerates a missing channel', async () => {

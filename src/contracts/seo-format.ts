@@ -5,6 +5,7 @@ import { activeScenes } from './scene-active';
 import { parseSourceReferences } from './seo-sources';
 import { formatSlotLabel, nextPublishSlots, PUBLISH_LEAD_HOURS_MAX, PUBLISH_LEAD_HOURS_MIN } from './channel-schedule';
 import { findDuplicateTitle } from './seo-duplicates';
+import { pickShortsWindows, sameShortsWindowFields } from './seo-shorts';
 import {
   SEO_DESCRIPTION_MAX_CHARS,
   SEO_HASHTAGS_MAX_COUNT,
@@ -252,10 +253,14 @@ export function findUnsupportedFacts(texts: readonly string[], sourceText: strin
   return unsupported;
 }
 
-export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'chapter-timestamps' | 'video' | 'channel' | 'sources' | 'ai-content' | 'description-length' | 'schedule' | 'duplicate-title';
+export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'chapter-timestamps' | 'video' | 'channel' | 'sources' | 'ai-content' | 'description-length' | 'schedule' | 'duplicate-title' | 'shorts';
 export type PublishChecklistItem = { key: PublishChecklistKey; label: string; done: boolean; detail: string; warning?: boolean; reminder?: true };
 export type PublishThumbnailFile = { id: string; mimeType: string; sizeBytes: number };
 export type PublishPackageContext = { now?: Date; otherChannelTitles?: readonly string[] };
+
+export function substituteLongVideoUrl(text: string, url: string): string {
+  return url ? text.split('{LONG_VIDEO_URL}').join(url) : text;
+}
 
 /** Build the warn-only publish checklist from the project package and optional file metadata. */
 export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: PublishThumbnailFile, channel?: Channel, context?: PublishPackageContext): PublishChecklistItem[] {
@@ -289,6 +294,18 @@ export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: Pu
   const duplicateTitles = title && context?.otherChannelTitles !== undefined
     ? findDuplicateTitle(title.text, context.otherChannelTitles)
     : null;
+  const shortsWindows = pickShortsWindows(project);
+  const shortsStale = seo.shorts.length > 0 && !sameShortsWindowFields(seo.shorts, shortsWindows.windows);
+  const unresolvedLongVideoUrl = !seo.longVideoUrl && seo.shorts.some((short) => short.caption.includes('{LONG_VIDEO_URL}'));
+  const shortsDetail = shortsWindows.windows.length === 0
+    ? 'Video không có đoạn 30–55 giây phù hợp.'
+    : shortsStale
+      ? 'Mốc cắt có thể đã cũ; hãy tạo lại gói Shorts.'
+      : unresolvedLongVideoUrl
+        ? 'Caption còn placeholder {LONG_VIDEO_URL}; nhập URL video dài để thay thế khi xuất hoặc sao chép.'
+        : seo.shorts.length > 0
+          ? 'Gói Shorts đã có nội dung cho các mốc cắt hiện tại.'
+          : 'Có thể tạo gói Shorts từ các mốc cắt gợi ý.';
   return [
     ...(chapterWarnings.length > 0 ? [{ key: 'chapter-timestamps' as const, label: 'M\u1ed1c ch\u01b0\u01a1ng', done: true, warning: true, detail: chapterWarnings.join(' ') }] : []),
     { key: 'title', label: 'Đã chọn tiêu đề', done: Boolean(title && titleStatus(title.text).length <= SEO_TITLE_MAX_CHARS), detail: title?.text ?? 'Chưa chọn tiêu đề.' },
@@ -307,6 +324,14 @@ export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: Pu
       warning: duplicateTitles.length > 0,
       detail: duplicateTitles.length > 0 ? `Tiêu đề trùng hoặc gần giống: ${duplicateTitles.join(' · ')}` : 'Không trùng tiêu đề đã chọn trên kênh này.',
     }]),
+    {
+      key: 'shorts',
+      label: 'Gói Shorts',
+      done: shortsWindows.windows.length === 0 || seo.shorts.length > 0,
+      ...(seo.shorts.length === 0 && shortsWindows.windows.length > 0 ? { reminder: true as const } : {}),
+      ...(shortsStale || unresolvedLongVideoUrl ? { warning: true } : {}),
+      detail: shortsDetail,
+    },
     { key: 'sources', label: 'Nguồn tham khảo', done: parsedSources.length > 0 && !description.trimmed.includes('sources'), warning: parsedSources.length === 0, detail: parsedSources.length > 0 ? `${parsedSources.length} nguồn có URL hợp lệ.` : 'referencesText chưa có URL HTTP/HTTPS nào trong dòng nguồn có số thứ tự.' },
     { key: 'ai-content', label: 'Khai báo nội dung AI/tổng hợp', done: false, reminder: true, detail: 'Trả lời câu hỏi nội dung bị thay đổi/tổng hợp trong bước tải lên của YouTube nếu video có cảnh hoặc giọng thật được tạo bằng AI. Đây là quy tắc của YouTube; bạn tự quyết định theo nội dung video.' },
     ...(description.trimmed.length > 0 || description.overLimit ? [{ key: 'description-length' as const, label: 'Độ dài mô tả', done: false, warning: true, detail: description.overLimit ? 'Mô tả vẫn vượt giới hạn sau khi bỏ các khối nguồn và từ khóa có thể cắt.' : `Đã bỏ khối ${description.trimmed.join(' rồi ')} để giữ mô tả trong giới hạn.` }] : []),
@@ -333,6 +358,20 @@ export function buildPackageMarkdown(project: ProjectDetail, channel?: Channel, 
       `gợi ý, chưa kiểm chứng: tải video lên ở chế độ không công khai hoặc đặt lịch trước khoảng ${PUBLISH_LEAD_HOURS_MIN}–${PUBLISH_LEAD_HOURS_MAX} giờ để YouTube xử lý và kiểm tra bản quyền xong.`,
     ].join('\n')]
     : [];
+  const shortsSection = seo.shorts.length > 0
+    ? [[
+      '## Gói Shorts',
+      ...seo.shorts.flatMap((short, index) => [
+        `${index + 1}. ${formatTimestamp(short.startSec)}–${formatTimestamp(short.endSec)} · Chương ${short.chapterNo}`,
+        `Hook: ${short.hookLine}`,
+        `Tiêu đề: ${short.title}`,
+        `Caption: ${substituteLongVideoUrl(short.caption, seo.longVideoUrl)}`,
+        `Hashtags: ${short.hashtags.join(' ')}`,
+        `Lý do: ${short.reason}`,
+      ]),
+      'Cắt và dựng video dọc thực hiện thủ công.',
+    ].join('\n')]
+    : [];
   return [
     ['# Gói đăng YouTube', `Ngày tạo gói: ${project.updatedAt}`].join('\n'),
     ...channelSection,
@@ -342,6 +381,7 @@ export function buildPackageMarkdown(project: ProjectDetail, channel?: Channel, 
     ['## Tags', seo.tags.join(', ')].join('\n'),
     ['## Hashtag', hashtags.join(' ')].join('\n'),
     ['## Bình luận ghim', seo.pinnedComment].join('\n'),
+    ...shortsSection,
     ['## Thumbnail', idea ? `Chữ: ${idea.overlayText}\nConcept: ${idea.concept}\nPrompt ảnh: ${idea.imagePrompt}` : '(chưa chọn ý tưởng)'].join('\n'),
   ].join('\n\n') + '\n';
 }
