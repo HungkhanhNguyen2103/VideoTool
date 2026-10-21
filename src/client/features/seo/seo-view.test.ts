@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptySeoPackage } from '../../../contracts/seo';
 import type { ProjectDetail } from '../../../contracts/project';
-import { buildSeoDisplay, saveStateLabel, TITLE_ANGLE_LABELS } from './seo-view';
+import { buildSeoDisplay, descriptionLengthGuidance, descriptionWordCount, saveStateLabel, TITLE_ANGLE_LABELS } from './seo-view';
 
 function projectWithSeo(overrides: Partial<ProjectDetail['seo']> = {}): ProjectDetail {
   return {
@@ -41,5 +41,18 @@ describe('SEO client display helpers', () => {
     expect(saveStateLabel('saving')).toBe('Đang lưu…');
     expect(saveStateLabel('saved')).toBe('Đã lưu');
     expect(saveStateLabel('error')).toBe('Lỗi lưu (thử lại)');
+  });
+
+  it('counts assembled description words and gives only a soft unverified length hint', () => {
+    expect(descriptionWordCount('  Một   hai\nba  ')).toBe(3);
+    expect(descriptionWordCount('  ')).toBe(0);
+    expect(descriptionLengthGuidance('one '.repeat(160))).toMatchObject({
+      wordCount: 160,
+      minWords: 150,
+      maxWords: 300,
+      inSuggestedRange: true,
+      hint: 'gợi ý 150–300 từ, chưa kiểm chứng',
+    });
+    expect(descriptionLengthGuidance('too short').inSuggestedRange).toBe(false);
   });
 });

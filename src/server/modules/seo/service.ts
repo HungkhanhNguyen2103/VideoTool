@@ -1,6 +1,10 @@
 import type { ProjectDetail } from '../../../contracts/project';
+import type { Channel } from '../../../contracts/channel';
+import { mergeChannelHashtags } from '../../../contracts/seo-format';
 import { SEO_SECTIONS, type GeneratedSeoSections, type SeoSection } from '../../../contracts/seo';
 import { getAiClient } from '../../shared/ai';
+import { NotFound } from '../../shared/errors';
+import { getChannel } from '../channel';
 import { getProject, applyGeneratedSeoSections } from '../project';
 import { buildSeoPrompt } from './ai/build-prompt';
 import { parseSeoOutput, SeoAiOutputError } from './ai/parse-output';
@@ -15,6 +19,25 @@ function uniqueSections(sections: readonly SeoSection[]): SeoSection[] {
   return [...new Set(sections.length > 0 ? sections : SEO_SECTIONS)];
 }
 
+export async function getSeoChannel(project: ProjectDetail): Promise<Channel | undefined> {
+  if (!project.channelId) return undefined;
+  try {
+    return await getChannel(project.channelId);
+  } catch (error) {
+    if (error instanceof NotFound) return undefined;
+    throw error;
+  }
+}
+
+export function mergeGeneratedChannelDefaults(
+  sections: readonly SeoSection[],
+  generated: Omit<GeneratedSeoSections, 'generatedBy'>,
+  channel?: Channel,
+): Omit<GeneratedSeoSections, 'generatedBy'> {
+  if (!channel || !sections.includes('tags') || !generated.hashtags) return generated;
+  return { ...generated, hashtags: mergeChannelHashtags(generated.hashtags, channel.defaultHashtags, generated.tags ?? []) };
+}
+
 export async function generateSeoPackage(
   projectId: string,
   sections: readonly SeoSection[] = SEO_SECTIONS,
@@ -24,7 +47,8 @@ export async function generateSeoPackage(
   const requested = uniqueSections(sections);
   if (await context.isCancelled()) return project;
 
-  const prompt = buildSeoPrompt(project, requested);
+  const channel = await getSeoChannel(project);
+  const prompt = buildSeoPrompt(project, requested, channel);
   const client = getAiClient(project.aiProvider, project.aiModel);
   let parsed: Omit<GeneratedSeoSections, 'generatedBy'> | undefined;
   let validationError = '';
@@ -39,7 +63,7 @@ export async function generateSeoPackage(
     ], { json: true });
     if (await context.isCancelled()) return getProject(projectId);
     try {
-      parsed = parseSeoOutput(raw, requested);
+      parsed = mergeGeneratedChannelDefaults(requested, parseSeoOutput(raw, requested), channel);
       break;
     } catch (error) {
       if (!(error instanceof SeoAiOutputError) || attempt === 1) throw error;

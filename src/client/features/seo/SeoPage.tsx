@@ -19,7 +19,7 @@ import { ManualSeoPanel } from './components/ManualSeoPanel';
 import { PublishPanel } from './components/PublishPanel';
 import { ChannelManagerDialog } from '../channel/components/ChannelManagerDialog';
 import { HISTORY_CHANNEL_PREFILL } from '../channel/channel-helpers';
-import { useChannels } from '../channel/hooks';
+import { useChannel, useChannels } from '../channel/hooks';
 import { useSetProjectChannel } from '../project/hooks';
 import styles from './SeoPage.module.css';
 
@@ -28,6 +28,8 @@ export function SeoPage() {
   const { project: projectQuery, files: filesQuery } = useSeoProject(projectId);
   const project = projectQuery.data;
   const channelsQuery = useChannels();
+  const channelQuery = useChannel(project?.channelId);
+  const channel = channelQuery.data;
   const setChannelMutation = useSetProjectChannel();
   const { draft, saveState, update, flush } = useSeoDraft(projectId, project?.seo);
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
@@ -64,7 +66,7 @@ export function SeoPage() {
     if (!project || activeJob) return;
     const hasContent = sections.some((section) => {
       if (section === 'titles') return seo?.titles.length;
-      if (section === 'description') return Boolean(seo?.descriptionIntro.trim());
+      if (section === 'description') return Boolean(seo && (seo.descriptionIntro.trim() || seo.descriptionKeywords.trim()));
       if (section === 'tags') return Boolean(seo?.tags.length || seo?.hashtags.length);
       if (section === 'pinnedComment') return Boolean(seo?.pinnedComment.trim());
       return Boolean(seo?.thumbnail.ideas.length);
@@ -132,7 +134,7 @@ export function SeoPage() {
 
   async function copyPackage() {
     if (!project || !seo) return;
-    try { await flush(); await navigator.clipboard.writeText(buildPackageMarkdown({ ...project, seo })); toast('Đã sao chép toàn bộ gói đăng.'); }
+    try { await flush(); await navigator.clipboard.writeText(buildPackageMarkdown({ ...project, seo }, channel)); toast('Đã sao chép toàn bộ gói đăng.'); }
     catch (error) { toast(error instanceof Error ? error.message : 'Không thể sao chép gói đăng.'); }
   }
 
@@ -141,7 +143,7 @@ export function SeoPage() {
     try {
       await flush();
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob([buildPackageMarkdown({ ...project, seo })], { type: 'text/markdown;charset=utf-8' }));
+      link.href = URL.createObjectURL(new Blob([buildPackageMarkdown({ ...project, seo }, channel)], { type: 'text/markdown;charset=utf-8' }));
       link.download = `${slugifyPackageTitle(seo.titles.find((title) => title.id === seo.chosenTitleId)?.text ?? project.title)}.md`;
       link.click();
       URL.revokeObjectURL(link.href);
@@ -183,7 +185,7 @@ export function SeoPage() {
 
   if (project.chapters.length === 0) return <main className={styles.page}>{pageHeader}{channelSection}<section className={styles.emptyState}><h2>Chưa có chương</h2><p>Dự án chưa có chương. Hãy quay lại tab 2 để tạo và duyệt kịch bản trước.</p></section>{channelDialog}</main>;
 
-  const readyDisplay = buildSeoDisplay({ ...project, seo });
+  const readyDisplay = buildSeoDisplay({ ...project, seo }, channel);
   const controlsBusy = Boolean(busy || activeJob);
   return <main className={styles.page}>
     {pageHeader}
@@ -199,7 +201,7 @@ export function SeoPage() {
       <PinnedCommentPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['pinnedComment'])} onFlush={() => void flush()} />
       <ThumbnailPanel seo={seo} thumbnailFile={thumbnailFile} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['thumbnail'])} onUpload={(file) => void uploadThumbnail(file)} onRemove={() => void removeThumbnail()} />
     </div>
-    <PublishPanel project={{ ...project, seo }} thumbnailFile={thumbnailFile} renderFile={renderFile} onCopy={() => void copyPackage()} onDownload={() => void downloadPackage()} />
+    <PublishPanel project={{ ...project, seo }} thumbnailFile={thumbnailFile} renderFile={renderFile} channel={channel} onCopy={() => void copyPackage()} onDownload={() => void downloadPackage()} />
     <div className={styles.flush}><Button size="sm" onClick={() => void flush()} disabled={saveState !== 'error'}>Thử lưu lại</Button></div>
     {channelDialog}
   </main>;

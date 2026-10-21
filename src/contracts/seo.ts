@@ -8,6 +8,11 @@ export type SeoSection = (typeof SEO_SECTIONS)[number];
 export const SEO_TITLE_MAX_CHARS = 100;
 export const SEO_TITLE_RECOMMENDED_MAX_CHARS = 70;
 export const SEO_DESCRIPTION_MAX_CHARS = 5000;
+export const SEO_DESCRIPTION_KEYWORDS_MAX_CHARS = 800;
+export const SEO_DESCRIPTION_KEYWORDS_MIN_WORDS = 40;
+export const SEO_DESCRIPTION_KEYWORDS_MAX_WORDS = 100;
+export const SEO_DESCRIPTION_HINT_MIN_WORDS = 150;
+export const SEO_DESCRIPTION_HINT_MAX_WORDS = 300;
 export const SEO_TAGS_MAX_CHARS = 500;
 export const SEO_HASHTAGS_MAX_COUNT = 15;
 export const SEO_HASHTAGS_VISIBLE_COUNT = 3;
@@ -88,6 +93,7 @@ const SeoPackageObjectSchema = z.object({
   titles: z.array(TitleOptionSchema).default([]),
   chosenTitleId: z.string().nullable().default(null),
   descriptionIntro: z.string().max(SEO_DESCRIPTION_MAX_CHARS).default(''),
+  descriptionKeywords: z.string().max(SEO_DESCRIPTION_KEYWORDS_MAX_CHARS).default(''),
   tags: z.array(z.string()).default([]),
   hashtags: z.array(z.string().regex(/^#[A-Z][A-Za-z0-9]*$/, 'Hashtag phải bắt đầu bằng #, không có khoảng trắng và dùng CamelCase.')).max(SEO_HASHTAGS_MAX_COUNT).default([]),
   pinnedComment: z.string().default(''),
@@ -111,6 +117,7 @@ export const SeoPatchSchema = z.object({
   titles: z.array(TitleOptionSchema).optional(),
   chosenTitleId: z.string().nullable().optional(),
   descriptionIntro: z.string().max(SEO_DESCRIPTION_MAX_CHARS).optional(),
+  descriptionKeywords: z.string().max(SEO_DESCRIPTION_KEYWORDS_MAX_CHARS).optional(),
   tags: z.array(z.string()).optional(),
   hashtags: z.array(z.string()).max(SEO_HASHTAGS_MAX_COUNT).optional(),
   pinnedComment: z.string().optional(),
@@ -119,7 +126,7 @@ export const SeoPatchSchema = z.object({
 }).strict();
 export type SeoPatch = z.input<typeof SeoPatchSchema>;
 
-export type GeneratedSeoSections = Partial<Pick<SeoPackage, 'titles' | 'descriptionIntro' | 'tags' | 'hashtags' | 'pinnedComment' | 'thumbnail'>> & {
+export type GeneratedSeoSections = Partial<Pick<SeoPackage, 'titles' | 'descriptionIntro' | 'descriptionKeywords' | 'tags' | 'hashtags' | 'pinnedComment' | 'thumbnail'>> & {
   generatedBy: SeoGeneratedBy;
 };
 

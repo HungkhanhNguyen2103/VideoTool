@@ -8,6 +8,10 @@ export function listChannels() {
   return apiRequest('/api/channels', ChannelListSchema);
 }
 
+export function getChannel(id: string) {
+  return apiRequest(`/api/channels/${encodeURIComponent(id)}`, ChannelSchema);
+}
+
 export function createChannel(input: CreateChannelRequest) {
   return apiRequest('/api/channels', ChannelSchema, { method: 'POST', body: CreateChannelRequestSchema.parse(input) });
 }

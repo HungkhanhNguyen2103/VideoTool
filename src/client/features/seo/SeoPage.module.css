@@ -63,9 +63,12 @@
 .checklist li { display: flex; align-items: flex-start; gap: .6rem; padding: .55rem .65rem; border: 1px solid var(--border); border-radius: .5rem; }
 .checklist li > span:first-child { width: 1.2rem; font-size: 1.05rem; text-align: center; }
 .checklist small { display: block; margin-top: .15rem; color: var(--text-3); }
+.fieldLabel { display: block; margin-top: .5rem; color: var(--text-2); font-size: .85rem; }
 .checkDone { color: var(--green); }
 .checkDone small, .checkPending { color: var(--text-2); }
 .checkPending > span:first-child { color: var(--text-3); }
+.checkReminder { color: var(--text-2); background: var(--panel); }
+.checkReminder > span:first-child { color: var(--text-3); font-weight: 700; }
 .checkWarning { color: var(--amber-text, var(--amber)); border-color: var(--amber-border, var(--border)); background: var(--amber-bg, transparent); }
 .checkWarning small { color: var(--text-2); }
 .publishLinks { display: flex; flex-wrap: wrap; gap: 1rem; }

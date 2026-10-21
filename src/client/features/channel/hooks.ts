@@ -3,6 +3,7 @@ import type { CreateChannelRequest, UpdateChannelRequest } from '../../../contra
 import * as api from './api';
 
 export const CHANNELS_QUERY_KEY = ['channels'] as const;
+export const channelQueryKey = (id: string) => [...CHANNELS_QUERY_KEY, 'detail', id] as const;
 
 export async function invalidateChannelMutationQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, projectId?: string): Promise<void> {
   const invalidations = [queryClient.invalidateQueries({ queryKey: CHANNELS_QUERY_KEY })];
@@ -15,6 +16,10 @@ export async function invalidateChannelMutationQueries(queryClient: Pick<QueryCl
 
 export function useChannels() {
   return useQuery({ queryKey: CHANNELS_QUERY_KEY, queryFn: api.listChannels });
+}
+
+export function useChannel(id: string | null | undefined) {
+  return useQuery({ queryKey: channelQueryKey(id ?? ''), queryFn: () => api.getChannel(id!), enabled: Boolean(id) });
 }
 
 export function useCreateChannel() {

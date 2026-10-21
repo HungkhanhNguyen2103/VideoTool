@@ -77,6 +77,7 @@ describe('ProjectDocSchema visual style compatibility', () => {
       titles: [],
       chosenTitleId: null,
       descriptionIntro: '',
+      descriptionKeywords: '',
       tags: [],
       hashtags: [],
       pinnedComment: '',

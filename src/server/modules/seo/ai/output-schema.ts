@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SEO_TITLE_ANGLES } from '../../../../contracts/seo';
+import { SEO_DESCRIPTION_KEYWORDS_MAX_CHARS, SEO_TITLE_ANGLES } from '../../../../contracts/seo';
 
 export const SeoAiTitleSchema = z.object({
   text: z.string().min(1),
@@ -15,6 +15,7 @@ export const SeoAiThumbnailIdeaSchema = z.object({
 export const SeoAiOutputSchema = z.object({
   titles: z.array(SeoAiTitleSchema).optional(),
   description_intro: z.string().optional(),
+  description_keywords: z.string().max(SEO_DESCRIPTION_KEYWORDS_MAX_CHARS).optional(),
   tags: z.array(z.string()).optional(),
   hashtags: z.array(z.string()).optional(),
   pinned_comment: z.string().optional(),

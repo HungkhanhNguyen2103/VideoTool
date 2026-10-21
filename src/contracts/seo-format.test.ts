@@ -1,22 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { sceneFrameTimings, sceneVisualTimings, totalDurationInFrames } from '../remotion/frame-math';
 import type { ProjectDetail } from './project';
+import type { Channel } from './channel';
 import type { SeoPackage } from './seo';
 import {
   assembleDescription,
+  assembleDescriptionDetailed,
   chapterTimestamps,
   findUnsupportedFacts,
   formatTimestamp,
   hashtagStatus,
+  mergeChannelHashtags,
   tagBudget,
   thumbnailTextStatus,
   titleStatus,
 } from './seo-format';
 
-type TimingProject = Pick<ProjectDetail, 'chapters' | 'scenes' | 'renderSettings'>;
+type TimingProject = Pick<ProjectDetail, 'chapters' | 'scenes' | 'renderSettings' | 'referencesText' | 'language' | 'channelId'>;
 
 function projectWithScenes(durations: number[], sceneCounts: number[], fps = 24): TimingProject {
   return {
+    referencesText: '',
+    language: 'vi',
+    channelId: null,
     renderSettings: { aspect: '16:9', width: 1280, height: 720, fps: fps as 24 | 30 | 60 },
     scenes: durations.map((durationSec, index) => ({
       id: `scene-${index + 1}`,
@@ -66,11 +72,29 @@ const emptySeo: SeoPackage = {
   titles: [],
   chosenTitleId: null,
   descriptionIntro: '',
+  descriptionKeywords: '',
   tags: [],
   hashtags: [],
   pinnedComment: '',
   thumbnail: { ideas: [], chosenIdeaId: null, fileId: null },
   generatedBy: null,
+};
+
+const channel: Channel = {
+  id: 'channel-1',
+  name: 'Kênh Sử Việt',
+  handle: '@su-viet',
+  tagline: '',
+  description: '',
+  language: 'vi',
+  links: [{ label: 'Trang chủ', url: 'https://example.org/channel' }],
+  defaultHashtags: ['#LichSu', '#SuViet'],
+  descriptionFooter: 'Theo dõi Kênh Sử Việt.',
+  aiDisclosureText: 'Một số cảnh được tạo bằng AI.',
+  thumbnailTemplate: '',
+  publishSchedule: null,
+  createdAt: '2026-10-21T00:00:00.000Z',
+  updatedAt: '2026-10-21T00:00:00.000Z',
 };
 
 describe('SEO format helpers', () => {
@@ -135,6 +159,76 @@ describe('SEO format helpers', () => {
     const seo = { ...emptySeo, descriptionIntro: 'Mở đầu.', hashtags: ['#DienBienPhu', '#DienBienPhu', '#LichSu'] };
 
     expect(assembleDescription(seo, project)).toBe('Mở đầu.\n\nMốc chương:\n0:00 Chương 1\n0:10 Chương 2\n0:20 Chương 3\n\n#DienBienPhu #LichSu');
+  });
+
+  it('merges channel hashtags after the first three AI tags and fills missing visible slots', () => {
+    expect(mergeChannelHashtags(
+      ['#AIEvent', '#AIPerson', '#AIEra', '#AITail'],
+      ['#ChannelOne', '#ChannelTwo'],
+      [],
+    )).toEqual(['#AIEvent', '#AIPerson', '#AIEra', '#ChannelOne', '#ChannelTwo', '#AITail']);
+    expect(mergeChannelHashtags(['#AIOnly'], ['#DefaultOne', '#DefaultTwo', '#DefaultThree', '#DefaultFour'], [])).toEqual([
+      '#AIOnly', '#DefaultOne', '#DefaultTwo', '#DefaultThree', '#DefaultFour',
+    ]);
+    expect(mergeChannelHashtags(['#One', '#Two', '#Three', '#Four'], [], [])).toEqual(['#One', '#Two', '#Three', '#Four']);
+  });
+
+  it('deduplicates hashtags against tags and caps the merged channel result', () => {
+    expect(mergeChannelHashtags(['#Event', '#Person', '#Era', '#Tail'], ['#Event', '#Channel'], ['event'])).toEqual([
+      '#Person', '#Era', '#Channel', '#Tail',
+    ]);
+    const manyAi = Array.from({ length: 15 }, (_, index) => `#Ai${index + 1}`);
+    const manyDefaults = Array.from({ length: 5 }, (_, index) => `#Channel${index + 1}`);
+    const merged = mergeChannelHashtags(manyAi, manyDefaults, []);
+    expect(merged).toHaveLength(15);
+    expect(merged.slice(0, 3)).toEqual(manyAi.slice(0, 3));
+    expect(merged.slice(3, 8)).toEqual(manyDefaults);
+  });
+
+  it('assembles localized sources, channel links, footer, disclosure, and hashtags in order', () => {
+    const project = { ...projectWithScenes([10, 10, 10], [1, 1, 1]), referencesText: '[1] Archive: https://example.org/source', channelId: channel.id };
+    const seo = { ...emptySeo, descriptionIntro: 'Intro.', descriptionKeywords: 'Từ khóa.', hashtags: ['#DienBienPhu'] };
+    const result = assembleDescriptionDetailed(seo, project, channel);
+
+    expect(result).toEqual({ text: [
+      'Intro.',
+      'Từ khóa.',
+      'Mốc chương:\n0:00 Chương 1\n0:10 Chương 2\n0:20 Chương 3',
+      'Nguồn tham khảo:\n1. Archive: https://example.org/source',
+      'Trang chủ: https://example.org/channel',
+      'Theo dõi Kênh Sử Việt.',
+      'Một số cảnh được tạo bằng AI.',
+      '#DienBienPhu',
+    ].join('\n\n'), trimmed: [], overLimit: false });
+    expect(assembleDescription(seo, project, channel)).toBe(result.text);
+  });
+
+  it('uses the English sources heading and omits empty optional blocks', () => {
+    const project = { ...projectWithScenes([], []), language: 'en' as const, referencesText: '1) Record - https://example.org/record' };
+    const result = assembleDescriptionDetailed({ ...emptySeo, descriptionIntro: 'Intro.' }, project);
+    expect(result.text).toBe('Intro.\n\nSources:\n1. Record: https://example.org/record');
+  });
+
+  it('drops the whole sources block before keywords when the assembled description exceeds its limit', () => {
+    const project = {
+      ...projectWithScenes([], []),
+      referencesText: `1. ${'source '.repeat(150)}https://example.org/source`,
+    };
+    const seo = { ...emptySeo, descriptionIntro: 'i'.repeat(4500), descriptionKeywords: 'k'.repeat(800) };
+    const result = assembleDescriptionDetailed(seo, project);
+    expect(result.trimmed).toEqual(['sources', 'keywords']);
+    expect(result.overLimit).toBe(false);
+    expect(result.text).not.toContain('Sources:');
+    expect(result.text).not.toContain('k'.repeat(20));
+  });
+
+  it('keeps required description blocks and reports when they still exceed the limit', () => {
+    const project = { ...projectWithScenes([], []), referencesText: '' };
+    const seo = { ...emptySeo, descriptionIntro: 'i'.repeat(5000), descriptionKeywords: 'keyword', hashtags: ['#Tag'] };
+    const result = assembleDescriptionDetailed(seo, project);
+    expect(result.trimmed).toEqual(['keywords']);
+    expect(result.overLimit).toBe(true);
+    expect(result.text.startsWith('i'.repeat(5000))).toBe(true);
   });
 
   it('reports title, tag, hashtag, and thumbnail text boundaries', () => {

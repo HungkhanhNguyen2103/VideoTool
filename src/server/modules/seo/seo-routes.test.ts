@@ -8,7 +8,8 @@ import type { Server } from 'node:http';
 import { getCollection } from '../../db/client';
 import { errorHandler } from '../../error-handler';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
-import { createProject, getProject, replaceProjectChapters } from '../project';
+import { createProject, getProject, replaceProjectChapters, setProjectChannel } from '../project';
+import { createChannel } from '../channel';
 import { createFileStoreService } from '../file-store';
 import { configureSeoModule, createSeoRouter } from './routes';
 
@@ -41,6 +42,7 @@ beforeEach(async () => {
   await getCollection('projects').deleteMany({});
   await getCollection('jobs').deleteMany({});
   await getCollection('files').deleteMany({});
+  await getCollection('channels').deleteMany({});
   configureSeoModule(filesDir);
 });
 afterEach(async () => {
@@ -100,7 +102,7 @@ describe('SEO routes and thumbnail files', () => {
     const base = await startSeoServer();
     const prompt = await fetch(`${base}/api/project/${project.id}/seo/manual-prompt?sections=titles,tags`);
     expect(prompt.status).toBe(200);
-    expect(await prompt.json()).toMatchObject({ prompt: expect.stringContaining('SYSTEM'), promptVersion: 'seo-prompt-v1/seo-documentary@7' });
+    expect(await prompt.json()).toMatchObject({ prompt: expect.stringContaining('SYSTEM'), promptVersion: 'seo-prompt-v1/seo-documentary@8' });
 
     const imported = await fetch(`${base}/api/project/${project.id}/seo/manual-import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: seoRaw, sections: ['titles', 'tags'] }) });
     expect(imported.status).toBe(200);
@@ -113,6 +115,41 @@ describe('SEO routes and thumbnail files', () => {
     const invalid = await fetch(`${base}/api/project/${project.id}/seo/manual-import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ raw: '{', sections: ['titles'] }) });
     expect(invalid.status).toBe(422);
     expect(await invalid.json()).toMatchObject({ error: { code: 'SEO_PARSE_ERROR', message: expect.stringContaining('JSON của gói SEO không hợp lệ') } });
+  });
+
+  it('uses an assigned channel in manual prompts, merges its hashtags on import, and tolerates a missing channel', async () => {
+    const project = await projectWithChapter();
+    const channel = await createChannel({
+      name: 'Kênh thử nghiệm',
+      defaultHashtags: ['#ChannelOne', '#ChannelTwo'],
+      links: [{ label: 'Private link', url: 'https://example.org/private' }],
+      descriptionFooter: 'Private footer.',
+      aiDisclosureText: 'Private disclosure.',
+    });
+    await setProjectChannel(project.id, channel.id);
+    const base = await startSeoServer();
+    const promptResponse = await fetch(`${base}/api/project/${project.id}/seo/manual-prompt?sections=tags`);
+    const promptBody = await promptResponse.json() as { prompt: string };
+
+    expect(promptResponse.status).toBe(200);
+    expect(promptBody.prompt).toContain('Channel:\nName: Kênh thử nghiệm');
+    expect(promptBody.prompt).toContain('Default hashtags: ["#ChannelOne","#ChannelTwo"]');
+    expect(promptBody.prompt).not.toContain('Private link');
+    expect(promptBody.prompt).not.toContain('Private footer.');
+    expect(promptBody.prompt).not.toContain('Private disclosure.');
+
+    const imported = await fetch(`${base}/api/project/${project.id}/seo/manual-import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ raw: seoRaw, sections: ['tags'] }),
+    });
+    expect(imported.status).toBe(200);
+    expect((await imported.json()).seo.hashtags).toEqual(['#ChannelOne', '#ChannelTwo']);
+
+    const missing = await projectWithChapter();
+    await setProjectChannel(missing.id, 'missing-channel');
+    const missingPrompt = await fetch(`${base}/api/project/${missing.id}/seo/manual-prompt?sections=tags`);
+    expect(missingPrompt.status).toBe(200);
+    expect((await missingPrompt.json()).prompt).not.toContain('Channel:');
   });
 
   it('rejects unknown body fields and unknown section values', async () => {

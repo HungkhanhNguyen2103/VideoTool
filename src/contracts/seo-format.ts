@@ -1,8 +1,12 @@
+import type { Channel } from './channel';
 import type { ProjectDetail } from './project';
 import { secondsToFrames } from './frame-math';
 import { activeScenes } from './scene-active';
+import { parseSourceReferences } from './seo-sources';
 import {
+  SEO_DESCRIPTION_MAX_CHARS,
   SEO_HASHTAGS_MAX_COUNT,
+  SEO_HASHTAGS_VISIBLE_COUNT,
   SEO_THUMBNAIL_MAX_BYTES,
   SEO_TAGS_MAX_CHARS,
   SEO_THUMBNAIL_MAX_WORDS,
@@ -13,6 +17,8 @@ import {
 } from './seo';
 
 type TimingProject = Pick<ProjectDetail, 'chapters' | 'scenes' | 'renderSettings'>;
+type DescriptionProject = TimingProject & Pick<ProjectDetail, 'referencesText' | 'language' | 'channelId'>;
+type DescriptionSeo = Pick<SeoPackage, 'descriptionIntro' | 'hashtags' | 'tags'> & Partial<Pick<SeoPackage, 'descriptionKeywords'>>;
 
 export type ChapterTimestamp = {
   no: number;
@@ -96,22 +102,76 @@ export function chapterTimestamps(project: TimingProject): ChapterTimestampsResu
   return { ok: true, timestamps, warnings };
 }
 
-export function assembleDescription(seo: Pick<SeoPackage, 'descriptionIntro' | 'hashtags' | 'tags'>, project: TimingProject): string {
-  const sections: string[] = [];
-  const intro = seo.descriptionIntro.trim();
-  if (intro) sections.push(intro);
+export function mergeChannelHashtags(aiHashtags: readonly string[], channelDefaults: readonly string[], tags: readonly string[] = []): string[] {
+  const leadingAi = aiHashtags.slice(0, SEO_HASHTAGS_VISIBLE_COUNT);
+  const remainingAi = aiHashtags.slice(SEO_HASHTAGS_VISIBLE_COUNT);
+  const ordered = [...leadingAi, ...channelDefaults, ...remainingAi];
+  return normalizeHashtags(ordered, tags).slice(0, SEO_HASHTAGS_MAX_COUNT);
+}
 
+export type DescriptionTrimmedBlock = 'sources' | 'keywords';
+export type AssembledDescription = { text: string; trimmed: DescriptionTrimmedBlock[]; overLimit: boolean };
+
+function sectionText(value: string | undefined): string {
+  return value?.trim() ?? '';
+}
+
+function sourceBlock(project: DescriptionProject): string {
+  const sources = parseSourceReferences(project.referencesText);
+  if (sources.length === 0) return '';
+  const heading = project.language === 'vi' ? 'Nguồn tham khảo:' : 'Sources:';
+  return [heading, ...sources.map(({ title, url }, index) => `${index + 1}. ${title ? `${title}: ` : ''}${url}`)].join('\n');
+}
+
+function channelBlocks(project: DescriptionProject, channel?: Channel): { links: string; footer: string; disclosure: string } {
+  const assignedChannel = channel && project.channelId === channel.id ? channel : undefined;
+  return {
+    links: assignedChannel?.links.map(({ label, url }) => `${label}: ${url}`).join('\n') ?? '',
+    footer: sectionText(assignedChannel?.descriptionFooter),
+    disclosure: sectionText(assignedChannel?.aiDisclosureText),
+  };
+}
+
+export function assembleDescriptionDetailed(seo: DescriptionSeo, project: DescriptionProject, channel?: Channel): AssembledDescription {
+  const intro = sectionText(seo.descriptionIntro);
+  const keywords = sectionText(seo.descriptionKeywords);
   const chapters = chapterTimestamps(project);
-  if (chapters.ok) {
-    sections.push([
-      'Mốc chương:',
-      ...chapters.timestamps.map((chapter) => `${chapter.timestamp} ${chapter.title}`),
-    ].join('\n'));
-  }
+  const chapterBlock = chapters.ok
+    ? ['Mốc chương:', ...chapters.timestamps.map((chapter) => `${chapter.timestamp} ${chapter.title}`)].join('\n')
+    : '';
+  const sources = sourceBlock(project);
+  const channelContent = channelBlocks(project, channel);
+  const hashtags = normalizeHashtags(seo.hashtags, seo.tags).slice(0, SEO_HASHTAGS_MAX_COUNT).join(' ');
+  const compose = (includeSources: boolean, includeKeywords: boolean) => [
+    intro,
+    includeKeywords ? keywords : '',
+    chapterBlock,
+    includeSources ? sources : '',
+    channelContent.links,
+    channelContent.footer,
+    channelContent.disclosure,
+    hashtags,
+  ].filter(Boolean).join('\n\n');
 
-  const hashtags = normalizeHashtags(seo.hashtags, seo.tags);
-  if (hashtags.length > 0) sections.push(hashtags.slice(0, SEO_HASHTAGS_MAX_COUNT).join(' '));
-  return sections.join('\n\n');
+  let includeSources = true;
+  let includeKeywords = true;
+  let text = compose(includeSources, includeKeywords);
+  const trimmed: DescriptionTrimmedBlock[] = [];
+  if (text.length > SEO_DESCRIPTION_MAX_CHARS && sources) {
+    includeSources = false;
+    trimmed.push('sources');
+    text = compose(includeSources, includeKeywords);
+  }
+  if (text.length > SEO_DESCRIPTION_MAX_CHARS && keywords) {
+    includeKeywords = false;
+    trimmed.push('keywords');
+    text = compose(includeSources, includeKeywords);
+  }
+  return { text, trimmed, overLimit: text.length > SEO_DESCRIPTION_MAX_CHARS };
+}
+
+export function assembleDescription(seo: DescriptionSeo, project: DescriptionProject, channel?: Channel): string {
+  return assembleDescriptionDetailed(seo, project, channel).text;
 }
 
 export type TitleStatus = {
@@ -190,12 +250,12 @@ export function findUnsupportedFacts(texts: readonly string[], sourceText: strin
   return unsupported;
 }
 
-export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'chapter-timestamps' | 'video';
-export type PublishChecklistItem = { key: PublishChecklistKey; label: string; done: boolean; detail: string; warning?: boolean };
+export type PublishChecklistKey = 'title' | 'description' | 'tags' | 'hashtag' | 'pinnedComment' | 'thumbnail' | 'chapter-timestamps' | 'video' | 'channel' | 'sources' | 'ai-content' | 'description-length';
+export type PublishChecklistItem = { key: PublishChecklistKey; label: string; done: boolean; detail: string; warning?: boolean; reminder?: true };
 export type PublishThumbnailFile = { id: string; mimeType: string; sizeBytes: number };
 
 /** Build the warn-only publish checklist from the project package and optional file metadata. */
-export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: PublishThumbnailFile): PublishChecklistItem[] {
+export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: PublishThumbnailFile, channel?: Channel): PublishChecklistItem[] {
   const seo = project.seo;
   const title = seo.titles.find((item) => item.id === seo.chosenTitleId);
   const tags = tagBudget(seo.tags);
@@ -206,46 +266,45 @@ export function buildPublishChecklist(project: ProjectDetail, thumbnailFile?: Pu
       && thumbnailFile.sizeBytes <= SEO_THUMBNAIL_MAX_BYTES
     : Boolean(seo.thumbnail.fileId);
   const chapterWarnings = chapterTimestamps(project).warnings ?? [];
+  const description = assembleDescriptionDetailed(seo, project, channel);
+  const parsedSources = parseSourceReferences(project.referencesText);
+  const hasAssignedChannel = Boolean(channel && channel.id === project.channelId);
+  const hasDescriptionIntro = seo.descriptionIntro.trim().length > 0;
   return [
     ...(chapterWarnings.length > 0 ? [{ key: 'chapter-timestamps' as const, label: 'M\u1ed1c ch\u01b0\u01a1ng', done: true, warning: true, detail: chapterWarnings.join(' ') }] : []),
     { key: 'title', label: 'Đã chọn tiêu đề', done: Boolean(title && titleStatus(title.text).length <= SEO_TITLE_MAX_CHARS), detail: title?.text ?? 'Chưa chọn tiêu đề.' },
-    { key: 'description', label: 'Có mô tả', done: seo.descriptionIntro.trim().length > 0, detail: seo.descriptionIntro.trim() ? 'Mô tả đã có phần mở đầu.' : 'Chưa có phần mở đầu mô tả.' },
+    { key: 'description', label: 'Có mô tả', done: hasDescriptionIntro, detail: hasDescriptionIntro ? 'Mô tả đã có phần mở đầu.' : 'Chưa có phần mở đầu mô tả.' },
     { key: 'tags', label: 'Tags trong ngân sách', done: !tags.overLimit && seo.tags.length > 0, detail: `${tags.used}/${tags.max} ký tự.` },
     { key: 'hashtag', label: 'Có hashtag', done: hashtags.ok && hashtags.count > 0, detail: `${hashtags.count}/${hashtags.max} hashtag.` },
     { key: 'pinnedComment', label: 'Có bình luận ghim', done: seo.pinnedComment.trim().length > 0, detail: seo.pinnedComment.trim() ? 'Đã có bình luận.' : 'Chưa có bình luận.' },
     { key: 'thumbnail', label: 'Thumbnail hợp lệ', done: thumbnailOk, detail: thumbnailOk ? 'PNG/JPEG, trong giới hạn.' : 'Cần thumbnail PNG/JPEG không quá 2 MB.' },
     { key: 'video', label: 'Video đã render', done: Boolean(project.renderFileId), detail: project.renderFileId ? 'Đã có file render.' : 'Chưa render video cuối.' },
+    { key: 'channel', label: 'Đã chọn kênh', done: hasAssignedChannel, warning: !hasAssignedChannel, detail: hasAssignedChannel ? channel!.name : 'Chưa gán kênh cho dự án.' },
+    { key: 'sources', label: 'Nguồn tham khảo', done: parsedSources.length > 0 && !description.trimmed.includes('sources'), warning: parsedSources.length === 0, detail: parsedSources.length > 0 ? `${parsedSources.length} nguồn có URL hợp lệ.` : 'referencesText chưa có URL HTTP/HTTPS nào trong dòng nguồn có số thứ tự.' },
+    { key: 'ai-content', label: 'Khai báo nội dung AI/tổng hợp', done: false, reminder: true, detail: 'Trả lời câu hỏi nội dung bị thay đổi/tổng hợp trong bước tải lên của YouTube nếu video có cảnh hoặc giọng thật được tạo bằng AI. Đây là quy tắc của YouTube; bạn tự quyết định theo nội dung video.' },
+    ...(description.trimmed.length > 0 || description.overLimit ? [{ key: 'description-length' as const, label: 'Độ dài mô tả', done: false, warning: true, detail: description.overLimit ? 'Mô tả vẫn vượt giới hạn sau khi bỏ các khối nguồn và từ khóa có thể cắt.' : `Đã bỏ khối ${description.trimmed.join(' rồi ')} để giữ mô tả trong giới hạn.` }] : []),
   ];
 }
 
-export function buildPackageMarkdown(project: ProjectDetail): string {
+export function buildPackageMarkdown(project: ProjectDetail, channel?: Channel): string {
   const seo = project.seo;
   const title = seo.titles.find((item) => item.id === seo.chosenTitleId)?.text ?? '';
   const idea = seo.thumbnail.ideas.find((item) => item.id === seo.thumbnail.chosenIdeaId);
   const hashtags = normalizeHashtags(seo.hashtags, seo.tags);
+  const assignedChannel = channel && project.channelId === channel.id ? channel : undefined;
+  const channelSection = assignedChannel
+    ? [`## Kênh\n${assignedChannel.name}${assignedChannel.handle ? `\n${assignedChannel.handle}` : ''}${assignedChannel.links.length ? `\n${assignedChannel.links.map(({ label, url }) => `${label}: ${url}`).join('\n')}` : ''}`]
+    : [];
   return [
-    '# Gói đăng YouTube',
-    `Ngày tạo gói: ${project.updatedAt}`,
-    '',
-    '## Tiêu đề',
-    title || '(chưa chọn)',
-    '',
-    '## Mô tả',
-    assembleDescription(seo, project),
-    '',
-    '## Tags',
-    seo.tags.join(', '),
-    '',
-    '## Hashtag',
-    hashtags.join(' '),
-    '',
-    '## Bình luận ghim',
-    seo.pinnedComment,
-    '',
-    '## Thumbnail',
-    idea ? `Chữ: ${idea.overlayText}\nConcept: ${idea.concept}\nPrompt ảnh: ${idea.imagePrompt}` : '(chưa chọn ý tưởng)',
-    '',
-  ].join('\n');
+    ['# Gói đăng YouTube', `Ngày tạo gói: ${project.updatedAt}`].join('\n'),
+    ...channelSection,
+    ['## Tiêu đề', title || '(chưa chọn)'].join('\n'),
+    ['## Mô tả', assembleDescription(seo, project, assignedChannel)].join('\n'),
+    ['## Tags', seo.tags.join(', ')].join('\n'),
+    ['## Hashtag', hashtags.join(' ')].join('\n'),
+    ['## Bình luận ghim', seo.pinnedComment].join('\n'),
+    ['## Thumbnail', idea ? `Chữ: ${idea.overlayText}\nConcept: ${idea.concept}\nPrompt ảnh: ${idea.imagePrompt}` : '(chưa chọn ý tưởng)'].join('\n'),
+  ].join('\n\n') + '\n';
 }
 
 export function slugifyPackageTitle(value: string): string {

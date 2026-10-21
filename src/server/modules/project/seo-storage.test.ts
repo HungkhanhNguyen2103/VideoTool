@@ -33,6 +33,7 @@ function packageWithContent(): SeoPackage {
     titles: [title],
     chosenTitleId: title.id,
     descriptionIntro: 'Một mô tả ngắn.',
+    descriptionKeywords: 'Điện Biên Phủ, chiến dịch năm 1954.',
     tags: ['lịch sử chiến dịch', 'quân sự'],
     hashtags: ['#DienBienPhu'],
     pinnedComment: 'Bạn nghĩ gì về chiến lược này?',
@@ -58,6 +59,7 @@ describe('SEO project storage', () => {
       titles: [],
       chosenTitleId: null,
       descriptionIntro: '',
+      descriptionKeywords: '',
       tags: [],
       hashtags: [],
       pinnedComment: '',
@@ -113,6 +115,44 @@ describe('SEO project storage', () => {
     expect(after.seo.descriptionIntro).toBe(before.seo.descriptionIntro);
     expect(after.seo.tags).toEqual(before.seo.tags);
     expect(after.seo.generatedBy).toEqual(generatedBy);
+  });
+
+  it('writes description keywords together with the generated description section', async () => {
+    const project = await createProject(projectInput);
+    const after = await applyGeneratedSeoSections(project.id, ['description'], {
+      descriptionIntro: 'Mở đầu mới.',
+      descriptionKeywords: 'Sự kiện, nhân vật, địa danh và thời kỳ.',
+      generatedBy,
+    });
+
+    expect(after.seo.descriptionIntro).toBe('Mở đầu mới.');
+    expect(after.seo.descriptionKeywords).toBe('Sự kiện, nhân vật, địa danh và thời kỳ.');
+  });
+
+  it('preserves existing description keywords when generated output omits them', async () => {
+    const project = await createProject(projectInput);
+    await patchProjectSeo(project.id, { descriptionIntro: 'Existing intro.', descriptionKeywords: 'User-edited keywords.' });
+
+    const after = await applyGeneratedSeoSections(project.id, ['description'], {
+      descriptionIntro: 'Generated intro.',
+      generatedBy,
+    });
+
+    expect(after.seo.descriptionIntro).toBe('Generated intro.');
+    expect(after.seo.descriptionKeywords).toBe('User-edited keywords.');
+  });
+
+  it('clears existing description keywords when generated output supplies an empty string', async () => {
+    const project = await createProject(projectInput);
+    await patchProjectSeo(project.id, { descriptionIntro: 'Existing intro.', descriptionKeywords: 'User-edited keywords.' });
+
+    const after = await applyGeneratedSeoSections(project.id, ['description'], {
+      descriptionIntro: 'Generated intro.',
+      descriptionKeywords: '',
+      generatedBy,
+    });
+
+    expect(after.seo.descriptionKeywords).toBe('');
   });
 
   it('rejects unknown fields in an SEO patch', async () => {

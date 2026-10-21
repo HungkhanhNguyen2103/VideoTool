@@ -6,6 +6,7 @@ import { uploadThumbnail } from '../../shared/upload';
 import { applyGeneratedSeoSections, getProject, patchProjectSeo } from '../project';
 import { buildSeoPrompt } from './ai/build-prompt';
 import { parseSeoOutput, SeoAiOutputError } from './ai/parse-output';
+import { getSeoChannel, mergeGeneratedChannelDefaults } from './service';
 import { configureThumbnailService, removeProjectThumbnail, replaceProjectThumbnail, THUMBNAIL_MIME_TYPES } from './thumbnail-service';
 
 type EnqueueSeoJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
@@ -54,7 +55,9 @@ export function createSeoRouter(options: { enqueueJob: EnqueueSeoJob; getActiveJ
 
   router.get('/:id/seo/manual-prompt', async (req, res) => {
     const sections = parseSectionsQuery(req.query.sections);
-    const prompt = buildSeoPrompt(await getProject(req.params.id), sections);
+    const project = await getProject(req.params.id);
+    const channel = await getSeoChannel(project);
+    const prompt = buildSeoPrompt(project, sections, channel);
     res.json({ prompt: `SYSTEM\n${prompt.system}\n\nUSER\n${prompt.user}`, promptVersion: prompt.promptVersion });
   });
 
@@ -67,8 +70,9 @@ export function createSeoRouter(options: { enqueueJob: EnqueueSeoJob; getActiveJ
     } catch (error) {
       translateManualParseError(error);
     }
+    const channel = await getSeoChannel(project);
     const saved = await applyGeneratedSeoSections(project.id, body.sections, {
-      ...parsed,
+      ...mergeGeneratedChannelDefaults(body.sections, parsed, channel),
       generatedBy: { provider: 'manual', model: 'Dán thủ công', promptVersion: 'manual', generatedAt: new Date().toISOString() },
     });
     res.json(saved);

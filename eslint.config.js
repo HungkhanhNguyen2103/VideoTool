@@ -8,7 +8,7 @@ const ALLOWED = {
   script: ['project'],
   asset: ['project', 'job'],
   video: ['project', 'asset', 'job'],
-  seo: ['project'],
+  seo: ['project', 'channel'],
   channel: ['project'],
 };
 

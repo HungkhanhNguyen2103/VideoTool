@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createChannel, deleteChannel, listChannels, updateChannel } from './api';
+import { createChannel, deleteChannel, getChannel, listChannels, updateChannel } from './api';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -30,5 +30,11 @@ describe('channel API', () => {
     await expect(deleteChannel('channel/1')).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/channels/channel%2F1', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ tagline: 'Stories' }) }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/channels/channel%2F1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('loads a single channel by its encoded id', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(channel), { status: 200 }));
+    await expect(getChannel('channel/1')).resolves.toMatchObject({ id: 'channel-1' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/channels/channel%2F1', expect.objectContaining({ method: 'GET' }));
   });
 });

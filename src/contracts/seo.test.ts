@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SEO_HASHTAGS_MAX_COUNT, SeoPackageSchema, normalizeHashtag, normalizeHashtags } from './seo';
+import { SEO_HASHTAGS_MAX_COUNT, SeoPackageSchema, SeoPatchSchema, normalizeHashtag, normalizeHashtags } from './seo';
 
 describe('SEO contracts', () => {
   it('parses an empty package with all legacy-safe defaults', () => {
@@ -7,12 +7,26 @@ describe('SEO contracts', () => {
       titles: [],
       chosenTitleId: null,
       descriptionIntro: '',
+      descriptionKeywords: '',
       tags: [],
       hashtags: [],
       pinnedComment: '',
       thumbnail: { ideas: [], chosenIdeaId: null, fileId: null },
       generatedBy: null,
     });
+  });
+
+  it('parses legacy SEO packages without description keywords', () => {
+    expect(SeoPackageSchema.parse({ descriptionIntro: 'Intro.' }).descriptionKeywords).toBe('');
+  });
+
+  it('accepts description keywords up to 800 characters and rejects longer values', () => {
+    expect(SeoPackageSchema.safeParse({ descriptionKeywords: 'k'.repeat(800) }).success).toBe(true);
+    expect(SeoPackageSchema.safeParse({ descriptionKeywords: 'k'.repeat(801) }).success).toBe(false);
+  });
+
+  it('accepts description keywords in a partial SEO patch', () => {
+    expect(SeoPatchSchema.parse({ descriptionKeywords: 'Từ khóa tự nhiên.' })).toEqual({ descriptionKeywords: 'Từ khóa tự nhiên.' });
   });
 
   it('normalizes pasted hashtags to accent-free CamelCase and removes duplicates', () => {

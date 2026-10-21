@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SEO_DESCRIPTION_MAX_CHARS, SEO_HASHTAGS_MAX_COUNT, SEO_TITLE_MAX_CHARS, normalizeHashtags, type GeneratedSeoSections, type SeoSection } from '../../../../contracts/seo';
+import { SEO_DESCRIPTION_KEYWORDS_MAX_CHARS, SEO_DESCRIPTION_MAX_CHARS, SEO_HASHTAGS_MAX_COUNT, SEO_TITLE_MAX_CHARS, normalizeHashtags, type GeneratedSeoSections, type SeoSection } from '../../../../contracts/seo';
 import { AppError } from '../../../shared/errors';
 import { SeoAiOutputSchema, type SeoAiOutput } from './output-schema';
 
@@ -51,7 +51,12 @@ function normalizeOutput(output: SeoAiOutput, sections: readonly SeoSection[]): 
   if (requested.has('titles')) {
     result.titles = output.titles!.slice(0, 5).map((title, index) => ({ id: `title-${index + 1}`, text: title.text.trim().slice(0, SEO_TITLE_MAX_CHARS), angle: title.angle })).filter((title) => title.text.length > 0);
   }
-  if (requested.has('description')) result.descriptionIntro = output.description_intro!.trim().slice(0, SEO_DESCRIPTION_MAX_CHARS);
+  if (requested.has('description')) {
+    result.descriptionIntro = output.description_intro!.trim().slice(0, SEO_DESCRIPTION_MAX_CHARS);
+    if (output.description_keywords !== undefined) {
+      result.descriptionKeywords = output.description_keywords.trim().slice(0, SEO_DESCRIPTION_KEYWORDS_MAX_CHARS);
+    }
+  }
   if (requested.has('tags')) {
     result.tags = uniqueTags(output.tags!);
     const candidates = output.hashtags!.filter((hashtag) => /^#[^\s]+$/.test(hashtag.trim())).slice(0, SEO_HASHTAGS_MAX_COUNT);

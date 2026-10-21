@@ -17,6 +17,8 @@
 
 ## Client flow
 
+- `features/channel/api.ts` and `hooks.ts` own channel list/detail and CRUD requests; `useChannel(id)` loads an assigned profile for SEO, and successful channel writes invalidate the channel query.
+
 - `features/channel/api.ts` and `hooks.ts` own channel list and CRUD requests; successful channel writes invalidate the channel query.
 - The create-project form remembers its last selected channel in local storage when available. The SEO page owns the project's channel selection through the project mutation and invalidates channel, project-detail, and project-list queries.
 - Channel management uses a native `<dialog>`. The history-channel template only prefills the editor and never saves automatically.

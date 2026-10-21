@@ -525,7 +525,10 @@ export async function applyGeneratedSeoSections(
     fields['seo.titles'] = candidate.titles;
     fields['seo.chosenTitleId'] = candidate.titles.some((item) => item.id === current.seo.chosenTitleId) ? current.seo.chosenTitleId : null;
   }
-  if (requested.has('description')) fields['seo.descriptionIntro'] = candidate.descriptionIntro;
+  if (requested.has('description')) {
+    fields['seo.descriptionIntro'] = candidate.descriptionIntro;
+    if (generated.descriptionKeywords !== undefined) fields['seo.descriptionKeywords'] = candidate.descriptionKeywords;
+  }
   if (requested.has('tags')) {
     fields['seo.tags'] = candidate.tags;
     fields['seo.hashtags'] = candidate.hashtags;
