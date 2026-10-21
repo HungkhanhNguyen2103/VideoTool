@@ -8,5 +8,7 @@ data/models/
 data/remotion-public/
 __pycache__/
 !data/files/.gitkeep
+tools/explainer-3d/out/
+tools/explainer-3d/reference/
 *.log
 .DS_Store

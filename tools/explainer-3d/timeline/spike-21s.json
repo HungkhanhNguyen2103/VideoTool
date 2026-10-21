@@ -1,0 +1,109 @@
+{
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "beats": [
+    {
+      "id": "river-establish",
+      "start": 0,
+      "dur": 3,
+      "ops": [
+        { "op": "river", "length": 22, "width": 8.5 },
+        { "op": "add_rocks", "count": 4 }
+      ],
+      "camera": { "position": [10.5, -15.5, 5.2], "target": [0, 0, 0.2], "lens": 53 }
+    },
+    {
+      "id": "deck-drops",
+      "start": 3,
+      "dur": 1.5,
+      "ops": [
+        { "op": "drop_deck", "planks": 24, "span": 8.8, "deck_width": 1.2, "deck_z": 1.55 }
+      ],
+      "camera": { "position": [8.5, -12.5, 7.2], "target": [0, 0, 0.4], "lens": 55 }
+    },
+    {
+      "id": "low-piers-and-yacht",
+      "start": 4.5,
+      "dur": 3,
+      "ops": [
+        { "op": "add_piers", "count": 7, "height": 1.4 },
+        { "op": "spawn_yacht", "delay_sec": 1.5, "from_y": -8, "blocked_y": -1.1 }
+      ],
+      "camera": { "position": [9.5, -11, 8.5], "target": [0, 0, 0.5], "lens": 57 }
+    },
+    {
+      "id": "reduce-supports",
+      "start": 7.5,
+      "dur": 1.5,
+      "ops": [
+        { "op": "reduce_piers", "keep": 3 }
+      ],
+      "camera": { "position": [8.2, -10, 6.2], "target": [0, 0, 1.4], "lens": 57 }
+    },
+    {
+      "id": "towers-rise",
+      "start": 9,
+      "dur": 1.5,
+      "ops": [
+        { "op": "raise_towers", "height": 5.6 }
+      ],
+      "camera": { "position": [7.5, -9.2, 5.8], "target": [0, 0, 1.7], "lens": 58 }
+    },
+    {
+      "id": "suspension-ropes",
+      "start": 10.5,
+      "dur": 3,
+      "ops": [
+        { "op": "hang_ropes", "sag": 0.9, "hangers": 11 },
+        { "op": "pass_yacht", "to_y": 7.5 }
+      ],
+      "camera": { "position": [7, -8, 6.8], "target": [0, 0, 2], "lens": 59 }
+    },
+    {
+      "id": "suspension-bridge-reveal",
+      "start": 13.5,
+      "dur": 1.5,
+      "ops": [
+        { "op": "reveal_full_bridge" }
+      ],
+      "camera": { "position": [9, -7, 9], "target": [0, 0, 1.8], "lens": 56 }
+    },
+    {
+      "id": "tall-ship-arrives",
+      "start": 15,
+      "dur": 1.5,
+      "ops": [
+        { "op": "spawn_ship", "from_y": 9, "approach_y": 1.2 }
+      ],
+      "camera": { "position": [9.4, -8.5, 5.8], "target": [0, 0, 1.8], "lens": 55 }
+    },
+    {
+      "id": "tall-ship-blocked",
+      "start": 16.5,
+      "dur": 1.5,
+      "ops": [
+        { "op": "block_ship", "blocked_y": 1.2 }
+      ],
+      "camera": { "position": [9.8, -8.8, 5.6], "target": [0, 0, 1.8], "lens": 55 }
+    },
+    {
+      "id": "raise-deck-proposal",
+      "start": 18,
+      "dur": 1.5,
+      "ops": [
+        { "op": "raise_deck", "amount": 0.2 }
+      ],
+      "camera": { "position": [13, -12, 9.5], "target": [0, 0, 1.7], "lens": 53 }
+    },
+    {
+      "id": "long-approaches",
+      "start": 19.5,
+      "dur": 1.5,
+      "ops": [
+        { "op": "extend_approaches", "length": 3.2 }
+      ],
+      "camera": { "position": [15, -14, 12], "target": [0, 0, 1.5], "lens": 51 }
+    }
+  ]
+}
