@@ -1,11 +1,13 @@
 import type { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
-import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubeQuotaDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeCredentialDoc, type YoutubeQuotaDoc, type YoutubeVideoDoc } from './docs';
+import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeCredentialDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeVideoDoc } from './docs';
 
 const credentials = (): Collection<YoutubeCredentialDoc> => getCollection('youtubeCredentials');
 const videos = (): Collection<YoutubeVideoDoc> => getCollection('youtubeVideos');
 const daily = (): Collection<YoutubeChannelDailyDoc> => getCollection('youtubeChannelDaily');
 const quotas = (): Collection<YoutubeQuotaDoc> => getCollection('youtubeQuota');
+const retention = (): Collection<YoutubeRetentionDoc> => getCollection('youtubeRetention');
+const reviews = (): Collection<YoutubeReviewDoc> => getCollection('youtubeReviews');
 
 export async function findCredential(profileId: string): Promise<YoutubeCredentialDoc | null> {
   const doc = await credentials().findOne({ _id: profileId });
@@ -58,8 +60,30 @@ export async function listChannelDaily(profileId: string): Promise<YoutubeChanne
   return rows.map((row) => YoutubeChannelDailyDocSchema.parse(row));
 }
 
+export async function patchVideoAnalytics(profileId: string, videoId: string, windows: Record<string, Record<string, number | null>>): Promise<void> {
+  await videos().updateOne({ channelProfileId: profileId, videoId }, { $set: Object.fromEntries(Object.entries(windows).map(([window, metrics]) => [`analytics.${window}`, metrics])) });
+}
+
+export async function upsertRetention(doc: YoutubeRetentionDoc): Promise<void> {
+  await retention().replaceOne({ _id: doc._id }, doc, { upsert: true });
+}
+
+export async function findRetention(profileId: string, videoId: string): Promise<YoutubeRetentionDoc | null> {
+  const row = await retention().findOne({ channelProfileId: profileId, videoId });
+  return row ? YoutubeRetentionDocSchema.parse(row) : null;
+}
+
+export async function upsertReview(doc: YoutubeReviewDoc): Promise<void> {
+  await reviews().replaceOne({ _id: doc._id }, doc, { upsert: true });
+}
+
+export async function findReview(profileId: string, target: 'channel' | 'video', targetId: string): Promise<YoutubeReviewDoc | null> {
+  const row = await reviews().findOne({ channelProfileId: profileId, target, targetId });
+  return row ? YoutubeReviewDocSchema.parse(row) : null;
+}
+
 export async function deleteSyncedData(profileId: string): Promise<void> {
-  await Promise.all([videos().deleteMany({ channelProfileId: profileId }), daily().deleteMany({ channelProfileId: profileId })]);
+  await Promise.all([videos().deleteMany({ channelProfileId: profileId }), daily().deleteMany({ channelProfileId: profileId }), retention().deleteMany({ channelProfileId: profileId }), reviews().deleteMany({ channelProfileId: profileId })]);
 }
 
 export async function getQuota(date: string, projectKey: string): Promise<YoutubeQuotaDoc | null> {

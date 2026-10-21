@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { findDuplicateTitle } from './seo-duplicates';
+import { findDuplicateTitle, normalizeSeoTitleForComparison } from './seo-duplicates';
 
 describe('SEO duplicate-title matching', () => {
+  it('exposes the shared accent-insensitive comparison normalizer', () => {
+    expect(normalizeSeoTitleForComparison('Vì Sao Việt Nam?')).toBe('visaovietnam');
+  });
+
   it('matches equal titles after accent, case, and punctuation normalization', () => {
     expect(findDuplicateTitle('Điện Biên Phủ: Trận Đỏ', ['dien-bien-phu tran do', 'Một tiêu đề khác']))
       .toEqual(['dien-bien-phu tran do']);

@@ -4,9 +4,14 @@ import type { Config } from '../../config';
 import { getChannel } from '../channel';
 import { AppError, NotFound } from '../../shared/errors';
 import type { JobSummary } from '../../../contracts/job';
-import { countVideoDocs, findCredential, listChannelDaily, listVideoDocs } from './repo';
+import { countVideoDocs, findCredential, listVideoDocs } from './repo';
 import { assertYoutubeConfigured, assertYoutubeQuotaAllowsSync, beginYoutubeOauth, completeYoutubeOauth, disconnectYoutube, discardYoutubeOauthState, getYoutubeConnection, selectYoutubeChannel } from './service';
-import { clearYoutubeAccessToken } from './sync';
+import { clearYoutubeAccessToken, getYoutubeAccessToken } from './sync';
+import { buildChannelHealth, buildChannelTrend, buildVideoCohorts, getRetentionDropSegments, getVideoRanking, YOUTUBE_PARTNER_PROGRAM_THRESHOLDS } from './analysis';
+import { getSuggestedYoutubeLinks } from './link-service';
+import { generateYoutubeReview, getYoutubeReview } from './review-service';
+import { getYoutubeRetention, getStoredChannelDaily } from './analytics-service';
+import { getProject, listProjects } from '../project';
 
 type EnqueueYoutubeJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
 type GetActiveYoutubeJob = (projectId: string, type: string) => Promise<JobSummary | null>;
@@ -112,21 +117,61 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
     await getChannel(req.params.channelId);
     const connection = await getYoutubeConnection(req.params.channelId, options.config);
     if (!connection.connected) throw new AppError('Kết nối kênh YouTube rồi đồng bộ để xem số liệu.', 409, 'YOUTUBE_NOT_CONNECTED');
-    const [daily, videos] = await Promise.all([listChannelDaily(req.params.channelId), listVideoDocs(req.params.channelId, { removed: { $ne: true } })]);
-    res.json({ connection, daily, videoCount: videos.length, synced: videos.length > 0 });
+    const [daily, videos, credential, summaries] = await Promise.all([
+      getStoredChannelDaily(req.params.channelId),
+      listVideoDocs(req.params.channelId, { removed: { $ne: true } }),
+      findCredential(req.params.channelId),
+      listProjects({}),
+    ]);
+    const projects = await Promise.all(summaries.filter((project) => project.channelId === req.params.channelId && project.youtubeVideoId).map((project) => getProject(project.id)));
+    const byVideo = new Map(projects.filter((project) => project.youtubeVideoId).map((project) => [project.youtubeVideoId!, project]));
+    const profile = await getChannel(req.params.channelId);
+    const timezone = profile.publishSchedule?.timezone ?? 'Asia/Ho_Chi_Minh';
+    const cohortRows = videos.map((video) => {
+      const project = byVideo.get(video.videoId);
+      return { video, project: project ? { scriptPresetId: project.scriptPresetId, visualStylePresetId: project.visualStylePresetId } : null };
+    });
+    const channelReview = await getYoutubeReview(req.params.channelId, 'channel');
+    res.json({
+      connection, daily, videoCount: videos.length, synced: videos.length > 0,
+      trend: buildChannelTrend(daily),
+      health: buildChannelHealth({ subscriberCount: credential?.subscriberCount ?? null, videos }),
+      thresholds: YOUTUBE_PARTNER_PROGRAM_THRESHOLDS,
+      rankings: getVideoRanking(videos),
+      cohorts: buildVideoCohorts(cohortRows, timezone),
+      channelReview,
+    });
   });
 
   router.get('/channels/:channelId/videos', async (req, res) => {
     await getChannel(req.params.channelId);
-    const videos = await listVideoDocs(req.params.channelId, { removed: { $ne: true } });
+    let videos = await listVideoDocs(req.params.channelId, { removed: { $ne: true } });
     const sort = typeof req.query.sort === 'string' ? req.query.sort : 'publishedAt';
-    const allowed = new Set(['publishedAt', 'viewCount', 'durationSec', 'title']);
+    const window = typeof req.query.window === 'string' ? req.query.window : '28d';
+    if (!['28d', '90d', '365d', 'lifetime'].includes(window)) throw new AppError('Khung thời gian video không hợp lệ.', 400, 'YOUTUBE_WINDOW_INVALID');
+    const type = typeof req.query.type === 'string' ? req.query.type : 'all';
+    if (!['all', 'long', 'short'].includes(type)) throw new AppError('Bộ lọc video không hợp lệ.', 400, 'YOUTUBE_VIDEO_FILTER_INVALID');
+    if (type !== 'all') videos = videos.filter((video) => type === 'short' ? video.isShort : !video.isShort);
+    const search = typeof req.query.q === 'string' ? req.query.q.trim().toLocaleLowerCase() : '';
+    if (search) videos = videos.filter((video) => video.title.toLocaleLowerCase().includes(search));
+    const allowed = new Set(['publishedAt', 'viewCount', 'durationSec', 'title', 'viewsPerDay', 'averageViewPercentage', 'clickThroughRate', 'subscribersPerThousandViews']);
     if (!allowed.has(sort)) throw new AppError('Cách sắp xếp video không hợp lệ.', 400, 'YOUTUBE_SORT_INVALID');
+    const rankings = getVideoRanking(videos, new Date(), window);
+    const rankMaps = new Map<string, Map<string, number>>([
+      ['viewsPerDay', new Map(rankings.viewsPerDay.map((row) => [row.videoId, row.value]))],
+      ['averageViewPercentage', new Map(rankings.averageViewPercentage.map((row) => [row.videoId, row.value]))],
+      ['clickThroughRate', new Map(rankings.clickThroughRate.map((row) => [row.videoId, row.value]))],
+      ['subscribersPerThousandViews', new Map(rankings.subscribersPerThousandViews.map((row) => [row.videoId, row.value]))],
+    ]);
     const sorted = [...videos].sort((a, b) => {
+      const map = rankMaps.get(sort);
+      if (map) return (map.get(b.videoId) ?? -Infinity) - (map.get(a.videoId) ?? -Infinity);
       const left = a[sort as keyof typeof a]; const right = b[sort as keyof typeof b];
       return typeof left === 'number' && typeof right === 'number' ? right - left : String(right ?? '').localeCompare(String(left ?? ''));
     });
-    res.json(sorted);
+    const linked = await listProjects({});
+    const linkedByVideo = new Map(linked.filter((project) => project.channelId === req.params.channelId && project.youtubeVideoId).map((project) => [project.youtubeVideoId!, { id: project.id, title: project.title }]));
+    res.json(sorted.map((video) => ({ ...video, ranking: Object.fromEntries([...rankMaps.entries()].map(([key, map]) => [key, map.get(video.videoId) ?? null])), linkedProject: linkedByVideo.get(video.videoId) ?? null })));
   });
 
   router.get('/videos/:channelId/:videoId', async (req, res) => {
@@ -135,12 +180,27 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
     if (!credential?.youtubeChannelId) throw new NotFound('Không tìm thấy video đã đồng bộ.');
     const video = (await listVideoDocs(req.params.channelId, { videoId: req.params.videoId, removed: { $ne: true } }))[0];
     if (!video) throw new NotFound('Không tìm thấy video đã đồng bộ.');
-    res.json({ ...video, retentionCurve: null, retentionUnavailableReason: 'Chưa đồng bộ dữ liệu giữ chân người xem.' });
+    const retention = await getYoutubeRetention(req.params.channelId, video, await getYoutubeAccessToken(req.params.channelId, options.fetcher, options.config), options.fetcher);
+    const linked = (await listProjects({})).find((project) => project.channelId === req.params.channelId && project.youtubeVideoId === video.videoId);
+    const linkedProject = linked ? await getProject(linked.id) : null;
+    const dropSegments = retention.curve ? getRetentionDropSegments(retention.curve, video.durationSec) : null;
+    const review = await getYoutubeReview(req.params.channelId, 'video', video.videoId);
+    res.json({ ...video, retentionCurve: retention.curve, retentionUnavailableReason: retention.reason, dropSegments, linkedProject: linkedProject ? { id: linkedProject.id, title: linkedProject.title, scriptPresetId: linkedProject.scriptPresetId, visualStylePresetId: linkedProject.visualStylePresetId } : null, review });
   });
 
   router.get('/channels/:channelId/suggested-links', async (req, res) => {
     await getChannel(req.params.channelId);
-    res.json([]);
+    res.json(await getSuggestedYoutubeLinks(req.params.channelId));
+  });
+
+  router.post('/channels/:channelId/review', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json(await generateYoutubeReview({ profileId: req.params.channelId, target: 'channel', fetcher: options.fetcher, config: options.config }));
+  });
+
+  router.post('/videos/:channelId/:videoId/review', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json(await generateYoutubeReview({ profileId: req.params.channelId, target: 'video', videoId: req.params.videoId, fetcher: options.fetcher, config: options.config }));
   });
 
   return router;

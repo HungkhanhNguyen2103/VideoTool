@@ -1,7 +1,7 @@
 # Module: youtube
 
 **Purpose:** Connect an owned YouTube channel with read-only OAuth and synchronize channel/video data for private analytics.
-**Owns collections:** `youtubeCredentials`, `youtubeVideos`, `youtubeChannelDaily`, `youtubeQuota`.
+**Owns collections:** `youtubeCredentials`, `youtubeVideos`, `youtubeChannelDaily`, `youtubeQuota`, `youtubeRetention`, `youtubeReviews`.
 **May import:** `channel`, `project`, `seo`, `job`, and shared AI via their public `index.ts` APIs.
 
 ## Security and write boundary
@@ -18,6 +18,8 @@
 - A full pass estimates `1 + max(1, ceil(videoCount / 50)) + ceil(videoCount / 50)` units: 5 units for 100 videos, 41 for 1,000. Actual API project usage remains authoritative.
 - The Data API does not expose a normal channel-owner aspect-ratio field in the selected video response. Shorts are classified by duration <= 180 seconds in this phase; verticality is not verified.
 - Analytics API requests are separately recorded by report group. A failed/unavailable report does not invalidate Data API metadata.
+- Analytics reports use `views`, `estimatedMinutesWatched`, `averageViewDuration`, `averageViewPercentage`, `subscribersGained`, and `subscribersLost`; daily rows use the day dimension and retention uses `audienceWatchRatio` by `elapsedVideoTimeRatio`. The report API returns only metrics available for that channel and date range.
+- `impressions` and `impressionsClickThroughRate` are not used in this phase. CTR is available in Studio and through the YouTube Reporting API, which is not connected. `estimatedRevenue` is not requested because it requires a monetary scope, which is intentionally absent.
 
 ## Current official documentation checked on 2026-10-21
 
@@ -27,6 +29,20 @@
 - Quota: https://developers.google.com/youtube/v3/determine_quota_cost.
 - Analytics query and reports: https://developers.google.com/youtube/analytics/reference/reports/query and https://developers.google.com/youtube/analytics/metrics.
 - Reporting API thumbnail impressions and CTR: https://developers.google.com/youtube/reporting/v1/reports/metrics. CTR is unavailable here; the Reporting API is not implemented.
+- Targeted Analytics metric availability and dimensions: https://developers.google.com/youtube/analytics/metrics and https://developers.google.com/youtube/analytics/dimensions.
+
+## Partner Program reference thresholds checked on 2026-10-21
+
+| Tier | Current reference | From 2027-02-01 reference |
+|---|---|---|
+| Early access / fan funding | 500 subscribers and 3,000 public watch hours in 12 months OR 3,000,000 public Shorts views in 90 days | 500 subscribers and 3,000 public watch hours in 12 months OR 3,000,000 public Shorts views in 90 days |
+| Advertising revenue eligibility | 1,000 subscribers and 4,000 public watch hours in 12 months OR 10,000,000 public Shorts views in 90 days | 1,000 subscribers and 8,000 public watch hours in 12 months OR 20,000,000 public Shorts views in 90 days |
+
+Sources: https://support.google.com/youtube/answer/72851 and https://support.google.com/youtube/answer/12843009. These are reference thresholds only; the UI labels them “mốc tham khảo, kiểm tra lại trên YouTube Studio”. Studio is authoritative. Stored Analytics totals are an approximation of qualifying public watch hours/views; no revenue is calculated.
+
+## Named follow-up
+
+- **YouTube Reporting API CTR integration:** separately review and implement the Reporting API job/download lifecycle for `video_thumbnail_impressions` and `video_thumbnail_impressions_ctr`. Until then, the UI shows “Chưa có dữ liệu” and explains that CTR is in Studio and the unimplemented Reporting API.
 
 ## Google Cloud setup
 

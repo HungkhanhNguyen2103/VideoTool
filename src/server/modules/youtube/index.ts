@@ -1,4 +1,5 @@
 export { createYoutubeRouter } from './routes';
+export { createYoutubeProjectRouter } from './project-routes';
 export { ensureYoutubeIndexes } from './indexes';
 export { syncYoutubeChannel } from './sync';
 export { getYoutubeConnection, disconnectYoutube, selectYoutubeChannel, youtubeIsConfigured } from './service';

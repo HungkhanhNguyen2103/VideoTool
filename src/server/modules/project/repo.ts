@@ -28,6 +28,7 @@ export type ProjectSummaryRow = {
   title: string;
   status: ProjectDoc['status'];
   channelId: string | null;
+  youtubeVideoId: string | null;
   updatedAt: Date;
   scenesCount: number | null;
   durationSec: number | null;
@@ -63,6 +64,7 @@ export async function listProjectSummaries(filter: ListProjectsFilter): Promise<
           title: 1,
           status: 1,
           channelId: { $ifNull: ['$channelId', null] },
+          youtubeVideoId: { $ifNull: ['$youtubeVideoId', null] },
           updatedAt: 1,
           scenesCount: { $cond: [{ $gt: [{ $size: { $ifNull: ['$scenes', []] } }, 0] }, { $size: '$activeScenes' }, null] },
           durationSec: { $cond: [{ $gt: [{ $size: { $ifNull: ['$scenes', []] } }, 0] }, { $round: [{ $sum: '$activeScenes.durationSec' }, 2] }, null] },

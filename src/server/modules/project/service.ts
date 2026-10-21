@@ -21,6 +21,7 @@ function toSummary(row: ProjectSummaryRow): ProjectSummary {
     title: row.title,
     status: row.status,
     channelId: row.channelId ?? null,
+    youtubeVideoId: row.youtubeVideoId ?? null,
     scenesCount: row.scenesCount,
     durationSec: row.durationSec,
     updatedAt: row.updatedAt.toISOString(),
@@ -33,6 +34,7 @@ function toDetail(doc: ProjectDoc): ProjectDetail {
     title: doc.title,
     status: doc.status,
     channelId: doc.channelId,
+    youtubeVideoId: doc.youtubeVideoId ?? null,
     language: doc.language,
     brief: doc.brief,
     referencesText: doc.referencesText,
@@ -116,6 +118,7 @@ export async function createProject(input: CreateProjectRequest): Promise<Projec
     chapterCount: input.chapterCount,
     voiceId: input.voiceId,
     channelId: input.channelId ?? null,
+    youtubeVideoId: null,
     aiProvider,
     ...(input.aiModel === undefined ? {} : { aiModel: input.aiModel }),
     renderEngine: input.renderEngine ?? 'ffmpeg',
@@ -174,6 +177,7 @@ export async function duplicateProject(id: string): Promise<ProjectDetail> {
     _id: newId(),
     title,
     titleSearch: normalizeTitle(title),
+    youtubeVideoId: null,
     status: src.status === 'rendered' ? 'assets' : src.status,
     // A duplicate does not copy files; clear references so scenes cannot point
     // at metadata and disk content owned by the source project.
@@ -693,7 +697,13 @@ export async function listChosenSeoTitlesByChannel(channelId: string, excludePro
 }
 
 export async function setProjectChannel(id: string, channelId: string | null): Promise<ProjectDetail> {
-  await updateProject(id, { channelId });
+  const current = await getProject(id);
+  await updateProject(id, { channelId, ...(current.channelId === channelId ? {} : { youtubeVideoId: null }) });
+  return getProject(id);
+}
+
+export async function setProjectYoutubeVideo(id: string, youtubeVideoId: string | null): Promise<ProjectDetail> {
+  await updateProject(id, { youtubeVideoId });
   return getProject(id);
 }
 

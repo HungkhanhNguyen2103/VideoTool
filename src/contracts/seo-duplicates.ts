@@ -1,6 +1,6 @@
 export const SEO_TITLE_CONTAINMENT_MIN_CHARS = 12;
 
-function comparableTitle(value: string): string {
+export function normalizeSeoTitleForComparison(value: string): string {
   return value
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
@@ -11,10 +11,10 @@ function comparableTitle(value: string): string {
 
 /** Return chosen titles that equal or substantially overlap the current chosen title. */
 export function findDuplicateTitle(chosenTitle: string, otherTitles: readonly string[]): string[] {
-  const chosen = comparableTitle(chosenTitle);
+  const chosen = normalizeSeoTitleForComparison(chosenTitle);
   if (!chosen) return [];
   return otherTitles.filter((title) => {
-    const other = comparableTitle(title);
+    const other = normalizeSeoTitleForComparison(title);
     if (!other) return false;
     if (chosen === other) return true;
     const shorterLength = Math.min([...chosen].length, [...other].length);

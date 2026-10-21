@@ -41,6 +41,7 @@ export {
   setProjectRenderEngine,
   setProjectAiProvider,
   setProjectChannel,
+  setProjectYoutubeVideo,
   setProjectVisualStylePreset,
   setProjectRenderFile,
   setProjectDraftRenderFile,

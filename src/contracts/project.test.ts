@@ -53,6 +53,8 @@ describe('project channel field', () => {
       createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
     };
     expect(ProjectDetailSchema.parse(legacyDetail).channelId).toBeNull();
+    expect(ProjectDetailSchema.parse(legacyDetail).youtubeVideoId).toBeNull();
+    expect(ProjectDetailSchema.parse({ ...legacyDetail, youtubeVideoId: 'video-1' }).youtubeVideoId).toBe('video-1');
     expect(ProjectSummarySchema.parse({ id: 'project-1', title: 'Project', status: 'draft', scenesCount: null, durationSec: null, updatedAt: '2026-10-21T00:00:00.000Z' }).channelId).toBeNull();
     expect(CreateProjectRequestSchema.parse({ ...validCreateInput, channelId: 'channel-1' }).channelId).toBe('channel-1');
     expect(() => CreateProjectRequestSchema.parse({ ...validCreateInput, channelId: '' })).toThrow();

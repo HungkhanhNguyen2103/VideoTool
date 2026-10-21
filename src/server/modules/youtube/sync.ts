@@ -6,12 +6,12 @@ import { decryptRefreshToken } from './credentials-store';
 import { YoutubeOAuthError, refreshAccessToken } from './oauth';
 import { findCredential, getQuota, incrementQuota, patchCredential, upsertVideoDocs } from './repo';
 import { YoutubeVideoDocSchema } from './docs';
+import { syncYoutubeAnalytics } from './analytics-service';
 
 export const YOUTUBE_DATA_API_DAILY_BUDGET = 10_000;
 export const YOUTUBE_DATA_API_SYNC_SOFT_LIMIT = 8_000;
 export const YOUTUBE_LIST_CALL_QUOTA_UNITS = 1;
 export const YOUTUBE_LIST_PAGE_SIZE = 50;
-export const YOUTUBE_ANALYTICS_RETENTION_VIDEO_COUNT = 15;
 
 export function estimateDataApiUnits(videoCount: number): number {
   const count = Math.max(0, Math.trunc(videoCount));
@@ -118,8 +118,10 @@ export type YoutubeSyncJobContext = {
 
 const accessTokens = new Map<string, { value: string; expiresAt: number }>();
 
-async function getAccessToken(profileId: string, fetcher: typeof fetch): Promise<{ token: string; refreshToken: string }> {
-  const config = loadConfig();
+async function getAccessToken(profileId: string, fetcher: typeof fetch, config = loadConfig()): Promise<{ token: string; refreshToken: string }> {
+  if (!config.GOOGLE_OAUTH_CLIENT_ID || !config.GOOGLE_OAUTH_CLIENT_SECRET || !config.YOUTUBE_TOKEN_ENCRYPTION_KEY) {
+    throw new AppError('Chưa cấu hình thông tin Google OAuth và khóa mã hóa YouTube ở máy chủ.', 503, 'YOUTUBE_NOT_CONFIGURED');
+  }
   const credential = await findCredential(profileId);
   if (!credential?.youtubeChannelId) throw new AppError('Kênh YouTube chưa được kết nối.', 409, 'YOUTUBE_NOT_CONNECTED');
   if (credential.needsReconnect) throw new AppError('Cần kết nối lại kênh (token hết hạn). Nếu app Google đang ở chế độ Testing, token chỉ sống 7 ngày.', 401, 'YOUTUBE_RECONNECT_REQUIRED');
@@ -149,14 +151,14 @@ async function runYoutubeSync(profileId: string, context: YoutubeSyncJobContext,
   const config = loadConfig();
   const credential = await findCredential(profileId);
   if (!credential?.youtubeChannelId) throw new AppError('Kênh YouTube chưa được kết nối.', 409, 'YOUTUBE_NOT_CONNECTED');
-  const { token } = await getAccessToken(profileId, fetcher);
+  const { token } = await getAccessToken(profileId, fetcher, config);
   let units = 0;
   const now = new Date();
   const fetchedAt = now.toISOString();
   const channelUrl = new URL('https://www.googleapis.com/youtube/v3/channels');
-  channelUrl.searchParams.set('part', 'contentDetails');
+  channelUrl.searchParams.set('part', 'contentDetails,statistics');
   channelUrl.searchParams.set('id', credential.youtubeChannelId);
-  const channel = await apiJson<{ items?: { contentDetails?: { relatedPlaylists?: { uploads?: string } } }[] }>(channelUrl, token, fetcher);
+  const channel = await apiJson<{ items?: { contentDetails?: { relatedPlaylists?: { uploads?: string } }; statistics?: { subscriberCount?: string } }[] }>(channelUrl, token, fetcher);
   units += 1;
   const uploads = channel.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!uploads) throw new AppError('Không tìm thấy danh sách video tải lên của kênh.', 502, 'YOUTUBE_UPLOADS_UNAVAILABLE');
@@ -178,8 +180,16 @@ async function runYoutubeSync(profileId: string, context: YoutubeSyncJobContext,
   const stats = apiVideos.map((video) => normalizeApiVideo(video, fetchedAt));
   const docs = stats.map((row) => YoutubeVideoDocSchema.parse({ ...row, _id: `${profileId}:${row.videoId}`, channelProfileId: profileId, removed: false }));
   await upsertVideoDocs(profileId, docs, now);
+  await context.reportProgress(72);
+  const analyticsReport = await syncYoutubeAnalytics(profileId, stats, token, fetcher, now);
   await incrementQuota(day, projectKey, units);
-  await patchCredential(profileId, { lastSyncAt: now, lastSyncError: undefined, needsReconnect: false });
+  await patchCredential(profileId, {
+    lastSyncAt: now,
+    lastSyncError: undefined,
+    needsReconnect: false,
+    subscriberCount: numeric(channel.items?.[0]?.statistics?.subscriberCount),
+    lastSyncReport: analyticsReport,
+  });
   await context.appendLog(`Đã đồng bộ ${stats.length} video; quota dữ liệu ước tính ${units} đơn vị.`);
   await context.reportProgress(100);
   return { videos: stats.length, removed: Math.max(0, ids.length - stats.length), quotaUnits: units };
@@ -193,6 +203,10 @@ export async function syncYoutubeChannel(profileId: string, context: YoutubeSync
     await patchCredential(profileId, { lastSyncError: message }).catch(() => undefined);
     throw error;
   }
+}
+
+export async function getYoutubeAccessToken(profileId: string, fetcher: typeof fetch = fetch, config = loadConfig()): Promise<string> {
+  return (await getAccessToken(profileId, fetcher, config)).token;
 }
 
 export function clearYoutubeAccessToken(profileId: string): void {

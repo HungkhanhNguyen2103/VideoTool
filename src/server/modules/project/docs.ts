@@ -49,6 +49,7 @@ export const ProjectDocSchema = z.object({
   chapterCount: z.number().int().nullable(),
   voiceId: z.string().nullable(),
   channelId: z.string().min(1).nullable().default(null),
+  youtubeVideoId: z.string().min(1).nullable().default(null),
   aiProvider: z.enum(AI_PROVIDERS).default('deepseek'),
   aiModel: z.string().optional(),
   renderEngine: z.enum(RENDER_ENGINES).default('ffmpeg'),

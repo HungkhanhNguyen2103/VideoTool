@@ -31,6 +31,10 @@ describe('ProjectDocSchema visual style compatibility', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).channelId).toBeNull();
   });
 
+  it('defaults legacy documents to no linked YouTube video', () => {
+    expect(ProjectDocSchema.parse(validLegacyDoc).youtubeVideoId).toBeNull();
+  });
+
   it('keeps keyword pop-ups enabled for legacy project documents', () => {
     expect(ProjectDocSchema.parse(validLegacyDoc).keywordPopupsEnabled).toBe(true);
   });

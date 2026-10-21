@@ -12,7 +12,7 @@ import { configureVideoModule, createVideoRouter } from './modules/video';
 import { configureSeoModule, createSeoRouter } from './modules/seo';
 import { NotFound } from './shared/errors';
 import { assertChannelExists, createChannelRouter } from './modules/channel';
-import { createYoutubeRouter, getYoutubeConnection } from './modules/youtube';
+import { createYoutubeProjectRouter, createYoutubeRouter, getYoutubeConnection } from './modules/youtube';
 import { loadConfig, type Config } from './config';
 
 export type AppOptions = {
@@ -57,6 +57,7 @@ export function createApp(options: AppOptions): Express {
   const youtubeConfig = options.youtubeConfig ?? loadConfig();
   app.use('/api/channels', createChannelRouter({ getYoutubeConnection: (channelId) => getYoutubeConnection(channelId, youtubeConfig) }));
   app.use('/api/youtube', createYoutubeRouter({ config: youtubeConfig, enqueueJob, getActiveJob: getActiveJobByType }));
+  app.use('/api/project', createYoutubeProjectRouter(youtubeConfig));
   app.use('/api/project', createScriptRouter({ enqueueJob, getActiveJob: getActiveJobDetailsByType }));
   app.use('/api/script', createScriptCliStatusRouter());
   app.use('/api/project', fileStoreRouter);
