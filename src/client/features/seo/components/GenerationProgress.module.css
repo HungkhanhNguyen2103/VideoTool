@@ -1,0 +1,16 @@
+.panel { display: grid; gap: .5rem; min-width: 0; padding: .75rem 1rem; border: 1px solid var(--border); border-radius: .65rem; background: var(--panel); }
+.header, .heading, .logHeader, .actions { display: flex; align-items: center; gap: .65rem; }
+.header, .logHeader { justify-content: space-between; }
+.heading { min-width: 0; flex-wrap: wrap; color: var(--text-2); font-size: .82rem; }
+.heading strong { overflow-wrap: anywhere; color: var(--text); }
+.heading span, .percentage { color: var(--text-3); font-size: .78rem; white-space: nowrap; }
+.progress { width: 100%; height: .45rem; accent-color: var(--amber); }
+.finalLine { margin: 0; color: var(--text-2); font-size: .8rem; overflow-wrap: anywhere; }
+.warning { margin: 0; padding: .45rem .6rem; border: 1px solid var(--amber-bd); border-radius: .45rem; color: var(--amber-text); background: var(--amber-bg); font-size: .78rem; line-height: 1.4; }
+.logToggle { padding: .2rem 0; border: 0; color: var(--text-2); background: transparent; font: inherit; font-size: .78rem; text-decoration: underline; text-underline-offset: .15em; cursor: pointer; }
+.logList { max-height: 12rem; min-height: 2.4rem; overflow: auto; padding: .45rem .6rem; border: 1px solid var(--border); border-radius: .45rem; background: var(--input); }
+.logList ol { display: grid; gap: .25rem; margin: 0; padding: 0; list-style: none; }
+.logList li, .logList p { margin: 0; color: var(--text-2); font-family: var(--mono); font-size: .72rem; line-height: 1.45; overflow-wrap: anywhere; }
+.logList p { color: var(--text-3); }
+.actions { flex: 0 0 auto; }
+@media (max-width: 600px) { .panel { padding: .65rem; } .header, .logHeader { align-items: flex-start; } .heading { gap: .25rem .6rem; } .logList { max-height: 10rem; } }

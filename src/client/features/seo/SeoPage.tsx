@@ -26,6 +26,7 @@ import { useChannel, useChannels } from '../channel/hooks';
 import { useSetProjectChannel } from '../project/hooks';
 import { getClaudeCliStatus } from '../asset/api';
 import { seoGenerationAvailability } from './seo-generation-mode';
+import { GenerationProgress } from './components/GenerationProgress';
 import styles from './SeoPage.module.css';
 
 export function SeoPage() {
@@ -45,6 +46,7 @@ export function SeoPage() {
   const [manualShortsOnly, setManualShortsOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStartedAt, setJobStartedAt] = useState<number | null>(null);
   const [manualPrompt, setManualPrompt] = useState('');
   const [manualRaw, setManualRaw] = useState('');
   const [manualError, setManualError] = useState<string | null>(null);
@@ -72,7 +74,6 @@ export function SeoPage() {
     void projectQuery.refetch();
     void filesQuery.refetch();
     setBusy(null);
-    setJobId(null);
   }, [jobId, progress?.status, progress?.error]);
 
   async function refresh() {
@@ -96,6 +97,7 @@ export function SeoPage() {
       const result = await api.generateSeo(project.id, sections, generationBackend === 'cli'
         ? { backend: 'cli', cliModel }
         : {});
+      setJobStartedAt(Date.now());
       setJobId(result.jobId);
       toast('Đã xếp hàng tạo gói SEO.');
     } catch (error) {
@@ -214,7 +216,13 @@ export function SeoPage() {
     {pageHeader}
     {channelSection}
     <Toolbar mode={mode} provider={project.aiProvider} model={project.aiModel} backend={generationBackend} cliModel={cliModel} cliAvailability={cliAvailability} busy={controlsBusy} sections={manualSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider, aiModelForProviderChange(provider, project.aiProvider, project.aiModel))} onModelChange={(model) => void changeModel(model)} onBackendChange={setGenerationBackend} onCliModelChange={setCliModel} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
-    {activeJob && <div className={styles.jobProgress} role="status"><span>Đang tạo gói SEO…</span><progress value={progress?.progress ?? 0} max={100} /> <span>{progress?.progress ?? 0}%</span></div>}
+    {jobId && <GenerationProgress
+      key={jobId}
+      jobId={jobId}
+      progress={progress}
+      startedAt={jobStartedAt ?? Date.now()}
+      onClose={() => { setJobId(null); setJobStartedAt(null); }}
+    />}
     {readyDisplay.unsupportedFacts.length > 0 && <aside className={styles.factWarning}><strong>Kiểm tra số liệu</strong><ul>{readyDisplay.unsupportedFacts.map((fact) => <li key={fact}>Số liệu “{fact}” chưa thấy trong dữ liệu nguồn. Đây là cảnh báo, không chặn.</li>)}</ul></aside>}
     {mode === 'manual' && <ManualSeoPanel prompt={manualPrompt} raw={manualRaw} error={manualError} busy={controlsBusy} sections={manualSections} shortsOnly={manualShortsOnly} onShortsOnlyChange={setManualShortsOnly} onRawChange={setManualRaw} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />}
     <div className={styles.grid}>

@@ -64,29 +64,94 @@ export function mergeGeneratedShortsChannelDefaults(
 
 type SeoPrompt = { system: string; user: string; promptVersion: string };
 
+type SeoGenerationStep = { kind: 'main'; sections: SeoSection[]; name: 'Phần chính' } | { kind: 'shorts'; windows: ReturnType<typeof pickShortsWindows>['windows']; name: 'Shorts' };
+type SeoStepProgress = { index: number; total: number; name: SeoGenerationStep['name'] };
+
+const SEO_STEP_PROGRESS_START = 5;
+const SEO_STEP_PROGRESS_END = 95;
+const SEO_HEARTBEAT_INTERVAL_MS = 30_000;
+const MAX_SEO_HEARTBEATS_PER_STEP = 20;
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+function stepPrefix(step: SeoStepProgress): string {
+  return `Bước ${step.index}/${step.total} — ${step.name}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function requestValidatedOutput<T>(
   backend: SeoGenerationBackend,
   prompt: SeoPrompt,
   parse: (raw: string) => T,
   context: SeoGenerationContext,
   label: string,
+  step: SeoStepProgress,
 ): Promise<T | undefined> {
   let validationError = '';
+  let heartbeatCount = 0;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (await context.isCancelled()) return undefined;
     const user = validationError
       ? `${prompt.user}\n\nValidation error: ${validationError}\nReturn corrected JSON for exactly the requested ${label}.`
       : prompt.user;
-    let raw: string;
+    const messages: ChatMessage[] = [
+      { role: 'system', content: prompt.system },
+      { role: 'user', content: user },
+    ];
+    const promptBytes = messages.reduce((sum, message) => sum + Buffer.byteLength(message.content, 'utf8'), 0);
+    const startedAt = Date.now();
+    await context.appendLog(`${stepPrefix(step)}: gửi yêu cầu (${promptBytes} byte).`);
+
+    let raw = '';
+    let chatError: unknown;
+    let chatFailed = false;
+    let heartbeatError: unknown;
+    let heartbeatTask: Promise<void> | null = null;
+    const heartbeatTimer = setInterval(() => {
+      if (heartbeatTask || heartbeatCount >= MAX_SEO_HEARTBEATS_PER_STEP) {
+        if (heartbeatCount >= MAX_SEO_HEARTBEATS_PER_STEP) clearInterval(heartbeatTimer);
+        return;
+      }
+      heartbeatTask = (async () => {
+        if (await context.isCancelled()) {
+          clearInterval(heartbeatTimer);
+          return;
+        }
+        if (heartbeatCount >= MAX_SEO_HEARTBEATS_PER_STEP) {
+          clearInterval(heartbeatTimer);
+          return;
+        }
+        heartbeatCount += 1;
+        await context.appendLog(`${stepPrefix(step)}: vẫn đang chờ (${formatElapsed(Date.now() - startedAt)})…`);
+        if (heartbeatCount >= MAX_SEO_HEARTBEATS_PER_STEP) clearInterval(heartbeatTimer);
+      })().catch((error: unknown) => {
+        heartbeatError = error;
+        clearInterval(heartbeatTimer);
+      }).finally(() => {
+        heartbeatTask = null;
+      });
+    }, SEO_HEARTBEAT_INTERVAL_MS);
     try {
-      raw = await backend.chat([
-        { role: 'system', content: prompt.system },
-        { role: 'user', content: user },
-      ], { stepLabel: `${label.replaceAll(' ', '-')}${attempt ? '-retry' : ''}` });
+      raw = await backend.chat(messages, { stepLabel: `${label.replaceAll(' ', '-')}${attempt ? '-retry' : ''}` });
     } catch (error) {
-      if (await context.isCancelled()) return undefined;
-      throw error;
+      chatFailed = true;
+      chatError = error;
+    } finally {
+      clearInterval(heartbeatTimer);
+      if (heartbeatTask) await heartbeatTask;
     }
+    if (heartbeatError) throw heartbeatError;
+    if (await context.isCancelled()) return undefined;
+    if (chatFailed) throw chatError;
+    await context.appendLog(`${stepPrefix(step)}: nhận phản hồi sau ${formatElapsed(Date.now() - startedAt)} (${Buffer.byteLength(raw, 'utf8')} byte).`);
     if (await context.isCancelled()) return undefined;
     try {
       let output = raw;
@@ -105,7 +170,7 @@ async function requestValidatedOutput<T>(
     } catch (error) {
       if (!(error instanceof SeoAiOutputError) || attempt === 1) throw error;
       validationError = error.message;
-      await context.appendLog(`SEO ${label} response invalid; retrying once: ${validationError}`);
+      await context.appendLog(`${stepPrefix(step)}: JSON chưa hợp lệ, thử lại 1 lần: ${validationError}`);
     }
   }
   return undefined;
@@ -128,6 +193,9 @@ export async function generateSeoPackage(
   const parsed: Partial<Omit<GeneratedSeoSections, 'generatedBy'>> = {};
   let activeBackend = backend;
   let promptVersion = SEO_SHORTS_PROMPT_VERSION;
+  const steps: SeoGenerationStep[] = [];
+  if (mainSections.length > 0) steps.push({ kind: 'main', sections: mainSections, name: 'Phần chính' });
+  if (wantsShorts && windows.length > 0) steps.push({ kind: 'shorts', windows, name: 'Shorts' });
 
   function getBackend(): SeoGenerationBackend {
     if (activeBackend) return activeBackend;
@@ -140,27 +208,91 @@ export async function generateSeoPackage(
     return activeBackend;
   }
 
-  if (mainSections.length > 0) {
-    const prompt = buildSeoPrompt(project, mainSections, channel);
-    const mainParsed = await requestValidatedOutput(getBackend(), prompt, (raw) => parseSeoOutput(raw, mainSections), context, 'requested sections');
-    if (!mainParsed) return getProject(projectId);
-    Object.assign(parsed, mergeGeneratedChannelDefaults(mainSections, mainParsed, channel));
-    promptVersion = prompt.promptVersion;
-  }
+  if (steps.length === 0 && wantsShorts) parsed.shorts = [];
 
-  if (wantsShorts) {
-    if (windows.length === 0) {
-      parsed.shorts = [];
-    } else {
-      const prompt = buildShortsPrompt(project, windows, channel);
-      const shortsParsed = await requestValidatedOutput(getBackend(), prompt, (raw) => parseShortsOutput(raw, windows), context, 'Shorts windows');
-      if (!shortsParsed) return getProject(projectId);
-      Object.assign(parsed, mergeGeneratedShortsChannelDefaults(shortsParsed, channel));
-      if (mainSections.length === 0) promptVersion = prompt.promptVersion;
+  const generationStartedAt = Date.now();
+  await context.reportProgress(SEO_STEP_PROGRESS_START);
+  let backendSetupError: unknown;
+  let backendSetupFailed = false;
+  if (steps.length > 0) {
+    try {
+      getBackend();
+    } catch (error) {
+      backendSetupFailed = true;
+      backendSetupError = error;
     }
   }
+  const backendKind = activeBackend?.kind ?? 'api';
+  const backendModel = activeBackend?.model ?? project.aiModel ?? getDefaultAiModelId(project.aiProvider);
+  const stepNames = steps.map((step) => step.name);
+  const stepList = stepNames.length > 0 ? stepNames.join(', ') : 'không có phần cần gọi AI';
+  const generationMode = backendKind === 'cli' ? `Claude CLI ${backendModel}` : `API ${backendModel}`;
+  await context.appendLog(`Bắt đầu tạo gói SEO: ${steps.length} bước (${stepList}). Cách sinh: ${generationMode}.`);
+  if (backendSetupFailed) {
+    const firstStep = steps[0];
+    if (firstStep) await context.appendLog(`${stepPrefix({ index: 1, total: steps.length, name: firstStep.name })}: thất bại — ${errorMessage(backendSetupError)}`);
+    throw backendSetupError;
+  }
 
-  if (await context.isCancelled()) return getProject(projectId);
+  let lastProgress = SEO_STEP_PROGRESS_START;
+  async function reportStepProgress(progress: number): Promise<void> {
+    if (progress === lastProgress) return;
+    lastProgress = progress;
+    await context.reportProgress(progress);
+  }
+
+  for (const [index, step] of steps.entries()) {
+    const stepInfo: SeoStepProgress = { index: index + 1, total: steps.length, name: step.name };
+    const startProgress = SEO_STEP_PROGRESS_START + (SEO_STEP_PROGRESS_END - SEO_STEP_PROGRESS_START) * index / steps.length;
+    const endProgress = SEO_STEP_PROGRESS_START + (SEO_STEP_PROGRESS_END - SEO_STEP_PROGRESS_START) * (index + 1) / steps.length;
+    await reportStepProgress(startProgress);
+    if (await context.isCancelled()) {
+      await context.appendLog(`Đã hủy ở bước ${stepInfo.index}/${stepInfo.total}.`);
+      return getProject(projectId);
+    }
+
+    try {
+      if (step.kind === 'main') {
+        const prompt = buildSeoPrompt(project, step.sections, channel);
+        const mainParsed = await requestValidatedOutput(getBackend(), prompt, (raw) => parseSeoOutput(raw, step.sections), context, 'requested sections', stepInfo);
+        if (!mainParsed) {
+          if (await context.isCancelled()) await context.appendLog(`Đã hủy ở bước ${stepInfo.index}/${stepInfo.total}.`);
+          return getProject(projectId);
+        }
+        Object.assign(parsed, mergeGeneratedChannelDefaults(step.sections, mainParsed, channel));
+        promptVersion = prompt.promptVersion;
+      } else {
+        const prompt = buildShortsPrompt(project, step.windows, channel);
+        const shortsParsed = await requestValidatedOutput(getBackend(), prompt, (raw) => parseShortsOutput(raw, step.windows), context, 'Shorts windows', stepInfo);
+        if (!shortsParsed) {
+          if (await context.isCancelled()) await context.appendLog(`Đã hủy ở bước ${stepInfo.index}/${stepInfo.total}.`);
+          return getProject(projectId);
+        }
+        Object.assign(parsed, mergeGeneratedShortsChannelDefaults(shortsParsed, channel));
+        if (mainSections.length === 0) promptVersion = prompt.promptVersion;
+      }
+    } catch (error) {
+      if (await context.isCancelled()) {
+        await context.appendLog(`Đã hủy ở bước ${stepInfo.index}/${stepInfo.total}.`);
+        return getProject(projectId);
+      }
+      await context.appendLog(`${stepPrefix(stepInfo)}: thất bại — ${errorMessage(error)}`);
+      throw error;
+    }
+
+    if (await context.isCancelled()) {
+      await context.appendLog(`Đã hủy ở bước ${stepInfo.index}/${stepInfo.total}.`);
+      return getProject(projectId);
+    }
+    await reportStepProgress(endProgress);
+    await context.appendLog(`${stepPrefix(stepInfo)}: xong.`);
+  }
+
+  if (await context.isCancelled()) {
+    const lastStep = steps.at(-1);
+    if (lastStep) await context.appendLog(`Đã hủy ở bước ${steps.length}/${steps.length}.`);
+    return getProject(projectId);
+  }
   const generatedByBackend = activeBackend;
   const generated: GeneratedSeoSections = {
     ...parsed,
@@ -174,5 +306,6 @@ export async function generateSeoPackage(
   };
   const saved = await applyGeneratedSeoSections(projectId, requested, generated);
   await context.reportProgress(100, saved.seo);
+  await context.appendLog(`Đã lưu gói SEO. Tổng thời gian ${formatElapsed(Date.now() - generationStartedAt)}.`);
   return saved;
 }

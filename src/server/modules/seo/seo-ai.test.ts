@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectDetailSchema } from '../../../contracts/project';
 import { ChannelSchema } from '../../../contracts/channel';
 import { SEO_SECTIONS } from '../../../contracts/seo';
@@ -91,8 +91,8 @@ const V7_THUMBNAIL_TEMPLATE = `- Template, left to right:
 
 const context = () => ({
   isCancelled: vi.fn(async () => false),
-  reportProgress: vi.fn(async () => undefined),
-  appendLog: vi.fn(async () => undefined),
+  reportProgress: vi.fn(async (percent: number, result?: unknown) => { void percent; void result; }),
+  appendLog: vi.fn(async (message: string) => { void message; }),
 });
 
 function projectWithShortWindow() {
@@ -105,6 +105,8 @@ function projectWithShortWindow() {
 }
 
 describe('SEO AI generation', () => {
+  afterEach(() => vi.useRealTimers());
+
   beforeEach(() => {
     mocks.chat.mockReset();
     mocks.getAiClient.mockReset().mockImplementation(() => ({ model: 'deepseek-chat', chat: mocks.chat }));
@@ -288,7 +290,7 @@ describe('SEO AI generation', () => {
     expect(mocks.applyGeneratedSeoSections.mock.calls[0]?.[1]).toEqual(['titles', 'tags']);
     expect(mocks.applyGeneratedSeoSections.mock.calls[0]?.[2]).toMatchObject({ generatedBy: { backend: 'api' } });
     expect(mocks.getChannel).not.toHaveBeenCalled();
-    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('retrying once'));
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('JSON chưa hợp lệ, thử lại 1 lần:'));
   });
 
   it('generates through an injected Claude CLI backend without constructing the API client and records CLI metadata', async () => {
@@ -313,11 +315,13 @@ describe('SEO AI generation', () => {
     await generateSeoPackage(project.id, ['titles'], jobContext, cli);
 
     expect(cli.chat).toHaveBeenCalledTimes(2);
-    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('retrying once'));
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('JSON chưa hợp lệ, thử lại 1 lần:'));
     expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledOnce();
 
     mocks.applyGeneratedSeoSections.mockClear();
     const cancelledContext = { ...context(), isCancelled: vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(true) };
@@ -476,5 +480,158 @@ describe('SEO AI generation', () => {
     const parsed = parseSeoOutput(readFileSync(fixturePath, 'utf8'), ['titles', 'tags']);
     expect(parsed.titles).toHaveLength(2);
     expect(parsed.tags).toEqual(['lịch sử', 'chiến dịch']);
+  });
+
+  it('reports one-step progress and Vietnamese request, response, completion, and save logs', async () => {
+    const api = { kind: 'api' as const, model: 'deepseek-chat', chat: vi.fn(async () => generatedJson) };
+    const jobContext = context();
+    const prompt = buildSeoPrompt(project, ['titles']);
+
+    await generateSeoPackage(project.id, ['titles'], jobContext, api);
+
+    expect(jobContext.reportProgress.mock.calls.map(([percent]) => percent)).toEqual([5, 95, 100]);
+    expect(jobContext.appendLog.mock.calls.map(([line]) => line)).toEqual(expect.arrayContaining([
+      'Bắt đầu tạo gói SEO: 1 bước (Phần chính). Cách sinh: API deepseek-chat.',
+      `Bước 1/1 — Phần chính: gửi yêu cầu (${Buffer.byteLength(prompt.system, 'utf8') + Buffer.byteLength(prompt.user, 'utf8')} byte).`,
+      `Bước 1/1 — Phần chính: nhận phản hồi sau 00:00 (${Buffer.byteLength(generatedJson, 'utf8')} byte).`,
+      'Bước 1/1 — Phần chính: xong.',
+    ]));
+    expect(jobContext.appendLog).toHaveBeenLastCalledWith(expect.stringMatching(/^Đã lưu gói SEO\. Tổng thời gian \d{2,}:\d{2}\.$/));
+  });
+
+  it('splits progress evenly and labels main and Shorts steps in order', async () => {
+    const eligible = projectWithShortWindow();
+    mocks.getProject.mockResolvedValue(eligible);
+    const shortsJson = JSON.stringify({ shorts: [{ window_id: 'short-short-scene-1', hook_line: 'Hook', title: 'Title', caption: 'Caption', hashtags: ['#History'], reason: 'Reason' }] });
+    const cli = {
+      kind: 'cli' as const,
+      model: 'claude-sonnet-5-5',
+      chat: vi.fn(async (_messages, options?: { stepLabel?: string }) => options?.stepLabel === 'Shorts-windows' ? shortsJson : generatedJson),
+    };
+    const jobContext = context();
+
+    await generateSeoPackage(project.id, ['titles', 'shorts'], jobContext, cli);
+
+    expect(jobContext.reportProgress.mock.calls.map(([percent]) => percent)).toEqual([5, 50, 95, 100]);
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Bắt đầu tạo gói SEO: 2 bước (Phần chính, Shorts). Cách sinh: Claude CLI claude-sonnet-5-5.');
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringMatching(/^Bước 1\/2 — Phần chính: gửi yêu cầu \(\d+ byte\)\.$/));
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringMatching(/^Bước 2\/2 — Shorts: gửi yêu cầu \(\d+ byte\)\.$/));
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Bước 1/2 — Phần chính: xong.');
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Bước 2/2 — Shorts: xong.');
+  });
+
+  it('uses one full progress slice for Shorts-only generation', async () => {
+    const eligible = projectWithShortWindow();
+    mocks.getProject.mockResolvedValue(eligible);
+    const shortsJson = JSON.stringify({ shorts: [{ window_id: 'short-short-scene-1', hook_line: 'Hook', title: 'Title', caption: 'Caption', hashtags: ['#History'], reason: 'Reason' }] });
+    const cli = { kind: 'cli' as const, model: 'claude-haiku-4-5', chat: vi.fn(async () => shortsJson) };
+    const jobContext = context();
+
+    await generateSeoPackage(project.id, ['shorts'], jobContext, cli);
+
+    expect(jobContext.reportProgress.mock.calls.map(([percent]) => percent)).toEqual([5, 95, 100]);
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Bắt đầu tạo gói SEO: 1 bước (Shorts). Cách sinh: Claude CLI claude-haiku-4-5.');
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Bước 1/1 — Shorts: xong.');
+  });
+
+  it('logs validation retry and step failure details', async () => {
+    const jobContext = context();
+    const api = { kind: 'api' as const, model: 'deepseek-chat', chat: vi.fn().mockResolvedValueOnce('{}').mockResolvedValueOnce(generatedJson) };
+
+    await generateSeoPackage(project.id, ['titles'], jobContext, api);
+
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringMatching(/^Bước 1\/1 — Phần chính: JSON chưa hợp lệ, thử lại 1 lần: .+$/));
+
+    const failureContext = context();
+    const failedApi = { kind: 'api' as const, model: 'deepseek-chat', chat: vi.fn().mockRejectedValue(new Error('provider unavailable')) };
+    await expect(generateSeoPackage(project.id, ['titles'], failureContext, failedApi)).rejects.toThrow('provider unavailable');
+    expect(failureContext.appendLog).toHaveBeenCalledWith('Bước 1/1 — Phần chính: thất bại — provider unavailable');
+  });
+
+  it('logs heartbeat every 30 seconds while the request is pending and stops after the call', async () => {
+    vi.useFakeTimers();
+    let resolveChat!: (value: string) => void;
+    const chatResult = new Promise<string>((resolve) => { resolveChat = resolve; });
+    const cli = { kind: 'cli' as const, model: 'claude-sonnet-5-5', chat: vi.fn(() => chatResult) };
+    const jobContext = context();
+    const generation = generateSeoPackage(project.id, ['titles'], jobContext, cli);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cli.chat).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Bước 1/1 — Phần chính: vẫn đang chờ (00:30)…');
+
+    resolveChat(generatedJson);
+    await generation;
+    const heartbeatCount = jobContext.appendLog.mock.calls.filter(([line]) => line.includes('vẫn đang chờ')).length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(jobContext.appendLog.mock.calls.filter(([line]) => line.includes('vẫn đang chờ'))).toHaveLength(heartbeatCount);
+  });
+
+  it('stops heartbeat after cancellation and logs the cancelled step once', async () => {
+    vi.useFakeTimers();
+    let cancelled = false;
+    let resolveChat!: (value: string) => void;
+    const chatResult = new Promise<string>((resolve) => { resolveChat = resolve; });
+    const cli = { kind: 'cli' as const, model: 'claude-sonnet-5-5', chat: vi.fn(() => chatResult) };
+    const jobContext = { ...context(), isCancelled: vi.fn(async () => cancelled) };
+    const generation = generateSeoPackage(project.id, ['titles'], jobContext, cli);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cli.chat).toHaveBeenCalledOnce();
+    cancelled = true;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(jobContext.appendLog.mock.calls.filter(([line]) => line.includes('vẫn đang chờ'))).toHaveLength(0);
+
+    resolveChat(generatedJson);
+    await generation;
+    expect(jobContext.appendLog).toHaveBeenCalledWith('Đã hủy ở bước 1/1.');
+    expect(jobContext.appendLog.mock.calls.filter(([line]) => line === 'Đã hủy ở bước 1/1.')).toHaveLength(1);
+    expect(mocks.applyGeneratedSeoSections).not.toHaveBeenCalled();
+  });
+
+  it('caps SEO heartbeat lines at 20 per step', async () => {
+    vi.useFakeTimers();
+    let resolveChat!: (value: string) => void;
+    const chatResult = new Promise<string>((resolve) => { resolveChat = resolve; });
+    const cli = { kind: 'cli' as const, model: 'claude-sonnet-5-5', chat: vi.fn(() => chatResult) };
+    const jobContext = context();
+    const generation = generateSeoPackage(project.id, ['titles'], jobContext, cli);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cli.chat).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(21 * 30_000);
+    expect(jobContext.appendLog.mock.calls.filter(([line]) => line.includes('vẫn đang chờ'))).toHaveLength(20);
+
+    resolveChat(generatedJson);
+    await generation;
+  });
+
+  it('shares the per-step heartbeat cap across a validation retry', async () => {
+    vi.useFakeTimers();
+    let resolveFirst!: (value: string) => void;
+    let resolveSecond!: (value: string) => void;
+    const firstResult = new Promise<string>((resolve) => { resolveFirst = resolve; });
+    const secondResult = new Promise<string>((resolve) => { resolveSecond = resolve; });
+    const cli = {
+      kind: 'cli' as const,
+      model: 'claude-sonnet-5-5',
+      chat: vi.fn().mockReturnValueOnce(firstResult).mockReturnValueOnce(secondResult),
+    };
+    const jobContext = context();
+    const generation = generateSeoPackage(project.id, ['titles'], jobContext, cli);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(20 * 30_000);
+    expect(jobContext.appendLog.mock.calls.filter(([line]) => line.includes('vẫn đang chờ'))).toHaveLength(20);
+
+    resolveFirst('{}');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cli.chat).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(jobContext.appendLog.mock.calls.filter(([line]) => line.includes('vẫn đang chờ'))).toHaveLength(20);
+
+    resolveSecond(generatedJson);
+    await generation;
   });
 });
