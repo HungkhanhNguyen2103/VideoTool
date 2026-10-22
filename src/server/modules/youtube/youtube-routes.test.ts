@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { Document } from 'mongodb';
 import type { JobSummary } from '../../../contracts/job';
+import type { ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { getCollection } from '../../db/client';
 import { errorHandler } from '../../error-handler';
 import { loadConfig } from '../../config';
@@ -46,6 +47,7 @@ async function startApi(fetcher: typeof fetch, overrides: {
   config?: typeof config;
   enqueueJob?: (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
   getActiveJob?: (projectId: string, type: string) => Promise<JobSummary | null>;
+  getClaudeCliStatus?: () => Promise<ClaudeCliStatus>;
 } = {}): Promise<string> {
   const app = express();
   app.use(express.json());
@@ -55,6 +57,7 @@ async function startApi(fetcher: typeof fetch, overrides: {
     fetcher,
     enqueueJob: overrides.enqueueJob ?? (async () => ({ id: 'job-1' } as JobSummary)),
     getActiveJob: overrides.getActiveJob ?? (async () => null),
+    ...(overrides.getClaudeCliStatus ? { getClaudeCliStatus: overrides.getClaudeCliStatus } : {}),
   }));
   app.use(errorHandler);
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
@@ -125,6 +128,54 @@ describe('YouTube import routes', () => {
     const credentials = await getCollection<TestDoc>('youtubeCredentials').find({}).toArray();
     expect(JSON.stringify(credentials)).not.toContain('import-refresh-token-private');
     expect(credentials.some((credential) => credential.kind === 'pending-import')).toBe(false);
+  });
+});
+
+describe('YouTube review v2 routes', () => {
+  it('defaults to Claude CLI, rejects unavailable CLI before enqueue, validates models, and deduplicates by target', async () => {
+    const profile = await createChannel({ name: 'Kênh review' });
+    let enqueueCount = 0;
+    const unavailable = await startApi(async () => { throw new Error('No Google request expected.'); }, {
+      getClaudeCliStatus: async () => ({ available: false, reason: 'CLI unavailable in test.', authPathLikely: 'subscription' }),
+      enqueueJob: async () => { enqueueCount += 1; return { id: 'unexpected' } as JobSummary; },
+    });
+    const rejected = await fetch(`${unavailable}/api/youtube/channels/${profile.id}/review-v2`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    expect(rejected.status).toBe(503);
+    expect(await rejected.json()).toMatchObject({ error: { code: 'CLAUDE_CLI_UNAVAILABLE' } });
+    expect(enqueueCount).toBe(0);
+
+    const invalidModel = await fetch(`${unavailable}/api/youtube/channels/${profile.id}/review-v2`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'api', cliModel: 'invalid-model' }) });
+    expect(invalidModel.status).toBe(422);
+    expect(await invalidModel.json()).toMatchObject({ error: { code: 'AI_MODEL_UNAVAILABLE' } });
+
+    const payloads: Array<{ type: string; projectId: string; payload: unknown; maxAttempts?: number }> = [];
+    const api = await startApi(async () => { throw new Error('No Google request expected.'); }, {
+      getActiveJob: async (scope) => scope.includes(':video:') ? { id: 'active-review' } as JobSummary : null,
+      enqueueJob: async (payload) => { payloads.push(payload); return { id: 'queued-review' } as JobSummary; },
+    });
+    const channelResponse = await fetch(`${api}/api/youtube/channels/${profile.id}/review-v2`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'api' }) });
+    expect(channelResponse.status).toBe(202);
+    expect(await channelResponse.json()).toEqual({ jobId: 'queued-review' });
+    expect(payloads[0]).toMatchObject({ type: 'youtube-review', projectId: `youtube-review:${profile.id}:channel:channel`, payload: { channelId: profile.id, target: 'channel', backend: 'api' }, maxAttempts: 1 });
+
+    const videoResponse = await fetch(`${api}/api/youtube/videos/${profile.id}/video-1/review-v2`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'api' }) });
+    expect(videoResponse.status).toBe(409);
+    expect(await videoResponse.json()).toMatchObject({ error: { code: 'YOUTUBE_REVIEW_ALREADY_RUNNING', jobId: 'active-review' } });
+    expect(payloads).toHaveLength(1);
+  });
+
+  it('rejects extra request keys and never echoes token fields', async () => {
+    const profile = await createChannel({ name: 'Kênh strict' });
+    let enqueued = false;
+    const api = await startApi(async () => { throw new Error('No Google request expected.'); }, {
+      getClaudeCliStatus: async () => ({ available: true, version: 'test', authPathLikely: 'subscription' }),
+      enqueueJob: async () => { enqueued = true; return { id: 'job' } as JobSummary; },
+    });
+    const response = await fetch(`${api}/api/youtube/channels/${profile.id}/review-v2`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'cli', accessToken: 'private-token' }) });
+    const body = await response.json();
+    expect(response.status).toBe(400);
+    expect(enqueued).toBe(false);
+    expect(JSON.stringify(body)).not.toContain('private-token');
   });
 });
 

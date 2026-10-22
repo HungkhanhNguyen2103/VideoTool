@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { JobHandler } from '../server/modules/job';
 import { handleCliRegeneration, handleFinalQa, handleGenerateScript, handleGenerateVisualPrompts, handleSplitScenes } from '../server/modules/script';
 import { getProject } from '../server/modules/project';
@@ -7,7 +8,7 @@ import { alignProjectWordTimings, analyzeProjectPopups, autoAnalyzeProjectPopups
 import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
 import { isSceneActive } from '../contracts/scene-active';
-import { syncYoutubeChannel } from '../server/modules/youtube';
+import { generateYoutubeReviewV2, syncYoutubeChannel } from '../server/modules/youtube';
 import { loadConfig } from '../server/config';
 import { isAiModelForProvider } from '../contracts/ai-models';
 import { AppError } from '../server/shared/errors';
@@ -115,6 +116,28 @@ const handleYoutubeSync: JobHandler = async (job, context) => {
   return syncYoutubeChannel(profileId, context);
 };
 
+const handleYoutubeReview: JobHandler = async (job, context) => {
+  if (await context.isCancelled()) return;
+  const payload = z.object({
+    channelId: z.string().min(1),
+    target: z.enum(['channel', 'video']),
+    videoId: z.string().min(1).optional(),
+    backend: z.enum(['cli', 'api']).default('cli'),
+    cliModel: z.string().min(1).optional(),
+  }).strict().refine((value) => value.target !== 'video' || Boolean(value.videoId), { message: 'videoId is required for a video review.' }).parse(job.payload);
+  if (payload.cliModel !== undefined && !isAiModelForProvider('claude', payload.cliModel)) {
+    throw new AppError('Model Claude CLI không còn khả dụng; hãy chọn model khác.', 422, 'AI_MODEL_UNAVAILABLE');
+  }
+  return generateYoutubeReviewV2({
+    profileId: payload.channelId,
+    target: payload.target,
+    ...(payload.videoId ? { videoId: payload.videoId } : {}),
+    request: { backend: payload.backend, ...(payload.cliModel ? { cliModel: payload.cliModel } : {}) },
+    context,
+    config: loadConfig(),
+  });
+};
+
 const handleGenerateScriptWithLogging: JobHandler = async (job, context) => {
   try {
     await handleGenerateScript(job, context);
@@ -145,4 +168,5 @@ export const jobHandlers: Record<string, JobHandler> = {
   'render-full-video': handleRenderFullVideo,
   'generate-seo': handleGenerateSeo,
   'youtube-sync': handleYoutubeSync,
+  'youtube-review': handleYoutubeReview,
 };

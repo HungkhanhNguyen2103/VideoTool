@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema, YoutubeSearchTermsBreakdownSchema, YoutubeTrafficBreakdownSchema } from '../../../contracts/youtube';
 import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthExperimentSchema, YoutubeGrowthPlanConfigSchema } from '../../../contracts/youtube-plan';
+import { YoutubeChannelReviewV2AnalysisSchema, YoutubeReviewBackendSchema, YoutubeReviewGroundingReportSchema, YoutubeReviewIdeaSchema, YoutubeReviewPacketSummarySchema, YoutubeVideoReviewV2AnalysisSchema } from '../../../contracts/youtube-review';
 
 const EncryptedRefreshTokenSchema = z.object({
   algorithm: z.literal('aes-256-gcm'),
@@ -82,6 +83,26 @@ export const YoutubeReviewDocSchema = z.object({
   generatedAt: z.date(),
 }).strict();
 export type YoutubeReviewDoc = z.infer<typeof YoutubeReviewDocSchema>;
+
+export const YoutubeReviewV2DocSchema = z.object({
+  _id: z.string(),
+  channelProfileId: z.string(),
+  target: z.enum(['channel', 'video']),
+  targetId: z.string(),
+  promptVersion: z.enum(['youtube-review-v2-channel', 'youtube-review-v2-video']),
+  backend: YoutubeReviewBackendSchema,
+  model: z.string().min(1),
+  dataFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+  packetSummary: YoutubeReviewPacketSummarySchema,
+  groundingReport: YoutubeReviewGroundingReportSchema,
+  metricMap: z.record(z.string(), z.object({ value: z.number().finite(), unit: z.string(), label: z.string(), assumed: z.boolean().optional() }).strict()),
+  analysis: z.union([YoutubeChannelReviewV2AnalysisSchema, YoutubeVideoReviewV2AnalysisSchema]),
+  ideas: z.object({ status: z.enum(['generated', 'gated']), reason: z.string().optional(), items: z.array(YoutubeReviewIdeaSchema).max(5) }).strict().optional(),
+  generatedAt: z.date(),
+}).strict();
+export type YoutubeReviewV2Doc = z.infer<typeof YoutubeReviewV2DocSchema>;
+export const YoutubeStoredReviewDocSchema = z.union([YoutubeReviewDocSchema, YoutubeReviewV2DocSchema]);
+export type YoutubeStoredReviewDoc = z.infer<typeof YoutubeStoredReviewDocSchema>;
 
 export const YoutubeChannelTrafficDocSchema = z.object({
   _id: z.string(),

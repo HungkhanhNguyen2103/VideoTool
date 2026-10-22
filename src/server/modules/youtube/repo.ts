@@ -1,6 +1,6 @@
 import type { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
-import { YoutubeChannelDailyDocSchema, YoutubeChannelTrafficDocSchema, YoutubeCredentialDocSchema, YoutubeGrowthPlanDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeChannelTrafficDoc, type YoutubeCredentialDoc, type YoutubeGrowthPlanDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeStoredCredentialDoc, type YoutubeVideoDoc } from './docs';
+import { YoutubeChannelDailyDocSchema, YoutubeChannelTrafficDocSchema, YoutubeCredentialDocSchema, YoutubeGrowthPlanDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeReviewV2DocSchema, YoutubeStoredReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeChannelTrafficDoc, type YoutubeCredentialDoc, type YoutubeGrowthPlanDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeReviewV2Doc, type YoutubeStoredCredentialDoc, type YoutubeStoredReviewDoc, type YoutubeVideoDoc } from './docs';
 import type { YoutubeFirst28dSnapshot, YoutubeManualReach, YoutubeSearchTermsBreakdown, YoutubeTrafficBreakdown } from '../../../contracts/youtube';
 import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthPlanConfigSchema, type YoutubeGrowthExperiment, type YoutubeGrowthPlanConfig } from '../../../contracts/youtube-plan';
 
@@ -9,7 +9,7 @@ const videos = (): Collection<YoutubeVideoDoc> => getCollection('youtubeVideos')
 const daily = (): Collection<YoutubeChannelDailyDoc> => getCollection('youtubeChannelDaily');
 const quotas = (): Collection<YoutubeQuotaDoc> => getCollection('youtubeQuota');
 const retention = (): Collection<YoutubeRetentionDoc> => getCollection('youtubeRetention');
-const reviews = (): Collection<YoutubeReviewDoc> => getCollection('youtubeReviews');
+const reviews = (): Collection<YoutubeStoredReviewDoc> => getCollection('youtubeReviews');
 const channelTraffic = (): Collection<YoutubeChannelTrafficDoc> => getCollection('youtubeChannelTraffic');
 const growthPlans = (): Collection<YoutubeGrowthPlanDoc> => getCollection('youtubeGrowthPlans');
 
@@ -166,13 +166,23 @@ export async function findRetention(profileId: string, videoId: string): Promise
   return row ? YoutubeRetentionDocSchema.parse(row) : null;
 }
 
-export async function upsertReview(doc: YoutubeReviewDoc): Promise<void> {
+export async function upsertReview(doc: YoutubeStoredReviewDoc): Promise<void> {
   await reviews().replaceOne({ _id: doc._id }, doc, { upsert: true });
 }
 
 export async function findReview(profileId: string, target: 'channel' | 'video', targetId: string): Promise<YoutubeReviewDoc | null> {
-  const row = await reviews().findOne({ channelProfileId: profileId, target, targetId });
+  const row = await reviews().findOne({ channelProfileId: profileId, target, targetId, promptVersion: { $not: /^youtube-review-v2/u } });
   return row ? YoutubeReviewDocSchema.parse(row) : null;
+}
+
+export async function findYoutubeReviewV2(profileId: string, target: 'channel' | 'video', targetId: string): Promise<YoutubeReviewV2Doc | null> {
+  const promptVersion = target === 'channel' ? 'youtube-review-v2-channel' : 'youtube-review-v2-video';
+  const row = await reviews().findOne({ channelProfileId: profileId, target, targetId, promptVersion });
+  return row ? YoutubeReviewV2DocSchema.parse(row) : null;
+}
+
+export function parseStoredYoutubeReview(value: unknown): YoutubeStoredReviewDoc {
+  return YoutubeStoredReviewDocSchema.parse(value);
 }
 
 export async function deleteSyncedData(profileId: string): Promise<void> {

@@ -7,6 +7,8 @@ import { AppError, NotFound } from '../../shared/errors';
 import type { JobSummary } from '../../../contracts/job';
 import { RefreshYoutubeProfileRequestSchema, YoutubeManualReachInputSchema, YoutubeManualReachSchema, YoutubePlanExclusionInputSchema, YoutubeVideoStatsSchema, type YoutubeVideoStats } from '../../../contracts/youtube';
 import { YoutubeGrowthExperimentInputSchema, YoutubeGrowthPlanConfigSchema, YoutubeGrowthPlanSchema } from '../../../contracts/youtube-plan';
+import { YoutubeReviewRequestSchema } from '../../../contracts/youtube-review';
+import { isAiModelForProvider } from '../../../contracts/ai-models';
 import { appendYoutubeGrowthExperiment, countVideoDocs, findCredential, listVideoDocs, removeYoutubeGrowthExperiment, updateVideoManualReach, updateVideoPlanExclusion } from './repo';
 import type { YoutubeVideoDoc } from './docs';
 import { assertYoutubeConfigured, assertYoutubeQuotaAllowsSync, beginYoutubeImport, beginYoutubeOauth, completeYoutubeOauth, disconnectYoutube, discardYoutubeOauthState, getYoutubeConnection, getYoutubeImportOptions, getYoutubeOauthOpenerOrigin, refreshYoutubeProfile, selectYoutubeChannel, selectYoutubeImportChannels, youtubeIsConfigured, YOUTUBE_SETUP_MESSAGE } from './service';
@@ -19,9 +21,13 @@ import { getProject, listProjects } from '../project';
 import { YoutubeChannelsOverviewSchema, YoutubeChannelOverviewRowSchema, YoutubeSyncAllResultSchema } from '../../../contracts/youtube-overview';
 import { buildYoutubeOverviewWindows } from './channel-overview';
 import { getYoutubeGrowthPlan, getYoutubeGrowthPlanStatus, saveYoutubeGrowthPlan } from './growth-plan-service';
+import { getYoutubeReviewV2, youtubeReviewJobScope } from './review-v2-service';
+import { assertClaudeCliAvailable, assertClaudeCliStatusAvailable } from '../../shared/claude-cli/cli-chat';
+import type { ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 
 type EnqueueYoutubeJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
 type GetActiveYoutubeJob = (projectId: string, type: string) => Promise<JobSummary | null>;
+type YoutubeCliStatusReader = () => Promise<ClaudeCliStatus>;
 
 const DisconnectSchema = z.object({ deleteSyncedData: z.boolean().default(false) }).strict();
 
@@ -101,7 +107,7 @@ function importResultPage(results: Awaited<ReturnType<typeof selectYoutubeImport
   return `<!doctype html><html lang="vi"><meta charset="utf-8"><title>Kết quả thêm kênh</title><body style="font:16px system-ui;max-width:42rem;margin:3rem auto;padding:0 1rem;background:#111;color:#eee"><h1>Đã xử lý lựa chọn kênh</h1><p>Đã thêm ${imported} kênh, bỏ qua ${skipped} kênh.</p><ul>${rows}</ul><button onclick="window.close()">Đóng cửa sổ</button><script>if(window.opener){window.opener.postMessage({type:'youtube-oauth-finished',success:true,imported:${imported},skipped:${skipped},alreadyBound:${alreadyBound},failed:${failed},profileIds:${profileIds}},${targetOrigin});window.close()}</script></body></html>`;
 }
 
-export function createYoutubeRouter(options: { config: Config; enqueueJob: EnqueueYoutubeJob; getActiveJob: GetActiveYoutubeJob; fetcher?: typeof fetch }): Router {
+export function createYoutubeRouter(options: { config: Config; enqueueJob: EnqueueYoutubeJob; getActiveJob: GetActiveYoutubeJob; getClaudeCliStatus?: YoutubeCliStatusReader; fetcher?: typeof fetch }): Router {
   const router = Router();
 
   router.get('/setup', (_req, res) => {
@@ -465,6 +471,64 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
   router.post('/videos/:channelId/:videoId/review', async (req, res) => {
     await getChannel(req.params.channelId);
     res.json(await generateYoutubeReview({ profileId: req.params.channelId, target: 'video', videoId: req.params.videoId, fetcher: options.fetcher, config: options.config }));
+  });
+
+  router.post('/channels/:channelId/review-v2', async (req, res) => {
+    const body = YoutubeReviewRequestSchema.parse(req.body ?? {});
+    if (body.cliModel !== undefined && !isAiModelForProvider('claude', body.cliModel)) {
+      throw new AppError(`Model ${body.cliModel} không còn khả dụng cho Claude CLI; hãy chọn model khác.`, 422, 'AI_MODEL_UNAVAILABLE');
+    }
+    await getChannel(req.params.channelId);
+    const scope = youtubeReviewJobScope(req.params.channelId, 'channel');
+    const active = await options.getActiveJob(scope, 'youtube-review');
+    if (active) {
+      res.status(409).json({ error: { code: 'YOUTUBE_REVIEW_ALREADY_RUNNING', message: 'Đang có lượt đánh giá kênh chạy; đang mở lại tiến độ hiện có.', jobId: active.id } });
+      return;
+    }
+    if (body.backend === 'cli') {
+      if (options.getClaudeCliStatus) assertClaudeCliStatusAvailable(await options.getClaudeCliStatus());
+      else await assertClaudeCliAvailable({ CLAUDE_CLI_PATH: options.config.CLAUDE_CLI_PATH });
+    }
+    const job = await options.enqueueJob({
+      type: 'youtube-review', projectId: scope,
+      payload: { channelId: req.params.channelId, target: 'channel', backend: body.backend, ...(body.cliModel ? { cliModel: body.cliModel } : {}) },
+      maxAttempts: 1,
+    });
+    res.status(202).json({ jobId: job.id });
+  });
+
+  router.get('/channels/:channelId/review-v2', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json(await getYoutubeReviewV2({ profileId: req.params.channelId, target: 'channel', fetcher: options.fetcher, config: options.config }));
+  });
+
+  router.post('/videos/:channelId/:videoId/review-v2', async (req, res) => {
+    const body = YoutubeReviewRequestSchema.parse(req.body ?? {});
+    if (body.cliModel !== undefined && !isAiModelForProvider('claude', body.cliModel)) {
+      throw new AppError(`Model ${body.cliModel} không còn khả dụng cho Claude CLI; hãy chọn model khác.`, 422, 'AI_MODEL_UNAVAILABLE');
+    }
+    await getChannel(req.params.channelId);
+    const scope = youtubeReviewJobScope(req.params.channelId, 'video', req.params.videoId);
+    const active = await options.getActiveJob(scope, 'youtube-review');
+    if (active) {
+      res.status(409).json({ error: { code: 'YOUTUBE_REVIEW_ALREADY_RUNNING', message: 'Đang có lượt đánh giá video chạy; đang mở lại tiến độ hiện có.', jobId: active.id } });
+      return;
+    }
+    if (body.backend === 'cli') {
+      if (options.getClaudeCliStatus) assertClaudeCliStatusAvailable(await options.getClaudeCliStatus());
+      else await assertClaudeCliAvailable({ CLAUDE_CLI_PATH: options.config.CLAUDE_CLI_PATH });
+    }
+    const job = await options.enqueueJob({
+      type: 'youtube-review', projectId: scope,
+      payload: { channelId: req.params.channelId, target: 'video', videoId: req.params.videoId, backend: body.backend, ...(body.cliModel ? { cliModel: body.cliModel } : {}) },
+      maxAttempts: 1,
+    });
+    res.status(202).json({ jobId: job.id });
+  });
+
+  router.get('/videos/:channelId/:videoId/review-v2', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json(await getYoutubeReviewV2({ profileId: req.params.channelId, target: 'video', videoId: req.params.videoId, fetcher: options.fetcher, config: options.config }));
   });
 
   return router;

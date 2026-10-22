@@ -5,6 +5,7 @@ import { ProjectDocSchema } from '../src/server/modules/project/docs';
 import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubeGrowthPlanDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema } from '../src/server/modules/youtube/docs';
 import { ensureYoutubeIndexes } from '../src/server/modules/youtube/indexes';
 import { YoutubeGrowthPlanConfigSchema } from '../src/contracts/youtube-plan';
+import { makeYoutubeReviewDemoRetentionCurve, makeYoutubeReviewDemoScenes } from './youtube-review-demo-data';
 
 const seedPrefix = 'youtube-demo-';
 const seedStamp = '20261022';
@@ -42,7 +43,7 @@ function makeChannel(id: string, name: string, handle: string) {
   });
 }
 
-function makeProject(id: string, channelId: string, title: string, chosenTitle: string, youtubeVideoId: string | null, createdAt: Date, scriptPresetId: 'documentary' | 'explainer' | 'hubris-trap' | 'strategist', visualStylePresetId: 'cinematic' | 'anime' | 'watercolor' | 'photorealistic' | 'flat-cartoon' | 'strategic-map') {
+function makeProject(id: string, channelId: string, title: string, chosenTitle: string, youtubeVideoId: string | null, createdAt: Date, scriptPresetId: 'documentary' | 'explainer' | 'hubris-trap' | 'strategist', visualStylePresetId: 'cinematic' | 'anime' | 'watercolor' | 'photorealistic' | 'flat-cartoon' | 'strategic-map', scenes: ReturnType<typeof makeYoutubeReviewDemoScenes> = []) {
   return ProjectDocSchema.parse({
     _id: id,
     schemaVersion: 1,
@@ -82,7 +83,7 @@ function makeProject(id: string, channelId: string, title: string, chosenTitle: 
     }),
     renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 },
     status: 'rendered',
-    scenes: [],
+    scenes,
     chapters: [],
     openLoops: [],
     motif: null,
@@ -276,9 +277,11 @@ async function main() {
 
   const linkedProjectId = `${seedPrefix}project-linked`;
   const suggestionProjectId = `${seedPrefix}project-suggestion`;
+  const growthLinkedProjectId = `${seedPrefix}project-growth-12`;
   await db.collection('projects').insertMany([
     makeProject(linkedProjectId, full!, 'Demo · Đã liên kết', 'Cuộc vây hãm kéo dài 100 ngày', 'demo-video-02', offsetDays(now, -20), 'documentary', 'cinematic'),
     makeProject(suggestionProjectId, full!, 'Demo · Gợi ý liên kết', 'Vì sao thành cổ biến mất?', null, offsetDays(now, -29), 'strategist', 'photorealistic'),
+    makeProject(growthLinkedProjectId, growth12!, 'Demo · Review retention theo cảnh', 'Khi tuyến tiếp tế làm đổi cục diện', `demo-growth-${growth12!.slice(-1)}-01`, offsetDays(now, -40), 'documentary', 'cinematic', makeYoutubeReviewDemoScenes()),
   ]);
 
   const reviewResult = { observations: ['Kênh có đủ dữ liệu minh họa cho hai cửa sổ gần nhất.'], hypotheses: ['Mở đầu ngắn hơn có thể giúp giữ người xem; đây là giả thuyết cần thử.'], experiments: ['So sánh tỷ lệ xem trung bình của hai video gần nhất.'] };
@@ -306,10 +309,27 @@ async function main() {
     }));
   }
 
+  const growthVideoId = `demo-growth-${growth12!.slice(-1)}-01`;
+  await db.collection('youtubeRetention').insertOne(YoutubeRetentionDocSchema.parse({
+    _id: `${growth12}:${growthVideoId}`, channelProfileId: growth12!, videoId: growthVideoId, fetchedAt: now,
+    curve: makeYoutubeReviewDemoRetentionCurve(),
+  }));
+  const capturedAt = now.toISOString();
+  await db.collection('youtubeVideos').updateOne({ channelProfileId: growth12!, videoId: growthVideoId }, { $set: {
+    'searchTerms.last28d': { capturedAt, status: 'ok', terms: [
+      { term: 'tuyến tiếp tế thành cổ', views: 48, estimatedMinutesWatched: 276 },
+      { term: 'cuộc vây hãm kéo dài bao lâu', views: 31, estimatedMinutesWatched: 154 },
+    ] },
+    'searchTerms.lifetime': { capturedAt, status: 'ok', terms: [
+      { term: 'tuyến tiếp tế thành cổ', views: 116, estimatedMinutesWatched: 652 },
+      { term: 'chiến thuật vây thành', views: 73, estimatedMinutesWatched: 341 },
+    ] },
+  } });
+
   console.log(`Seeded Task 112 demo data into isolated database ${database}.`);
   console.log(`Analytics scenarios: ${full}, ${empty}, ${unavailable}; connection scenarios: ${disconnected}, ${reconnect}.`);
   console.log(`Growth-plan cohorts: ${growth2}, ${growth12}, ${growth20}, ${growth45} (2/12/20/45 mature videos).`);
-  console.log(`Demo project IDs: ${linkedProjectId}, ${suggestionProjectId}. No OAuth tokens or real channel data were used.`);
+  console.log(`Demo project IDs: ${linkedProjectId}, ${suggestionProjectId}, ${growthLinkedProjectId}. The 12-video cohort has a linked 10-minute project, stored retention curve, and synthetic video search terms. No OAuth tokens or real channel data were used.`);
 }
 
 main().catch(() => {

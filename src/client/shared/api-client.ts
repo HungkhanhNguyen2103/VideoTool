@@ -8,6 +8,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     readonly fields?: { path: string; message: string }[],
+    readonly jobId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -23,7 +24,7 @@ async function parseErrorBody(res: Response): Promise<ApiError> {
   }
   const parsed = ApiErrorBodySchema.safeParse(body);
   if (!parsed.success) return new ApiError(`Yêu cầu thất bại (${res.status}).`, res.status, 'unknown_error');
-  return new ApiError(parsed.data.error.message, res.status, parsed.data.error.code, parsed.data.error.fields);
+  return new ApiError(parsed.data.error.message, res.status, parsed.data.error.code, parsed.data.error.fields, parsed.data.error.jobId);
 }
 
 export type RequestOptions = {

@@ -1,5 +1,5 @@
 import { getCollection } from '../../db/client';
-import type { YoutubeStoredCredentialDoc, YoutubeQuotaDoc, YoutubeVideoDoc, YoutubeChannelDailyDoc, YoutubeRetentionDoc, YoutubeReviewDoc, YoutubeChannelTrafficDoc, YoutubeGrowthPlanDoc } from './docs';
+import type { YoutubeStoredCredentialDoc, YoutubeQuotaDoc, YoutubeVideoDoc, YoutubeChannelDailyDoc, YoutubeRetentionDoc, YoutubeStoredReviewDoc, YoutubeChannelTrafficDoc, YoutubeGrowthPlanDoc } from './docs';
 
 export async function ensureYoutubeIndexes(): Promise<void> {
   await getCollection<YoutubeStoredCredentialDoc>('youtubeCredentials').createIndex(
@@ -14,7 +14,13 @@ export async function ensureYoutubeIndexes(): Promise<void> {
   await getCollection<YoutubeChannelDailyDoc>('youtubeChannelDaily').createIndex({ channelProfileId: 1, date: 1 }, { unique: true, name: 'youtube_daily_profile_date_unique' });
   await getCollection<YoutubeQuotaDoc>('youtubeQuota').createIndex({ date: 1, projectKey: 1 }, { unique: true, name: 'youtube_quota_project_date_unique' });
   await getCollection<YoutubeRetentionDoc>('youtubeRetention').createIndex({ channelProfileId: 1, videoId: 1 }, { unique: true, name: 'youtube_retention_profile_video_unique' });
-  await getCollection<YoutubeReviewDoc>('youtubeReviews').createIndex({ channelProfileId: 1, target: 1, targetId: 1 }, { unique: true, name: 'youtube_review_profile_target_unique' });
+  const reviewCollection = getCollection<YoutubeStoredReviewDoc>('youtubeReviews');
+  const reviewIndexes = await reviewCollection.indexes().catch(() => []);
+  const legacyReviewIndex = reviewIndexes.find((index) => index.name === 'youtube_review_profile_target_unique');
+  if (legacyReviewIndex && !Object.hasOwn(legacyReviewIndex.key ?? {}, 'promptVersion')) {
+    await reviewCollection.dropIndex('youtube_review_profile_target_unique');
+  }
+  await reviewCollection.createIndex({ channelProfileId: 1, target: 1, targetId: 1, promptVersion: 1 }, { unique: true, name: 'youtube_review_profile_target_version_unique' });
   await getCollection<YoutubeChannelTrafficDoc>('youtubeChannelTraffic').createIndex({ channelProfileId: 1 }, { unique: true, name: 'youtube_channel_traffic_profile_unique' });
   await getCollection<YoutubeVideoDoc>('youtubeVideos').createIndex({ channelProfileId: 1, privacy: 1, isShort: 1, first28d: 1 }, { name: 'youtube_video_first28d_pending' });
   await getCollection<YoutubeGrowthPlanDoc>('youtubeGrowthPlans').createIndex({ channelProfileId: 1 }, { unique: true, name: 'youtube_growth_plan_profile_unique' });
