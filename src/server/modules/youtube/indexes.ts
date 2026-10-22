@@ -1,5 +1,5 @@
 import { getCollection } from '../../db/client';
-import type { YoutubeStoredCredentialDoc, YoutubeQuotaDoc, YoutubeVideoDoc, YoutubeChannelDailyDoc, YoutubeRetentionDoc, YoutubeReviewDoc } from './docs';
+import type { YoutubeStoredCredentialDoc, YoutubeQuotaDoc, YoutubeVideoDoc, YoutubeChannelDailyDoc, YoutubeRetentionDoc, YoutubeReviewDoc, YoutubeChannelTrafficDoc } from './docs';
 
 export async function ensureYoutubeIndexes(): Promise<void> {
   await getCollection<YoutubeStoredCredentialDoc>('youtubeCredentials').createIndex(
@@ -15,4 +15,6 @@ export async function ensureYoutubeIndexes(): Promise<void> {
   await getCollection<YoutubeQuotaDoc>('youtubeQuota').createIndex({ date: 1, projectKey: 1 }, { unique: true, name: 'youtube_quota_project_date_unique' });
   await getCollection<YoutubeRetentionDoc>('youtubeRetention').createIndex({ channelProfileId: 1, videoId: 1 }, { unique: true, name: 'youtube_retention_profile_video_unique' });
   await getCollection<YoutubeReviewDoc>('youtubeReviews').createIndex({ channelProfileId: 1, target: 1, targetId: 1 }, { unique: true, name: 'youtube_review_profile_target_unique' });
+  await getCollection<YoutubeChannelTrafficDoc>('youtubeChannelTraffic').createIndex({ channelProfileId: 1 }, { unique: true, name: 'youtube_channel_traffic_profile_unique' });
+  await getCollection<YoutubeVideoDoc>('youtubeVideos').createIndex({ channelProfileId: 1, privacy: 1, isShort: 1, first28d: 1 }, { name: 'youtube_video_first28d_pending' });
 }

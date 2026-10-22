@@ -1,7 +1,7 @@
 # Module: youtube
 
 **Purpose:** Connect owned YouTube channels with read-only OAuth, import them as local profiles, refresh profile fields, and synchronize channel/video data for private analytics.
-**Owns collections:** `youtubeCredentials`, `youtubeVideos`, `youtubeChannelDaily`, `youtubeQuota`, `youtubeRetention`, `youtubeReviews`.
+**Owns collections:** `youtubeCredentials`, `youtubeVideos`, `youtubeChannelDaily`, `youtubeChannelTraffic`, `youtubeQuota`, `youtubeRetention`, `youtubeReviews` (and `youtubeGrowthPlans` for the growth plan).
 **May import:** `channel`, `project`, `seo`, `job`, and shared AI via their public `index.ts` APIs.
 
 ## Security and write boundary
@@ -24,26 +24,30 @@
 - The Data API does not expose a normal channel-owner aspect-ratio field in the selected video response. Shorts are classified by duration <= 180 seconds in this phase; verticality is not verified.
 - Analytics API requests are separately recorded by report group. A failed/unavailable report does not invalidate Data API metadata.
 - Analytics reports use `views`, `estimatedMinutesWatched`, `averageViewDuration`, `averageViewPercentage`, `subscribersGained`, and `subscribersLost`; daily rows use the day dimension and retention uses `audienceWatchRatio` by `elapsedVideoTimeRatio`. The report API returns only metrics available for that channel and date range.
+- Public long videos aged at least 31 days receive one publish-relative first-28-day report (`startDate` = publish date, `endDate` = publish date + 27 days). Stored snapshots are immutable. Failures stay unknown and are reported per video; the growth engine may use lifetime views as an explicitly approximate fallback only at ages 28–45 days. This targeted report is not part of the Data API quota estimate.
+- Traffic source reports use `insightTrafficSourceType` with `views` and `estimatedMinutesWatched`, stored separately for channel and video across recent 28-day and lifetime windows. A 400/403 marks that report unavailable; other failures are reported as errors. These mixes are context for the verdict, never a pass/fail input.
+- Studio impressions and CTR remain manual in this phase. Each entered record stores its timestamp; the verdict considers CTR known only at 1,000 or more impressions. Per-video exclusion from the growth plan is also user-owned and survives provider sync.
 - `impressions` and `impressionsClickThroughRate` are not used in this phase. CTR is available in Studio and through the YouTube Reporting API, which is not connected. `estimatedRevenue` is not requested because it requires a monetary scope, which is intentionally absent.
 
-## Current official documentation checked on 2026-10-21
+## Current official documentation checked on 2026-10-22
 
 - OAuth web server and PKCE/redirect behavior: https://developers.google.com/identity/protocols/oauth2/web-server and https://developers.google.com/identity/protocols/oauth2/resources/best-practices.
 - Owned channel discovery: https://developers.google.com/youtube/v3/docs/channels/list.
 - Upload playlist and video listing: https://developers.google.com/youtube/v3/docs/playlistItems/list and https://developers.google.com/youtube/v3/docs/videos/list.
 - Quota: https://developers.google.com/youtube/v3/determine_quota_cost.
 - Analytics query and reports: https://developers.google.com/youtube/analytics/reference/reports/query and https://developers.google.com/youtube/analytics/metrics.
+- The `reports.query` reference accepts `startDate` and `endDate` in `YYYY-MM-DD` form and documents the `video==...` filter. The data model says analytics latency is typically 48–72 hours. Channel video reports support the six user-activity metrics above; traffic source reports support `insightTrafficSourceType`, `views`, and `estimatedMinutesWatched`, with `video` as a filter. Verified 2026-10-22: https://developers.google.com/youtube/analytics/data_model and https://developers.google.com/youtube/analytics/channel_reports.
 - Reporting API thumbnail impressions and CTR: https://developers.google.com/youtube/reporting/v1/reports/metrics. CTR is unavailable here; the Reporting API is not implemented.
 - Targeted Analytics metric availability and dimensions: https://developers.google.com/youtube/analytics/metrics and https://developers.google.com/youtube/analytics/dimensions.
 
-## Partner Program reference thresholds checked on 2026-10-21
+## Partner Program reference thresholds checked on 2026-10-22
 
 | Tier | Current reference | From 2027-02-01 reference |
 |---|---|---|
 | Early access / fan funding | 500 subscribers and 3,000 public watch hours in 12 months OR 3,000,000 public Shorts views in 90 days | 500 subscribers and 3,000 public watch hours in 12 months OR 3,000,000 public Shorts views in 90 days |
 | Advertising revenue eligibility | 1,000 subscribers and 4,000 public watch hours in 12 months OR 10,000,000 public Shorts views in 90 days | 1,000 subscribers and 8,000 public watch hours in 12 months OR 20,000,000 public Shorts views in 90 days |
 
-Sources: https://support.google.com/youtube/answer/72851 and https://support.google.com/youtube/answer/12843009. These are reference thresholds only; the UI labels them “mốc tham khảo, kiểm tra lại trên YouTube Studio”. Studio is authoritative. Stored Analytics totals are an approximation of qualifying public watch hours/views; no revenue is calculated.
+Sources: https://support.google.com/youtube/answer/72851 and https://support.google.com/youtube/answer/12843009. These are reference thresholds only; the UI labels them “mốc tham khảo, kiểm tra lại trên YouTube Studio”. The 500-subscriber tier opens fan funding, Creator Partnerships, and Shopping; it is not the advertising revenue tier. Only qualifying public long-form watch hours count; Shorts feed watch hours do not count toward the hours path. Studio is authoritative. Stored Analytics totals are an approximation of qualifying public watch hours/views; no revenue is calculated.
 
 ## Named follow-up
 
@@ -64,3 +68,4 @@ Sources: https://support.google.com/youtube/answer/72851 and https://support.goo
 - Google decides which channels `channels.list?mine=true` returns for a given consent. The picker shows already-bound channels as disabled and supports a repeated sign-in when another channel is not listed.
 - Missing Data or Analytics metrics remain unavailable; never synthesize a value. `impressionsClickThroughRate` is not requested: CTR lives in Studio and in the YouTube Reporting API, which is not implemented here. Revenue is out of scope and no monetary scope is requested.
 - Partner Program thresholds are dated reference values only; YouTube Studio always wins. Do not estimate or show revenue.
+- Video sync updates provider-owned metadata and Analytics windows while preserving the first-28-day snapshot, manual reach, plan exclusion, and traffic source data. First-28-day values can be revised by YouTube after capture; this app intentionally keeps the first captured response as its stable comparison point.

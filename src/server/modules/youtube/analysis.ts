@@ -4,7 +4,8 @@ export const YOUTUBE_SMALL_COHORT_SIZE = 5;
 export const YOUTUBE_TREND_MINIMUM_VIEWS = 100;
 export const EARLY_RETENTION_DROP_THRESHOLD = 0.3;
 export const YOUTUBE_PARTNER_PROGRAM_THRESHOLDS = {
-  checkedOn: '2026-10-21',
+  checkedOn: '2026-10-22',
+  referenceLabel: 'mốc tham khảo, kiểm tra lại trên YouTube Studio',
   sourceUrls: [
     'https://support.google.com/youtube/answer/72851',
     'https://support.google.com/youtube/answer/12843009',
@@ -17,6 +18,9 @@ export const YOUTUBE_PARTNER_PROGRAM_THRESHOLDS = {
     entryTier: { subscribers: 500, longWatchHours: 3_000, shortViews: 3_000_000 },
     ads: { subscribers: 1_000, longWatchHours: 8_000, shortViews: 20_000_000 },
   },
+  longWatchWindowDays: 365,
+  shortsViewWindowDays: 90,
+  qualifyingWatchHours: 'public long-form only; Shorts feed watch hours do not count',
 } as const;
 
 function metric(video: YoutubeVideoStats, window: string, key: string): number | null {

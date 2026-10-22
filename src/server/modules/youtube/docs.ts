@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema } from '../../../contracts/youtube';
+import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema, YoutubeTrafficBreakdownSchema } from '../../../contracts/youtube';
 
 const EncryptedRefreshTokenSchema = z.object({
   algorithm: z.literal('aes-256-gcm'),
@@ -81,3 +81,11 @@ export const YoutubeReviewDocSchema = z.object({
   generatedAt: z.date(),
 }).strict();
 export type YoutubeReviewDoc = z.infer<typeof YoutubeReviewDocSchema>;
+
+export const YoutubeChannelTrafficDocSchema = z.object({
+  _id: z.string(),
+  channelProfileId: z.string(),
+  last28d: YoutubeTrafficBreakdownSchema.nullable().optional(),
+  lifetime: YoutubeTrafficBreakdownSchema.nullable().optional(),
+}).strict();
+export type YoutubeChannelTrafficDoc = z.infer<typeof YoutubeChannelTrafficDocSchema>;

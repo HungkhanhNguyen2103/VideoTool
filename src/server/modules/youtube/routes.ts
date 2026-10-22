@@ -4,8 +4,8 @@ import type { Config } from '../../config';
 import { getChannel, listChannels } from '../channel';
 import { AppError, NotFound } from '../../shared/errors';
 import type { JobSummary } from '../../../contracts/job';
-import { RefreshYoutubeProfileRequestSchema, YoutubeVideoStatsSchema, type YoutubeVideoStats } from '../../../contracts/youtube';
-import { countVideoDocs, findCredential, listVideoDocs } from './repo';
+import { RefreshYoutubeProfileRequestSchema, YoutubeManualReachInputSchema, YoutubeManualReachSchema, YoutubePlanExclusionInputSchema, YoutubeVideoStatsSchema, type YoutubeVideoStats } from '../../../contracts/youtube';
+import { countVideoDocs, findCredential, listVideoDocs, updateVideoManualReach, updateVideoPlanExclusion } from './repo';
 import type { YoutubeVideoDoc } from './docs';
 import { assertYoutubeConfigured, assertYoutubeQuotaAllowsSync, beginYoutubeImport, beginYoutubeOauth, completeYoutubeOauth, disconnectYoutube, discardYoutubeOauthState, getYoutubeConnection, getYoutubeImportOptions, getYoutubeOauthOpenerOrigin, refreshYoutubeProfile, selectYoutubeChannel, selectYoutubeImportChannels, youtubeIsConfigured, YOUTUBE_SETUP_MESSAGE } from './service';
 import { clearYoutubeAccessToken, getYoutubeAccessToken } from './sync';
@@ -35,6 +35,10 @@ function toPublicVideoStats(video: YoutubeVideoDoc): YoutubeVideoStats {
     commentCount: video.commentCount,
     fetchedAt: video.fetchedAt,
     analytics: video.analytics,
+    first28d: video.first28d,
+    manualReach: video.manualReach,
+    excludedFromPlan: video.excludedFromPlan,
+    trafficSources: video.trafficSources,
   });
 }
 
@@ -359,6 +363,32 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
       return [project.youtubeVideoId!, { id: project.id, title: project.title, scriptPresetId: project.scriptPresetId, visualStylePresetId: project.visualStylePresetId }] as const;
     })));
     res.json(sorted.map((video) => ({ ...toPublicVideoStats(video), ranking: Object.fromEntries([...rankMaps.entries()].map(([key, map]) => [key, map.get(video.videoId) ?? null])), linkedProject: linkedByVideo.get(video.videoId) ?? null })));
+  });
+
+  router.put('/videos/:channelId/:videoId/manual-reach', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const parsed = YoutubeManualReachInputSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError('Nhập số lượt hiển thị và CTR hợp lệ từ YouTube Studio.', 400, 'YOUTUBE_MANUAL_REACH_INVALID');
+    const video = (await listVideoDocs(req.params.channelId, { videoId: req.params.videoId, removed: { $ne: true } }))[0];
+    const manualReach = YoutubeManualReachSchema.parse({ ...parsed.data, enteredAt: new Date().toISOString() });
+    if (!video || !await updateVideoManualReach(req.params.channelId, req.params.videoId, manualReach)) throw new NotFound('Không tìm thấy video đã đồng bộ.');
+    res.json(toPublicVideoStats({ ...video, manualReach }));
+  });
+
+  router.delete('/videos/:channelId/:videoId/manual-reach', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const video = (await listVideoDocs(req.params.channelId, { videoId: req.params.videoId, removed: { $ne: true } }))[0];
+    if (!video || !await updateVideoManualReach(req.params.channelId, req.params.videoId, null)) throw new NotFound('Không tìm thấy video đã đồng bộ.');
+    res.json(toPublicVideoStats({ ...video, manualReach: null }));
+  });
+
+  router.put('/videos/:channelId/:videoId/plan-exclusion', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const parsed = YoutubePlanExclusionInputSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError('Trạng thái loại video khỏi kế hoạch không hợp lệ.', 400, 'YOUTUBE_PLAN_EXCLUSION_INVALID');
+    const video = (await listVideoDocs(req.params.channelId, { videoId: req.params.videoId, removed: { $ne: true } }))[0];
+    if (!video || !await updateVideoPlanExclusion(req.params.channelId, req.params.videoId, parsed.data.excluded)) throw new NotFound('Không tìm thấy video đã đồng bộ.');
+    res.json(toPublicVideoStats({ ...video, excludedFromPlan: parsed.data.excluded }));
   });
 
   router.get('/videos/:channelId/:videoId', async (req, res) => {

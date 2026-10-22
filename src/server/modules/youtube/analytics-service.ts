@@ -1,13 +1,17 @@
 import { YoutubeChannelDailyDocSchema, YoutubeRetentionDocSchema, type YoutubeChannelDailyDoc } from './docs';
-import type { YoutubeChannelDaily, YoutubeRetentionCurve, YoutubeVideoStats } from '../../../contracts/youtube';
-import { findRetention, listChannelDaily, patchVideoAnalytics, replaceChannelDaily, upsertRetention } from './repo';
+import type { YoutubeChannelDaily, YoutubeRetentionCurve, YoutubeTrafficSource, YoutubeVideoStats } from '../../../contracts/youtube';
+import { findRetention, listChannelDaily, listVideoDocs, patchVideoAnalytics, replaceChannelDaily, saveChannelTrafficSources, saveFirst28dIfMissing, saveVideoTrafficSources, upsertRetention } from './repo';
 
 export const YOUTUBE_ANALYTICS_RETENTION_VIDEO_COUNT = 15;
+export const YOUTUBE_FIRST28D_MINIMUM_AGE_DAYS = 31;
 
 const REPORT_URL = 'https://youtubeanalytics.googleapis.com/v2/reports';
 const ANALYTICS_VIDEO_BATCH_SIZE = 200;
+const ANALYTICS_TRAFFIC_VIDEO_BATCH_SIZE = 10;
 const RETENTION_CACHE_MS = 24 * 60 * 60_000;
 const REPORT_METRICS = ['views', 'estimatedMinutesWatched', 'averageViewDuration', 'averageViewPercentage', 'subscribersGained', 'subscribersLost'] as const;
+const FIRST28D_METRICS = REPORT_METRICS.join(',');
+const TRAFFIC_METRICS = 'views,estimatedMinutesWatched';
 
 type ReportPayload = { columnHeaders?: { name?: string }[]; rows?: (string | number | null)[][] };
 type AnalyticsGroupStatus = { status: 'ok' | 'unavailable' | 'error'; message?: string };
@@ -53,6 +57,102 @@ function numberAt(row: (string | number | null)[], index: number | undefined): n
 
 function columnIndex(payload: ReportPayload, name: string): number | undefined {
   return payload.columnHeaders?.findIndex((column) => column.name?.toLowerCase() === name.toLowerCase());
+}
+
+function toTrafficSources(payload: ReportPayload): YoutubeTrafficSource[] {
+  const sourceColumn = columnIndex(payload, 'insightTrafficSourceType');
+  return (payload.rows ?? []).flatMap((row) => {
+    const sourceType = sourceColumn === undefined ? null : row[sourceColumn];
+    if (typeof sourceType !== 'string') return [];
+    return [{ sourceType, views: numberAt(row, columnIndex(payload, 'views')), estimatedMinutesWatched: numberAt(row, columnIndex(payload, 'estimatedMinutesWatched')) }];
+  }).sort((a, b) => (b.views ?? -1) - (a.views ?? -1) || a.sourceType.localeCompare(b.sourceType));
+}
+
+function first28dDates(publishedAt: string): { startDate: string; endDate: string } {
+  const start = new Date(publishedAt);
+  const end = shiftDate(new Date(`${dateString(start)}T00:00:00.000Z`), 27);
+  return { startDate: dateString(start), endDate: dateString(end) };
+}
+
+function ageInDays(publishedAt: string | null, now: Date): number | null {
+  if (!publishedAt) return null;
+  const published = new Date(publishedAt).getTime();
+  return Number.isFinite(published) ? Math.floor((now.getTime() - published) / 86_400_000) : null;
+}
+
+async function captureFirst28dSnapshots(profileId: string, videos: readonly YoutubeVideoStats[], accessToken: string, fetcher: typeof fetch, now: Date, report: YoutubeAnalyticsSyncReport): Promise<void> {
+  const stored = new Map((await listVideoDocs(profileId)).map((video) => [video.videoId, video]));
+  const mature = videos.filter((video) => {
+    const age = ageInDays(video.publishedAt, now);
+    return video.privacy === 'public' && !video.isShort && age !== null && age >= YOUTUBE_FIRST28D_MINIMUM_AGE_DAYS && !stored.get(video.videoId)?.first28d;
+  });
+  for (const video of mature) {
+    const key = `first28d_${video.videoId}`;
+    try {
+      const payload = await queryReport({ ...first28dDates(video.publishedAt!), metrics: FIRST28D_METRICS, filters: `video==${video.videoId}` }, accessToken, fetcher);
+      const row = payload.rows?.[0];
+      const snapshot = {
+        capturedAt: now.toISOString(),
+        views: row ? numberAt(row, columnIndex(payload, 'views')) : null,
+        estimatedMinutesWatched: row ? numberAt(row, columnIndex(payload, 'estimatedMinutesWatched')) : null,
+        averageViewDurationSec: row ? numberAt(row, columnIndex(payload, 'averageViewDuration')) : null,
+        averageViewPercentage: row ? numberAt(row, columnIndex(payload, 'averageViewPercentage')) : null,
+        subscribersGained: row ? numberAt(row, columnIndex(payload, 'subscribersGained')) : null,
+        subscribersLost: row ? numberAt(row, columnIndex(payload, 'subscribersLost')) : null,
+      };
+      await saveFirst28dIfMissing(profileId, video.videoId, snapshot);
+      report[key] = { status: 'ok' };
+    } catch (error) {
+      report[key] = queryStatus(error);
+    }
+  }
+}
+
+async function syncTrafficSources(profileId: string, videos: readonly YoutubeVideoStats[], window: 'last28d' | 'lifetime', accessToken: string, fetcher: typeof fetch, now: Date, report: YoutubeAnalyticsSyncReport): Promise<void> {
+  const endDate = dateString(shiftDate(now, -2));
+  const startDate = window === 'last28d'
+    ? dateString(shiftDate(new Date(`${endDate}T00:00:00.000Z`), -27))
+    : videos.flatMap((video) => video.publishedAt ? [dateString(new Date(video.publishedAt))] : []).sort()[0] ?? endDate;
+  const channelKey = `traffic_channel_${window}`;
+  try {
+    const payload = await queryReport({ startDate, endDate, metrics: TRAFFIC_METRICS, dimensions: 'insightTrafficSourceType', sort: '-views', maxResults: '200' }, accessToken, fetcher);
+    await saveChannelTrafficSources(profileId, window, { capturedAt: now.toISOString(), status: 'ok', sources: toTrafficSources(payload) });
+    report[channelKey] = { status: 'ok' };
+  } catch (error) {
+    const status = queryStatus(error);
+    await saveChannelTrafficSources(profileId, window, { capturedAt: now.toISOString(), status: status.status, sources: [] });
+    report[channelKey] = status;
+  }
+
+  const available = videos.filter((video) => video.privacy !== 'removed');
+  let videoStatus: AnalyticsGroupStatus['status'] = 'ok';
+  let failures = 0;
+  for (let offset = 0; offset < available.length; offset += ANALYTICS_TRAFFIC_VIDEO_BATCH_SIZE) {
+    const batch = available.slice(offset, offset + ANALYTICS_TRAFFIC_VIDEO_BATCH_SIZE);
+    if (!batch.length) continue;
+    try {
+      const payload = await queryReport({ startDate, endDate, metrics: TRAFFIC_METRICS, dimensions: batch.length > 1 ? 'insightTrafficSourceType,video' : 'insightTrafficSourceType', filters: `video==${batch.map((video) => video.videoId).join(',')}`, sort: '-views', maxResults: '200' }, accessToken, fetcher);
+      const videoColumn = columnIndex(payload, 'video');
+      const sourceColumn = columnIndex(payload, 'insightTrafficSourceType');
+      const grouped = new Map<string, YoutubeTrafficSource[]>();
+      for (const row of payload.rows ?? []) {
+        const videoId = batch.length === 1 ? batch[0]!.videoId : videoColumn === undefined ? null : row[videoColumn];
+        const sourceType = sourceColumn === undefined ? null : row[sourceColumn];
+        if (typeof videoId !== 'string' || typeof sourceType !== 'string') continue;
+        const sources = grouped.get(videoId) ?? [];
+        sources.push({ sourceType, views: numberAt(row, columnIndex(payload, 'views')), estimatedMinutesWatched: numberAt(row, columnIndex(payload, 'estimatedMinutesWatched')) });
+        grouped.set(videoId, sources);
+      }
+      await Promise.all(batch.map((video) => saveVideoTrafficSources(profileId, video.videoId, window, { capturedAt: now.toISOString(), status: 'ok', sources: (grouped.get(video.videoId) ?? []).sort((a, b) => (b.views ?? -1) - (a.views ?? -1) || a.sourceType.localeCompare(b.sourceType)) })));
+    } catch (error) {
+      failures += batch.length;
+      const status = queryStatus(error);
+      if (status.status === 'error') videoStatus = 'error';
+      else if (videoStatus === 'ok') videoStatus = 'unavailable';
+      await Promise.all(batch.map((video) => saveVideoTrafficSources(profileId, video.videoId, window, { capturedAt: now.toISOString(), status: status.status, sources: [] })));
+    }
+  }
+  report[`traffic_video_${window}`] = failures ? { status: videoStatus, message: `Traffic source data unavailable for ${failures} videos.` } : { status: 'ok' };
 }
 
 function toDailyRows(payload: ReportPayload, profileId: string): YoutubeChannelDailyDoc[] {
@@ -167,6 +267,10 @@ export async function syncYoutubeAnalytics(profileId: string, videos: readonly Y
       report[`videos_${window}`] = queryStatus(error);
     }
   }
+
+  await captureFirst28dSnapshots(profileId, availableVideos, accessToken, fetcher, now, report);
+  await syncTrafficSources(profileId, availableVideos, 'last28d', accessToken, fetcher, now, report);
+  await syncTrafficSources(profileId, availableVideos, 'lifetime', accessToken, fetcher, now, report);
 
   const topLong = [...availableVideos].filter((video) => !video.isShort).sort((a, b) => String(b.publishedAt ?? '').localeCompare(String(a.publishedAt ?? ''))).slice(0, YOUTUBE_ANALYTICS_RETENTION_VIDEO_COUNT);
   let retentionFailures = 0;

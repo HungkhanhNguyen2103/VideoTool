@@ -49,6 +49,43 @@ export const YoutubeConnectionSummarySchema = z.object({
 }).strict();
 export type YoutubeConnectionSummary = z.infer<typeof YoutubeConnectionSummarySchema>;
 
+export const YoutubeFirst28dSnapshotSchema = z.object({
+  capturedAt: z.string().datetime(),
+  views: z.number().nonnegative().nullable(),
+  estimatedMinutesWatched: z.number().nonnegative().nullable(),
+  averageViewDurationSec: z.number().nonnegative().nullable(),
+  averageViewPercentage: z.number().nonnegative().nullable(),
+  subscribersGained: z.number().nonnegative().nullable(),
+  subscribersLost: z.number().nonnegative().nullable(),
+}).strict();
+export type YoutubeFirst28dSnapshot = z.infer<typeof YoutubeFirst28dSnapshotSchema>;
+
+export const YoutubeManualReachInputSchema = z.object({
+  impressions: z.number().int().nonnegative(),
+  ctrPercent: z.number().min(0).max(100),
+}).strict();
+export const YoutubeManualReachSchema = YoutubeManualReachInputSchema.extend({ enteredAt: z.string().datetime() }).strict();
+export type YoutubeManualReach = z.infer<typeof YoutubeManualReachSchema>;
+export const YoutubePlanExclusionInputSchema = z.object({ excluded: z.boolean() }).strict();
+
+export const YoutubeTrafficSourceSchema = z.object({
+  sourceType: z.string().min(1),
+  views: z.number().nonnegative().nullable(),
+  estimatedMinutesWatched: z.number().nonnegative().nullable(),
+}).strict();
+export const YoutubeTrafficBreakdownSchema = z.object({
+  capturedAt: z.string().datetime(),
+  status: z.enum(['ok', 'unavailable', 'error']),
+  sources: z.array(YoutubeTrafficSourceSchema),
+}).strict();
+export const YoutubeTrafficSourcesSchema = z.object({
+  last28d: YoutubeTrafficBreakdownSchema.nullable().optional(),
+  lifetime: YoutubeTrafficBreakdownSchema.nullable().optional(),
+}).strict();
+export type YoutubeTrafficSource = z.infer<typeof YoutubeTrafficSourceSchema>;
+export type YoutubeTrafficBreakdown = z.infer<typeof YoutubeTrafficBreakdownSchema>;
+export type YoutubeTrafficSources = z.infer<typeof YoutubeTrafficSourcesSchema>;
+
 export const YoutubeVideoStatsSchema = z.object({
   videoId: z.string(),
   title: z.string(),
@@ -70,6 +107,10 @@ export const YoutubeVideoStatsSchema = z.object({
     impressions: z.number().nonnegative().nullable().optional(),
     impressionsClickThroughRate: z.number().nonnegative().nullable().optional(),
   }).strict()).default({}),
+  first28d: YoutubeFirst28dSnapshotSchema.nullable().default(null),
+  manualReach: YoutubeManualReachSchema.nullable().default(null),
+  excludedFromPlan: z.boolean().default(false),
+  trafficSources: YoutubeTrafficSourcesSchema.default({}),
 }).strict();
 export type YoutubeVideoStats = z.infer<typeof YoutubeVideoStatsSchema>;
 

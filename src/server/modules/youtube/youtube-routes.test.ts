@@ -31,6 +31,7 @@ beforeEach(async () => {
   await getCollection<TestDoc>('youtubeQuota').deleteMany({});
   await getCollection<TestDoc>('youtubeVideos').deleteMany({});
   await getCollection<TestDoc>('youtubeChannelDaily').deleteMany({});
+  await getCollection<TestDoc>('youtubeChannelTraffic').deleteMany({});
   await getCollection<TestDoc>('channels').deleteMany({});
 });
 afterEach(async () => {
@@ -241,5 +242,42 @@ describe('YouTube channels overview and sync-all routes', () => {
     expect(body.error.code).toBe('YOUTUBE_NOT_CONFIGURED');
     expect(body.error.message).toContain('GOOGLE_OAUTH_CLIENT_ID');
     expect(JSON.stringify(body)).not.toMatch(/refreshToken|accessToken|ciphertext|authTag|clientSecret/i);
+  });
+});
+
+describe('YouTube manual reach and plan exclusion routes', () => {
+  it('validates and persists manual Studio reach values and exclusion without exposing credentials', async () => {
+    const profile = await createChannel({ name: 'Kênh kiểm tra' });
+    await getCollection<TestDoc>('youtubeVideos').insertOne({
+      _id: `${profile.id}:video-manual`, channelProfileId: profile.id, videoId: 'video-manual', title: 'Video',
+      publishedAt: '2026-10-01T00:00:00.000Z', durationSec: 600, isShort: false, privacy: 'public',
+      viewCount: 100, likeCount: 2, commentCount: 0, fetchedAt: '2026-10-21T00:00:00.000Z', analytics: {}, removed: false,
+    });
+    const base = await startApi(async () => { throw new Error('Manual fields must not call Google.'); });
+    const path = `${base}/api/youtube/videos/${profile.id}/video-manual`;
+
+    const invalid = await fetch(`${path}/manual-reach`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ impressions: 2_000, ctrPercent: 101 }) });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: { code: 'YOUTUBE_MANUAL_REACH_INVALID' } });
+
+    const missingVideo = await fetch(`${base}/api/youtube/videos/${profile.id}/missing-video/manual-reach`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ impressions: 200, ctrPercent: 2 }) });
+    expect(missingVideo.status).toBe(404);
+    const missingProfile = await fetch(`${base}/api/youtube/videos/missing-profile/video-manual/manual-reach`, { method: 'DELETE' });
+    expect(missingProfile.status).toBe(404);
+
+    const saved = await fetch(`${path}/manual-reach`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ impressions: 2_000, ctrPercent: 3.2 }) });
+    expect(saved.status).toBe(200);
+    const savedBody = await saved.json() as Record<string, unknown>;
+    expect(savedBody).toMatchObject({ manualReach: { impressions: 2_000, ctrPercent: 3.2, enteredAt: expect.any(String) } });
+    expect(JSON.stringify(savedBody)).not.toMatch(/refreshToken|accessToken|ciphertext|authTag|clientSecret/i);
+
+    const excluded = await fetch(`${path}/plan-exclusion`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ excluded: true }) });
+    expect(excluded.status).toBe(200);
+    expect(await excluded.json()).toMatchObject({ excludedFromPlan: true });
+
+    const cleared = await fetch(`${path}/manual-reach`, { method: 'DELETE' });
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({ manualReach: null, excludedFromPlan: true });
+    expect(await getCollection<TestDoc>('youtubeVideos').findOne({ _id: `${profile.id}:video-manual` })).toMatchObject({ manualReach: null, excludedFromPlan: true });
   });
 });

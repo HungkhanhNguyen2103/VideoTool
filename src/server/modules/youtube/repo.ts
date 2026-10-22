@@ -1,6 +1,7 @@
 import type { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
-import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeCredentialDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeStoredCredentialDoc, type YoutubeVideoDoc } from './docs';
+import { YoutubeChannelDailyDocSchema, YoutubeChannelTrafficDocSchema, YoutubeCredentialDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeChannelTrafficDoc, type YoutubeCredentialDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeStoredCredentialDoc, type YoutubeVideoDoc } from './docs';
+import type { YoutubeFirst28dSnapshot, YoutubeManualReach, YoutubeTrafficBreakdown } from '../../../contracts/youtube';
 
 const credentials = (): Collection<YoutubeStoredCredentialDoc> => getCollection('youtubeCredentials');
 const videos = (): Collection<YoutubeVideoDoc> => getCollection('youtubeVideos');
@@ -8,6 +9,7 @@ const daily = (): Collection<YoutubeChannelDailyDoc> => getCollection('youtubeCh
 const quotas = (): Collection<YoutubeQuotaDoc> => getCollection('youtubeQuota');
 const retention = (): Collection<YoutubeRetentionDoc> => getCollection('youtubeRetention');
 const reviews = (): Collection<YoutubeReviewDoc> => getCollection('youtubeReviews');
+const channelTraffic = (): Collection<YoutubeChannelTrafficDoc> => getCollection('youtubeChannelTraffic');
 
 export async function findCredential(profileId: string): Promise<YoutubeCredentialDoc | null> {
   const doc = await credentials().findOne({ _id: profileId, kind: { $ne: 'pending-import' } });
@@ -61,8 +63,42 @@ export async function countVideoDocs(profileId: string): Promise<number> {
 }
 
 export async function upsertVideoDocs(profileId: string, rows: YoutubeVideoDoc[], seenAt: Date): Promise<void> {
-  if (rows.length) await videos().bulkWrite(rows.map((row) => ({ updateOne: { filter: { channelProfileId: profileId, videoId: row.videoId }, update: { $set: { ...row, removed: false } }, upsert: true } })));
+  if (rows.length) await videos().bulkWrite(rows.map((row) => {
+    const { _id, channelProfileId, first28d, manualReach, excludedFromPlan, trafficSources, ...providerFields } = row;
+    return { updateOne: { filter: { channelProfileId: profileId, videoId: row.videoId }, update: {
+      $set: { ...providerFields, removed: false },
+      $setOnInsert: { _id, channelProfileId, first28d, manualReach, excludedFromPlan, trafficSources },
+    }, upsert: true } };
+  }));
   await videos().updateMany({ channelProfileId: profileId, fetchedAt: { $lt: seenAt.toISOString() } }, { $set: { removed: true, privacy: 'removed' } });
+}
+
+export async function saveFirst28dIfMissing(profileId: string, videoId: string, snapshot: YoutubeFirst28dSnapshot): Promise<boolean> {
+  const result = await videos().updateOne({ channelProfileId: profileId, videoId, $or: [{ first28d: null }, { first28d: { $exists: false } }] }, { $set: { first28d: snapshot } });
+  return result.modifiedCount === 1;
+}
+
+export async function updateVideoManualReach(profileId: string, videoId: string, manualReach: YoutubeManualReach | null): Promise<boolean> {
+  const result = await videos().updateOne({ channelProfileId: profileId, videoId, removed: { $ne: true } }, { $set: { manualReach } });
+  return result.matchedCount === 1;
+}
+
+export async function updateVideoPlanExclusion(profileId: string, videoId: string, excluded: boolean): Promise<boolean> {
+  const result = await videos().updateOne({ channelProfileId: profileId, videoId, removed: { $ne: true } }, { $set: { excludedFromPlan: excluded } });
+  return result.matchedCount === 1;
+}
+
+export async function saveVideoTrafficSources(profileId: string, videoId: string, window: 'last28d' | 'lifetime', breakdown: YoutubeTrafficBreakdown): Promise<void> {
+  await videos().updateOne({ channelProfileId: profileId, videoId }, { $set: { [`trafficSources.${window}`]: breakdown } });
+}
+
+export async function saveChannelTrafficSources(profileId: string, window: 'last28d' | 'lifetime', breakdown: YoutubeTrafficBreakdown): Promise<void> {
+  await channelTraffic().updateOne({ _id: profileId, channelProfileId: profileId }, { $set: { [`${window}`]: breakdown }, $setOnInsert: { _id: profileId, channelProfileId: profileId } }, { upsert: true });
+}
+
+export async function findChannelTrafficSources(profileId: string): Promise<YoutubeChannelTrafficDoc | null> {
+  const row = await channelTraffic().findOne({ _id: profileId, channelProfileId: profileId });
+  return row ? YoutubeChannelTrafficDocSchema.parse(row) : null;
 }
 
 export async function replaceChannelDaily(profileId: string, rows: YoutubeChannelDailyDoc[]): Promise<void> {
@@ -97,7 +133,7 @@ export async function findReview(profileId: string, target: 'channel' | 'video',
 }
 
 export async function deleteSyncedData(profileId: string): Promise<void> {
-  await Promise.all([videos().deleteMany({ channelProfileId: profileId }), daily().deleteMany({ channelProfileId: profileId }), retention().deleteMany({ channelProfileId: profileId }), reviews().deleteMany({ channelProfileId: profileId })]);
+  await Promise.all([videos().deleteMany({ channelProfileId: profileId }), daily().deleteMany({ channelProfileId: profileId }), retention().deleteMany({ channelProfileId: profileId }), reviews().deleteMany({ channelProfileId: profileId }), channelTraffic().deleteOne({ _id: profileId })]);
 }
 
 export async function getQuota(date: string, projectKey: string): Promise<YoutubeQuotaDoc | null> {

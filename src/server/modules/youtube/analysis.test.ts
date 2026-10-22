@@ -91,7 +91,7 @@ describe('YouTube analytics calculations', () => {
     const zero = buildChannelHealth({ subscriberCount: 0, videos: [], now: new Date('2026-10-21T00:00:00.000Z') });
     expect(zero.subscribers).toBe(0);
     expect(zero.current.entryTier.eligible).toBe(false);
-    expect(YOUTUBE_PARTNER_PROGRAM_THRESHOLDS.checkedOn).toBe('2026-10-21');
+    expect(YOUTUBE_PARTNER_PROGRAM_THRESHOLDS.checkedOn).toBe('2026-10-22');
     expect(YOUTUBE_PARTNER_PROGRAM_THRESHOLDS.current.ads.longWatchHours).toBe(4000);
     expect(YOUTUBE_PARTNER_PROGRAM_THRESHOLDS.from2027_02_01.ads.shortViews).toBe(20_000_000);
 
