@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { runYoutubeReviewV2Analysis, type YoutubeReviewEvidencePacket, type YoutubeReviewJobContext } from './review-v2-engine';
+import { runYoutubeReviewV2Analysis, YOUTUBE_REVIEW_IDEAS_MIN_MATURE, type YoutubeReviewEvidencePacket, type YoutubeReviewJobContext } from './review-v2-engine';
+import { NEXT_VIDEO_IDEAS_MIN_MATURE } from '../../../contracts/youtube-ideas';
 
 function packet(matureCount: number): YoutubeReviewEvidencePacket {
   const data = {
@@ -32,6 +33,10 @@ const ideasJson = JSON.stringify({ ideas: [{
 }] });
 
 describe('YouTube review v2 job engine', () => {
+  it('shares the evidence gate with the standalone video-ideas feature', () => {
+    expect(YOUTUBE_REVIEW_IDEAS_MIN_MATURE).toBe(NEXT_VIDEO_IDEAS_MIN_MATURE);
+  });
+
   it('gates ideas at nine mature videos without making an ideas call', async () => {
     const calls: string[] = []; const ctx = context();
     const result = await runYoutubeReviewV2Analysis({ target: 'channel', packet: packet(9), backend: { kind: 'api', model: 'test-model', chat: async (messages) => { calls.push(messages[1]!.content); return channelJson(); } }, context: ctx });

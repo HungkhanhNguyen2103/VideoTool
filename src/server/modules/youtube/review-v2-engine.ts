@@ -5,6 +5,7 @@ import { parseJsonWithLeadingText } from '../../shared/claude-cli/json-output';
 import type { ReviewMetricMap } from './review-evidence';
 import { validateYoutubeReviewGrounding, type YoutubeReviewInvalidItem } from './review-grounding';
 import { buildYoutubeReviewV2Messages, YOUTUBE_REVIEW_PROMPT_VERSIONS, type YoutubeReviewPromptKind } from './review-prompts';
+import { NEXT_VIDEO_IDEAS_MIN_MATURE } from '../../../contracts/youtube-ideas';
 
 export type YoutubeReviewV2Backend = {
   kind: 'cli' | 'api';
@@ -28,7 +29,7 @@ export type YoutubeReviewEvidencePacket = {
 
 export const YOUTUBE_REVIEW_HEARTBEAT_INTERVAL_MS = 30_000;
 export const YOUTUBE_REVIEW_MAX_HEARTBEATS_PER_STEP = 20;
-export const YOUTUBE_REVIEW_IDEAS_MIN_MATURE = 10;
+export const YOUTUBE_REVIEW_IDEAS_MIN_MATURE = NEXT_VIDEO_IDEAS_MIN_MATURE;
 
 type JsonRecord = Record<string, unknown>;
 

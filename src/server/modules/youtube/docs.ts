@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema, YoutubeSearchTermsBreakdownSchema, YoutubeTrafficBreakdownSchema } from '../../../contracts/youtube';
 import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthExperimentSchema, YoutubeGrowthPlanConfigSchema } from '../../../contracts/youtube-plan';
 import { YoutubeChannelReviewV2AnalysisSchema, YoutubeReviewBackendSchema, YoutubeReviewGroundingReportSchema, YoutubeReviewIdeaSchema, YoutubeReviewPacketSummarySchema, YoutubeVideoReviewV2AnalysisSchema } from '../../../contracts/youtube-review';
+import { YoutubeIdeaBackendSchema, YoutubeIdeaDroppedSchema, YoutubeIdeaEvidenceTierSchema, YoutubeIdeaPacketSummarySchema, YoutubeIdeaRunDurationsSchema, YoutubeIdeaSchema, YoutubeIdeaStatusSchema } from '../../../contracts/youtube-ideas';
 
 const EncryptedRefreshTokenSchema = z.object({
   algorithm: z.literal('aes-256-gcm'),
@@ -103,6 +104,39 @@ export const YoutubeReviewV2DocSchema = z.object({
 export type YoutubeReviewV2Doc = z.infer<typeof YoutubeReviewV2DocSchema>;
 export const YoutubeStoredReviewDocSchema = z.union([YoutubeReviewDocSchema, YoutubeReviewV2DocSchema]);
 export type YoutubeStoredReviewDoc = z.infer<typeof YoutubeStoredReviewDocSchema>;
+
+export const YoutubeVideoIdeaDocSchema = z.object({
+  _id: z.string().min(1),
+  channelProfileId: z.string().min(1),
+  runId: z.string().min(1),
+  evidenceTier: YoutubeIdeaEvidenceTierSchema,
+  backend: YoutubeIdeaBackendSchema,
+  model: z.string().min(1),
+  promptVersion: z.literal('video-ideas-v1'),
+  generatedAt: z.string().datetime(),
+  idea: YoutubeIdeaSchema,
+  status: YoutubeIdeaStatusSchema,
+  statusNote: z.string().max(300).optional(),
+  usedProjectId: z.string().min(1).optional(),
+  manualDemand: z.object({ note: z.string().max(300), checkedAt: z.string().datetime() }).strict().optional(),
+}).strict();
+export type YoutubeVideoIdeaDoc = z.infer<typeof YoutubeVideoIdeaDocSchema>;
+
+export const YoutubeIdeaRunDocSchema = z.object({
+  _id: z.string().min(1),
+  channelProfileId: z.string().min(1),
+  evidenceTier: YoutubeIdeaEvidenceTierSchema,
+  backend: YoutubeIdeaBackendSchema,
+  model: z.string().min(1),
+  promptVersion: z.literal('video-ideas-v1'),
+  generatedAt: z.string().datetime(),
+  requestedCount: z.number().int().min(4).max(8),
+  packetSummary: YoutubeIdeaPacketSummarySchema,
+  coverageFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+  dropped: z.array(YoutubeIdeaDroppedSchema).max(20),
+  durations: YoutubeIdeaRunDurationsSchema,
+}).strict();
+export type YoutubeIdeaRunDoc = z.infer<typeof YoutubeIdeaRunDocSchema>;
 
 export const YoutubeChannelTrafficDocSchema = z.object({
   _id: z.string(),

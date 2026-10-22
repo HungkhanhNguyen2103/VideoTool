@@ -63,6 +63,13 @@
 
 - Number grounding accepts a match against the item's cited allowlist metric values after display-precision rounding, localized separator normalization, and `k`/`nghìn`/`triệu` conversion. It also permits packet dates, packet retention times, packet scene numbers, step labels, and “1 video”. These checks are intentionally conservative: quoted numbers written in an unusual unit or a date without an identical packet spelling can be rejected; a matching number alone does not establish causal truth. Stop/promise phrase lists and normalized-title similarity are heuristics and may produce false positives or miss unfamiliar wording. Invalid claims are repaired once and then dropped or fail according to the limits above.
 
+## Video ideas (Task 120)
+
+- `youtubeVideoIdeas` and `youtubeIdeaRuns` store channel-profile-scoped generated ideas and compact run metadata. Lists are capped at 200 per channel; oldest rejected rows are pruned first, then oldest new rows. Chosen and used rows are preserved, and generation returns a conflict when protected rows leave no room. Prompt/evidence text and credentials are not persisted.
+- Evidence tiers use the shared `NEXT_VIDEO_IDEAS_MIN_MATURE` threshold: `no-performance-data` below 3 mature uploads, `weak-signal` from 3 through 9, and `data-informed` from 10. Weak-signal packets include counts and limited ranking context with an explicit small-sample warning; only data-informed packets include growth-plan metrics, search terms, traffic mix, deterministic verdict, and experiment context. The tier reports available evidence and does not claim market demand or predict views.
+- Packets include linked project summaries, eligible synced public long-form videos, and recent saved ideas with user statuses. User-entered references and sensitive absolute paths, credentials, and email-like strings are excluded. A content fingerprint tracks packet freshness separately from channel coverage state.
+- `GET /channels/:channelId/ideas`, `/ideas/generate`, and `/ideas/:ideaId` support reads, queued generation, status/manual-demand updates, deletion, and prefill hand-off. The prefill has empty references and an explicit research reminder. An idea becomes `used` only after a matching channel project is successfully created.
+
 ## Growth plan and deterministic verdict (Task 117)
 
 - `youtubeGrowthPlans` stores one strict, channel-profile-scoped plan document. GET returns virtual defaults without writing; PUT replaces only configuration fields and preserves the user's experiment log. Experiments are capped at 100. Plan-status reads only MongoDB and local deterministic analysis; it makes no Google request and no AI call.
