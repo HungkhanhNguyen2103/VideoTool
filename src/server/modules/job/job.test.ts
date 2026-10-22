@@ -1,11 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JOB_STATUSES, JobSummarySchema } from '../../../contracts/job';
 import { JobDocSchema } from './docs';
-import { JOB_INDEXES } from './indexes';
+import { ensureJobIndexes, JOB_INDEXES } from './indexes';
 import {
   claimNextJob,
   appendJobLog,
   findJobById,
+  findActiveJobByType,
   insertJob,
   markDone,
   markFailed,
@@ -62,7 +63,10 @@ describe('job contracts and indexes', () => {
   });
 
   it('defines the claim index and validates public summaries', () => {
-    expect(JOB_INDEXES).toEqual([{ key: { status: 1, runAt: 1 } }]);
+    expect(JOB_INDEXES).toEqual([
+      { key: { status: 1, runAt: 1 } },
+      { key: { projectId: 1, type: 1 }, options: { unique: true, partialFilterExpression: { type: 'video-ideas', status: { $in: ['queued', 'running'] } } } },
+    ]);
     expect(
       JobSummarySchema.parse({
         id: 'job-1',
@@ -82,8 +86,25 @@ describe('job contracts and indexes', () => {
 
 describe('job repository', () => {
   beforeAll(async () => startTestMongo());
-  beforeEach(async () => resetTestMongo());
+  beforeEach(async () => { await resetTestMongo(); await ensureJobIndexes(); });
   afterAll(async () => closeTestMongo());
+
+  it('allows only one queued or running video idea job per channel scope', async () => {
+    const results = await Promise.allSettled([
+      enqueueJob({ type: 'video-ideas', projectId: 'youtube-ideas:channel-a', payload: { channelId: 'channel-a' } }),
+      enqueueJob({ type: 'video-ideas', projectId: 'youtube-ideas:channel-a', payload: { channelId: 'channel-a' } }),
+    ]);
+    const created = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(created).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ code: 11000 });
+    const active = await findActiveJobByType('youtube-ideas:channel-a', 'video-ideas');
+    expect(active).not.toBeNull();
+    expect(await claimNextJob('worker-a')).toMatchObject({ _id: active!._id, status: 'running' });
+    await markDone(active!._id, { complete: true });
+    await expect(enqueueJob({ type: 'video-ideas', projectId: 'youtube-ideas:channel-a', payload: { channelId: 'channel-a' } })).resolves.toMatchObject({ status: 'queued' });
+  });
 
   it('inserts and finds a job', async () => {
     const job = makeJob({ type: 'example' });
@@ -275,6 +296,18 @@ describe('job service', () => {
     await running;
     expect(cancelled).toBe(true);
     expect(await getJob(job.id)).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('keeps a durable committed result done when cancellation arrives afterward', async () => {
+    const job = await enqueueJob({ type: 'example', projectId: 'project-1', payload: {} });
+    await claimAndRun({
+      example: async (_doc, ctx) => {
+        ctx.markCommitComplete?.();
+        await cancelJob(job.id);
+        return { persisted: true };
+      },
+    }, 'worker-a');
+    expect(await getJob(job.id)).toMatchObject({ status: 'done', result: { persisted: true } });
   });
 
   it('uses the service stale-job threshold', async () => {

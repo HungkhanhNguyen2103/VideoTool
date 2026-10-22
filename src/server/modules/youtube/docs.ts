@@ -133,7 +133,7 @@ export const YoutubeIdeaRunDocSchema = z.object({
   requestedCount: z.number().int().min(4).max(8),
   packetSummary: YoutubeIdeaPacketSummarySchema,
   coverageFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
-  dropped: z.array(YoutubeIdeaDroppedSchema).max(20),
+  dropped: z.array(YoutubeIdeaDroppedSchema).max(30),
   durations: YoutubeIdeaRunDurationsSchema,
 }).strict();
 export type YoutubeIdeaRunDoc = z.infer<typeof YoutubeIdeaRunDocSchema>;

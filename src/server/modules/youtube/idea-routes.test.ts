@@ -11,6 +11,7 @@ import { loadConfig } from '../../config';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createChannel } from '../channel';
 import { createProject } from '../project';
+import { enqueueJob, ensureJobIndexes, getActiveJobByType } from '../job';
 import { ensureYoutubeIndexes } from './indexes';
 import { createYoutubeRouter } from './routes';
 import { saveYoutubeIdeaRun } from './idea-repo';
@@ -21,7 +22,7 @@ let server: Server | null = null;
 
 const content = {
   id: 'candidate-1', title: 'Kế hoạch hoàn hảo tự sụp đổ', hook: 'Mở đầu khi cái bẫy khép lại.',
-  brief: 'Một người dựng kế hoạch hoàn hảo nhưng bỏ qua điểm mù và tự tạo ra thất bại của mình.',
+  brief: 'Một người dựng kế hoạch hoàn hảo. Một điểm mù bị bỏ qua. Dấu hiệu cảnh báo xuất hiện. Nhân vật vẫn tiếp tục hành động. Cái bẫy dần khép lại. Thất bại đến từ chính kế hoạch ấy.',
   presetId: 'hubris-trap' as const,
   motif: {
     hunter: { text: 'Người chủ động đặt bẫy.', evidence: 'strong' as const },
@@ -50,9 +51,9 @@ async function saveIdea(channelId: string) {
   });
 }
 
-beforeAll(async () => { await startTestMongo(); await ensureYoutubeIndexes(); });
+beforeAll(async () => { await startTestMongo(); await ensureYoutubeIndexes(); await ensureJobIndexes(); });
 beforeEach(async () => {
-  for (const collection of ['youtubeVideos', 'youtubeChannelDaily', 'youtubeChannelTraffic', 'youtubeGrowthPlans', 'youtubeRetention', 'youtubeCredentials', 'youtubeVideoIdeas', 'youtubeIdeaRuns', 'channels', 'projects']) {
+  for (const collection of ['youtubeVideos', 'youtubeChannelDaily', 'youtubeChannelTraffic', 'youtubeGrowthPlans', 'youtubeRetention', 'youtubeCredentials', 'youtubeVideoIdeas', 'youtubeIdeaRuns', 'channels', 'projects', 'jobs']) {
     await getCollection<TestDoc>(collection).deleteMany({});
   }
 });
@@ -122,6 +123,33 @@ describe('YouTube video idea routes', () => {
     }));
   });
 
+  it('maps a concurrent active-job uniqueness race to the existing job response', async () => {
+    const channel = await createChannel({ name: 'Ideas concurrent generation' });
+    const base = await startApi({ enqueueJob, getActiveJob: getActiveJobByType, getClaudeCliStatus: async () => ({ available: true, version: '2.1.306', authPathLikely: 'subscription' }) });
+    const create = () => fetch(`${base}/api/youtube/channels/${channel.id}/ideas/generate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}),
+    });
+    const responses = await Promise.all([create(), create()]);
+    expect(responses.map((response) => response.status).sort()).toEqual([202, 409]);
+    const conflict = await responses.find((response) => response.status === 409)!.json();
+    expect(conflict).toMatchObject({ error: { code: 'YOUTUBE_IDEAS_ALREADY_RUNNING', jobId: expect.any(String) } });
+    expect(await getCollection<TestDoc>('jobs').countDocuments({ type: 'video-ideas', projectId: `youtube-ideas:${channel.id}`, status: { $in: ['queued', 'running'] } })).toBe(1);
+  });
+
+  it('defaults the duration to the channel’s most recently updated project', async () => {
+    const channel = await createChannel({ name: 'Ideas duration default' });
+    await createProject({
+      title: 'Recent channel project', language: 'vi', brief: 'A long enough project brief for setup.', referencesText: '',
+      scriptPresetId: 'documentary', visualStylePresetId: 'cinematic', targetDurationSec: 240, chapterCount: 4, voiceId: null,
+      channelId: channel.id, renderSettings: { aspect: '16:9', width: 1920, height: 1080, fps: 30 },
+    });
+    const enqueueJob = vi.fn(async () => ({ id: 'duration-job' } as JobSummary));
+    const base = await startApi({ enqueueJob });
+    const response = await fetch(`${base}/api/youtube/channels/${channel.id}/ideas/generate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backend: 'api' }) });
+    expect(response.status).toBe(202);
+    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ targetDurationSec: 240 }) }));
+  });
+
   it('stores user statuses and manual checks, returns an empty-reference project prefill and marks used after a matching project exists', async () => {
     const channel = await createChannel({ name: 'Ideas handoff' });
     await saveIdea(channel.id);
@@ -149,5 +177,11 @@ describe('YouTube video idea routes', () => {
     expect(await markUsed.json()).toMatchObject({ ideaId: 'idea-1' });
     const listed = await fetch(`${base}/api/youtube/channels/${channel.id}/ideas`);
     expect((await listed.json() as { ideas: { status: string; usedProjectId?: string }[] }).ideas[0]).toMatchObject({ status: 'used', usedProjectId: project.id });
+
+    const locked = await fetch(`${base}/api/youtube/channels/${channel.id}/ideas/idea-1`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'chosen' }),
+    });
+    expect(locked.status).toBe(409);
+    expect(await locked.json()).toMatchObject({ error: { code: 'YOUTUBE_IDEA_STATUS_LOCKED' } });
   });
 });

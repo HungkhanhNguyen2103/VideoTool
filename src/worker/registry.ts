@@ -8,7 +8,8 @@ import { alignProjectWordTimings, analyzeProjectPopups, autoAnalyzeProjectPopups
 import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
 import { isSceneActive } from '../contracts/scene-active';
-import { generateYoutubeReviewV2, syncYoutubeChannel } from '../server/modules/youtube';
+import { generateYoutubeReviewV2, generateYoutubeVideoIdeas, syncYoutubeChannel } from '../server/modules/youtube';
+import { YoutubeIdeasJobPayloadSchema } from '../contracts/youtube-ideas';
 import { loadConfig } from '../server/config';
 import { isAiModelForProvider } from '../contracts/ai-models';
 import { AppError } from '../server/shared/errors';
@@ -138,6 +139,13 @@ const handleYoutubeReview: JobHandler = async (job, context) => {
   });
 };
 
+const handleYoutubeVideoIdeas: JobHandler = async (job, context) => {
+  if (await context.isCancelled()) return;
+  const payload = YoutubeIdeasJobPayloadSchema.parse(job.payload);
+  const { channelId, ...request } = payload;
+  return generateYoutubeVideoIdeas({ profileId: channelId, request, context, config: loadConfig() });
+};
+
 const handleGenerateScriptWithLogging: JobHandler = async (job, context) => {
   try {
     await handleGenerateScript(job, context);
@@ -169,4 +177,5 @@ export const jobHandlers: Record<string, JobHandler> = {
   'generate-seo': handleGenerateSeo,
   'youtube-sync': handleYoutubeSync,
   'youtube-review': handleYoutubeReview,
+  'video-ideas': handleYoutubeVideoIdeas,
 };

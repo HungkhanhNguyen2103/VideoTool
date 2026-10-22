@@ -1,12 +1,22 @@
 import { canTransitionYoutubeIdeaStatus, NEXT_VIDEO_IDEAS_MIN_MATURE, YoutubeIdeaCreateProjectResponseSchema, YoutubeIdeaProjectPrefillSchema, YoutubeIdeasListResponseSchema, type YoutubeIdeasGenerateRequest, type YoutubeIdeaRecord } from '../../../contracts/youtube-ideas';
+import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
+import type { AiProvider } from '../../../contracts/project';
+import type { Config } from '../../config';
+import { loadConfig } from '../../config';
+import { getAiClient, type AiClient } from '../../shared/ai';
+import { createClaudeCliChat } from '../../shared/claude-cli/cli-chat';
+import type { ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
+import type { YoutubeIdeaJobContext, YoutubeIdeaBackend } from './idea-engine';
+import { runYoutubeIdeaPipeline } from './idea-engine';
 import { getChannel } from '../channel';
 import { getProject, listProjects } from '../project';
 import { newId } from '../../shared/ids';
 import { AppError, NotFound } from '../../shared/errors';
 import { getYoutubeGrowthPlanStatus } from './growth-plan-service';
 import { findChannelTrafficSources, listVideoDocs } from './repo';
-import { deleteYoutubeIdeaDoc, findLatestYoutubeIdeaRun, findYoutubeIdeaDoc, listYoutubeIdeaDocs, patchYoutubeIdeaDoc } from './idea-repo';
+import { claimYoutubeIdeaProjectDoc, deleteYoutubeIdeaDoc, findLatestYoutubeIdeaRun, findYoutubeIdeaDoc, listYoutubeIdeaDocs, patchYoutubeIdeaDoc } from './idea-repo';
 import { buildYoutubeIdeaPacket, type IdeaPacketInput } from './idea-packet';
+import { saveYoutubeIdeaRun } from './idea-repo';
 
 export const YOUTUBE_VIDEO_IDEAS_JOB_TYPE = 'video-ideas';
 
@@ -63,7 +73,7 @@ async function loadIdeaPacket(profileId: string, request: Pick<YoutubeIdeasGener
     const row = traffic?.[window];
     if (!row) return [];
     const total = row.sources.reduce((sum, source) => sum + (source.views ?? 0), 0);
-    return [{ window, sources: row.sources.map((source) => ({ sourceType: source.sourceType, views: source.views, share: source.views === null || total <= 0 ? null : source.views / total })) }];
+    return [{ window, status: row.status, sources: row.sources.map((source) => ({ sourceType: source.sourceType, views: source.views, share: source.views === null || total <= 0 ? null : source.views / total })) }];
   });
   const packet = buildYoutubeIdeaPacket({
     channel: { id: channel.id, name: channel.name, language: channel.language, tagline: channel.tagline, description: channel.description },
@@ -100,6 +110,87 @@ export async function buildYoutubeIdeaRunPacket(profileId: string, request: Yout
   return loadIdeaPacket(profileId, request);
 }
 
+export async function getYoutubeIdeasDefaultTargetDuration(profileId: string): Promise<number> {
+  const latest = (await listProjects({}))
+    .filter((project) => project.channelId === profileId)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  if (!latest) return 600;
+  return (await getProject(latest.id)).targetDurationSec;
+}
+
+export async function generateYoutubeVideoIdeas(input: {
+  profileId: string;
+  request: YoutubeIdeasGenerateRequest;
+  context: YoutubeIdeaJobContext;
+  config?: Config;
+  getClaudeCliStatus?: (options: { executablePath: string; env?: NodeJS.ProcessEnv }) => Promise<ClaudeCliStatus>;
+  cliChatFactory?: typeof createClaudeCliChat;
+  clientFactory?: (provider: AiProvider, model: string) => Pick<AiClient, 'chat'>;
+}): Promise<{ runId: string; ideaIds: string[]; dropped: number; evidenceTier: string } | undefined> {
+  const config = input.config ?? loadConfig();
+  const { packet } = await buildYoutubeIdeaRunPacket(input.profileId, input.request);
+  let backend: YoutubeIdeaBackend;
+  if (input.request.backend === 'cli') {
+    const model = input.request.cliModel ?? getDefaultAiModelId('claude');
+    if (!isAiModelForProvider('claude', model)) throw new AppError('Model Claude CLI không còn khả dụng; hãy chọn model khác.', 422, 'AI_MODEL_UNAVAILABLE');
+    const cli = await (input.cliChatFactory ?? createClaudeCliChat)({
+      projectId: `youtube-ideas-${input.profileId}`,
+      chapterId: 'youtube-ideas',
+      label: 'Ý tưởng video tiếp theo',
+      model,
+      config,
+      context: input.context,
+      getStatus: input.getClaudeCliStatus,
+    });
+    backend = { kind: 'cli', model: cli.model, chat: cli.chat };
+  } else {
+    const provider = config.DEFAULT_AI_PROVIDER;
+    const model = getDefaultAiModelId(provider);
+    const client = input.clientFactory?.(provider, model) ?? getAiClient(provider, model);
+    backend = { kind: 'api', model, chat: (messages) => client.chat(messages, { json: true }) };
+  }
+  await input.context.appendLog(`Bắt đầu gợi ý bằng ${backend.kind === 'cli' ? 'Claude CLI' : `API ${backend.model}`}; Claude CLI không có web hoặc tệp, sự kiện lịch sử đều cần kiểm chứng; gói ${packet.serialized.length} ký tự.`);
+  const result = await runYoutubeIdeaPipeline({ packet, backend, context: input.context, request: input.request });
+  if (!result || await input.context.isCancelled()) return undefined;
+  const generatedAt = new Date().toISOString();
+  const runId = newYoutubeIdeaRunId();
+  const ideaRows = result.ideas.map((idea) => ({
+    _id: newId(),
+    channelProfileId: input.profileId,
+    runId,
+    evidenceTier: packet.evidenceTier,
+    backend: backend.kind,
+    model: backend.model,
+    promptVersion: result.promptVersion,
+    generatedAt,
+    idea,
+    status: 'new' as const,
+  }));
+  const saved = await saveYoutubeIdeaRun({
+    run: {
+      _id: runId,
+      channelProfileId: input.profileId,
+      evidenceTier: packet.evidenceTier,
+      backend: backend.kind,
+      model: backend.model,
+      promptVersion: result.promptVersion,
+      generatedAt,
+      requestedCount: input.request.count,
+      packetSummary: packet.packetSummary,
+      coverageFingerprint: packet.coverageFingerprint,
+      dropped: result.dropped,
+      durations: result.durations,
+    },
+    ideas: ideaRows,
+    isCancelled: input.context.isCancelled,
+  });
+  if (!saved) return undefined;
+  input.context.markCommitComplete?.();
+  await input.context.appendLog(`Đã lưu ${ideaRows.length} ý tưởng và tóm tắt lượt chạy; không lưu prompt, gói coverage, token hoặc nội dung phản hồi thô.`);
+  await input.context.reportProgress(100, { step: 'Hoàn tất', runId, ideaCount: ideaRows.length, droppedCount: result.dropped.length });
+  return { runId, ideaIds: ideaRows.map((idea) => idea._id), dropped: result.dropped.length, evidenceTier: packet.evidenceTier };
+}
+
 export async function updateYoutubeIdea(profileId: string, ideaId: string, patch: {
   status?: 'new' | 'chosen' | 'rejected';
   statusNote?: string | null;
@@ -116,6 +207,9 @@ export async function updateYoutubeIdea(profileId: string, ideaId: string, patch
     ...(patch.manualDemand !== undefined ? { manualDemand: { ...patch.manualDemand, checkedAt: new Date().toISOString() } } : {}),
   });
   if (!updated) throw new NotFound('Không tìm thấy ý tưởng video.');
+  if (patch.status && !canTransitionYoutubeIdeaStatus(updated.status, patch.status)) {
+    throw new AppError('Ý tưởng đã dùng không thể đổi trạng thái.', 409, 'YOUTUBE_IDEA_STATUS_LOCKED');
+  }
   return publicIdea(updated);
 }
 
@@ -143,8 +237,15 @@ export async function handoffYoutubeIdeaToProject(profileId: string, ideaId: str
     if (project.channelId !== profileId) throw new AppError('Dự án không thuộc kênh của ý tưởng này.', 409, 'YOUTUBE_IDEA_PROJECT_CHANNEL_MISMATCH');
     if (idea.status === 'used' && idea.usedProjectId !== projectId) throw new AppError('Ý tưởng đã được dùng cho một dự án khác.', 409, 'YOUTUBE_IDEA_ALREADY_USED');
     if (idea.status !== 'used') {
-      const saved = await patchYoutubeIdeaDoc(profileId, ideaId, { status: 'used', usedProjectId: projectId });
-      if (!saved) throw new NotFound('Không tìm thấy ý tưởng video.');
+      const claimed = await claimYoutubeIdeaProjectDoc(profileId, ideaId, projectId);
+      if (!claimed) {
+        const latest = await findYoutubeIdeaDoc(profileId, ideaId);
+        if (!latest) throw new NotFound('Không tìm thấy ý tưởng video.');
+        if (latest.status === 'used' && latest.usedProjectId === projectId) return YoutubeIdeaCreateProjectResponseSchema.parse({ ideaId, prefill });
+        if (latest.status === 'used') throw new AppError('Ý tưởng đã được dùng cho một dự án khác.', 409, 'YOUTUBE_IDEA_ALREADY_USED');
+        if (latest.status === 'rejected') throw new AppError('Hãy chọn lại ý tưởng trước khi tạo dự án.', 409, 'YOUTUBE_IDEA_REJECTED');
+        throw new AppError('Trạng thái ý tưởng vừa thay đổi; hãy mở lại ý tưởng rồi thử lại.', 409, 'YOUTUBE_IDEA_STATUS_CHANGED');
+      }
     }
   }
   return YoutubeIdeaCreateProjectResponseSchema.parse({ ideaId, prefill });

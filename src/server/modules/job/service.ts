@@ -25,6 +25,8 @@ export type JobContext = {
   reportProgress: (pct: number, result?: unknown) => Promise<void>;
   isCancelled: () => Promise<boolean>;
   appendLog: (message: string) => Promise<void>;
+  /** Marks a durable, complete output set so a later cancel request cannot label it cancelled. */
+  markCommitComplete?: () => void;
 };
 
 export type JobHandler = (job: JobDoc, ctx: JobContext) => Promise<unknown>;
@@ -132,10 +134,12 @@ export async function claimAndRun(handlers: Record<string, JobHandler>, lockedBy
     return true;
   }
 
+  let commitComplete = false;
   const context: JobContext = {
     reportProgress: async (pct, result) => updateProgress(job._id, pct, result),
     isCancelled: async () => (await findJobById(job._id))?.cancelRequested ?? false,
     appendLog: async (message) => appendJobLog(job._id, message),
+    markCommitComplete: () => { commitComplete = true; },
   };
   const heartbeat = setInterval(() => {
     void heartbeatJob(job._id, lockedBy).then((renewed) => {
@@ -144,7 +148,7 @@ export async function claimAndRun(handlers: Record<string, JobHandler>, lockedBy
   }, JOB_HEARTBEAT_INTERVAL_MS);
   try {
     const result = await handler(job, context);
-    if (await context.isCancelled()) await markCancelled(job._id);
+    if (await context.isCancelled() && !commitComplete) await markCancelled(job._id);
     else await markDone(job._id, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

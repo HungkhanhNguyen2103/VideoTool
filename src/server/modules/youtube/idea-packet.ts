@@ -8,7 +8,7 @@ import { sanitizeReviewText } from './review-evidence';
 export type IdeaPacketInput = {
   channel: { id: string; name: string; language: 'vi' | 'en'; tagline: string; description: string };
   plan: { nicheStartDate: string | null; cadencePerWeek: number; experiments: { id: string; date: string; variable: string; note: string; videoIds?: string[] }[] };
-  planStatus: Pick<YoutubeGrowthPlanStatus, 'matureCount' | 'videos' | 'metrics' | 'verdict'>;
+  planStatus: Pick<YoutubeGrowthPlanStatus, 'matureCount' | 'videos' | 'metrics' | 'verdict' | 'distribution' | 'hitRates'>;
   projects: { id: string; title: string; scriptPresetId: ScriptPresetId; brief: string; youtubeVideoId: string | null; status: string }[];
   syncedVideos: { videoId: string; title: string; publishedAt: string | null; privacy: string }[];
   savedIdeas: { title: string; status: 'new' | 'chosen' | 'rejected' | 'used' }[];
@@ -17,7 +17,7 @@ export type IdeaPacketInput = {
   count: number;
   targetDurationSec: number;
   searchTerms?: { window: 'last28d' | 'lifetime'; status: string; terms: { term: string; views: number | null }[] }[];
-  trafficMix?: { window: 'last28d' | 'lifetime'; sources: { sourceType: string; views: number | null; share: number | null }[] }[];
+  trafficMix?: { window: 'last28d' | 'lifetime'; status?: string; sources: { sourceType: string; views: number | null; share: number | null }[] }[];
 };
 
 export type YoutubeIdeaPacket = {
@@ -52,7 +52,12 @@ function fingerprint(value: unknown): string {
 }
 
 function metricMap(status: IdeaPacketInput['planStatus']): Record<string, { value: number | null; unit: string; label: string; assumed?: boolean }> {
-  return Object.fromEntries(Object.entries(status.metrics).map(([id, item]) => [id, item]));
+  return Object.fromEntries(Object.entries(status.metrics).map(([id, item]) => [id, {
+    value: item.value,
+    unit: sanitizeIdeaText(item.unit, 40),
+    label: sanitizeIdeaText(item.label, 200),
+    ...(item.assumed === undefined ? {} : { assumed: item.assumed }),
+  }]));
 }
 
 export function buildYoutubeIdeaPacket(input: IdeaPacketInput): YoutubeIdeaPacket {
@@ -102,20 +107,62 @@ export function buildYoutubeIdeaPacket(input: IdeaPacketInput): YoutubeIdeaPacke
   } else if (tier.tier === 'data-informed') {
     const asRanked = (rows: typeof measured) => rows.map((video) => ({ videoId: video.videoId, title: sanitizeIdeaText(video.title, 200), first28dViews: video.first28dViews, approximate: video.approximate, metricId: video.metricId }));
     packet.metrics = metricMap(input.planStatus);
+    packet.distribution = input.planStatus.distribution;
+    packet.hitRates = {
+      first: {
+        hits: input.planStatus.hitRates.first.hits,
+        count: input.planStatus.hitRates.first.count,
+        rate: input.planStatus.hitRates.first.rate,
+        low: input.planStatus.hitRates.first.low,
+        high: input.planStatus.hitRates.first.high,
+        ruleOfThreeUpperBound: input.planStatus.hitRates.first.ruleOfThreeUpperBound,
+        approximate: input.planStatus.hitRates.first.approximate,
+      },
+      strong: {
+        hits: input.planStatus.hitRates.strong.hits,
+        count: input.planStatus.hitRates.strong.count,
+        rate: input.planStatus.hitRates.strong.rate,
+        low: input.planStatus.hitRates.strong.low,
+        high: input.planStatus.hitRates.strong.high,
+        ruleOfThreeUpperBound: input.planStatus.hitRates.strong.ruleOfThreeUpperBound,
+        approximate: input.planStatus.hitRates.strong.approximate,
+      },
+    };
     packet.topVideos = asRanked(measured.slice(0, 5));
     packet.bottomVideos = asRanked([...measured].slice(-5).reverse());
-    packet.searchTerms = Object.fromEntries((input.searchTerms ?? []).map((window) => [window.window, window.terms.slice(0, 25).map((row, index) => ({
-      rank: index + 1,
-      term: sanitizeIdeaText(row.term, 200),
-      views: row.views,
-      metricIds: [`search:${window.window}:${index + 1}:views`],
-    }))]));
-    packet.trafficMix = Object.fromEntries((input.trafficMix ?? []).map((window) => [window.window, window.sources.map((row) => ({ ...row, metricId: `traffic:${window.window}:${row.sourceType.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, '_')}:share` }))]));
+    packet.searchTerms = Object.fromEntries((['last28d', 'lifetime'] as const).map((windowKey) => {
+      const window = (input.searchTerms ?? []).find((row) => row.window === windowKey);
+      return [windowKey, {
+        status: window?.status ?? 'unavailable',
+        terms: (window?.terms ?? []).slice(0, 25).map((row, index) => ({
+          rank: index + 1,
+          term: sanitizeIdeaText(row.term, 200),
+          views: row.views,
+          metricIds: [`search:${windowKey}:${index + 1}:views`],
+        })),
+      }];
+    }));
+    packet.trafficMix = Object.fromEntries((['last28d', 'lifetime'] as const).map((windowKey) => {
+      const window = (input.trafficMix ?? []).find((row) => row.window === windowKey);
+      return [windowKey, {
+        status: window?.status ?? 'unavailable',
+        sources: (window?.sources ?? []).map((row) => ({ ...row, metricId: `traffic:${windowKey}:${row.sourceType.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, '_')}:share` })),
+      }];
+    }));
     packet.verdict = input.planStatus.verdict;
-    packet.activeExperiment = input.plan.experiments.at(-1) ?? null;
+    const activeExperiment = input.plan.experiments.at(-1);
+    packet.activeExperiment = activeExperiment ? {
+      id: sanitizeIdeaText(activeExperiment.id, 80),
+      date: sanitizeIdeaText(activeExperiment.date, 40),
+      variable: sanitizeIdeaText(activeExperiment.variable, 40),
+      note: sanitizeIdeaText(activeExperiment.note, 300),
+      videoIds: (activeExperiment.videoIds ?? []).slice(0, 30).map((id) => sanitizeIdeaText(id, 80)),
+    } : null;
   }
 
-  const coverageFingerprint = fingerprint(coverage);
+  // Freshness describes channel material that can invalidate an idea. Newly generated
+  // saved ideas are part of the prompt packet, but adding them must not stale their own run.
+  const coverageFingerprint = fingerprint({ projects, syncedVideos });
   const serialized = JSON.stringify(packet);
   return {
     packet,

@@ -25,16 +25,21 @@ export const YoutubeIdeaMotifSchema = z.object({
 }).strict();
 
 export const YoutubeIdeaScoresSchema = z.object({
-  fit: z.number().min(0).max(5),
-  clarity: z.number().min(0).max(5),
-  riskOfThinSources: z.number().min(0).max(5),
+  fit: z.number().int().min(0).max(5),
+  clarity: z.number().int().min(0).max(5),
+  riskOfThinSources: z.number().int().min(0).max(5),
 }).strict();
+
+function hasFiveToEightSentences(value: string): boolean {
+  const sentences = value.trim().split(/(?<=[.!?。！？])\s+/u).filter((sentence) => sentence.trim().length > 0);
+  return sentences.length >= 5 && sentences.length <= 8;
+}
 
 export const YoutubeIdeaDraftSchema = z.object({
   id: z.string().trim().min(1).max(80),
   title: z.string().trim().min(1).max(100),
   hook: z.string().trim().min(1).max(300),
-  brief: z.string().trim().min(10).max(1200),
+  brief: z.string().trim().min(10).max(1200).refine(hasFiveToEightSentences, 'Brief must contain 5–8 sentences.'),
   presetId: z.enum(SCRIPT_PRESET_IDS),
   motif: YoutubeIdeaMotifSchema.optional(),
   whyForThisChannel: z.string().trim().min(1).max(300),
@@ -52,7 +57,7 @@ export type YoutubeIdeaDraft = z.infer<typeof YoutubeIdeaDraftSchema>;
 export const YoutubeIdeaSchema = YoutubeIdeaDraftSchema.extend({ scores: YoutubeIdeaScoresSchema }).strict();
 export type YoutubeIdea = z.infer<typeof YoutubeIdeaSchema>;
 
-export const YoutubeIdeaManualDemandInputSchema = z.object({ note: z.string().trim().max(300) }).strict();
+export const YoutubeIdeaManualDemandInputSchema = z.object({ note: z.string().trim().min(1).max(300) }).strict();
 export const YoutubeIdeaManualDemandSchema = YoutubeIdeaManualDemandInputSchema.extend({ checkedAt: z.string().datetime() }).strict();
 
 export const YoutubeIdeasGenerateRequestSchema = z.object({
@@ -73,6 +78,7 @@ export const YoutubeIdeaStatusPatchSchema = z.object({
 export type YoutubeIdeaStatusPatch = z.infer<typeof YoutubeIdeaStatusPatchSchema>;
 
 export const YoutubeIdeaDroppedSchema = z.object({ id: z.string().min(1).max(80), reason: z.string().min(1).max(300) }).strict();
+export type YoutubeIdeaDropped = z.infer<typeof YoutubeIdeaDroppedSchema>;
 export const YoutubeIdeaPacketSummarySchema = z.object({
   projectCount: z.number().int().nonnegative(),
   syncedVideoCount: z.number().int().nonnegative(),
@@ -91,7 +97,7 @@ export const YoutubeIdeaRunSummarySchema = z.object({
   requestedCount: z.number().int().min(4).max(8),
   packetSummary: YoutubeIdeaPacketSummarySchema,
   coverageFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
-  dropped: z.array(YoutubeIdeaDroppedSchema).max(20),
+  dropped: z.array(YoutubeIdeaDroppedSchema).max(30),
   durations: YoutubeIdeaRunDurationsSchema,
 }).strict();
 export type YoutubeIdeaRunSummary = z.infer<typeof YoutubeIdeaRunSummarySchema>;
@@ -125,6 +131,8 @@ export const YoutubeIdeasListResponseSchema = z.object({
 export type YoutubeIdeasListResponse = z.infer<typeof YoutubeIdeasListResponseSchema>;
 
 export const YoutubeIdeasGenerateResponseSchema = z.object({ jobId: z.string().min(1) }).strict();
+export const YoutubeIdeasJobPayloadSchema = YoutubeIdeasGenerateRequestSchema.extend({ channelId: z.string().min(1) }).strict();
+export type YoutubeIdeasJobPayload = z.infer<typeof YoutubeIdeasJobPayloadSchema>;
 export const YoutubeIdeaCreateProjectRequestSchema = z.object({ projectId: z.string().min(1).optional() }).strict();
 export const YoutubeIdeaProjectPrefillSchema = z.object({
   title: z.string().min(1).max(100),
@@ -137,4 +145,6 @@ export const YoutubeIdeaProjectPrefillSchema = z.object({
   channelId: z.string().min(1),
   researchNote: z.literal('Chưa có nguồn: cần research có dẫn nguồn trước khi viết kịch bản'),
 }).strict();
+export type YoutubeIdeaProjectPrefill = z.infer<typeof YoutubeIdeaProjectPrefillSchema>;
 export const YoutubeIdeaCreateProjectResponseSchema = z.object({ ideaId: z.string().min(1), prefill: YoutubeIdeaProjectPrefillSchema }).strict();
+export type YoutubeIdeaCreateProjectResponse = z.infer<typeof YoutubeIdeaCreateProjectResponseSchema>;

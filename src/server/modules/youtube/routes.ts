@@ -25,7 +25,7 @@ import { getYoutubeReviewV2, youtubeReviewJobScope } from './review-v2-service';
 import { assertClaudeCliAvailable, assertClaudeCliStatusAvailable } from '../../shared/claude-cli/cli-chat';
 import type { ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { YoutubeIdeaCreateProjectRequestSchema, YoutubeIdeaStatusPatchSchema, YoutubeIdeasGenerateRequestSchema, YoutubeIdeasGenerateResponseSchema } from '../../../contracts/youtube-ideas';
-import { YOUTUBE_VIDEO_IDEAS_JOB_TYPE, deleteYoutubeIdea, getYoutubeIdeas, handoffYoutubeIdeaToProject, updateYoutubeIdea, youtubeVideoIdeasJobScope } from './idea-service';
+import { YOUTUBE_VIDEO_IDEAS_JOB_TYPE, deleteYoutubeIdea, getYoutubeIdeas, getYoutubeIdeasDefaultTargetDuration, handoffYoutubeIdeaToProject, updateYoutubeIdea, youtubeVideoIdeasJobScope } from './idea-service';
 
 type EnqueueYoutubeJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
 type GetActiveYoutubeJob = (projectId: string, type: string) => Promise<JobSummary | null>;
@@ -539,11 +539,15 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
   });
 
   router.post('/channels/:channelId/ideas/generate', async (req, res) => {
-    const body = YoutubeIdeasGenerateRequestSchema.parse(req.body ?? {});
+    await getChannel(req.params.channelId);
+    const raw = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body as Record<string, unknown> : {};
+    const defaultTargetDurationSec = raw.targetDurationSec === undefined
+      ? await getYoutubeIdeasDefaultTargetDuration(req.params.channelId)
+      : undefined;
+    const body = YoutubeIdeasGenerateRequestSchema.parse({ ...raw, ...(defaultTargetDurationSec !== undefined ? { targetDurationSec: defaultTargetDurationSec } : {}) });
     if (body.cliModel !== undefined && !isAiModelForProvider('claude', body.cliModel)) {
       throw new AppError(`Model ${body.cliModel} không còn khả dụng cho Claude CLI; hãy chọn model khác.`, 422, 'AI_MODEL_UNAVAILABLE');
     }
-    await getChannel(req.params.channelId);
     const scope = youtubeVideoIdeasJobScope(req.params.channelId);
     const active = await options.getActiveJob(scope, YOUTUBE_VIDEO_IDEAS_JOB_TYPE);
     if (active) {
@@ -554,12 +558,24 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
       if (options.getClaudeCliStatus) assertClaudeCliStatusAvailable(await options.getClaudeCliStatus());
       else await assertClaudeCliAvailable({ CLAUDE_CLI_PATH: options.config.CLAUDE_CLI_PATH });
     }
-    const job = await options.enqueueJob({
-      type: YOUTUBE_VIDEO_IDEAS_JOB_TYPE,
-      projectId: scope,
-      payload: { channelId: req.params.channelId, ...body },
-      maxAttempts: 1,
-    });
+    let job: JobSummary;
+    try {
+      job = await options.enqueueJob({
+        type: YOUTUBE_VIDEO_IDEAS_JOB_TYPE,
+        projectId: scope,
+        payload: { channelId: req.params.channelId, ...body },
+        maxAttempts: 1,
+      });
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+        const raced = await options.getActiveJob(scope, YOUTUBE_VIDEO_IDEAS_JOB_TYPE);
+        if (raced) {
+          res.status(409).json({ error: { code: 'YOUTUBE_IDEAS_ALREADY_RUNNING', message: 'Đang có lượt gợi ý video chạy; có thể mở lại tiến độ hiện tại.', jobId: raced.id } });
+          return;
+        }
+      }
+      throw error;
+    }
     res.status(202).json(YoutubeIdeasGenerateResponseSchema.parse({ jobId: job.id }));
   });
 
