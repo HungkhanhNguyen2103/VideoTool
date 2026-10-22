@@ -4,10 +4,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../shared/ui/Button';
 import { ChannelYoutubeControls } from './components/ChannelYoutubeControls';
 import { GrowthPlanPanel } from './components/GrowthPlanPanel';
+import { ReviewV2Panel } from './components/ReviewV2Panel';
 import { useChannels } from '../channel/hooks';
 import { useProjects } from '../project/hooks';
-import { useYoutubeOverview, useYoutubeSuggestedLinks, useYoutubeVideo, useYoutubeVideos, invalidateYoutubeLinkQueries, youtubeChannelsOverviewKey, youtubeGrowthPlanStatusKey, youtubeOverviewKey, youtubeVideoKey } from './hooks';
-import { clearYoutubeManualReach, generateYoutubeChannelReview, generateYoutubeVideoReview, linkProjectToYoutubeVideo, saveYoutubeManualReach, setYoutubePlanExclusion, unlinkProjectFromYoutubeVideo } from './api';
+import { useYoutubeOverview, useYoutubeSuggestedLinks, useYoutubeVideo, useYoutubeVideos, invalidateYoutubeLinkQueries, youtubeChannelsOverviewKey, youtubeGrowthPlanStatusKey } from './hooks';
+import { clearYoutubeManualReach, linkProjectToYoutubeVideo, saveYoutubeManualReach, setYoutubePlanExclusion, unlinkProjectFromYoutubeVideo } from './api';
 import type { YoutubeChannelHealth, YoutubePartnerThresholds, YoutubeVideoListItem } from '../../../contracts/youtube-analytics';
 import type { YoutubeVideoStats } from '../../../contracts/youtube';
 import { formatYoutubeMetric, lineChartPath, youtubeThresholdSourceLinks, YOUTUBE_CTR_UNAVAILABLE_TOOLTIP, YOUTUBE_METRIC_UNAVAILABLE_TOOLTIP } from './youtube-view';
@@ -91,24 +92,6 @@ function ThresholdPanel({ health, thresholds }: { health: YoutubeChannelHealth; 
   );
 }
 
-function ReviewBlock({ review, onGenerate, pending, error }: { review: { result: { observations: string[]; hypotheses: string[]; experiments: string[] }; dataWindow: string; generatedAt: string } | null; onGenerate: () => void; pending: boolean; error: string | null }) {
-  return (
-    <section className={styles.reviewBlock}>
-      <div className={styles.panelHeading}><div><h3>Nhận xét bằng AI</h3><p>Chỉ dùng số liệu đã đồng bộ; giả thuyết không phải kết luận.</p></div><Button size="sm" variant="amber" onClick={onGenerate} disabled={pending}>{pending ? 'Đang phân tích…' : 'Tạo nhận xét'}</Button></div>
-      {error && <p className={styles.error} role="alert">{error}</p>}
-      {!review && !error && <p className={styles.emptyInline}>Chưa có nhận xét. Tạo nhận xét khi đã có số liệu đồng bộ.</p>}
-      {review && <>
-        <p className={styles.muted}>Cửa sổ: {review.dataWindow} · {maybeDate(review.generatedAt)}</p>
-        <div className={styles.reviewColumns}>
-          <div><h4>Dữ liệu cho thấy</h4><ul>{review.result.observations.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>
-          <div><h4>Giả thuyết cần thử</h4><ul>{review.result.hypotheses.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>
-        </div>
-        <div><h4>Thử nghiệm tiếp theo</h4>{review.result.experiments.length ? <ul>{review.result.experiments.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul> : <p className={styles.emptyInline}>Chưa có thử nghiệm được đề xuất.</p>}</div>
-      </>}
-    </section>
-  );
-}
-
 function VideoRetention({ video }: { video: YoutubeVideoStats }) {
   const curve = 'retentionCurve' in video ? (video as YoutubeVideoStats & { retentionCurve: { ratio: number; watchRatio: number }[] | null }).retentionCurve : null;
   const points = curve ?? [];
@@ -131,12 +114,10 @@ function VideoRetention({ video }: { video: YoutubeVideoStats }) {
   );
 }
 
-function VideoDetailDrawer({ channelId, videoId, onClose }: { channelId: string; videoId: string | null; onClose: () => void }) {
+function VideoDetailDrawer({ channelId, videoId, onClose, onOpenVideo }: { channelId: string; videoId: string | null; onClose: () => void; onOpenVideo: (videoId: string) => void }) {
   const queryClient = useQueryClient();
   const detailQuery = useYoutubeVideo(channelId, videoId);
   const projectsQuery = useProjects({});
-  const [reviewPending, setReviewPending] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [manualImpressions, setManualImpressions] = useState('');
@@ -217,20 +198,6 @@ function VideoDetailDrawer({ channelId, videoId, onClose }: { channelId: string;
     }
   }
 
-  async function generateReview() {
-    if (!video) return;
-    setReviewPending(true);
-    setReviewError(null);
-    try {
-      await generateYoutubeVideoReview(channelId, video.videoId);
-      await queryClient.invalidateQueries({ queryKey: youtubeVideoKey(channelId, video.videoId) });
-    } catch (caught) {
-      setReviewError(caught instanceof Error ? caught.message : 'Không thể tạo nhận xét AI.');
-    } finally {
-      setReviewPending(false);
-    }
-  }
-
   if (!videoId) return null;
   if (detailQuery.isLoading) return <div className={styles.drawerOverlay}><div className={styles.drawerBackdrop} /><section className={styles.drawer} role="dialog" aria-modal="true" aria-label="Chi tiết video"><Button onClick={onClose}>Đóng</Button><p role="status">Đang tải số liệu video…</p></section></div>;
   if (detailQuery.error || !video) return <div className={styles.drawerOverlay}><button className={styles.drawerBackdrop} aria-label="Đóng chi tiết video" onClick={onClose} /><section className={styles.drawer} role="dialog" aria-modal="true" aria-label="Chi tiết video"><header className={styles.drawerHeader}><h2>Chi tiết video</h2><Button onClick={onClose}>Đóng</Button></header><p className={styles.error} role="alert">{detailQuery.error instanceof Error ? detailQuery.error.message : 'Không tải được chi tiết video.'}</p><Button onClick={() => void detailQuery.refetch()}>Thử lại</Button></section></div>;
@@ -286,7 +253,7 @@ function VideoDetailDrawer({ channelId, videoId, onClose }: { channelId: string;
           </label>
           {video.linkedProject && <p className={styles.muted}>Kịch bản: {video.linkedProject.scriptPresetId ?? 'Chưa có dữ liệu'} · Hình ảnh: {video.linkedProject.visualStylePresetId ?? 'Chưa có dữ liệu'}</p>}
         </section>
-        <ReviewBlock review={video.review} onGenerate={() => void generateReview()} pending={reviewPending} error={reviewError} />
+        <ReviewV2Panel channelId={channelId} target="video" videoId={video.videoId} onOpenVideo={onOpenVideo} />
       </section>
     </div>
   );
@@ -305,9 +272,6 @@ export function YoutubeAnalyticsPage() {
   const [sort, setSort] = useState<SortKey>('viewsPerDay');
   const [search, setSearch] = useState('');
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
-  const [reviewPending, setReviewPending] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
-  const [reviewNotice, setReviewNotice] = useState<string | null>(null);
   const [linkNotice, setLinkNotice] = useState<string | null>(null);
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(() => new Set());
   const filters = useMemo(() => ({ sort, window: windowKey, type: videoKind, q: search.trim() }), [search, sort, videoKind, windowKey]);
@@ -322,21 +286,6 @@ export function YoutubeAnalyticsPage() {
   useEffect(() => {
     if (selectedVideoId && videosQuery.error) setSelectedVideoId(null);
   }, [selectedVideoId, videosQuery.error]);
-
-  async function generateChannelReview() {
-    setReviewPending(true);
-    setReviewError(null);
-    setReviewNotice(null);
-    try {
-      await generateYoutubeChannelReview(channelId);
-      await queryClient.invalidateQueries({ queryKey: youtubeOverviewKey(channelId) });
-      setReviewNotice('Đã lưu nhận xét cho kênh.');
-    } catch (caught) {
-      setReviewError(caught instanceof Error ? caught.message : 'Không thể tạo nhận xét AI cho kênh.');
-    } finally {
-      setReviewPending(false);
-    }
-  }
 
   async function confirmSuggestion(projectId: string, videoId: string) {
     setLinkNotice(null);
@@ -385,6 +334,7 @@ export function YoutubeAnalyticsPage() {
             </aside>}
 
             <GrowthPlanPanel channelId={channel.id} />
+            <ReviewV2Panel channelId={channel.id} target="channel" onOpenVideo={setSelectedVideoId} />
 
             <section className={styles.panel} aria-labelledby="trend-heading">
               <div className={styles.panelHeading}><div><h2 id="trend-heading">Xu hướng 28 ngày</h2><p>So sánh 28 ngày gần nhất với 28 ngày trước đó.</p></div><Button size="sm" onClick={() => void overviewQuery.refetch()}>Làm mới dữ liệu</Button></div>
@@ -446,13 +396,8 @@ export function YoutubeAnalyticsPage() {
                     })}</div>}
             </section>
 
-            <section className={styles.panel} aria-labelledby="channel-review-heading">
-              <div id="channel-review-heading" className={styles.srOnly}>Nhận xét AI cho kênh</div>
-              <ReviewBlock review={overview.channelReview} onGenerate={() => void generateChannelReview()} pending={reviewPending} error={reviewError} />
-              {reviewNotice && <p className={styles.message} role="status">{reviewNotice}</p>}
-            </section>
           </>}
-      <VideoDetailDrawer channelId={channel.id} videoId={selectedVideoId} onClose={() => setSelectedVideoId(null)} />
+      <VideoDetailDrawer channelId={channel.id} videoId={selectedVideoId} onClose={() => setSelectedVideoId(null)} onOpenVideo={setSelectedVideoId} />
     </main>
   );
 }

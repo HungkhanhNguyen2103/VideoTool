@@ -13,6 +13,8 @@ import {
 import { RefreshYoutubeProfileRequestSchema, RefreshYoutubeProfileResultSchema, YoutubeConnectionSummarySchema, YoutubeManualReachInputSchema, YoutubePlanExclusionInputSchema, YoutubeSetupStatusSchema, YoutubeVideoStatsSchema, type RefreshYoutubeProfileRequest } from '../../../contracts/youtube';
 import { YoutubeChannelsOverviewSchema, YoutubeSyncAllResultSchema } from '../../../contracts/youtube-overview';
 import { YoutubeGrowthExperimentInputSchema, YoutubeGrowthPlanConfigSchema, YoutubeGrowthPlanSchema, YoutubeGrowthPlanStatusSchema } from '../../../contracts/youtube-plan';
+import { YoutubeReviewRequestSchema, YoutubeReviewV2ResultSchema, type YoutubeReviewRequest } from '../../../contracts/youtube-review';
+import { ClaudeCliStatusSchema } from '../../../contracts/script';
 import { apiRequest } from '../../shared/api-client';
 
 const VideoListSchema = z.array(YoutubeVideoListItemSchema);
@@ -125,6 +127,26 @@ export function generateYoutubeChannelReview(channelId: string) {
 
 export function generateYoutubeVideoReview(channelId: string, videoId: string) {
   return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}/review`, YoutubeReviewSchema, { method: 'POST' });
+}
+
+export function getYoutubeCliStatus() {
+  return apiRequest('/api/script/cli-status', ClaudeCliStatusSchema);
+}
+
+export function startYoutubeChannelReviewV2(channelId: string, input: YoutubeReviewRequest = {}) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/review-v2`, YoutubeJobStartSchema, { method: 'POST', body: YoutubeReviewRequestSchema.parse(input) });
+}
+
+export function getYoutubeChannelReviewV2(channelId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/review-v2`, YoutubeReviewV2ResultSchema.nullable());
+}
+
+export function startYoutubeVideoReviewV2(channelId: string, videoId: string, input: YoutubeReviewRequest = {}) {
+  return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}/review-v2`, YoutubeJobStartSchema, { method: 'POST', body: YoutubeReviewRequestSchema.parse(input) });
+}
+
+export function getYoutubeVideoReviewV2(channelId: string, videoId: string) {
+  return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}/review-v2`, YoutubeReviewV2ResultSchema.nullable());
 }
 
 export function linkProjectToYoutubeVideo(projectId: string, videoId: string) {

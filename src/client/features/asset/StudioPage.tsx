@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import type { VideoDistributionPreview } from '../../../contracts/asset';
 import { hashNarration } from '../../../contracts/name-keywords';
 import { SfxVolumeSchema, type Scene, type VisualStyleId } from '../../../contracts/project';
@@ -41,6 +41,8 @@ const INACTIVE_SCENE_ACTION_TITLE = 'Scene đang tắt — bật lại để dù
 
 export function StudioPage() {
   const { projectId = '' } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedScene = searchParams.get('scene');
   const [busy, setBusyState] = useState<string | null>(null);
   const [busyStartedAt, setBusyStartedAt] = useState<number | null>(null);
   const [editingScene, setEditingScene] = useState<string | null>(null);
@@ -159,6 +161,15 @@ export function StudioPage() {
   useEffect(() => { if (project) setSceneTailDraft(String(project.sceneTailSec)); }, [project?.id, project?.sceneTailSec]);
   useEffect(() => { if (project) setSfxVolumeDraft(String(project.sfxVolume)); }, [project?.id, project?.sfxVolume]);
   useEffect(() => { if (project) setVoiceSpeedDraft(String(project.voiceSpeed)); }, [project?.id, project?.voiceSpeed]);
+  useEffect(() => {
+    if (!project || !requestedScene) return;
+    const sceneNumber = Number(requestedScene);
+    const scene = project.scenes[sceneNumber - 1];
+    if (Number.isSafeInteger(sceneNumber) && sceneNumber > 0 && scene) setExpandedSceneId(scene.id);
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.delete('scene');
+    setSearchParams(nextSearchParams, { replace: true });
+  }, [project, requestedScene, searchParams, setSearchParams]);
   useEffect(() => () => { Object.values(scenePreviewsRef.current).forEach(({ url }) => URL.revokeObjectURL(url)); }, []);
   useEffect(() => {
     if (!jobId || !progress || !['done', 'failed', 'cancelled'].includes(progress.status) || refreshedJobRef.current === jobId) return;

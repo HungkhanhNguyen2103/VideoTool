@@ -2,6 +2,16 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('Studio scene readiness presentation', () => {
+  it('opens the requested one-based scene from a review deep link and consumes the query', async () => {
+    const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('useSearchParams');
+    expect(source).toContain("searchParams.get('scene')");
+    expect(source).toContain('const scene = project.scenes[sceneNumber - 1]');
+    expect(source).toContain('setExpandedSceneId(scene.id)');
+    expect(source).toContain("nextSearchParams.delete('scene')");
+    expect(source).toContain("setSearchParams(nextSearchParams, { replace: true })");
+  });
+
   it('offers per-scene image, clip, combined, and keyframe upload controls', async () => {
     const source = await readFile(new URL('./StudioPage.tsx', import.meta.url), 'utf8');
     expect(source).toContain('Upload clip + keyframe');

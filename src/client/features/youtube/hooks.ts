@@ -12,6 +12,8 @@ export const youtubeGrowthPlanStatusKey = (channelId: string) => [...YOUTUBE_QUE
 export const youtubeLinksKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'suggested-links', channelId] as const;
 export const youtubeActiveSyncKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'active-sync', channelId] as const;
 export const youtubeSetupStatusKey = [...YOUTUBE_QUERY_KEY, 'setup'] as const;
+export const youtubeChannelReviewV2Key = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'review-v2', 'channel', channelId] as const;
+export const youtubeVideoReviewV2Key = (channelId: string, videoId: string) => [...YOUTUBE_QUERY_KEY, 'review-v2', 'video', channelId, videoId] as const;
 export const youtubeChannelsOverviewKey = [...YOUTUBE_QUERY_KEY, 'channels-overview'] as const;
 
 export async function invalidateYoutubeChannelQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, channelId: string): Promise<void> {
@@ -107,4 +109,12 @@ export function useYoutubeGrowthPlanStatus(channelId: string, enabled = true) {
 
 export function useYoutubeSuggestedLinks(channelId: string, enabled = true) {
   return useQuery({ queryKey: youtubeLinksKey(channelId), queryFn: () => api.getSuggestedYoutubeLinks(channelId), enabled: Boolean(channelId) && enabled });
+}
+
+export function useYoutubeChannelReviewV2(channelId: string, enabled = true) {
+  return useQuery({ queryKey: youtubeChannelReviewV2Key(channelId), queryFn: () => api.getYoutubeChannelReviewV2(channelId), enabled: Boolean(channelId) && enabled });
+}
+
+export function useYoutubeVideoReviewV2(channelId: string, videoId: string | null) {
+  return useQuery({ queryKey: youtubeVideoReviewV2Key(channelId, videoId ?? ''), queryFn: () => api.getYoutubeVideoReviewV2(channelId, videoId!), enabled: Boolean(channelId && videoId) });
 }
