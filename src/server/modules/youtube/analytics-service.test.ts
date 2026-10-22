@@ -3,7 +3,7 @@ import type { Document } from 'mongodb';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import type { YoutubeVideoStats } from '../../../contracts/youtube';
-import { findChannelTrafficSources, findRetention, upsertVideoDocs } from './repo';
+import { findChannelTrafficSources, findRetention, replaceYoutubeGrowthPlan, upsertVideoDocs } from './repo';
 import { YoutubeVideoDocSchema } from './docs';
 import { getStoredChannelDaily, getYoutubeRetention, syncYoutubeAnalytics } from './analytics-service';
 
@@ -11,7 +11,7 @@ type TestDoc = Document & { _id: string; [key: string]: unknown };
 const sampleVideo: YoutubeVideoStats = {
   videoId: 'video-1', title: 'Kênh của Hung', publishedAt: '2026-09-01T00:00:00.000Z', durationSec: 600, isShort: false,
   privacy: 'public', viewCount: 100, likeCount: 2, commentCount: 0, fetchedAt: '2026-10-21T00:00:00.000Z', analytics: {},
-  first28d: null, manualReach: null, excludedFromPlan: false, trafficSources: {},
+  first28d: null, manualReach: null, excludedFromPlan: false, trafficSources: {}, searchTerms: {},
 };
 
 beforeAll(async () => startTestMongo());
@@ -127,14 +127,60 @@ describe('YouTube Analytics REST sync', () => {
     expect(await getCollection<TestDoc>('youtubeVideos').findOne({ _id: 'profile-1:video-1' })).toMatchObject({ trafficSources: { last28d: { status: 'unavailable', sources: [] } } });
   });
 
+  it('fetches bounded search-detail reports for the channel and mature plan videos in both windows', async () => {
+    await replaceYoutubeGrowthPlan('profile-1', {
+      nicheStartDate: '2026-01-01', cadencePerWeek: 2, viewTargets: { first: 500, strong: 1_000 },
+      assumedAvgViewDurationMin: 4, toleranceMonths: 12, warnAtMatureVideos: 15, decideAtMatureVideos: 40,
+      decideMinMonths: 4, hardReviewWeek: 26, minExperimentsBeforeStop: 2, submittedForReviewAt: null,
+    }, new Date('2026-10-21T00:00:00.000Z'));
+    await getCollection<TestDoc>('youtubeVideos').updateOne({ _id: 'profile-1:video-1' }, { $set: { first28d: { capturedAt: '2026-10-01T00:00:00.000Z', views: 100, estimatedMinutesWatched: 500, averageViewDurationSec: 300, averageViewPercentage: 50, subscribersGained: 2, subscribersLost: 0 } } });
+    const urls: URL[] = [];
+    const fetcher: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      urls.push(url);
+      if (url.searchParams.get('dimensions') === 'insightTrafficSourceDetail') return new Response(JSON.stringify({
+        columnHeaders: [{ name: 'insightTrafficSourceDetail' }, { name: 'views' }, { name: 'estimatedMinutesWatched' }],
+        rows: [['cách viết kịch bản', 12, 72]],
+      }), { status: 200 });
+      if (url.searchParams.get('dimensions') === 'day') return new Response(JSON.stringify({ columnHeaders: [{ name: 'day' }], rows: [] }), { status: 200 });
+      if (url.searchParams.get('dimensions')?.includes('insightTrafficSourceType')) return new Response(JSON.stringify({ columnHeaders: [{ name: 'insightTrafficSourceType' }, { name: 'views' }], rows: [] }), { status: 200 });
+      if (url.searchParams.get('metrics') === 'audienceWatchRatio') return new Response(JSON.stringify({ columnHeaders: [{ name: 'elapsedVideoTimeRatio' }, { name: 'audienceWatchRatio' }], rows: [] }), { status: 200 });
+      return new Response(JSON.stringify({ columnHeaders: [{ name: 'video' }, { name: 'views' }], rows: [] }), { status: 200 });
+    };
+    const report = await syncYoutubeAnalytics('profile-1', [sampleVideo], 'token', fetcher, new Date('2026-10-21T00:00:00.000Z'));
+    const searchRequests = urls.filter((url) => url.searchParams.get('dimensions') === 'insightTrafficSourceDetail');
+    expect(searchRequests).toHaveLength(4);
+    expect(searchRequests.every((url) => url.searchParams.get('filters')?.startsWith('insightTrafficSourceType==YT_SEARCH'))).toBe(true);
+    expect(searchRequests.every((url) => url.searchParams.get('sort') === '-views' && url.searchParams.get('maxResults') === '25')).toBe(true);
+    expect(searchRequests.some((url) => url.searchParams.get('filters')?.includes('video==video-1'))).toBe(true);
+    expect(report.search_channel_last28d?.status).toBe('ok');
+    expect(await findChannelTrafficSources('profile-1')).toMatchObject({ searchTerms: { last28d: { status: 'ok', terms: [{ term: 'cách viết kịch bản', views: 12, estimatedMinutesWatched: 72 }] } } });
+    expect(await getCollection<TestDoc>('youtubeVideos').findOne({ _id: 'profile-1:video-1' })).toMatchObject({ searchTerms: { lifetime: { status: 'ok', terms: [{ term: 'cách viết kịch bản', views: 12, estimatedMinutesWatched: 72 }] } } });
+  });
+
+  it('records unavailable and hidden search terms without fabricating term rows', async () => {
+    const fetcher: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get('dimensions') === 'insightTrafficSourceDetail' && !url.searchParams.get('filters')?.includes('video==')) return new Response('{}', { status: 403 });
+      if (url.searchParams.get('dimensions') === 'insightTrafficSourceDetail') return new Response(JSON.stringify({ columnHeaders: [{ name: 'insightTrafficSourceDetail' }, { name: 'views' }], rows: [] }), { status: 200 });
+      if (url.searchParams.get('dimensions') === 'day') return new Response('{}', { status: 200 });
+      if (url.searchParams.get('metrics') === 'audienceWatchRatio') return new Response('{}', { status: 200 });
+      return new Response('{}', { status: 200 });
+    };
+    await syncYoutubeAnalytics('profile-1', [sampleVideo], 'token', fetcher, new Date('2026-10-21T00:00:00.000Z'));
+    expect(await findChannelTrafficSources('profile-1')).toMatchObject({ searchTerms: { last28d: { status: 'unavailable', terms: [] }, lifetime: { status: 'unavailable', terms: [] } } });
+    expect(await getCollection<TestDoc>('youtubeVideos').findOne({ _id: 'profile-1:video-1' })).toMatchObject({ searchTerms: { last28d: { status: 'ok', terms: [] } } });
+  });
+
   it('preserves snapshots and user-entered video fields during provider upserts', async () => {
     const first28d = { capturedAt: '2026-10-01T00:00:00.000Z', views: 600, estimatedMinutesWatched: 1200, averageViewDurationSec: 120, averageViewPercentage: 30, subscribersGained: 3, subscribersLost: 0 };
     const manualReach = { impressions: 4_000, ctrPercent: 3.25, enteredAt: '2026-10-02T00:00:00.000Z' };
     const trafficSources = { last28d: { capturedAt: '2026-10-03T00:00:00.000Z', status: 'ok' as const, sources: [{ sourceType: 'BROWSE_FEATURES', views: 300, estimatedMinutesWatched: 900 }] } };
-    await getCollection<TestDoc>('youtubeVideos').updateOne({ _id: 'profile-1:video-1' }, { $set: { first28d, manualReach, excludedFromPlan: true, trafficSources } });
+    const searchTerms = { last28d: { capturedAt: '2026-10-03T00:00:00.000Z', status: 'ok' as const, terms: [{ term: 'kịch bản', views: 10, estimatedMinutesWatched: 35 }] } };
+    await getCollection<TestDoc>('youtubeVideos').updateOne({ _id: 'profile-1:video-1' }, { $set: { first28d, manualReach, excludedFromPlan: true, trafficSources, searchTerms } });
     const refreshed = YoutubeVideoDocSchema.parse({ ...sampleVideo, title: 'Refreshed title', fetchedAt: '2026-10-22T00:00:00.000Z', _id: 'profile-1:video-1', channelProfileId: 'profile-1', removed: false });
     await upsertVideoDocs('profile-1', [refreshed], new Date('2026-10-22T00:00:00.000Z'));
-    expect(await getCollection<TestDoc>('youtubeVideos').findOne({ _id: 'profile-1:video-1' })).toMatchObject({ title: 'Refreshed title', first28d, manualReach, excludedFromPlan: true, trafficSources });
+    expect(await getCollection<TestDoc>('youtubeVideos').findOne({ _id: 'profile-1:video-1' })).toMatchObject({ title: 'Refreshed title', first28d, manualReach, excludedFromPlan: true, trafficSources, searchTerms });
   });
 
   it('stores daily and per-video metrics while isolating unavailable groups and never requests CTR', async () => {

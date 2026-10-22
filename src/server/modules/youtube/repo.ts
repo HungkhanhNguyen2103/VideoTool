@@ -1,7 +1,7 @@
 import type { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
 import { YoutubeChannelDailyDocSchema, YoutubeChannelTrafficDocSchema, YoutubeCredentialDocSchema, YoutubeGrowthPlanDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeChannelTrafficDoc, type YoutubeCredentialDoc, type YoutubeGrowthPlanDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeStoredCredentialDoc, type YoutubeVideoDoc } from './docs';
-import type { YoutubeFirst28dSnapshot, YoutubeManualReach, YoutubeTrafficBreakdown } from '../../../contracts/youtube';
+import type { YoutubeFirst28dSnapshot, YoutubeManualReach, YoutubeSearchTermsBreakdown, YoutubeTrafficBreakdown } from '../../../contracts/youtube';
 import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthPlanConfigSchema, type YoutubeGrowthExperiment, type YoutubeGrowthPlanConfig } from '../../../contracts/youtube-plan';
 
 const credentials = (): Collection<YoutubeStoredCredentialDoc> => getCollection('youtubeCredentials');
@@ -66,10 +66,10 @@ export async function countVideoDocs(profileId: string): Promise<number> {
 
 export async function upsertVideoDocs(profileId: string, rows: YoutubeVideoDoc[], seenAt: Date): Promise<void> {
   if (rows.length) await videos().bulkWrite(rows.map((row) => {
-    const { _id, channelProfileId, first28d, manualReach, excludedFromPlan, trafficSources, ...providerFields } = row;
+    const { _id, channelProfileId, first28d, manualReach, excludedFromPlan, trafficSources, searchTerms, ...providerFields } = row;
     return { updateOne: { filter: { channelProfileId: profileId, videoId: row.videoId }, update: {
       $set: { ...providerFields, removed: false },
-      $setOnInsert: { _id, channelProfileId, first28d, manualReach, excludedFromPlan, trafficSources },
+      $setOnInsert: { _id, channelProfileId, first28d, manualReach, excludedFromPlan, trafficSources, searchTerms },
     }, upsert: true } };
   }));
   await videos().updateMany({ channelProfileId: profileId, fetchedAt: { $lt: seenAt.toISOString() } }, { $set: { removed: true, privacy: 'removed' } });
@@ -94,8 +94,16 @@ export async function saveVideoTrafficSources(profileId: string, videoId: string
   await videos().updateOne({ channelProfileId: profileId, videoId }, { $set: { [`trafficSources.${window}`]: breakdown } });
 }
 
+export async function saveVideoSearchTerms(profileId: string, videoId: string, window: 'last28d' | 'lifetime', breakdown: YoutubeSearchTermsBreakdown): Promise<void> {
+  await videos().updateOne({ channelProfileId: profileId, videoId }, { $set: { [`searchTerms.${window}`]: breakdown } });
+}
+
 export async function saveChannelTrafficSources(profileId: string, window: 'last28d' | 'lifetime', breakdown: YoutubeTrafficBreakdown): Promise<void> {
   await channelTraffic().updateOne({ _id: profileId, channelProfileId: profileId }, { $set: { [`${window}`]: breakdown }, $setOnInsert: { _id: profileId, channelProfileId: profileId } }, { upsert: true });
+}
+
+export async function saveChannelSearchTerms(profileId: string, window: 'last28d' | 'lifetime', breakdown: YoutubeSearchTermsBreakdown): Promise<void> {
+  await channelTraffic().updateOne({ _id: profileId, channelProfileId: profileId }, { $set: { [`searchTerms.${window}`]: breakdown }, $setOnInsert: { _id: profileId, channelProfileId: profileId } }, { upsert: true });
 }
 
 export async function findChannelTrafficSources(profileId: string): Promise<YoutubeChannelTrafficDoc | null> {

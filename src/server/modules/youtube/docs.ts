@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema, YoutubeTrafficBreakdownSchema } from '../../../contracts/youtube';
+import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema, YoutubeSearchTermsBreakdownSchema, YoutubeTrafficBreakdownSchema } from '../../../contracts/youtube';
 import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthExperimentSchema, YoutubeGrowthPlanConfigSchema } from '../../../contracts/youtube-plan';
 
 const EncryptedRefreshTokenSchema = z.object({
@@ -88,6 +88,10 @@ export const YoutubeChannelTrafficDocSchema = z.object({
   channelProfileId: z.string(),
   last28d: YoutubeTrafficBreakdownSchema.nullable().optional(),
   lifetime: YoutubeTrafficBreakdownSchema.nullable().optional(),
+  searchTerms: z.object({
+    last28d: YoutubeSearchTermsBreakdownSchema.nullable().optional(),
+    lifetime: YoutubeSearchTermsBreakdownSchema.nullable().optional(),
+  }).strict().default({}),
 }).strict();
 export type YoutubeChannelTrafficDoc = z.infer<typeof YoutubeChannelTrafficDocSchema>;
 

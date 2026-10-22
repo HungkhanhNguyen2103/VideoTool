@@ -1,9 +1,12 @@
 import { YoutubeChannelDailyDocSchema, YoutubeRetentionDocSchema, type YoutubeChannelDailyDoc } from './docs';
-import type { YoutubeChannelDaily, YoutubeRetentionCurve, YoutubeTrafficSource, YoutubeVideoStats } from '../../../contracts/youtube';
-import { findRetention, listChannelDaily, listVideoDocs, patchVideoAnalytics, replaceChannelDaily, saveChannelTrafficSources, saveFirst28dIfMissing, saveVideoTrafficSources, upsertRetention } from './repo';
+import type { YoutubeChannelDaily, YoutubeRetentionCurve, YoutubeSearchTerms, YoutubeSearchTermsBreakdown, YoutubeTrafficSource, YoutubeVideoStats } from '../../../contracts/youtube';
+import { findRetention, listChannelDaily, listVideoDocs, patchVideoAnalytics, replaceChannelDaily, saveChannelSearchTerms, saveChannelTrafficSources, saveFirst28dIfMissing, saveVideoSearchTerms, saveVideoTrafficSources, upsertRetention } from './repo';
+import { getYoutubeGrowthPlanStatus } from './growth-plan-service';
 
 export const YOUTUBE_ANALYTICS_RETENTION_VIDEO_COUNT = 15;
 export const YOUTUBE_FIRST28D_MINIMUM_AGE_DAYS = 31;
+export const YOUTUBE_SEARCH_TERM_MAX_RESULTS = 25;
+export const YOUTUBE_SEARCH_TERM_SYNC_QUERY_LIMIT = 20;
 
 const REPORT_URL = 'https://youtubeanalytics.googleapis.com/v2/reports';
 const ANALYTICS_VIDEO_BATCH_SIZE = 200;
@@ -66,6 +69,90 @@ function toTrafficSources(payload: ReportPayload): YoutubeTrafficSource[] {
     if (typeof sourceType !== 'string') return [];
     return [{ sourceType, views: numberAt(row, columnIndex(payload, 'views')), estimatedMinutesWatched: numberAt(row, columnIndex(payload, 'estimatedMinutesWatched')) }];
   }).sort((a, b) => (b.views ?? -1) - (a.views ?? -1) || a.sourceType.localeCompare(b.sourceType));
+}
+
+function toSearchTerms(payload: ReportPayload): YoutubeSearchTermsBreakdown['terms'] {
+  const termColumn = columnIndex(payload, 'insightTrafficSourceDetail');
+  return (payload.rows ?? []).flatMap((row) => {
+    const term = termColumn === undefined ? null : row[termColumn];
+    if (typeof term !== 'string' || !term.trim()) return [];
+    return [{ term: term.replace(/[\u0000-\u001f\u007f-\u009f]+/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, 200), views: numberAt(row, columnIndex(payload, 'views')), estimatedMinutesWatched: numberAt(row, columnIndex(payload, 'estimatedMinutesWatched')) }];
+  }).slice(0, YOUTUBE_SEARCH_TERM_MAX_RESULTS);
+}
+
+function searchTermDates(window: 'last28d' | 'lifetime', now: Date, firstPublishedAt: string | null): { startDate: string; endDate: string } {
+  const end = shiftDate(now, -2);
+  if (window === 'lifetime' && firstPublishedAt) return { startDate: dateString(new Date(firstPublishedAt)), endDate: dateString(end) };
+  return { startDate: dateString(shiftDate(new Date(`${dateString(end)}T00:00:00.000Z`), -27)), endDate: dateString(end) };
+}
+
+async function querySearchTerms(window: 'last28d' | 'lifetime', accessToken: string, fetcher: typeof fetch, now: Date, video?: YoutubeVideoStats, firstPublishedAt: string | null = null): Promise<YoutubeSearchTermsBreakdown> {
+  const targetPublishedAt = video?.publishedAt ?? firstPublishedAt;
+  const dates = searchTermDates(window, now, targetPublishedAt);
+  const filters = `insightTrafficSourceType==YT_SEARCH${video ? `;video==${video.videoId}` : ''}`;
+  try {
+    const payload = await queryReport({
+      ...dates,
+      metrics: TRAFFIC_METRICS,
+      dimensions: 'insightTrafficSourceDetail',
+      filters,
+      sort: '-views',
+      maxResults: String(YOUTUBE_SEARCH_TERM_MAX_RESULTS),
+    }, accessToken, fetcher);
+    return { capturedAt: now.toISOString(), status: 'ok', terms: toSearchTerms(payload) };
+  } catch (error) {
+    const status = queryStatus(error);
+    return { capturedAt: now.toISOString(), status: status.status, terms: [] };
+  }
+}
+
+export async function refreshYoutubeSearchTermsForVideo(profileId: string, video: YoutubeVideoStats, accessToken: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<YoutubeSearchTerms> {
+  const [last28d, lifetime] = await Promise.all([
+    querySearchTerms('last28d', accessToken, fetcher, now, video),
+    querySearchTerms('lifetime', accessToken, fetcher, now, video),
+  ]);
+  await Promise.all([
+    saveVideoSearchTerms(profileId, video.videoId, 'last28d', last28d),
+    saveVideoSearchTerms(profileId, video.videoId, 'lifetime', lifetime),
+  ]);
+  return { last28d, lifetime };
+}
+
+async function syncYoutubeSearchTerms(profileId: string, videos: readonly YoutubeVideoStats[], accessToken: string, fetcher: typeof fetch, now: Date, report: YoutubeAnalyticsSyncReport, isCancelled?: () => Promise<boolean>): Promise<void> {
+  const firstPublished = videos.flatMap((video) => video.publishedAt ? [video.publishedAt] : []).sort()[0] ?? null;
+  let requestCount = 0;
+  for (const window of ['last28d', 'lifetime'] as const) {
+    if (await isCancelled?.()) return;
+    const breakdown = await querySearchTerms(window, accessToken, fetcher, now, undefined, firstPublished);
+    await saveChannelSearchTerms(profileId, window, breakdown);
+    report[`search_channel_${window}`] = { status: breakdown.status };
+    requestCount += 1;
+  }
+
+  const status = await getYoutubeGrowthPlanStatus(profileId, now);
+  const maturePlanIds = new Set(status.videos.map((video) => video.videoId));
+  const selected = videos.filter((video) => maturePlanIds.has(video.videoId))
+    .sort((a, b) => String(b.publishedAt ?? '').localeCompare(String(a.publishedAt ?? '')) || b.videoId.localeCompare(a.videoId))
+    .slice(0, Math.floor((YOUTUBE_SEARCH_TERM_SYNC_QUERY_LIMIT - requestCount) / 2));
+  let failedVideos = 0;
+  let videoStatus: AnalyticsGroupStatus['status'] = 'ok';
+  for (const video of selected) {
+    for (const window of ['last28d', 'lifetime'] as const) {
+      if (await isCancelled?.()) return;
+      const breakdown = await querySearchTerms(window, accessToken, fetcher, now, video);
+      await saveVideoSearchTerms(profileId, video.videoId, window, breakdown);
+      requestCount += 1;
+      if (breakdown.status !== 'ok') {
+        failedVideos += 1;
+        if (breakdown.status === 'error') videoStatus = 'error';
+        else if (videoStatus === 'ok') videoStatus = 'unavailable';
+      }
+      report[`search_video_${window}`] = { status: videoStatus, ...(failedVideos ? { message: `Search term data unavailable for ${failedVideos} requests.` } : {}) };
+    }
+  }
+  if (selected.length === 0) report.search_video_last28d = { status: 'ok', message: 'No mature plan videos were selected for search-term detail.' };
+  if (selected.length === 0) report.search_video_lifetime = { status: 'ok', message: 'No mature plan videos were selected for search-term detail.' };
+  report.searchTermQueryCount = { status: 'ok', message: `${requestCount} Analytics search-term queries; cap ${YOUTUBE_SEARCH_TERM_SYNC_QUERY_LIMIT}.` };
 }
 
 function first28dDates(publishedAt: string): { startDate: string; endDate: string } {
@@ -245,7 +332,7 @@ export async function getYoutubeRetention(profileId: string, video: YoutubeVideo
   }
 }
 
-export async function syncYoutubeAnalytics(profileId: string, videos: readonly YoutubeVideoStats[], accessToken: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<YoutubeAnalyticsSyncReport> {
+export async function syncYoutubeAnalytics(profileId: string, videos: readonly YoutubeVideoStats[], accessToken: string, fetcher: typeof fetch = fetch, now = new Date(), isCancelled?: () => Promise<boolean>): Promise<YoutubeAnalyticsSyncReport> {
   const report: YoutubeAnalyticsSyncReport = {};
   const endDate = dateString(shiftDate(now, -2));
   const startDate = dateString(shiftDate(new Date(`${endDate}T00:00:00.000Z`), -89));
@@ -271,6 +358,7 @@ export async function syncYoutubeAnalytics(profileId: string, videos: readonly Y
   await captureFirst28dSnapshots(profileId, availableVideos, accessToken, fetcher, now, report);
   await syncTrafficSources(profileId, availableVideos, 'last28d', accessToken, fetcher, now, report);
   await syncTrafficSources(profileId, availableVideos, 'lifetime', accessToken, fetcher, now, report);
+  await syncYoutubeSearchTerms(profileId, availableVideos, accessToken, fetcher, now, report, isCancelled);
 
   const topLong = [...availableVideos].filter((video) => !video.isShort).sort((a, b) => String(b.publishedAt ?? '').localeCompare(String(a.publishedAt ?? ''))).slice(0, YOUTUBE_ANALYTICS_RETENTION_VIDEO_COUNT);
   let retentionFailures = 0;

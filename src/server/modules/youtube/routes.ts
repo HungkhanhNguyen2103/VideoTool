@@ -42,6 +42,7 @@ function toPublicVideoStats(video: YoutubeVideoDoc): YoutubeVideoStats {
     manualReach: video.manualReach,
     excludedFromPlan: video.excludedFromPlan,
     trafficSources: video.trafficSources,
+    searchTerms: video.searchTerms,
   });
 }
 

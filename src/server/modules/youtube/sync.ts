@@ -181,7 +181,7 @@ async function runYoutubeSync(profileId: string, context: YoutubeSyncJobContext,
   const docs = stats.map((row) => YoutubeVideoDocSchema.parse({ ...row, _id: `${profileId}:${row.videoId}`, channelProfileId: profileId, removed: false }));
   await upsertVideoDocs(profileId, docs, now);
   await context.reportProgress(72);
-  const analyticsReport = await syncYoutubeAnalytics(profileId, stats, token, fetcher, now);
+  const analyticsReport = await syncYoutubeAnalytics(profileId, stats, token, fetcher, now, () => context.isCancelled());
   await incrementQuota(day, projectKey, units);
   await patchCredential(profileId, {
     lastSyncAt: now,

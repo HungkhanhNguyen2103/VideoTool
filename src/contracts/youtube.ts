@@ -86,6 +86,24 @@ export type YoutubeTrafficSource = z.infer<typeof YoutubeTrafficSourceSchema>;
 export type YoutubeTrafficBreakdown = z.infer<typeof YoutubeTrafficBreakdownSchema>;
 export type YoutubeTrafficSources = z.infer<typeof YoutubeTrafficSourcesSchema>;
 
+export const YoutubeSearchTermSchema = z.object({
+  term: z.string().min(1).max(200),
+  views: z.number().nonnegative().nullable(),
+  estimatedMinutesWatched: z.number().nonnegative().nullable(),
+}).strict();
+export const YoutubeSearchTermsBreakdownSchema = z.object({
+  capturedAt: z.string().datetime(),
+  status: z.enum(['ok', 'unavailable', 'error']),
+  terms: z.array(YoutubeSearchTermSchema).max(25),
+}).strict();
+export const YoutubeSearchTermsSchema = z.object({
+  last28d: YoutubeSearchTermsBreakdownSchema.nullable().optional(),
+  lifetime: YoutubeSearchTermsBreakdownSchema.nullable().optional(),
+}).strict();
+export type YoutubeSearchTerm = z.infer<typeof YoutubeSearchTermSchema>;
+export type YoutubeSearchTermsBreakdown = z.infer<typeof YoutubeSearchTermsBreakdownSchema>;
+export type YoutubeSearchTerms = z.infer<typeof YoutubeSearchTermsSchema>;
+
 export const YoutubeVideoStatsSchema = z.object({
   videoId: z.string(),
   title: z.string(),
@@ -111,6 +129,7 @@ export const YoutubeVideoStatsSchema = z.object({
   manualReach: YoutubeManualReachSchema.nullable().default(null),
   excludedFromPlan: z.boolean().default(false),
   trafficSources: YoutubeTrafficSourcesSchema.default({}),
+  searchTerms: YoutubeSearchTermsSchema.default({}),
 }).strict();
 export type YoutubeVideoStats = z.infer<typeof YoutubeVideoStatsSchema>;
 

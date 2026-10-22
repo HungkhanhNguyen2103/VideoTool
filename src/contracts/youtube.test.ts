@@ -19,7 +19,7 @@ describe('YouTube growth-plan video inputs', () => {
       videoId: 'video-1', title: 'Video', publishedAt: null, durationSec: 600, isShort: false, privacy: 'public',
       viewCount: null, likeCount: null, commentCount: null, fetchedAt: '2026-10-22T00:00:00.000Z',
     });
-    expect(video).toMatchObject({ first28d: null, manualReach: null, excludedFromPlan: false, trafficSources: {} });
+    expect(video).toMatchObject({ first28d: null, manualReach: null, excludedFromPlan: false, trafficSources: {}, searchTerms: {} });
     expect(YoutubeManualReachInputSchema.parse({ impressions: 0, ctrPercent: 0 })).toEqual({ impressions: 0, ctrPercent: 0 });
     expect(() => YoutubeManualReachInputSchema.parse({ impressions: 1.5, ctrPercent: 101 })).toThrow();
     expect(() => YoutubeManualReachInputSchema.parse({ impressions: 10, ctrPercent: 2, enteredAt: '2026-10-22T00:00:00.000Z' })).toThrow();
