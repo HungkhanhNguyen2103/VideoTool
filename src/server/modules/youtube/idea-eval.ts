@@ -1,8 +1,26 @@
 import type { YoutubeIdeaDropped, YoutubeIdeaV2 } from '../../../contracts/youtube-ideas';
 import { auditYoutubeIdeaClaimCoverage, youtubeIdeaCenturyBucket } from './idea-quality';
+import type { YoutubeIdeaPipelineResult } from './idea-engine';
+
+export const YOUTUBE_IDEA_EVAL_MAX_CLI_CALLS = 20;
 
 export type YoutubeIdeaRepairCalls = { seeds: number; select: number; expand: number };
 export type YoutubeIdeaEvalDurations = { seedsMs: number; selectMs: number; expandMs: number; totalMs: number };
+
+export function createYoutubeIdeaEvalCallBudget(initialUsed = 0, limit = YOUTUBE_IDEA_EVAL_MAX_CLI_CALLS) {
+  if (!Number.isInteger(initialUsed) || initialUsed < 0 || !Number.isInteger(limit) || limit < 1 || initialUsed > limit) {
+    throw new Error('Invalid YouTube idea eval CLI call budget.');
+  }
+  let used = initialUsed;
+  return {
+    get used() { return used; },
+    claim(): boolean {
+      if (used >= limit) return false;
+      used += 1;
+      return true;
+    },
+  };
+}
 
 export function computeYoutubeIdeaEvalMetrics(input: {
   ideas: YoutubeIdeaV2[];
@@ -10,6 +28,7 @@ export function computeYoutubeIdeaEvalMetrics(input: {
   packetJson: string;
   repairCalls: YoutubeIdeaRepairCalls;
   durations: YoutubeIdeaEvalDurations;
+  diagnostics?: YoutubeIdeaPipelineResult['diagnostics'];
 }) {
   const blindSpotAtLeastPartial = input.ideas.filter((idea) => idea.motif.blindSpot.evidence !== 'thin').length;
   const archetypeCounts = input.ideas.reduce<Record<string, number>>((counts, idea) => {
@@ -41,6 +60,15 @@ export function computeYoutubeIdeaEvalMetrics(input: {
     unsupportedCausalStatements: claimAudits.flatMap((audit) => audit.unsupportedCausalStatements),
     repairCalls: { ...input.repairCalls },
     durations: { ...input.durations },
+    funnel: input.diagnostics ? {
+      seeds: input.diagnostics.seedCount,
+      shortlisted: input.diagnostics.shortlistedCount,
+      expanded: input.diagnostics.expandedCount,
+      valid: input.diagnostics.validCount,
+    } : null,
+    expansionBatches: input.diagnostics?.expansionBatches ?? [],
+    repairRescues: input.diagnostics?.repairRescues ?? 0,
+    budgetStopped: input.diagnostics?.budgetStopped ?? false,
     titles: input.ideas.map(({ title, trapSketch }) => ({ title, trapSketch })),
   };
 }

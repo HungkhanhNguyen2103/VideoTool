@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { YoutubeIdeaV2 } from '../../../contracts/youtube-ideas';
-import { computeYoutubeIdeaEvalMetrics } from './idea-eval';
+import { computeYoutubeIdeaEvalMetrics, createYoutubeIdeaEvalCallBudget } from './idea-eval';
 
 function idea(id: string, hunterArchetype: YoutubeIdeaV2['hunterArchetype'], period: string, blindSpot: 'strong' | 'partial' | 'thin' = 'partial'): YoutubeIdeaV2 {
   return {
@@ -28,6 +28,15 @@ function idea(id: string, hunterArchetype: YoutubeIdeaV2['hunterArchetype'], per
 }
 
 describe('YouTube idea eval metrics', () => {
+  it('enforces the shared 20-call cap across acceptance measurements', () => {
+    const budget = createYoutubeIdeaEvalCallBudget(19);
+    expect(budget.used).toBe(19);
+    expect(budget.claim()).toBe(true);
+    expect(budget.used).toBe(20);
+    expect(budget.claim()).toBe(false);
+    expect(budget.used).toBe(20);
+  });
+
   it('computes blind-spot, diversity, fame, claim, grounding, repair and duration metrics without a provider', () => {
     const metrics = computeYoutubeIdeaEvalMetrics({
       ideas: [idea('idea-1', 'military', 'thế kỷ XIII'), idea('idea-2', 'political', 'thế kỷ XIV', 'thin')],
@@ -44,5 +53,26 @@ describe('YouTube idea eval metrics', () => {
     });
     expect(metrics.droppedReasonCounts).toEqual({ 'blind spot mỏng.': 2, 'trùng loại bẫy.': 1 });
     expect(metrics.titles).toHaveLength(2);
+  });
+
+  it('reports funnel counts, per-batch timing and repair rescues for partial or failed run diagnostics', () => {
+    const metrics = computeYoutubeIdeaEvalMetrics({
+      ideas: [idea('idea-1', 'military', 'thế kỷ XIII')], dropped: [], packetJson: '{}',
+      repairCalls: { seeds: 0, select: 1, expand: 2 },
+      durations: { seedsMs: 100, selectMs: 200, expandMs: 900, totalMs: 1_250 },
+      diagnostics: {
+        seedCount: 18, shortlistedCount: 12, expandedCount: 5, validCount: 1,
+        expansionBatches: [
+          { index: 1, seedCount: 4, validCount: 1, durationMs: 300, repairCalls: 1, repairRescues: 1 },
+          { index: 2, seedCount: 4, validCount: 4, durationMs: 600, repairCalls: 1, repairRescues: 2 },
+        ],
+        repairRescues: 3, budgetStopped: true, repairCalls: { seeds: 0, select: 1, expand: 2 },
+      },
+    });
+    expect(metrics).toMatchObject({
+      funnel: { seeds: 18, shortlisted: 12, expanded: 5, valid: 1 },
+      expansionBatches: [{ index: 1, durationMs: 300, repairRescues: 1 }, { index: 2, durationMs: 600, repairRescues: 2 }],
+      repairRescues: 3, budgetStopped: true,
+    });
   });
 });
