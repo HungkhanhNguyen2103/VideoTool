@@ -32,6 +32,7 @@ beforeEach(async () => {
   await getCollection<TestDoc>('youtubeVideos').deleteMany({});
   await getCollection<TestDoc>('youtubeChannelDaily').deleteMany({});
   await getCollection<TestDoc>('youtubeChannelTraffic').deleteMany({});
+  await getCollection<TestDoc>('youtubeGrowthPlans').deleteMany({});
   await getCollection<TestDoc>('channels').deleteMany({});
 });
 afterEach(async () => {
@@ -183,6 +184,7 @@ describe('YouTube channels overview and sync-all routes', () => {
     expect(rows.get(disconnected.id)).toMatchObject({ connection: { connected: false }, last28: { views: null }, activeSyncJobId: null });
     expect(rows.get(connected.id)).toMatchObject({
       language: 'en', subscriberCount: 300, videoCount: 1, longCount: 1, shortCount: 0,
+      stage: 'A', verdict: 'insufficient_data',
       last28: { views: 150, estimatedMinutesWatched: 9_000, subscribersGained: 5, subscribersLost: 1 },
       previous28: { views: 100, estimatedMinutesWatched: 6_000, subscribersGained: 3, subscribersLost: 2 },
       trend: { views: { changePercent: 50 }, tooFewData: false },
@@ -242,6 +244,59 @@ describe('YouTube channels overview and sync-all routes', () => {
     expect(body.error.code).toBe('YOUTUBE_NOT_CONFIGURED');
     expect(body.error.message).toContain('GOOGLE_OAUTH_CLIENT_ID');
     expect(JSON.stringify(body)).not.toMatch(/refreshToken|accessToken|ciphertext|authTag|clientSecret/i);
+  });
+});
+
+describe('YouTube growth plan routes', () => {
+  it('reads defaults, strictly replaces configuration, and adds or removes bounded experiments', async () => {
+    const profile = await createChannel({ name: 'Kênh kế hoạch' });
+    const base = await startApi(async () => { throw new Error('Growth plan reads must not call Google.'); });
+    const path = `${base}/api/youtube/channels/${profile.id}/plan`;
+    const defaults = await fetch(path);
+    expect(defaults.status).toBe(200);
+    expect(await defaults.json()).toMatchObject({ channelProfileId: profile.id, nicheStartDate: null, cadencePerWeek: 3.5, viewTargets: { first: 500, strong: 1_000 }, experiments: [] });
+
+    const invalid = await fetch(path, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cadencePerWeek: 15 }) });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: { code: 'YOUTUBE_PLAN_INVALID' } });
+
+    const saved = await fetch(path, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nicheStartDate: '2026-10-20', cadencePerWeek: 4 }) });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ nicheStartDate: '2026-10-20', cadencePerWeek: 4, toleranceMonths: 18 });
+
+    const added = await fetch(`${path}/experiments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ date: '2026-10-22', variable: 'topic', note: 'Nhóm chủ đề thử' }) });
+    expect(added.status).toBe(201);
+    const addedBody = await added.json() as { experiments: Array<{ id: string; variable: string }> };
+    expect(addedBody.experiments).toHaveLength(1);
+    expect(addedBody.experiments[0]).toMatchObject({ id: expect.any(String), variable: 'topic' });
+
+    const replaced = await fetch(path, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nicheStartDate: '2026-10-20', cadencePerWeek: 5 }) });
+    expect(replaced.status).toBe(200);
+    expect(await replaced.json()).toMatchObject({ cadencePerWeek: 5, experiments: [{ variable: 'topic' }] });
+
+    const deleted = await fetch(`${path}/experiments/${addedBody.experiments[0]!.id}`, { method: 'DELETE' });
+    expect(deleted.status).toBe(200);
+    expect(await deleted.json()).toMatchObject({ experiments: [] });
+    expect(JSON.stringify(await (await fetch(`${base}/api/youtube/channels/${profile.id}/plan-status`)).json())).not.toMatch(/refreshToken|accessToken|ciphertext|authTag|clientSecret/i);
+  });
+
+  it('returns a conflict for a missing channel profile and a stored-data-only insufficient plan status', async () => {
+    const base = await startApi(async () => { throw new Error('Plan status must not call Google.'); });
+    const missing = await fetch(`${base}/api/youtube/channels/no-such-profile/plan`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toMatchObject({ error: { code: 'YOUTUBE_PLAN_PROFILE_NOT_FOUND' } });
+
+    const profile = await createChannel({ name: 'Kênh thiếu ngày' });
+    const response = await fetch(`${base}/api/youtube/channels/${profile.id}/plan-status`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      plan: { channelProfileId: profile.id, nicheStartDate: null },
+      eligibleVideoCount: 0,
+      matureCount: 0,
+      forecast: { status: 'insufficient-data' },
+      stage: { current: 'A' },
+      verdict: { verdict: 'insufficient_data', confidence: 'low' },
+    });
   });
 });
 

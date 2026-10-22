@@ -1,7 +1,8 @@
 import type { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
-import { YoutubeChannelDailyDocSchema, YoutubeChannelTrafficDocSchema, YoutubeCredentialDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeChannelTrafficDoc, type YoutubeCredentialDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeStoredCredentialDoc, type YoutubeVideoDoc } from './docs';
+import { YoutubeChannelDailyDocSchema, YoutubeChannelTrafficDocSchema, YoutubeCredentialDocSchema, YoutubeGrowthPlanDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeChannelTrafficDoc, type YoutubeCredentialDoc, type YoutubeGrowthPlanDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeStoredCredentialDoc, type YoutubeVideoDoc } from './docs';
 import type { YoutubeFirst28dSnapshot, YoutubeManualReach, YoutubeTrafficBreakdown } from '../../../contracts/youtube';
+import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthPlanConfigSchema, type YoutubeGrowthExperiment, type YoutubeGrowthPlanConfig } from '../../../contracts/youtube-plan';
 
 const credentials = (): Collection<YoutubeStoredCredentialDoc> => getCollection('youtubeCredentials');
 const videos = (): Collection<YoutubeVideoDoc> => getCollection('youtubeVideos');
@@ -10,6 +11,7 @@ const quotas = (): Collection<YoutubeQuotaDoc> => getCollection('youtubeQuota');
 const retention = (): Collection<YoutubeRetentionDoc> => getCollection('youtubeRetention');
 const reviews = (): Collection<YoutubeReviewDoc> => getCollection('youtubeReviews');
 const channelTraffic = (): Collection<YoutubeChannelTrafficDoc> => getCollection('youtubeChannelTraffic');
+const growthPlans = (): Collection<YoutubeGrowthPlanDoc> => getCollection('youtubeGrowthPlans');
 
 export async function findCredential(profileId: string): Promise<YoutubeCredentialDoc | null> {
   const doc = await credentials().findOne({ _id: profileId, kind: { $ne: 'pending-import' } });
@@ -99,6 +101,39 @@ export async function saveChannelTrafficSources(profileId: string, window: 'last
 export async function findChannelTrafficSources(profileId: string): Promise<YoutubeChannelTrafficDoc | null> {
   const row = await channelTraffic().findOne({ _id: profileId, channelProfileId: profileId });
   return row ? YoutubeChannelTrafficDocSchema.parse(row) : null;
+}
+
+export async function findYoutubeGrowthPlan(profileId: string): Promise<YoutubeGrowthPlanDoc | null> {
+  const row = await growthPlans().findOne({ _id: profileId });
+  return row ? YoutubeGrowthPlanDocSchema.parse(row) : null;
+}
+
+export async function replaceYoutubeGrowthPlan(profileId: string, config: YoutubeGrowthPlanConfig, now: Date): Promise<YoutubeGrowthPlanDoc> {
+  const normalized = YoutubeGrowthPlanConfigSchema.parse(config);
+  await growthPlans().updateOne({ _id: profileId }, {
+    $set: { ...normalized, updatedAt: now.toISOString() },
+    $setOnInsert: { _id: profileId, channelProfileId: profileId, experiments: [], createdAt: now.toISOString() },
+  }, { upsert: true });
+  const saved = await findYoutubeGrowthPlan(profileId);
+  if (!saved) throw new Error('Growth plan upsert completed without a stored document.');
+  return saved;
+}
+
+async function ensureYoutubeGrowthPlan(profileId: string, now: Date): Promise<void> {
+  const defaults = YoutubeGrowthPlanConfigSchema.parse({});
+  await growthPlans().updateOne({ _id: profileId }, { $setOnInsert: { ...defaults, _id: profileId, channelProfileId: profileId, experiments: [], createdAt: now.toISOString(), updatedAt: now.toISOString() } }, { upsert: true });
+}
+
+export async function appendYoutubeGrowthExperiment(profileId: string, experiment: YoutubeGrowthExperiment, now: Date): Promise<boolean> {
+  await ensureYoutubeGrowthPlan(profileId, now);
+  const max = YOUTUBE_GROWTH_PLAN_DEFAULTS.experimentLimit;
+  const result = await growthPlans().updateOne({ _id: profileId, [`experiments.${max - 1}`]: { $exists: false } }, { $push: { experiments: experiment }, $set: { updatedAt: now.toISOString() } });
+  return result.modifiedCount === 1;
+}
+
+export async function removeYoutubeGrowthExperiment(profileId: string, experimentId: string, now: Date): Promise<boolean> {
+  const result = await growthPlans().updateOne({ _id: profileId, 'experiments.id': experimentId }, { $pull: { experiments: { id: experimentId } }, $set: { updatedAt: now.toISOString() } });
+  return result.modifiedCount === 1;
 }
 
 export async function replaceChannelDaily(profileId: string, rows: YoutubeChannelDailyDoc[]): Promise<void> {

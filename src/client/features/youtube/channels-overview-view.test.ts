@@ -29,6 +29,8 @@ function row(channelId: string, name: string, views: number, subscribers: number
     videoCount: 4,
     longCount: 3,
     shortCount: 1,
+    stage: 'B',
+    verdict: 'continue',
     last28: { views, estimatedMinutesWatched: 1_500, subscribersGained: 12, subscribersLost: 2 },
     previous28: { views: 100, estimatedMinutesWatched: 1_000, subscribersGained: 10, subscribersLost: 1 },
     trend: {

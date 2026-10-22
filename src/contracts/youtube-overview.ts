@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { YoutubeChannelHealthSchema } from './youtube-analytics';
 import { YoutubeConnectionSummarySchema } from './youtube';
+import { YoutubeGrowthStageSchema, YoutubeGrowthVerdictSchema } from './youtube-plan';
 
 const WindowMetricsSchema = z.object({
   views: z.number().nonnegative().nullable(),
@@ -36,6 +37,8 @@ export const YoutubeChannelOverviewRowSchema = z.object({
   previous28: WindowMetricsSchema,
   trend: TrendSchema,
   health: YoutubeChannelHealthSchema,
+  stage: YoutubeGrowthStageSchema.shape.current,
+  verdict: YoutubeGrowthVerdictSchema.shape.verdict,
   activeSyncJobId: z.string().nullable(),
   topVideo: z.object({ videoId: z.string(), title: z.string(), viewsPerDay: z.number().nonnegative() }).strict().nullable(),
 }).strict();

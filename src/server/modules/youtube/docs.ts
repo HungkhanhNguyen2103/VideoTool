@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema, YoutubeTrafficBreakdownSchema } from '../../../contracts/youtube';
+import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthExperimentSchema, YoutubeGrowthPlanConfigSchema } from '../../../contracts/youtube-plan';
 
 const EncryptedRefreshTokenSchema = z.object({
   algorithm: z.literal('aes-256-gcm'),
@@ -89,3 +90,12 @@ export const YoutubeChannelTrafficDocSchema = z.object({
   lifetime: YoutubeTrafficBreakdownSchema.nullable().optional(),
 }).strict();
 export type YoutubeChannelTrafficDoc = z.infer<typeof YoutubeChannelTrafficDocSchema>;
+
+export const YoutubeGrowthPlanDocSchema = YoutubeGrowthPlanConfigSchema.extend({
+  _id: z.string(),
+  channelProfileId: z.string(),
+  experiments: z.array(YoutubeGrowthExperimentSchema).max(YOUTUBE_GROWTH_PLAN_DEFAULTS.experimentLimit).default([]),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+export type YoutubeGrowthPlanDoc = z.infer<typeof YoutubeGrowthPlanDocSchema>;

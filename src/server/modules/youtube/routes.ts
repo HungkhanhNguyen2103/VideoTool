@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { ulid } from 'ulid';
 import type { Config } from '../../config';
 import { getChannel, listChannels } from '../channel';
 import { AppError, NotFound } from '../../shared/errors';
 import type { JobSummary } from '../../../contracts/job';
 import { RefreshYoutubeProfileRequestSchema, YoutubeManualReachInputSchema, YoutubeManualReachSchema, YoutubePlanExclusionInputSchema, YoutubeVideoStatsSchema, type YoutubeVideoStats } from '../../../contracts/youtube';
-import { countVideoDocs, findCredential, listVideoDocs, updateVideoManualReach, updateVideoPlanExclusion } from './repo';
+import { YoutubeGrowthExperimentInputSchema, YoutubeGrowthPlanConfigSchema, YoutubeGrowthPlanSchema } from '../../../contracts/youtube-plan';
+import { appendYoutubeGrowthExperiment, countVideoDocs, findCredential, listVideoDocs, removeYoutubeGrowthExperiment, updateVideoManualReach, updateVideoPlanExclusion } from './repo';
 import type { YoutubeVideoDoc } from './docs';
 import { assertYoutubeConfigured, assertYoutubeQuotaAllowsSync, beginYoutubeImport, beginYoutubeOauth, completeYoutubeOauth, disconnectYoutube, discardYoutubeOauthState, getYoutubeConnection, getYoutubeImportOptions, getYoutubeOauthOpenerOrigin, refreshYoutubeProfile, selectYoutubeChannel, selectYoutubeImportChannels, youtubeIsConfigured, YOUTUBE_SETUP_MESSAGE } from './service';
 import { clearYoutubeAccessToken, getYoutubeAccessToken } from './sync';
@@ -16,6 +18,7 @@ import { getYoutubeRetention, getStoredChannelDaily } from './analytics-service'
 import { getProject, listProjects } from '../project';
 import { YoutubeChannelsOverviewSchema, YoutubeChannelOverviewRowSchema, YoutubeSyncAllResultSchema } from '../../../contracts/youtube-overview';
 import { buildYoutubeOverviewWindows } from './channel-overview';
+import { getYoutubeGrowthPlan, getYoutubeGrowthPlanStatus, saveYoutubeGrowthPlan } from './growth-plan-service';
 
 type EnqueueYoutubeJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
 type GetActiveYoutubeJob = (projectId: string, type: string) => Promise<JobSummary | null>;
@@ -108,12 +111,13 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
   router.get('/channels-overview', async (_req, res) => {
     const profiles = await listChannels();
     const channels = await Promise.all(profiles.map(async (profile) => {
-      const [connection, daily, videos, credential, activeJob] = await Promise.all([
+      const [connection, daily, videos, credential, activeJob, growthStatus] = await Promise.all([
         getYoutubeConnection(profile.id, options.config),
         getStoredChannelDaily(profile.id),
         listVideoDocs(profile.id, { removed: { $ne: true } }),
         findCredential(profile.id),
         options.getActiveJob(profile.id, 'youtube-sync'),
+        getYoutubeGrowthPlanStatus(profile.id),
       ]);
       const windows = buildYoutubeOverviewWindows(daily);
       const rankings = getVideoRanking(videos);
@@ -133,6 +137,8 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
         previous28: windows.previous28,
         trend: windows.trend,
         health: buildChannelHealth({ subscriberCount: credential?.subscriberCount ?? null, videos, dataSynced: Boolean(connection.lastSyncAt) }),
+        stage: growthStatus.stage.current,
+        verdict: growthStatus.verdict.verdict,
         activeSyncJobId: activeJob?.id ?? null,
         topVideo: topRank && topVideo ? { videoId: topVideo.videoId, title: topVideo.title, viewsPerDay: topRank.value } : null,
       });
@@ -298,6 +304,44 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
     await getChannel(req.params.channelId);
     const body = RefreshYoutubeProfileRequestSchema.parse(req.body ?? {});
     res.json(await refreshYoutubeProfile(req.params.channelId, options.config, body, options.fetcher));
+  });
+
+  router.get('/channels/:channelId/plan', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json(await getYoutubeGrowthPlan(req.params.channelId));
+  });
+
+  router.put('/channels/:channelId/plan', async (req, res) => {
+    try {
+      await getChannel(req.params.channelId);
+    } catch (error) {
+      if (error instanceof AppError && error.status === 404) throw new AppError('Không tìm thấy hồ sơ kênh để lưu kế hoạch.', 409, 'YOUTUBE_PLAN_PROFILE_NOT_FOUND');
+      throw error;
+    }
+    const parsed = YoutubeGrowthPlanConfigSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError('Cấu hình kế hoạch kênh không hợp lệ.', 400, 'YOUTUBE_PLAN_INVALID');
+    res.json(YoutubeGrowthPlanSchema.parse(await saveYoutubeGrowthPlan(req.params.channelId, parsed.data)));
+  });
+
+  router.get('/channels/:channelId/plan-status', async (req, res) => {
+    await getChannel(req.params.channelId);
+    res.json(await getYoutubeGrowthPlanStatus(req.params.channelId));
+  });
+
+  router.post('/channels/:channelId/plan/experiments', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const parsed = YoutubeGrowthExperimentInputSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError('Thông tin thử nghiệm không hợp lệ.', 400, 'YOUTUBE_EXPERIMENT_INVALID');
+    const added = await appendYoutubeGrowthExperiment(req.params.channelId, { ...parsed.data, id: ulid() }, new Date());
+    if (!added) throw new AppError('Kế hoạch đã có đủ 100 thử nghiệm.', 409, 'YOUTUBE_EXPERIMENT_LIMIT');
+    res.status(201).json(await getYoutubeGrowthPlan(req.params.channelId));
+  });
+
+  router.delete('/channels/:channelId/plan/experiments/:experimentId', async (req, res) => {
+    await getChannel(req.params.channelId);
+    const removed = await removeYoutubeGrowthExperiment(req.params.channelId, req.params.experimentId, new Date());
+    if (!removed) throw new AppError('Không tìm thấy thử nghiệm đã lưu.', 404, 'YOUTUBE_EXPERIMENT_NOT_FOUND');
+    res.json(await getYoutubeGrowthPlan(req.params.channelId));
   });
 
   router.get('/channels/:channelId/overview', async (req, res) => {
