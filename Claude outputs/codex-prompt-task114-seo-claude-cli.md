@@ -1,0 +1,50 @@
+# Task 114 — SEO generation through Claude Code CLI (no API key)
+
+Work directly on `main` (no feature branch, no worktree). Never push. Do not stage temp files (`.env`, `.env.*`, `vite.*.config.ts`, `Claude outputs/`, `docs/superpowers/tasks/*`, `docs/superpowers/plans/*`, the stray `01M4W…` files in the repo root). Keep LF line endings in commits. Follow AGENTS.md (rule 11: Status line in the same commit; import through each module's `index.ts`; CSS Modules + design tokens). Code, comments, AI prompts and commit messages are English; user-facing text is Vietnamese. Small task: no design-approval round needed, write a short untracked plan and implement. One commit: `feat(seo): generate SEO package through Claude CLI`.
+
+## Why
+
+The SEO tab ("4. SEO & Đóng Gói Kênh", `src/client/features/seo/SeoPage.tsx`) generates the package with `generateSeoPackage` (`src/server/modules/seo/service.ts`) through `getAiClient(project.aiProvider, project.aiModel)`, i.e. the Anthropic/DeepSeek **API**. Hung has `ANTHROPIC_API_KEY` empty and wants to use the Claude subscription already logged in through Claude Code on his machine instead, as the script module (chapter regeneration, Task 93/94) and the popup analysis (`video/popup-analysis-service.ts`) already do. SEO has no CLI path today.
+
+## What exists (read, reuse, do not duplicate)
+
+- `src/server/shared/claude-cli/cli-runner.ts`: `runClaudeCli`, `getClaudeCliStatus`, audit folders, stdin-only prompts, isolated cwd, timeout/output caps, Windows shim handling.
+- `src/server/modules/script/cli-script-backend.ts`: `createClaudeCliScriptBackend` — a `ScriptChatBackend`-shaped wrapper with `cliFailure` mapping (timeout, rate limit, auth, output too large, unavailable), cancellation polling and logging. `popup-analysis-service.ts` has a second smaller wrapper (`runCliChunk`, its own `cliFailure`). **Do not add a third copy of the failure mapping**: extract the shared `cliFailure`/call-wrapper into `src/server/shared/claude-cli/` (for example `cli-chat.ts` exporting a small `createClaudeCliChat({ config, model, projectId, label, isCancelled, appendLog, … })` that returns a `chat(messages, options)` compatible with what `requestValidatedOutput` needs), and make the new SEO code use it. Refactoring the two existing callers onto it is optional: do it only if it is a small, fully test-covered change; otherwise leave them as they are and list the duplication as a follow-up in the report.
+- `GET /api/script/cli-status` and the client `getClaudeCliStatus` (`features/asset/api.ts`) already report CLI availability; `PopupAnalysisCard.tsx` shows the pattern for a backend selector (`api` vs `cli`) with a CLI model picker and a "cli unavailable" state. Mirror that UX in the SEO toolbar.
+- `POST /api/project/:id/seo/generate` (`seo/routes.ts`) enqueues job `generate-seo` with payload `{ projectId, sections }`; worker `handleGenerateSeo` in `src/worker/registry.ts`.
+- `requestValidatedOutput` in `seo/service.ts` already validates JSON with one retry that appends `Validation error: … Return corrected JSON …`. Keep that behavior for CLI output (the CLI returns text, so strip any leading prose before the first JSON value the same way the script module's tolerant parser does — reuse that helper, do not write a new one; strict manual import parsing stays unchanged).
+
+## Required behavior
+
+1. **Backend choice**: add an optional `backend: 'api' | 'cli'` (default `'api'`) and optional `cliModel` to the generate request (`GenerateSchema` in `seo/routes.ts`, the job payload, the client `api.ts`). `'cli'` requires `getClaudeCliStatus` to report available **before** enqueue (Vietnamese 503 `CLAUDE_CLI_UNAVAILABLE` with the status reason, same as the popup route) and again in the worker. `cliModel`, when present, must satisfy `isAiModelForProvider('claude', cliModel)` (422 `AI_MODEL_UNAVAILABLE`), otherwise the CLI uses its own default model. Unknown fields stay rejected (`.strict()`).
+2. **Provider independence**: the CLI backend does not read or write `project.aiProvider` / `project.aiModel` and does not require `ANTHROPIC_API_KEY`; the CLI model is local UI state, not persisted to project settings (same rule as Task 93). If `ANTHROPIC_API_KEY` is present, leave the CLI's own auth behavior alone (as `getClaudeCliStatus` already reports which path is likely).
+3. **Generation**: `generateSeoPackage` gets an optional injectable backend parameter (follow `ScriptChatBackend` naming and the way `generateScript` accepts one; keep the default API path byte-for-byte unchanged and covered by the existing tests). With the CLI backend the same prompts are used (`buildSeoPrompt`, `buildShortsPrompt`), the same parsers and retry run, the same channel-default merging happens, and the result is saved through `applyGeneratedSeoSections`. The saved `generatedBy` records `provider: 'claude'`, `model: <cli model or 'default'>` and a way to see it came from the CLI (add an optional `backend: 'cli' | 'api'` field to `generatedBy` in the contract with a legacy-safe default; mapper test for old documents; do not break existing exports/checklists that read `generatedBy`).
+4. **Prompt transport**: `{system, user}` become one stdin text through the existing `formatChatMessages` helper (move it to the shared place if needed rather than importing script internals into the seo module), with an instruction line appended for CLI mode: "Return only the JSON object, no commentary, no code fences." Prompt bytes, duration and the audit folder path are logged with `appendLog` in the same style as the script CLI backend.
+5. **Cancellation, timeouts, errors**: the job is cancellable (poll `isCancelled`, abort the CLI run); timeout / output-too-large / rate limit / auth / unavailable errors surface as the existing Vietnamese `AppError`s and are **not** retried as transient (only JSON-validation failures use the one retry). A cancelled job leaves the project unchanged.
+6. **Sequential, one CLI run at a time per job**: main sections and Shorts are separate calls as today, run sequentially.
+7. **Client (SeoPage toolbar)**: add a selector "Cách sinh: API | Claude CLI" next to the existing AI/model controls (`Toolbar` in `SeoPage.tsx`). When "Claude CLI" is selected: hide the API provider/model selectors, show a Claude model picker defaulting to the registry default (as `PopupAnalysisCard` does), show a one-line note "Dùng Claude Code đã đăng nhập trên máy; chậm hơn API (thường 1–3 phút) và có thể bị giới hạn lượt gọi.", and disable "Tạo toàn bộ gói" / per-section "Sinh bằng Claude" with the CLI status reason when the CLI is unavailable (query the existing cli-status API through the same hook the popup card uses; do not add a new endpoint). Remember the last choice in component state only (no project setting). Manual mode is unchanged.
+8. **Per-section regeneration** ("Sinh bằng Claude" buttons on single sections, if present) uses the same selected backend.
+9. No change to the SEO prompts' text beyond the one CLI-only instruction line, no change to manual mode, parsing, checklist, export, Shorts selection, the thumbnail template or the analytics/YouTube code.
+
+## Tests (follow the repo's no-DOM style)
+
+- Server (`seo-ai.test.ts` / `seo-routes.test.ts`): default `api` path unchanged; `backend:'cli'` happy path with an injected fake `runCli` returning valid JSON → package saved, `generatedBy.backend === 'cli'`, no AI client constructed (assert `getAiClient` not called, works with no API key configured); JSON wrapped in prose / code fence is tolerated; invalid JSON then valid on retry → one retry logged; invalid twice → existing SEO parse error; CLI unavailable → 503 before enqueue; invalid `cliModel` → 422; unknown extra field → 400; cancellation mid-run leaves the project unchanged and kills the run; timeout / rate-limit / auth / output-too-large map to the right codes and are not retried; Shorts + main sections both go through the CLI sequentially; channel defaults still merged.
+- Shared helper tests for the extracted CLI chat wrapper (failure mapping, cancellation, logging, no secrets in logs).
+- Contract test for the optional `generatedBy.backend` with a legacy document.
+- Client: api helper (body shape with/without `backend`/`cliModel`), pure helper for the toolbar enable/disable rules and note text, hook test if the existing seo hooks tests cover that pattern.
+
+## Docs and Status
+
+Update `src/server/modules/seo/MODULE.md` (CLI backend, payload, errors, what is persisted), `src/server/shared/claude-cli/MODULE.md` (the shared chat wrapper) and the script/popup docs only if you moved code. Add the AGENTS.md Status line in the same commit.
+
+## Out of scope
+
+Changing the default provider, adding other CLIs, parallel CLI runs, streaming output to the UI, persisting the CLI choice, any change to the YouTube/analytics code, and the `ANTHROPIC_API_KEY` handling.
+
+## Verification (run and report real output)
+
+`npm run typecheck`, `npm run lint`, new and touched vitest files plus `src/server/modules/seo`, `src/server/shared/claude-cli`, `src/server/modules/script` (only if touched), `src/client/features/seo`, `src/contracts`, and `npm run build` (reuse the local Mongo workaround from earlier tasks if needed and say so). If the machine has Claude Code installed and logged in, run one real SEO generation on a disposable duplicate project through the CLI and report duration and the audit folder path; otherwise say clearly that a real CLI run was not verified, and give Hung the manual steps (restart server + worker, open a project's SEO tab, choose "Claude CLI", generate, check the package fills and `generatedBy`).
+
+## Report
+
+Write `docs/superpowers/tasks/task-114-report.md` (untracked): commit, files changed, the request/payload shape, how the CLI backend is wired and what was extracted/shared, error mapping, what is persisted, verification output, what you could not verify, deviations and the named follow-up (remaining duplicated CLI failure mapping if you left it). Do not push.

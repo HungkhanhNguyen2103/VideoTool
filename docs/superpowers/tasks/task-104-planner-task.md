@@ -1,0 +1,34 @@
+# Task 104 — Render output > 2 GiB must not be read into memory (planner task file, parts A/B/C)
+
+Spec (source of truth, do not edit): `Claude outputs/codex-prompt-task104-large-render-output.md`. This file splits it into parts and adds gates.
+
+Rules: work on `main` (no branch/worktree), never push, LF endings, stage only this task's hunks (never `git add -A`; check `git diff --cached --stat`). Final commit message exactly: `fix(video): stream large render output and cap h264 quality`. Do not touch Task 103 asset-upload code. Tests: `MONGOMS_SYSTEM_BINARY="C:/Program Files/MongoDB/Server/8.0/bin/mongod.exe"` (default download fails MD5). Known pre-existing failure: `src/server/app.test.ts` SPA fallback — leave it.
+
+**One commit for the whole task.** Parts A and B stay uncommitted in the working tree; I review them with `git diff` / `git status`. Commit only after Part C is ACCEPTED-for-commit by me. After each part: post a short report with real command output, then WAIT for my GO.
+
+## Part A — file-store `storeFileFromPath` (spec §1)
+- `createFileStoreService`: add `storeFileFromPath({ projectId, originalName, mimeType, sourcePath, purpose, extension? })`; same id/`storedPath`/`extensionFor` as `storeFile`; `stat` for size; zero-byte rejected with a clear error; `rename` into `filesDir`, on `EXDEV` stream-copy via `pipeline(createReadStream, createWriteStream)` then unlink source; insert same `FileDoc`; DB failure after move/copy removes the stored file and rethrows. No `readFile`/`writeFile` of the whole file anywhere in this path.
+- Make `rename` injectable for the EXDEV test (e.g. optional second argument/options to `createFileStoreService`, default `fs/promises.rename`) without changing existing callers.
+- Export through `file-store/index.ts` (type `StoreFileFromPathParams`). Do NOT yet change video service.
+- Serving finding: `app.ts:61` uses `express.static` for `/files` (streams, supports Range). Confirm by reading the code/express docs, and record in the report; also check whether any other route serves `render`-purpose files (grep file-store/routes.ts, video routes, SEO/download links in client) and whether anything buffers a whole file. Fix only if small; else list as limitation.
+- Tests (spec §5 file store list): real small file moved + original removed + doc fields; zero-byte rejected; EXDEV fallback; DB failure cleanup; `readFile` spy never called; sparse 2.5 GiB test guarded by `it.skipIf(!process.env.RUN_LARGE_FILE_TESTS)` — and actually RUN it once with `RUN_LARGE_FILE_TESTS=1` on a temp sparse file (truncate), report the result and the free disk it needed (sparse files on NTFS may need allocation; if impractical say so, do not claim).
+- `file-store/MODULE.md` updated.
+- Gates: typecheck, lint, `npx vitest run src/server/modules/file-store`.
+
+## Part B — renderers, service, failure handling, CRF (spec §2, §3, §4, tests for them)
+- `VideoRenderer.renderFullVideo(project, appendLog, reportProgress, options)` takes a caller output path and resolves to `{ sizeBytes }` (one shape for both engines); `renderScenePreview` still returns a Buffer (unchanged).
+- `RemotionRenderer`: output path = caller path (outside the staged `public/renders/<renderId>/` dir that `finally` deletes); remove `readOutput`/`readFile` option and the "read output" time log; keep memory/size logs; add `crf` (const `REMOTION_H264_CRF = 22`, env `REMOTION_CRF` validated 0–51 else 22; check Remotion version/`RenderMediaOptions` — `crf` vs `videoBitrate` mutually exclusive; same CRF for draft scale 0.5); log CRF once per render. Env parsing belongs in config (follow how other env values reach the renderer; do not read `process.env` deep in the renderer if config.ts is the pattern — check and follow it).
+- `FfmpegRenderer.renderFullVideo`: write concat/BGM result straight to the caller path; no `readFile` of the final file. Read `buildSceneArguments`/`buildConcatArguments`/`buildBgmArguments`: if scene encode has no explicit quality add `-crf 22` (+ existing preset or `medium`), audio untouched; if it already sets quality leave it and say so.
+- `renderFullProject` (`video/service.ts`): mutable `storeFileFromPath` configured like `storeFile` in `configureVideoModule`; `mkdtemp` temp dir (justify OS temp vs a `tmp` dir next to `FILES_DIR`; I prefer next to `FILES_DIR` on the same volume so `rename` is a cheap move and EXDEV is avoided — choose it unless you find a blocker, and say so); pass output path to renderer; `storeFileFromPath`; then `setProjectRenderFile`/`setProjectDraftRenderFile` exactly as today (active scene ids unchanged); remove temp dir in `finally`.
+- Failure handling (§3): render succeeded but storing fails → keep file at `<FILES_DIR>/../render-failed/<projectId>-<timestamp>/render.mp4`, `appendLog` Vietnamese "Render đã xong nhưng lưu thất bại; file giữ tại: <abs path>", rethrow the original error. Not for failures before render completes (those leave nothing behind). Note in video `MODULE.md` that the folder is not auto-cleaned.
+- Tests (spec §5): remotion.test.ts (new return shape; output exists after staged dir cleanup; `readFile` never invoked on it; `crf` in `renderMedia` options; invalid env falls back to 22), ffmpeg renderer tests path-based + argument builder tests, `video.test.ts` service tests (final & draft via path, temp dir removed in all cases, `setProjectRenderFile` args as before, store-failed keeps file + logs path, render-failed leaves nothing).
+- Gates: no `readFile` on the final render output anywhere (`grep -rn readFile src/server/modules/video` pasted in the report with each remaining hit explained); typecheck, lint, `npx vitest run src/server/modules/video src/server/modules/file-store`.
+
+## Part C — long-video readiness audit, docs, verification, commit (spec §7, §6, Verification)
+- Audit each §7 bullet, status ok/fixed/risk with file:line evidence; fix only small local items, one test per fixed item; rough size/time estimates for a 3600 s project for risks. Disk preflight (named constants, Vietnamese error, estimate logged) is required (spec says add it). Job lifecycle: verify lease/recovery of a 2–3 h job and `appendLog` growth (16 MB doc limit) with evidence from `job/service.ts`.
+- Docs: `video/MODULE.md`, `file-store/MODULE.md`, AGENTS.md Status line (real numbers only).
+- Verification: typecheck, lint, full `npm test`, `npm run build`, real short Remotion render (one-second acceptance render) reporting file size and that it went through the path route; the >2 GiB real render only if actually run, else "unverified".
+- Report `docs/superpowers/tasks/task-104-report.md` (untracked) per spec.
+
+## Rejection criteria (I will reject the part if)
+tests are missing for a bullet above; any `readFile`/`Buffer` of the final render output remains; a spec requirement is silently skipped or marked done without evidence; unverified claims are not labelled "unverified".
