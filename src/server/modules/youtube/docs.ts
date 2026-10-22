@@ -23,9 +23,22 @@ export const YoutubeCredentialDocSchema = z.object({
   subscriberCount: z.number().nonnegative().nullable().optional(),
   channelOptions: z.array(YoutubeChannelOptionSchema).default([]),
   selectionId: z.string().optional(),
+  openerOrigin: z.string().url().optional(),
   lastSyncReport: z.record(z.string(), z.object({ status: z.enum(['ok', 'unavailable', 'error']), message: z.string().optional() }).strict()).optional(),
 }).strict();
 export type YoutubeCredentialDoc = z.infer<typeof YoutubeCredentialDocSchema>;
+
+export const YoutubePendingImportDocSchema = z.object({
+  _id: z.string(),
+  schemaVersion: z.literal(1),
+  kind: z.literal('pending-import'),
+  refreshToken: EncryptedRefreshTokenSchema,
+  channelOptions: z.array(YoutubeChannelOptionSchema),
+  expiresAt: z.date(),
+  openerOrigin: z.string().url().optional(),
+}).strict();
+export type YoutubePendingImportDoc = z.infer<typeof YoutubePendingImportDocSchema>;
+export type YoutubeStoredCredentialDoc = YoutubeCredentialDoc | YoutubePendingImportDoc;
 
 export const YoutubeVideoDocSchema = YoutubeVideoStatsSchema.extend({
   _id: z.string(),

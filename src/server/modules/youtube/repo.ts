@@ -1,8 +1,8 @@
 import type { Collection } from 'mongodb';
 import { getCollection } from '../../db/client';
-import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeCredentialDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeVideoDoc } from './docs';
+import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubePendingImportDocSchema, YoutubeQuotaDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema, type YoutubeChannelDailyDoc, type YoutubeCredentialDoc, type YoutubePendingImportDoc, type YoutubeQuotaDoc, type YoutubeRetentionDoc, type YoutubeReviewDoc, type YoutubeStoredCredentialDoc, type YoutubeVideoDoc } from './docs';
 
-const credentials = (): Collection<YoutubeCredentialDoc> => getCollection('youtubeCredentials');
+const credentials = (): Collection<YoutubeStoredCredentialDoc> => getCollection('youtubeCredentials');
 const videos = (): Collection<YoutubeVideoDoc> => getCollection('youtubeVideos');
 const daily = (): Collection<YoutubeChannelDailyDoc> => getCollection('youtubeChannelDaily');
 const quotas = (): Collection<YoutubeQuotaDoc> => getCollection('youtubeQuota');
@@ -10,12 +10,26 @@ const retention = (): Collection<YoutubeRetentionDoc> => getCollection('youtubeR
 const reviews = (): Collection<YoutubeReviewDoc> => getCollection('youtubeReviews');
 
 export async function findCredential(profileId: string): Promise<YoutubeCredentialDoc | null> {
-  const doc = await credentials().findOne({ _id: profileId });
+  const doc = await credentials().findOne({ _id: profileId, kind: { $ne: 'pending-import' } });
   return doc ? YoutubeCredentialDocSchema.parse(doc) : null;
 }
 
 export async function upsertCredential(doc: YoutubeCredentialDoc): Promise<void> {
   await credentials().replaceOne({ _id: doc._id }, doc, { upsert: true });
+}
+
+export async function insertPendingYoutubeImport(doc: YoutubePendingImportDoc): Promise<void> {
+  await credentials().insertOne(doc);
+}
+
+export async function findPendingYoutubeImport(selectionId: string, now = new Date()): Promise<YoutubePendingImportDoc | null> {
+  const doc = await credentials().findOne({ _id: selectionId, kind: 'pending-import', expiresAt: { $gt: now } });
+  return doc ? YoutubePendingImportDocSchema.parse(doc) : null;
+}
+
+export async function consumePendingYoutubeImport(selectionId: string, now = new Date()): Promise<YoutubePendingImportDoc | null> {
+  const doc = await credentials().findOneAndDelete({ _id: selectionId, kind: 'pending-import', expiresAt: { $gt: now } });
+  return doc ? YoutubePendingImportDocSchema.parse(doc) : null;
 }
 
 export async function patchCredential(profileId: string, patch: Partial<YoutubeCredentialDoc>): Promise<void> {

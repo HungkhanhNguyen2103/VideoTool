@@ -4,9 +4,34 @@ export const YoutubeChannelOptionSchema = z.object({
   youtubeChannelId: z.string().min(1),
   title: z.string(),
   handle: z.string().optional(),
+  customUrl: z.string().optional(),
+  description: z.string().optional(),
+  defaultLanguage: z.string().optional(),
+  country: z.string().optional(),
   thumbnailUrl: z.string().url().optional(),
 }).strict();
 export type YoutubeChannelOption = z.infer<typeof YoutubeChannelOptionSchema>;
+
+export const YoutubeProfileFieldSchema = z.enum(['name', 'handle', 'description', 'language']);
+export type YoutubeProfileField = z.infer<typeof YoutubeProfileFieldSchema>;
+
+export const RefreshYoutubeProfileRequestSchema = z.object({
+  overwrite: z.boolean().default(false),
+  fields: z.array(YoutubeProfileFieldSchema).optional(),
+}).strict();
+export type RefreshYoutubeProfileRequest = z.input<typeof RefreshYoutubeProfileRequestSchema>;
+
+export const RefreshYoutubeProfileResultSchema = z.object({
+  updated: z.array(YoutubeProfileFieldSchema),
+  skipped: z.array(YoutubeProfileFieldSchema),
+}).strict();
+export type RefreshYoutubeProfileResult = z.infer<typeof RefreshYoutubeProfileResultSchema>;
+
+export const YoutubeSetupStatusSchema = z.object({
+  configured: z.boolean(),
+  message: z.string().optional(),
+}).strict();
+export type YoutubeSetupStatus = z.infer<typeof YoutubeSetupStatusSchema>;
 
 /** Safe for channel/project APIs. OAuth credentials intentionally have no fields in this contract. */
 export const YoutubeConnectionSummarySchema = z.object({

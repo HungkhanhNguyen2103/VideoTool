@@ -1,6 +1,6 @@
 # Module: youtube
 
-**Purpose:** Connect an owned YouTube channel with read-only OAuth and synchronize channel/video data for private analytics.
+**Purpose:** Connect owned YouTube channels with read-only OAuth, import them as local profiles, refresh profile fields, and synchronize channel/video data for private analytics.
 **Owns collections:** `youtubeCredentials`, `youtubeVideos`, `youtubeChannelDaily`, `youtubeQuota`, `youtubeRetention`, `youtubeReviews`.
 **May import:** `channel`, `project`, `seo`, `job`, and shared AI via their public `index.ts` APIs.
 
@@ -8,6 +8,7 @@
 
 - OAuth requests exactly `youtube.readonly` and `yt-analytics.readonly`; no write scopes or write endpoints are used.
 - Refresh tokens are stored only as AES-256-GCM ciphertext. Access tokens remain in process memory. OAuth state and PKCE verifier are single-use and expire after ten minutes. Never include credentials in responses, logs, job payloads, or client contracts.
+- Import-mode OAuth stores the refresh token only as AES-256-GCM ciphertext in a pending credential document keyed by a random selection id. A TTL index expires the document after ten minutes, and selection atomically consumes it before creating profiles.
 - All Google REST requests use an injectable `fetch`. Do not log request headers, token responses, or raw provider error bodies.
 - This module never uploads, edits, schedules, deletes, comments on, or reads other creators' videos.
 
@@ -16,6 +17,7 @@
 - Channel discovery uses `channels.list?mine=true`, then the channel's uploads playlist via `playlistItems.list`, followed by `videos.list` in batches of 50. **Never call `search.list`.**
 - Verified YouTube Data API quota documentation says every `channels.list`, `playlistItems.list`, and `videos.list` list call costs 1 quota unit. The default quota allocation is 10,000 units/day; this module keeps an estimate and pauses manual sync above 8,000 estimated units/day. See https://developers.google.com/youtube/v3/determine_quota_cost.
 - A full pass estimates `1 + max(1, ceil(videoCount / 50)) + ceil(videoCount / 50)` units: 5 units for 100 videos, 41 for 1,000. Actual API project usage remains authoritative.
+- Manual profile refresh uses one `channels.list?id=…&part=snippet` call and records one quota unit. Sync includes `snippet` in its existing channel-list request, so best-effort empty-field profile fill adds no list call.
 - The Data API does not expose a normal channel-owner aspect-ratio field in the selected video response. Shorts are classified by duration <= 180 seconds in this phase; verticality is not verified.
 - Analytics API requests are separately recorded by report group. A failed/unavailable report does not invalidate Data API metadata.
 - Analytics reports use `views`, `estimatedMinutesWatched`, `averageViewDuration`, `averageViewPercentage`, `subscribersGained`, and `subscribersLost`; daily rows use the day dimension and retention uses `audienceWatchRatio` by `elapsedVideoTimeRatio`. The report API returns only metrics available for that channel and date range.
@@ -55,5 +57,7 @@ Sources: https://support.google.com/youtube/answer/72851 and https://support.goo
 ## Invariants and limitations
 
 - A YouTube channel can bind to only one local profile. Disconnect revokes best-effort, always removes local credentials, and removes synchronized snapshots only when the caller explicitly requests data deletion.
+- Profile imports and refreshes use the channel module public API. Default refresh fills only empty/default `name`, `handle`, `description`, and `language`; explicit overwrite refresh can change only those selected fields. Links, hashtags, footer, AI disclosure, thumbnail template, publishing schedule, and tagline are never changed by YouTube refresh.
+- Google decides which channels `channels.list?mine=true` returns for a given consent. The picker shows already-bound channels as disabled and supports a repeated sign-in when another channel is not listed.
 - Missing Data or Analytics metrics remain unavailable; never synthesize a value. `impressionsClickThroughRate` is not requested: CTR lives in Studio and in the YouTube Reporting API, which is not implemented here. Revenue is out of scope and no monetary scope is requested.
 - Partner Program thresholds are dated reference values only; YouTube Studio always wins. Do not estimate or show revenue.

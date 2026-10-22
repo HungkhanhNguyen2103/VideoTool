@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { AppError } from '../../shared/errors';
 import { loadConfig } from '../../config';
-import { YoutubeVideoStatsSchema, type YoutubeVideoStats } from '../../../contracts/youtube';
+import { YoutubeVideoStatsSchema, type YoutubeChannelOption, type YoutubeVideoStats } from '../../../contracts/youtube';
 import { decryptRefreshToken } from './credentials-store';
 import { YoutubeOAuthError, refreshAccessToken } from './oauth';
 import { findCredential, getQuota, incrementQuota, patchCredential, upsertVideoDocs } from './repo';
 import { YoutubeVideoDocSchema } from './docs';
 import { syncYoutubeAnalytics } from './analytics-service';
+import { applyYoutubeProfileOption } from './profile-refresh';
 
 export const YOUTUBE_DATA_API_DAILY_BUDGET = 10_000;
 export const YOUTUBE_DATA_API_SYNC_SOFT_LIMIT = 8_000;
@@ -147,8 +148,7 @@ async function getAccessToken(profileId: string, fetcher: typeof fetch, config =
   }
 }
 
-async function runYoutubeSync(profileId: string, context: YoutubeSyncJobContext, fetcher: typeof fetch): Promise<{ videos: number; removed: number; quotaUnits: number }> {
-  const config = loadConfig();
+async function runYoutubeSync(profileId: string, context: YoutubeSyncJobContext, fetcher: typeof fetch, config: ReturnType<typeof loadConfig>): Promise<{ videos: number; removed: number; quotaUnits: number }> {
   const credential = await findCredential(profileId);
   if (!credential?.youtubeChannelId) throw new AppError('Kênh YouTube chưa được kết nối.', 409, 'YOUTUBE_NOT_CONNECTED');
   const { token } = await getAccessToken(profileId, fetcher, config);
@@ -156,9 +156,9 @@ async function runYoutubeSync(profileId: string, context: YoutubeSyncJobContext,
   const now = new Date();
   const fetchedAt = now.toISOString();
   const channelUrl = new URL('https://www.googleapis.com/youtube/v3/channels');
-  channelUrl.searchParams.set('part', 'contentDetails,statistics');
+  channelUrl.searchParams.set('part', 'snippet,contentDetails,statistics');
   channelUrl.searchParams.set('id', credential.youtubeChannelId);
-  const channel = await apiJson<{ items?: { contentDetails?: { relatedPlaylists?: { uploads?: string } }; statistics?: { subscriberCount?: string } }[] }>(channelUrl, token, fetcher);
+  const channel = await apiJson<{ items?: { snippet?: { title?: string; customUrl?: string; description?: string; defaultLanguage?: string; country?: string; thumbnails?: { default?: { url?: string }; high?: { url?: string } } }; contentDetails?: { relatedPlaylists?: { uploads?: string } }; statistics?: { subscriberCount?: string } }[] }>(channelUrl, token, fetcher);
   units += 1;
   const uploads = channel.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!uploads) throw new AppError('Không tìm thấy danh sách video tải lên của kênh.', 502, 'YOUTUBE_UPLOADS_UNAVAILABLE');
@@ -188,16 +188,39 @@ async function runYoutubeSync(profileId: string, context: YoutubeSyncJobContext,
     lastSyncError: undefined,
     needsReconnect: false,
     subscriberCount: numeric(channel.items?.[0]?.statistics?.subscriberCount),
+    ...(channel.items?.[0]?.snippet?.thumbnails?.high?.url ?? channel.items?.[0]?.snippet?.thumbnails?.default?.url
+      ? { thumbnailUrl: channel.items[0]!.snippet!.thumbnails?.high?.url ?? channel.items[0]!.snippet!.thumbnails?.default?.url }
+      : {}),
     lastSyncReport: analyticsReport,
   });
+  const snippet = channel.items?.[0]?.snippet;
+  if (snippet) {
+    try {
+      const option: YoutubeChannelOption = {
+        youtubeChannelId: credential.youtubeChannelId,
+        title: snippet.title ?? '',
+        ...(snippet.customUrl ? { handle: snippet.customUrl, customUrl: snippet.customUrl } : {}),
+        ...(snippet.description !== undefined ? { description: snippet.description } : {}),
+        ...(snippet.defaultLanguage ? { defaultLanguage: snippet.defaultLanguage } : {}),
+        ...(snippet.country ? { country: snippet.country } : {}),
+        ...(snippet.thumbnails?.high?.url ?? snippet.thumbnails?.default?.url
+          ? { thumbnailUrl: snippet.thumbnails?.high?.url ?? snippet.thumbnails?.default?.url }
+          : {}),
+      };
+      const profileRefresh = await applyYoutubeProfileOption(profileId, option);
+      if (profileRefresh.updated.length) await context.appendLog(`Đã cập nhật thông tin hồ sơ từ YouTube: ${profileRefresh.updated.join(', ')}.`);
+    } catch {
+      // Profile refresh is best-effort and cannot invalidate a completed video sync.
+    }
+  }
   await context.appendLog(`Đã đồng bộ ${stats.length} video; quota dữ liệu ước tính ${units} đơn vị.`);
   await context.reportProgress(100);
   return { videos: stats.length, removed: Math.max(0, ids.length - stats.length), quotaUnits: units };
 }
 
-export async function syncYoutubeChannel(profileId: string, context: YoutubeSyncJobContext, fetcher: typeof fetch = fetch): Promise<{ videos: number; removed: number; quotaUnits: number }> {
+export async function syncYoutubeChannel(profileId: string, context: YoutubeSyncJobContext, fetcher: typeof fetch = fetch, config = loadConfig()): Promise<{ videos: number; removed: number; quotaUnits: number }> {
   try {
-    return await runYoutubeSync(profileId, context, fetcher);
+    return await runYoutubeSync(profileId, context, fetcher, config);
   } catch (error) {
     const message = error instanceof AppError ? error.message : 'Đồng bộ YouTube không thành công.';
     await patchCredential(profileId, { lastSyncError: message }).catch(() => undefined);

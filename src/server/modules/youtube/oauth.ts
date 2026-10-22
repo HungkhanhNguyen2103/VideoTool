@@ -16,15 +16,26 @@ export function createOauthState(): string {
   return randomBytes(32).toString('base64url');
 }
 
-export type PendingOAuthState = { profileId: string; verifier: string; expiresAt: number; redirectUri?: string };
+export type PendingOAuthState =
+  | { mode: 'profile'; profileId: string; verifier: string; expiresAt: number; redirectUri?: string; openerOrigin?: string }
+  | { mode: 'import'; verifier: string; expiresAt: number; redirectUri?: string; openerOrigin?: string };
 
 export class OAuthStateStore {
   private readonly states = new Map<string, PendingOAuthState>();
 
   constructor(private readonly now: () => number = Date.now, private readonly ttlMs = 10 * 60_000) {}
 
-  put(state: string, profileId: string, verifier: string, redirectUri?: string): void {
-    this.states.set(state, { profileId, verifier, expiresAt: this.now() + this.ttlMs, ...(redirectUri ? { redirectUri } : {}) });
+  put(state: string, profileId: string, verifier: string, redirectUri?: string, openerOrigin?: string): void {
+    this.states.set(state, { mode: 'profile', profileId, verifier, expiresAt: this.now() + this.ttlMs, ...(redirectUri ? { redirectUri } : {}), ...(openerOrigin ? { openerOrigin } : {}) });
+    this.removeExpired();
+  }
+
+  putImport(state: string, verifier: string, redirectUri?: string, openerOrigin?: string): void {
+    this.states.set(state, { mode: 'import', verifier, expiresAt: this.now() + this.ttlMs, ...(redirectUri ? { redirectUri } : {}), ...(openerOrigin ? { openerOrigin } : {}) });
+    this.removeExpired();
+  }
+
+  private removeExpired(): void {
     for (const [key, value] of this.states) if (value.expiresAt < this.now()) this.states.delete(key);
   }
 
@@ -33,6 +44,17 @@ export class OAuthStateStore {
     const pending = this.states.get(state);
     this.states.delete(state);
     return pending && pending.expiresAt >= this.now() ? pending : null;
+  }
+
+  peek(state: string | undefined): PendingOAuthState | null {
+    if (!state) return null;
+    const pending = this.states.get(state);
+    if (!pending) return null;
+    if (pending.expiresAt < this.now()) {
+      this.states.delete(state);
+      return null;
+    }
+    return pending;
   }
 }
 
