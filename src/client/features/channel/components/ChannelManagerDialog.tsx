@@ -231,16 +231,16 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
             <div className={styles.panelHeader}>
               <h3>Kênh đã lưu</h3>
               <div className={styles.headerActions}>
-                <Button size="sm" onClick={startNew} disabled={busy}>Tạo kênh</Button>
-                <div className={styles.importControl}>
-                  <Button size="sm" variant="amber" onClick={() => void importFromYoutube()} disabled={busy || importPending || youtubeSetupQuery.data?.configured !== true}>
-                    {importPending ? 'Đang chờ Google…' : 'Thêm kênh từ YouTube'}
-                  </Button>
-                  <p className={styles.muted}>Google quyết định kênh nào được liệt kê. Cần thêm kênh khác? Bấm lại và chọn kênh khác khi đăng nhập.</p>
-                  {youtubeSetupQuery.data?.configured === false && <p className={styles.muted}>{youtubeSetupQuery.data.message}</p>}
-                  {youtubeSetupQuery.isError && <p className={styles.muted}>Không kiểm tra được cấu hình Google. Hãy tải lại trang.</p>}
-                </div>
+                <Button className={styles.headerActionButton} size="sm" onClick={startNew} disabled={busy}>Tạo kênh</Button>
+                <Button className={styles.headerActionButton} size="sm" variant="amber" onClick={() => void importFromYoutube()} disabled={busy || importPending || youtubeSetupQuery.data?.configured !== true}>
+                  {importPending ? 'Đang chờ Google…' : 'Thêm kênh từ YouTube'}
+                </Button>
               </div>
+              <p className={styles.listHelp}>
+                Google quyết định kênh nào được liệt kê. Cần thêm kênh khác? Bấm lại và chọn kênh khác khi đăng nhập.
+                {youtubeSetupQuery.data?.configured === false && ` ${youtubeSetupQuery.data.message}`}
+                {youtubeSetupQuery.isError && ' Không kiểm tra được cấu hình Google. Hãy tải lại trang.'}
+              </p>
             </div>
             {notice && <p className={styles.notice} role="status">{notice}</p>}
             {youtubeImportError && <p className={styles.error} role="alert">{youtubeImportError}</p>}
