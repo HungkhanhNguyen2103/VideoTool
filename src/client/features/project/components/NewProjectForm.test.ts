@@ -18,4 +18,14 @@ describe('NewProjectForm script configuration layout', () => {
     expect(css).toContain('.numericConfigField > label {');
     expect(css).toContain('.scriptConfigGrid { grid-template-columns: minmax(0, 1fr); }');
   });
+
+  it('keeps idea references empty, shows the research note, and reports a created project for used-status handoff', async () => {
+    const source = await readFile(new URL('./NewProjectForm.tsx', import.meta.url), 'utf8');
+    const page = await readFile(new URL('../ProjectInitPage.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('if (researchNote) merged.referencesText = \'\';');
+    expect(source).toContain('prefillResearchNote &&');
+    expect(source).toContain('onProjectCreated?.(project.id)');
+    expect(page).toContain('YoutubeIdeaProjectPrefillSchema');
+    expect(page).toContain('markYoutubeIdeaUsed(ideaHandoff.channelId, ideaHandoff.ideaId, projectId)');
+  });
 });

@@ -223,6 +223,7 @@
 .hiddenInput { display: none; }
 .stylePackField { grid-column: 1 / -1; }
 .channelField { max-width: 36rem; }
+.prefillResearchNote { margin: 0; padding: .55rem .65rem; border-left: 3px solid var(--amber); color: var(--amber-text); background: var(--amber-bg); font-size: .72rem; line-height: 1.45; }
 
 .formActions {
   display: flex;

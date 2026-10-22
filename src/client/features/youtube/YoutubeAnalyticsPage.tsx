@@ -5,6 +5,7 @@ import { Button } from '../../shared/ui/Button';
 import { ChannelYoutubeControls } from './components/ChannelYoutubeControls';
 import { GrowthPlanPanel } from './components/GrowthPlanPanel';
 import { ReviewV2Panel } from './components/ReviewV2Panel';
+import { VideoIdeasPanel } from './components/VideoIdeasPanel';
 import { useChannels } from '../channel/hooks';
 import { useProjects } from '../project/hooks';
 import { useYoutubeOverview, useYoutubeSuggestedLinks, useYoutubeVideo, useYoutubeVideos, invalidateYoutubeLinkQueries, youtubeChannelsOverviewKey, youtubeGrowthPlanStatusKey } from './hooks';
@@ -335,6 +336,7 @@ export function YoutubeAnalyticsPage() {
 
             <GrowthPlanPanel channelId={channel.id} />
             <ReviewV2Panel channelId={channel.id} target="channel" onOpenVideo={setSelectedVideoId} />
+            <VideoIdeasPanel channelId={channel.id} language={channel.language} />
 
             <section className={styles.panel} aria-labelledby="trend-heading">
               <div className={styles.panelHeading}><div><h2 id="trend-heading">Xu hướng 28 ngày</h2><p>So sánh 28 ngày gần nhất với 28 ngày trước đó.</p></div><Button size="sm" onClick={() => void overviewQuery.refetch()}>Làm mới dữ liệu</Button></div>

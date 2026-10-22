@@ -22,6 +22,11 @@ import {
   syncAllYoutubeChannels,
   refreshYoutubeProfile,
   unlinkProjectFromYoutubeVideo,
+  getYoutubeIdeas,
+  startYoutubeIdeasGeneration,
+  updateYoutubeIdea,
+  prepareYoutubeIdeaProject,
+  markYoutubeIdeaUsed,
 } from './api';
 
 afterEach(() => vi.restoreAllMocks());
@@ -143,5 +148,38 @@ describe('YouTube analytics client API', () => {
 
     await expect(saveYoutubeGrowthPlan('channel-1', config)).resolves.toEqual(saved);
     expect(fetchMock).toHaveBeenCalledWith('/api/youtube/channels/channel-1/plan', expect.objectContaining({ method: 'PUT', body: JSON.stringify(config) }));
+  });
+
+  it('loads, generates, updates, and hands off video ideas without sending an implicit duration', async () => {
+    const prefill = { title: 'Idea', language: 'vi', brief: 'A sufficiently long creative brief.', referencesText: '', scriptPresetId: 'hubris-trap', targetDurationSec: 600, chapterCount: 5, channelId: 'channel-1', researchNote: 'Chưa có nguồn: cần research có dẫn nguồn trước khi viết kịch bản' };
+    const response = { ideaId: 'idea-1', prefill };
+    const idea = {
+      id: 'idea-1', channelProfileId: 'channel-1', runId: 'run-1', evidenceTier: 'no-performance-data', backend: 'cli', model: 'claude-opus-4-5', promptVersion: 'video-ideas-v1', generatedAt: '2026-10-22T10:00:00.000Z',
+      idea: { id: 'idea-1', title: 'Idea', hook: 'A moment.', brief: 'A plan appears complete. One assumption goes unchecked. A warning sign appears. The character keeps going. The trap closes. The cost follows.', presetId: 'hubris-trap', motif: { hunter: { text: 'A hunter.', evidence: 'strong' }, perfectPlan: { text: 'A plan.', evidence: 'partial' }, blindSpot: { text: 'A gap.', evidence: 'partial' }, selfDestruction: { text: 'A fall.', evidence: 'strong' } }, whyForThisChannel: 'A coverage gap.', testVariable: 'topic', successCriterion: { description: 'Compare retention.', afterVideos: 3 }, unverifiedFacts: [], risks: [], evidenceTier: 'no-performance-data', scores: { fit: 4, clarity: 4, riskOfThinSources: 2 }, suggestedDurationSec: 600, suggestedChapterCount: 5 },
+      status: 'new',
+    };
+    const list = { ideas: [idea], latestRun: null, currentTier: 'no-performance-data', matureVideoCount: 2, minimumMatureForDataInformed: 10, currentCoverageFingerprint: 'a'.repeat(64), stale: false };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(list), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jobId: 'ideas-job-1' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...idea, status: 'chosen' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 200 }));
+    await expect(getYoutubeIdeas('channel/one')).resolves.toMatchObject({ currentTier: 'no-performance-data', ideas: [{ id: 'idea-1' }] });
+    await expect(startYoutubeIdeasGeneration('channel/one', { backend: 'cli', steering: 'lịch sử Việt Nam' })).resolves.toEqual({ jobId: 'ideas-job-1' });
+    await expect(updateYoutubeIdea('channel/one', 'idea/one', { status: 'chosen' })).resolves.toMatchObject({ status: 'chosen' });
+    await expect(prepareYoutubeIdeaProject('channel/one', 'idea/one')).resolves.toEqual(response);
+    await expect(markYoutubeIdeaUsed('channel/one', 'idea/one', 'project/one')).resolves.toEqual(response);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/youtube/channels/channel%2Fone/ideas',
+      '/api/youtube/channels/channel%2Fone/ideas/generate',
+      '/api/youtube/channels/channel%2Fone/ideas/idea%2Fone',
+      '/api/youtube/channels/channel%2Fone/ideas/idea%2Fone/create-project',
+      '/api/youtube/channels/channel%2Fone/ideas/idea%2Fone/create-project',
+    ]);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ backend: 'cli', steering: 'lịch sử Việt Nam' }) });
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ status: 'chosen' }) });
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'POST', body: '{}' });
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ projectId: 'project/one' }) });
   });
 });

@@ -14,6 +14,7 @@ export const youtubeActiveSyncKey = (channelId: string) => [...YOUTUBE_QUERY_KEY
 export const youtubeSetupStatusKey = [...YOUTUBE_QUERY_KEY, 'setup'] as const;
 export const youtubeChannelReviewV2Key = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'review-v2', 'channel', channelId] as const;
 export const youtubeVideoReviewV2Key = (channelId: string, videoId: string) => [...YOUTUBE_QUERY_KEY, 'review-v2', 'video', channelId, videoId] as const;
+export const youtubeIdeasKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'ideas', channelId] as const;
 export const youtubeChannelsOverviewKey = [...YOUTUBE_QUERY_KEY, 'channels-overview'] as const;
 
 export async function invalidateYoutubeChannelQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, channelId: string): Promise<void> {
@@ -117,4 +118,14 @@ export function useYoutubeChannelReviewV2(channelId: string, enabled = true) {
 
 export function useYoutubeVideoReviewV2(channelId: string, videoId: string | null) {
   return useQuery({ queryKey: youtubeVideoReviewV2Key(channelId, videoId ?? ''), queryFn: () => api.getYoutubeVideoReviewV2(channelId, videoId!), enabled: Boolean(channelId && videoId) });
+}
+
+export function useYoutubeIdeas(channelId: string) {
+  return useQuery({
+    queryKey: youtubeIdeasKey(channelId),
+    queryFn: () => api.getYoutubeIdeas(channelId),
+    enabled: Boolean(channelId),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
 }

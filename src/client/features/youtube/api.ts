@@ -15,6 +15,7 @@ import { YoutubeChannelsOverviewSchema, YoutubeSyncAllResultSchema } from '../..
 import { YoutubeGrowthExperimentInputSchema, YoutubeGrowthPlanConfigSchema, YoutubeGrowthPlanSchema, YoutubeGrowthPlanStatusSchema } from '../../../contracts/youtube-plan';
 import { YoutubeReviewRequestSchema, YoutubeReviewV2ResultSchema, type YoutubeReviewRequest } from '../../../contracts/youtube-review';
 import { ClaudeCliStatusSchema } from '../../../contracts/script';
+import { YoutubeIdeaCreateProjectRequestSchema, YoutubeIdeaCreateProjectResponseSchema, YoutubeIdeasGenerateRequestSchema, YoutubeIdeasGenerateResponseSchema, YoutubeIdeasListResponseSchema, YoutubeIdeaStatusPatchSchema, type YoutubeIdeasGenerateRequest, type YoutubeIdeaStatusPatch } from '../../../contracts/youtube-ideas';
 import { apiRequest } from '../../shared/api-client';
 
 const VideoListSchema = z.array(YoutubeVideoListItemSchema);
@@ -147,6 +148,40 @@ export function startYoutubeVideoReviewV2(channelId: string, videoId: string, in
 
 export function getYoutubeVideoReviewV2(channelId: string, videoId: string) {
   return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}/review-v2`, YoutubeReviewV2ResultSchema.nullable());
+}
+
+export function getYoutubeIdeas(channelId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/ideas`, YoutubeIdeasListResponseSchema);
+}
+
+export function startYoutubeIdeasGeneration(channelId: string, input: Partial<YoutubeIdeasGenerateRequest> = {}) {
+  const parsedInput = YoutubeIdeasGenerateRequestSchema.partial().parse(input);
+  const body = Object.fromEntries(Object.keys(input).map((key) => [key, parsedInput[key as keyof typeof parsedInput]]));
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/ideas/generate`, YoutubeIdeasGenerateResponseSchema, {
+    method: 'POST', body,
+  });
+}
+
+export function updateYoutubeIdea(channelId: string, ideaId: string, input: YoutubeIdeaStatusPatch) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/ideas/${encodeURIComponent(ideaId)}`, YoutubeIdeasListResponseSchema.shape.ideas.element, {
+    method: 'PATCH', body: YoutubeIdeaStatusPatchSchema.parse(input),
+  });
+}
+
+export function deleteYoutubeIdea(channelId: string, ideaId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/ideas/${encodeURIComponent(ideaId)}`, EmptySchema, { method: 'DELETE' });
+}
+
+export function prepareYoutubeIdeaProject(channelId: string, ideaId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/ideas/${encodeURIComponent(ideaId)}/create-project`, YoutubeIdeaCreateProjectResponseSchema, {
+    method: 'POST', body: YoutubeIdeaCreateProjectRequestSchema.parse({}),
+  });
+}
+
+export function markYoutubeIdeaUsed(channelId: string, ideaId: string, projectId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/ideas/${encodeURIComponent(ideaId)}/create-project`, YoutubeIdeaCreateProjectResponseSchema, {
+    method: 'POST', body: YoutubeIdeaCreateProjectRequestSchema.parse({ projectId }),
+  });
 }
 
 export function linkProjectToYoutubeVideo(projectId: string, videoId: string) {

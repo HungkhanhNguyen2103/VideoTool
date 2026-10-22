@@ -50,11 +50,12 @@ const DURATION_CHIPS = [
 const FIELD_ORDER = ['title', 'brief', 'targetDurationSec', 'chapterCount'] as const;
 
 export type NewProjectFormProps = {
-  prefill?: ProjectImportSeed | null;
+  prefill?: (ProjectImportSeed & { channelId?: string | null; researchNote?: string }) | null;
   onPrefillApplied?: () => void;
+  onProjectCreated?: (projectId: string) => Promise<void>;
 };
 
-export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProps) {
+export function NewProjectForm({ prefill, onPrefillApplied, onProjectCreated }: NewProjectFormProps) {
   const navigate = useNavigate();
   const setCurrentProjectId = useProjectUiStore((s) => s.setCurrentProjectId);
   const createProject = useCreateProject();
@@ -64,6 +65,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   const channelsQuery = useChannels();
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const [referenceBusy, setReferenceBusy] = useState(false);
+  const [prefillResearchNote, setPrefillResearchNote] = useState<string | null>(null);
 
   const {
     register,
@@ -100,7 +102,12 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
 
   useEffect(() => {
     if (!prefill) return;
-    reset(mergeProjectPrefill(getValues(), prefill));
+    const { channelId, researchNote, ...seed } = prefill;
+    const merged = mergeProjectPrefill(getValues(), seed);
+    if (channelId !== undefined) merged.channelId = channelId;
+    if (researchNote) merged.referencesText = '';
+    setPrefillResearchNote(researchNote ?? null);
+    reset(merged);
     onPrefillApplied?.();
   }, [getValues, onPrefillApplied, prefill, reset]);
 
@@ -162,19 +169,20 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
   async function onSubmit(data: CreateProjectRequest, event?: React.BaseSyntheticEvent) {
     const submitter = (event?.nativeEvent as SubmitEvent | undefined)?.submitter as HTMLButtonElement | undefined;
     const mode = submitter?.value === 'draft' ? 'draft' : 'outline';
-    try {
-      const project = await createProject.mutateAsync(data);
-      setCurrentProjectId(project.id);
-      reset(DEFAULT_VALUES);
-      onPrefillApplied?.();
-      if (mode === 'outline') {
-        toast('Đã tạo dự án. Đang chuyển sang "Duyệt & Tái Tạo"…');
-        navigate(`/production/${project.id}/review`);
-      } else {
-        toast('Đã lưu bản nháp.');
-      }
-    } catch (err) {
-      toast(`Không tạo được dự án: ${err instanceof Error ? err.message : 'Lỗi không xác định.'}`);
+    let project: Awaited<ReturnType<typeof createProject.mutateAsync>>;
+    try { project = await createProject.mutateAsync(data); }
+    catch (err) { toast(`Không tạo được dự án: ${err instanceof Error ? err.message : 'Lỗi không xác định.'}`); return; }
+    setCurrentProjectId(project.id);
+    reset(DEFAULT_VALUES);
+    setPrefillResearchNote(null);
+    onPrefillApplied?.();
+    try { await onProjectCreated?.(project.id); }
+    catch { toast('Dự án đã tạo, nhưng chưa đánh dấu được ý tưởng là đã dùng.'); }
+    if (mode === 'outline') {
+      toast('Đã tạo dự án. Đang chuyển sang "Duyệt & Tái Tạo"…');
+      navigate(`/production/${project.id}/review`);
+    } else {
+      toast('Đã lưu bản nháp.');
     }
   }
 
@@ -280,6 +288,7 @@ export function NewProjectForm({ prefill, onPrefillApplied }: NewProjectFormProp
             <label htmlFor="refs-text">
               Tư liệu tham khảo <span className={styles.optional}>(không bắt buộc)</span>
             </label>
+            {prefillResearchNote && <p className={styles.prefillResearchNote} role="note">{prefillResearchNote}</p>}
             <textarea
               className={`${styles.input} ${styles.textarea}`}
               id="refs-text"
