@@ -35,6 +35,9 @@
 .reconnect { border-color: var(--amber-bd); color: var(--amber-text); background: var(--amber-bg); }
 .not-configured { color: var(--text-3); }
 .disconnected { color: var(--text-2); }
+.growthBadges { display: flex; flex-wrap: wrap; gap: .35rem; }
+.growthBadges span { padding: .2rem .42rem; border: 1px solid var(--border-2); border-radius: 999px; color: var(--text-2); font-size: .59rem; font-weight: 700; }
+.growthBadges .growthWarning { border-color: var(--amber-bd); color: var(--amber-text); background: var(--amber-bg); }
 .counts { display: flex; flex-wrap: wrap; gap: .35rem .8rem; color: var(--text-3); font-size: .65rem; }
 .counts strong { color: var(--text); font-size: .74rem; }
 .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }

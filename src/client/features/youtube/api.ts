@@ -10,8 +10,9 @@ import {
   YoutubeVideoListItemSchema,
   type YoutubeVideoListItem,
 } from '../../../contracts/youtube-analytics';
-import { RefreshYoutubeProfileRequestSchema, RefreshYoutubeProfileResultSchema, YoutubeConnectionSummarySchema, YoutubeSetupStatusSchema, type RefreshYoutubeProfileRequest } from '../../../contracts/youtube';
+import { RefreshYoutubeProfileRequestSchema, RefreshYoutubeProfileResultSchema, YoutubeConnectionSummarySchema, YoutubeManualReachInputSchema, YoutubePlanExclusionInputSchema, YoutubeSetupStatusSchema, YoutubeVideoStatsSchema, type RefreshYoutubeProfileRequest } from '../../../contracts/youtube';
 import { YoutubeChannelsOverviewSchema, YoutubeSyncAllResultSchema } from '../../../contracts/youtube-overview';
+import { YoutubeGrowthExperimentInputSchema, YoutubeGrowthPlanConfigSchema, YoutubeGrowthPlanSchema, YoutubeGrowthPlanStatusSchema } from '../../../contracts/youtube-plan';
 import { apiRequest } from '../../shared/api-client';
 
 const VideoListSchema = z.array(YoutubeVideoListItemSchema);
@@ -80,6 +81,38 @@ export function getYoutubeVideos(channelId: string, filters: YoutubeVideoFilters
 
 export function getYoutubeVideo(channelId: string, videoId: string) {
   return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}`, YoutubeVideoDetailSchema);
+}
+
+export function getYoutubeGrowthPlan(channelId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/plan`, YoutubeGrowthPlanSchema);
+}
+
+export function saveYoutubeGrowthPlan(channelId: string, input: unknown) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/plan`, YoutubeGrowthPlanSchema, { method: 'PUT', body: YoutubeGrowthPlanConfigSchema.parse(input) });
+}
+
+export function getYoutubeGrowthPlanStatus(channelId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/plan-status`, YoutubeGrowthPlanStatusSchema);
+}
+
+export function addYoutubeGrowthExperiment(channelId: string, input: unknown) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/plan/experiments`, YoutubeGrowthPlanSchema, { method: 'POST', body: YoutubeGrowthExperimentInputSchema.parse(input) });
+}
+
+export function deleteYoutubeGrowthExperiment(channelId: string, experimentId: string) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/plan/experiments/${encodeURIComponent(experimentId)}`, YoutubeGrowthPlanSchema, { method: 'DELETE' });
+}
+
+export function saveYoutubeManualReach(channelId: string, videoId: string, input: unknown) {
+  return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}/manual-reach`, YoutubeVideoStatsSchema, { method: 'PUT', body: YoutubeManualReachInputSchema.parse(input) });
+}
+
+export function clearYoutubeManualReach(channelId: string, videoId: string) {
+  return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}/manual-reach`, YoutubeVideoStatsSchema, { method: 'DELETE' });
+}
+
+export function setYoutubePlanExclusion(channelId: string, videoId: string, excluded: boolean) {
+  return apiRequest(`/api/youtube/videos/${encodeURIComponent(channelId)}/${encodeURIComponent(videoId)}/plan-exclusion`, YoutubeVideoStatsSchema, { method: 'PUT', body: YoutubePlanExclusionInputSchema.parse({ excluded }) });
 }
 
 export function getSuggestedYoutubeLinks(channelId: string) {

@@ -2,8 +2,9 @@ import { closeDb, connectDb, getDb } from '../src/server/db/client';
 import { SeoPackageSchema } from '../src/contracts/seo';
 import { ChannelDocSchema } from '../src/server/modules/channel/docs';
 import { ProjectDocSchema } from '../src/server/modules/project/docs';
-import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema } from '../src/server/modules/youtube/docs';
+import { YoutubeChannelDailyDocSchema, YoutubeCredentialDocSchema, YoutubeGrowthPlanDocSchema, YoutubeRetentionDocSchema, YoutubeReviewDocSchema, YoutubeVideoDocSchema } from '../src/server/modules/youtube/docs';
 import { ensureYoutubeIndexes } from '../src/server/modules/youtube/indexes';
+import { YoutubeGrowthPlanConfigSchema } from '../src/contracts/youtube-plan';
 
 const seedPrefix = 'youtube-demo-';
 const seedStamp = '20261022';
@@ -150,6 +151,40 @@ function makeVideo(channelProfileId: string, index: number, now: Date) {
   });
 }
 
+function makeGrowthPlan(channelProfileId: string, nicheStartDate: string, experiments: { id: string; date: string; variable: 'topic' | 'title'; note: string }[] = []) {
+  const now = new Date().toISOString();
+  return YoutubeGrowthPlanDocSchema.parse({
+    ...YoutubeGrowthPlanConfigSchema.parse({ nicheStartDate, toleranceMonths: 1 }),
+    _id: channelProfileId,
+    channelProfileId,
+    experiments,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+function makeGrowthVideo(channelProfileId: string, index: number, count: number, views: number, now: Date) {
+  const videoId = `demo-growth-${channelProfileId.slice(-1)}-${String(index + 1).padStart(2, '0')}`;
+  const ageDays = 31 + (count - index - 1) * 2;
+  return YoutubeVideoDocSchema.parse({
+    _id: `${channelProfileId}:${videoId}`,
+    channelProfileId,
+    videoId,
+    title: `Kế hoạch demo · video ${index + 1}`,
+    publishedAt: offsetDays(now, -ageDays).toISOString(),
+    durationSec: 600,
+    isShort: false,
+    privacy: 'public',
+    viewCount: views * 2,
+    likeCount: null,
+    commentCount: null,
+    fetchedAt: now.toISOString(),
+    analytics: { '365d': { views: views * 2, estimatedMinutesWatched: views * 2 }, lifetime: { views: views * 2 } },
+    first28d: { capturedAt: now.toISOString(), views, estimatedMinutesWatched: views * 2, averageViewDurationSec: 120, averageViewPercentage: 20, subscribersGained: 1, subscribersLost: 0 },
+    removed: false,
+  });
+}
+
 async function main() {
   const { uri, database } = requireSafeTarget();
   await connectDb(uri, database);
@@ -160,6 +195,10 @@ async function main() {
     `${seedPrefix}unavailable-${seedStamp}`,
     `${seedPrefix}disconnected-${seedStamp}`,
     `${seedPrefix}reconnect-${seedStamp}`,
+    `${seedPrefix}growth-2-${seedStamp}`,
+    `${seedPrefix}growth-12-${seedStamp}`,
+    `${seedPrefix}growth-20-${seedStamp}`,
+    `${seedPrefix}growth-45-${seedStamp}`,
   ];
   await Promise.all([
     db.collection('channels').deleteMany({ _id: { $in: demoIds } }),
@@ -169,15 +208,21 @@ async function main() {
     db.collection('youtubeChannelDaily').deleteMany({ channelProfileId: { $in: demoIds } }),
     db.collection('youtubeRetention').deleteMany({ channelProfileId: { $in: demoIds } }),
     db.collection('youtubeReviews').deleteMany({ channelProfileId: { $in: demoIds } }),
+    db.collection('youtubeChannelTraffic').deleteMany({ channelProfileId: { $in: demoIds } }),
+    db.collection('youtubeGrowthPlans').deleteMany({ channelProfileId: { $in: demoIds } }),
   ]);
 
-  const [full, empty, unavailable, disconnected, reconnect] = demoIds;
+  const [full, empty, unavailable, disconnected, reconnect, growth2, growth12, growth20, growth45] = demoIds;
   const channels = [
     makeChannel(full!, 'Demo · Đầy đủ', '@demo-full'),
     makeChannel(empty!, 'Demo · Trống', '@demo-empty'),
     makeChannel(unavailable!, 'Demo · Chưa có Analytics', '@demo-no-data'),
     makeChannel(disconnected!, 'Demo · Chưa kết nối', '@demo-offline'),
     makeChannel(reconnect!, 'Demo · Cần kết nối lại', '@demo-reconnect'),
+    makeChannel(growth2!, 'Demo · 2 video trưởng thành', '@demo-growth-2'),
+    makeChannel(growth12!, 'Demo · 12 video trưởng thành', '@demo-growth-12'),
+    makeChannel(growth20!, 'Demo · 20 video trưởng thành', '@demo-growth-20'),
+    makeChannel(growth45!, 'Demo · 45 video trưởng thành', '@demo-growth-45'),
   ];
   await db.collection('channels').insertMany(channels);
   await ensureYoutubeIndexes();
@@ -188,6 +233,10 @@ async function main() {
     makeCredential(empty!, 'UC-DEMO-EMPTY', 'Demo · Trống', 42),
     makeCredential(unavailable!, 'UC-DEMO-NODATA', 'Demo · Chưa có Analytics', 180),
     makeCredential(reconnect!, 'UC-DEMO-RECONNECT', 'Demo · Cần kết nối lại', 760, true),
+    makeCredential(growth2!, 'UC-DEMO-GROWTH-2', 'Demo · 2 video trưởng thành', 30),
+    makeCredential(growth12!, 'UC-DEMO-GROWTH-12', 'Demo · 12 video trưởng thành', 120),
+    makeCredential(growth20!, 'UC-DEMO-GROWTH-20', 'Demo · 20 video trưởng thành', 80),
+    makeCredential(growth45!, 'UC-DEMO-GROWTH-45', 'Demo · 45 video trưởng thành', 100),
   ];
   fullCredentials[2]!.lastSyncReport = {
     channelDaily90d: { status: 'unavailable', message: 'No data for demo scenario.' },
@@ -238,8 +287,28 @@ async function main() {
     YoutubeReviewDocSchema.parse({ _id: `${full}:video:demo-video-02`, channelProfileId: full!, target: 'video', targetId: 'demo-video-02', promptVersion: 'youtube-review-v1', dataWindow: '28d', result: reviewResult, generatedAt: now }),
   ]);
 
+  const growthChannels: { id: string; count: number; views: (index: number) => number; experiments: { id: string; date: string; variable: 'topic' | 'title'; note: string }[] }[] = [
+    { id: growth2!, count: 2, views: (index: number) => 70 + index * 15, experiments: [] as { id: string; date: string; variable: 'topic' | 'title'; note: string }[] },
+    { id: growth12!, count: 12, views: () => 350, experiments: [] as { id: string; date: string; variable: 'topic' | 'title'; note: string }[] },
+    { id: growth20!, count: 20, views: (index: number) => Math.max(20, 200 - index * 10), experiments: [] as { id: string; date: string; variable: 'topic' | 'title'; note: string }[] },
+    { id: growth45!, count: 45, views: (index: number) => 20 + index % 3, experiments: [
+      { id: 'demo-exp-topic', date: dateOnly(offsetDays(now, -30)), variable: 'topic' as const, note: 'Đổi nhóm chủ đề trong dữ liệu minh họa.' },
+      { id: 'demo-exp-title', date: dateOnly(offsetDays(now, -10)), variable: 'title' as const, note: 'Thử một cách đặt tiêu đề khác trong dữ liệu minh họa.' },
+    ] },
+  ];
+  for (const growth of growthChannels) {
+    const startDate = dateOnly(offsetDays(now, -150));
+    await db.collection('youtubeGrowthPlans').insertOne(makeGrowthPlan(growth.id, startDate, growth.experiments));
+    await db.collection('youtubeVideos').insertMany(Array.from({ length: growth.count }, (_unused, index) => makeGrowthVideo(growth.id, index, growth.count, growth.views(index), now)));
+    await db.collection('youtubeChannelDaily').insertMany(Array.from({ length: 90 }, (_unused, index) => {
+      const date = dateOnly(offsetDays(now, -(91 - index)));
+      return YoutubeChannelDailyDocSchema.parse({ _id: `${growth.id}:${date}`, channelProfileId: growth.id, date, views: 20 + index, estimatedMinutesWatched: 40 + index, subscribersGained: 1, subscribersLost: 0 });
+    }));
+  }
+
   console.log(`Seeded Task 112 demo data into isolated database ${database}.`);
   console.log(`Analytics scenarios: ${full}, ${empty}, ${unavailable}; connection scenarios: ${disconnected}, ${reconnect}.`);
+  console.log(`Growth-plan cohorts: ${growth2}, ${growth12}, ${growth20}, ${growth45} (2/12/20/45 mature videos).`);
   console.log(`Demo project IDs: ${linkedProjectId}, ${suggestionProjectId}. No OAuth tokens or real channel data were used.`);
 }
 

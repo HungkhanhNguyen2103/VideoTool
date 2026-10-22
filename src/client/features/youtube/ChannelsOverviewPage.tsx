@@ -15,6 +15,7 @@ import {
 } from './hooks';
 import { useYoutubeOauthPopup, type YoutubeOauthFinishedMessage } from './use-youtube-oauth-popup';
 import { youtubeImportResultSummary } from './youtube-view';
+import { growthStageLabel, growthVerdictLabel } from './growth-plan-view';
 import {
   CHANNEL_OVERVIEW_TOTALS_CAPTION,
   channelOverviewConnectionLabel,
@@ -145,6 +146,11 @@ function ChannelCard({ row, onRefresh }: { row: YoutubeChannelOverviewRow; onRef
       </div>
       <span className={`${styles.badge} ${cardStateClass}`}>{channelOverviewConnectionLabel(state)}</span>
     </header>
+
+    <div className={styles.growthBadges} aria-label="Kế hoạch tăng trưởng">
+      <span>{growthStageLabel(row.stage)}</span>
+      <span className={row.verdict === 'change_one_variable' || row.verdict === 'consider_stop' ? styles.growthWarning : ''}>{growthVerdictLabel(row.verdict)}</span>
+    </div>
 
     <div className={styles.counts}>
       <span><strong>{formatOverviewNumber(row.subscriberCount)}</strong> người đăng ký</span>

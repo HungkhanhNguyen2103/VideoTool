@@ -7,6 +7,8 @@ export const youtubeConnectionKey = (channelId: string) => [...YOUTUBE_QUERY_KEY
 export const youtubeOverviewKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'overview', channelId] as const;
 export const youtubeVideosKey = (channelId: string, filters: YoutubeVideoFilters = {}) => [...YOUTUBE_QUERY_KEY, 'videos', channelId, filters] as const;
 export const youtubeVideoKey = (channelId: string, videoId: string) => [...YOUTUBE_QUERY_KEY, 'video', channelId, videoId] as const;
+export const youtubeGrowthPlanKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'growth-plan', channelId] as const;
+export const youtubeGrowthPlanStatusKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'growth-plan-status', channelId] as const;
 export const youtubeLinksKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'suggested-links', channelId] as const;
 export const youtubeActiveSyncKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'active-sync', channelId] as const;
 export const youtubeSetupStatusKey = [...YOUTUBE_QUERY_KEY, 'setup'] as const;
@@ -93,6 +95,14 @@ export function useYoutubeVideos(channelId: string, filters: YoutubeVideoFilters
 
 export function useYoutubeVideo(channelId: string, videoId: string | null) {
   return useQuery({ queryKey: youtubeVideoKey(channelId, videoId ?? ''), queryFn: () => api.getYoutubeVideo(channelId, videoId!), enabled: Boolean(channelId && videoId) });
+}
+
+export function useYoutubeGrowthPlan(channelId: string, enabled = true) {
+  return useQuery({ queryKey: youtubeGrowthPlanKey(channelId), queryFn: () => api.getYoutubeGrowthPlan(channelId), enabled: Boolean(channelId) && enabled });
+}
+
+export function useYoutubeGrowthPlanStatus(channelId: string, enabled = true) {
+  return useQuery({ queryKey: youtubeGrowthPlanStatusKey(channelId), queryFn: () => api.getYoutubeGrowthPlanStatus(channelId), enabled: Boolean(channelId) && enabled });
 }
 
 export function useYoutubeSuggestedLinks(channelId: string, enabled = true) {

@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { YoutubeGrowthPlanConfigSchema, YoutubeGrowthPlanSchema } from '../../../contracts/youtube-plan';
 import {
   beginYoutubeConnection,
   beginYoutubeImport,
   disconnectYoutube,
+  addYoutubeGrowthExperiment,
+  deleteYoutubeGrowthExperiment,
+  getYoutubeGrowthPlan,
+  getYoutubeGrowthPlanStatus,
   generateYoutubeChannelReview,
   getActiveYoutubeSync,
   getYoutubeConnection,
@@ -11,6 +16,9 @@ import {
   getYoutubeVideos,
   linkProjectToYoutubeVideo,
   startYoutubeSync,
+  saveYoutubeGrowthPlan,
+  saveYoutubeManualReach,
+  setYoutubePlanExclusion,
   syncAllYoutubeChannels,
   refreshYoutubeProfile,
   unlinkProjectFromYoutubeVideo,
@@ -99,5 +107,41 @@ describe('YouTube analytics client API', () => {
   it('maps refresh-profile errors through the shared API error contract', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'YOUTUBE_NOT_CONNECTED', message: 'Kênh YouTube chưa được kết nối.' } }), { status: 409 }));
     await expect(refreshYoutubeProfile('channel-1')).rejects.toMatchObject({ status: 409, code: 'YOUTUBE_NOT_CONNECTED', message: 'Kênh YouTube chưa được kết nối.' });
+  });
+
+  it('uses strict plan, experiment, Studio reach, and exclusion routes', async () => {
+    const error = JSON.stringify({ error: { code: 'DEMO', message: 'Demo error.' } });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(error, { status: 400 }));
+    await expect(getYoutubeGrowthPlan('channel/one')).rejects.toMatchObject({ code: 'DEMO' });
+    await expect(saveYoutubeGrowthPlan('channel/one', { cadencePerWeek: 3.5 })).rejects.toMatchObject({ code: 'DEMO' });
+    await expect(getYoutubeGrowthPlanStatus('channel/one')).rejects.toMatchObject({ code: 'DEMO' });
+    await expect(addYoutubeGrowthExperiment('channel/one', { date: '2026-10-22', variable: 'topic', note: 'Thử' })).rejects.toMatchObject({ code: 'DEMO' });
+    await expect(deleteYoutubeGrowthExperiment('channel/one', 'experiment 1')).rejects.toMatchObject({ code: 'DEMO' });
+    await expect(saveYoutubeManualReach('channel/one', 'video/one', { impressions: 2_000, ctrPercent: 3 })).rejects.toMatchObject({ code: 'DEMO' });
+    await expect(setYoutubePlanExclusion('channel/one', 'video/one', true)).rejects.toMatchObject({ code: 'DEMO' });
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/youtube/channels/channel%2Fone/plan',
+      '/api/youtube/channels/channel%2Fone/plan',
+      '/api/youtube/channels/channel%2Fone/plan-status',
+      '/api/youtube/channels/channel%2Fone/plan/experiments',
+      '/api/youtube/channels/channel%2Fone/plan/experiments/experiment%201',
+      '/api/youtube/videos/channel%2Fone/video%2Fone/manual-reach',
+      '/api/youtube/videos/channel%2Fone/video%2Fone/plan-exclusion',
+    ]);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'PUT', body: expect.stringContaining('"viewTargets"') });
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ date: '2026-10-22', variable: 'topic', note: 'Thử' }) });
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ impressions: 2_000, ctrPercent: 3 }) });
+    expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ excluded: true }) });
+    expect(() => saveYoutubeManualReach('channel-1', 'video-1', { impressions: -1, ctrPercent: 101 })).toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+  });
+
+  it('saves a validated plan and parses the returned configuration', async () => {
+    const config = YoutubeGrowthPlanConfigSchema.parse({ nicheStartDate: '2026-10-20', cadencePerWeek: 3.5 });
+    const saved = YoutubeGrowthPlanSchema.parse({ ...config, channelProfileId: 'channel-1', experiments: [], createdAt: null, updatedAt: '2026-10-22T00:00:00.000Z' });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(saved), { status: 200 }));
+
+    await expect(saveYoutubeGrowthPlan('channel-1', config)).resolves.toEqual(saved);
+    expect(fetchMock).toHaveBeenCalledWith('/api/youtube/channels/channel-1/plan', expect.objectContaining({ method: 'PUT', body: JSON.stringify(config) }));
   });
 });

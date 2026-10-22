@@ -3,10 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../shared/ui/Button';
 import { ChannelYoutubeControls } from './components/ChannelYoutubeControls';
+import { GrowthPlanPanel } from './components/GrowthPlanPanel';
 import { useChannels } from '../channel/hooks';
 import { useProjects } from '../project/hooks';
-import { useYoutubeOverview, useYoutubeSuggestedLinks, useYoutubeVideo, useYoutubeVideos, invalidateYoutubeLinkQueries, youtubeOverviewKey, youtubeVideoKey } from './hooks';
-import { generateYoutubeChannelReview, generateYoutubeVideoReview, linkProjectToYoutubeVideo, unlinkProjectFromYoutubeVideo } from './api';
+import { useYoutubeOverview, useYoutubeSuggestedLinks, useYoutubeVideo, useYoutubeVideos, invalidateYoutubeLinkQueries, youtubeChannelsOverviewKey, youtubeGrowthPlanStatusKey, youtubeOverviewKey, youtubeVideoKey } from './hooks';
+import { clearYoutubeManualReach, generateYoutubeChannelReview, generateYoutubeVideoReview, linkProjectToYoutubeVideo, saveYoutubeManualReach, setYoutubePlanExclusion, unlinkProjectFromYoutubeVideo } from './api';
 import type { YoutubeChannelHealth, YoutubePartnerThresholds, YoutubeVideoListItem } from '../../../contracts/youtube-analytics';
 import type { YoutubeVideoStats } from '../../../contracts/youtube';
 import { formatYoutubeMetric, lineChartPath, youtubeThresholdSourceLinks, YOUTUBE_CTR_UNAVAILABLE_TOOLTIP, YOUTUBE_METRIC_UNAVAILABLE_TOOLTIP } from './youtube-view';
@@ -138,10 +139,68 @@ function VideoDetailDrawer({ channelId, videoId, onClose }: { channelId: string;
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [manualImpressions, setManualImpressions] = useState('');
+  const [manualCtr, setManualCtr] = useState('');
+  const [reachBusy, setReachBusy] = useState(false);
+  const [exclusionBusy, setExclusionBusy] = useState(false);
   const video = detailQuery.data;
   const averageViewDuration = video?.analytics['28d']?.averageViewDurationSec;
   const averageViewPercentage = video?.analytics['28d']?.averageViewPercentage;
   const candidateProjects = (projectsQuery.data ?? []).filter((project) => project.channelId === channelId && (!project.youtubeVideoId || project.youtubeVideoId === videoId));
+
+  useEffect(() => {
+    setManualImpressions(video?.manualReach ? String(video.manualReach.impressions) : '');
+    setManualCtr(video?.manualReach ? String(video.manualReach.ctrPercent) : '');
+  }, [video?.videoId, video?.manualReach?.enteredAt]);
+
+  async function refreshGrowthData() {
+    await Promise.all([
+      invalidateYoutubeLinkQueries(queryClient, channelId, videoId ?? undefined),
+      queryClient.invalidateQueries({ queryKey: youtubeGrowthPlanStatusKey(channelId) }),
+      queryClient.invalidateQueries({ queryKey: youtubeChannelsOverviewKey }),
+    ]);
+  }
+
+  async function saveManualReach() {
+    if (!video) return;
+    setLinkError(null); setMessage(null);
+    const impressions = Number(manualImpressions);
+    const ctrPercent = Number(manualCtr);
+    if (!manualImpressions.trim() || !manualCtr.trim() || !Number.isInteger(impressions) || impressions < 0 || !Number.isFinite(ctrPercent) || ctrPercent < 0 || ctrPercent > 100) {
+      setLinkError('Nhập lượt hiển thị là số nguyên không âm và CTR từ 0 đến 100%.');
+      return;
+    }
+    setReachBusy(true);
+    try {
+      await saveYoutubeManualReach(channelId, video.videoId, { impressions, ctrPercent });
+      await refreshGrowthData();
+      setMessage('Đã lưu số liệu nhập tay từ Studio.');
+    } catch (caught) { setLinkError(caught instanceof Error ? caught.message : 'Không thể lưu số liệu Reach.'); }
+    finally { setReachBusy(false); }
+  }
+
+  async function clearManualReach() {
+    if (!video) return;
+    setReachBusy(true); setLinkError(null); setMessage(null);
+    try {
+      await clearYoutubeManualReach(channelId, video.videoId);
+      setManualImpressions(''); setManualCtr('');
+      await refreshGrowthData();
+      setMessage('Đã xóa số liệu nhập tay.');
+    } catch (caught) { setLinkError(caught instanceof Error ? caught.message : 'Không thể xóa số liệu Reach.'); }
+    finally { setReachBusy(false); }
+  }
+
+  async function togglePlanExclusion() {
+    if (!video) return;
+    setExclusionBusy(true); setLinkError(null); setMessage(null);
+    try {
+      await setYoutubePlanExclusion(channelId, video.videoId, !video.excludedFromPlan);
+      await refreshGrowthData();
+      setMessage(video.excludedFromPlan ? 'Đã đưa video trở lại kế hoạch.' : 'Đã loại video khỏi kế hoạch.');
+    } catch (caught) { setLinkError(caught instanceof Error ? caught.message : 'Không thể cập nhật kế hoạch video.'); }
+    finally { setExclusionBusy(false); }
+  }
 
   async function updateLink(projectId: string | null) {
     if (!video) return;
@@ -188,6 +247,27 @@ function VideoDetailDrawer({ channelId, videoId, onClose }: { channelId: string;
           <article><span>Tỷ lệ xem TB (28 ngày)</span><strong title={averageViewPercentage === null || averageViewPercentage === undefined ? YOUTUBE_METRIC_UNAVAILABLE_TOOLTIP : undefined}>{formatYoutubeMetric(averageViewPercentage, { style: 'percent' }).text}</strong></article>
           <article><span>CTR</span><strong title={YOUTUBE_CTR_UNAVAILABLE_TOOLTIP}>Chưa có dữ liệu</strong></article>
         </div>
+        <section className={styles.detailSection}>
+          <h3>Mốc 28 ngày đầu</h3>
+          {video.first28d ? <div className={styles.detailStats}>
+            <article><span>Lượt xem</span><strong>{formatYoutubeMetric(video.first28d.views).text}</strong></article>
+            <article><span>Phút xem</span><strong>{formatYoutubeMetric(video.first28d.estimatedMinutesWatched).text}</strong></article>
+            <article><span>Thời lượng xem TB</span><strong>{formatYoutubeMetric(video.first28d.averageViewDurationSec).text}{video.first28d.averageViewDurationSec !== null ? ' giây' : ''}</strong></article>
+            <article><span>Đã ghi nhận</span><strong>{maybeDate(video.first28d.capturedAt)}</strong></article>
+          </div> : <p className={styles.emptyInline}>Chưa có snapshot cố định. Snapshot được lấy khi video đủ 31 ngày và Analytics đã kịp cập nhật.</p>}
+        </section>
+        <section className={styles.detailSection}>
+          <h3>Nhập tay từ Studio (chưa tự động)</h3>
+          <p className={styles.muted}>CTR chỉ được dùng trong kết luận khi có ít nhất 1.000 lượt hiển thị. CTR và lượt hiển thị chưa được đồng bộ tự động.</p>
+          <div className={styles.reachForm}>
+            <label>Lượt hiển thị<input type="number" min="0" step="1" value={manualImpressions} onChange={(event) => setManualImpressions(event.target.value)} /></label>
+            <label>CTR · %<input type="number" min="0" max="100" step="0.1" value={manualCtr} onChange={(event) => setManualCtr(event.target.value)} /></label>
+          </div>
+          <div className={styles.drawerActions}><Button size="sm" variant="amber" onClick={() => void saveManualReach()} disabled={reachBusy}>{reachBusy ? 'Đang lưu…' : 'Lưu Reach'}</Button>{video.manualReach && <Button size="sm" onClick={() => void clearManualReach()} disabled={reachBusy}>Xóa Reach</Button>}</div>
+          {video.manualReach && <small className={styles.muted}>Đã nhập {maybeDate(video.manualReach.enteredAt)} · {video.manualReach.impressions < 1_000 ? 'chưa đủ ngưỡng để CTR được xem là đã biết' : 'đủ ngưỡng 1.000 lượt hiển thị'}</small>}
+          <label className={styles.excludeToggle}><input type="checkbox" checked={video.excludedFromPlan} disabled={exclusionBusy} onChange={() => void togglePlanExclusion()} /> Loại khỏi kế hoạch tăng trưởng</label>
+          {linkError && <p className={styles.error} role="alert">{linkError}</p>}{message && <p className={styles.message} role="status">{message}</p>}
+        </section>
         <section className={styles.detailSection}>
           <h3>So với trung vị của cùng kênh</h3>
           <p className={styles.muted}>Lượt xem/ngày: video {formatYoutubeMetric(video.channelComparison.videoViewsPerDay).text} · trung vị {formatYoutubeMetric(video.channelComparison.medianViewsPerDay).text} (n={video.channelComparison.viewsSampleSize})</p>
@@ -303,6 +383,8 @@ export function YoutubeAnalyticsPage() {
               <strong>Một số nhóm số liệu chưa có</strong>
               {Object.entries(overview.analyticsStatus).filter(([, status]) => status.status !== 'ok').map(([group, status]) => <p key={group}>{group}: {status.status === 'unavailable' ? 'YouTube chưa cung cấp dữ liệu cho kênh/khoảng thời gian này.' : 'Không thể tải nhóm số liệu này; các nhóm khác vẫn được hiển thị.'}</p>)}
             </aside>}
+
+            <GrowthPlanPanel channelId={channel.id} />
 
             <section className={styles.panel} aria-labelledby="trend-heading">
               <div className={styles.panelHeading}><div><h2 id="trend-heading">Xu hướng 28 ngày</h2><p>So sánh 28 ngày gần nhất với 28 ngày trước đó.</p></div><Button size="sm" onClick={() => void overviewQuery.refetch()}>Làm mới dữ liệu</Button></div>

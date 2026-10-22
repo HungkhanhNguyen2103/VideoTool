@@ -36,6 +36,7 @@ describe('ChannelsOverviewPage', () => {
         channelId: 'channel-1', name: 'Kênh thử nghiệm', handle: '@kenhthu', language: 'vi',
         connection: { connected: true, youtubeChannelId: 'UC-1', title: 'Kênh thử nghiệm', connectedAt: '2026-10-01T00:00:00.000Z', needsReconnect: false, setupConfigured: true },
         subscriberCount: 1_000, videoCount: 2, longCount: 1, shortCount: 1,
+        stage: 'B', verdict: 'continue',
         last28: { views: 150, estimatedMinutesWatched: 1_500, subscribersGained: 12, subscribersLost: 2 },
         previous28: { views: 100, estimatedMinutesWatched: 1_000, subscribersGained: 10, subscribersLost: 1 },
         trend: { views: { current: 150, previous: 100, changePercent: 50 }, watchMinutes: { current: 1_500, previous: 1_000, changePercent: 50 }, subscribers: { current: 10, previous: 9, changePercent: 11.1 }, tooFewData: false },
@@ -51,6 +52,8 @@ describe('ChannelsOverviewPage', () => {
     expect(markup).toContain('Kênh thử nghiệm');
     expect(markup).toContain('Mốc tham khảo');
     expect(markup).toContain('Video đứng đầu');
+    expect(markup).toContain('B · Tìm mẫu lặp lại');
+    expect(markup).toContain('Tiếp tục');
     expect(markup).toContain('href="/channels/channel-1/analytics"');
     expect(markup).toContain('↑ 50,0% so với 28 ngày trước');
   });

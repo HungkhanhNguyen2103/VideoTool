@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { invalidateYoutubeChannelQueries, invalidateYoutubeChannelsOverviewQueries, invalidateYoutubeLinkQueries, invalidateYoutubeProfileQueries, youtubeChannelsOverviewKey, youtubeOverviewKey, youtubeSetupStatusKey, youtubeVideoKey, youtubeVideosKey } from './hooks';
+import { invalidateYoutubeChannelQueries, invalidateYoutubeChannelsOverviewQueries, invalidateYoutubeLinkQueries, invalidateYoutubeProfileQueries, youtubeChannelsOverviewKey, youtubeGrowthPlanKey, youtubeGrowthPlanStatusKey, youtubeOverviewKey, youtubeSetupStatusKey, youtubeVideoKey, youtubeVideosKey } from './hooks';
 
 describe('YouTube analytics query keys', () => {
   it('keeps channel and filter-specific query keys stable', () => {
     expect(youtubeOverviewKey('channel-1')).toEqual(['youtube', 'overview', 'channel-1']);
     expect(youtubeVideosKey('channel-1', { window: '90d', sort: 'viewsPerDay' })).toEqual(['youtube', 'videos', 'channel-1', { window: '90d', sort: 'viewsPerDay' }]);
     expect(youtubeVideoKey('channel-1', 'video-1')).toEqual(['youtube', 'video', 'channel-1', 'video-1']);
+    expect(youtubeGrowthPlanKey('channel-1')).toEqual(['youtube', 'growth-plan', 'channel-1']);
+    expect(youtubeGrowthPlanStatusKey('channel-1')).toEqual(['youtube', 'growth-plan-status', 'channel-1']);
   });
 
   it('refreshes analytics and active-job state after a sync or connection change', async () => {
