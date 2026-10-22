@@ -44,11 +44,30 @@ describe('Claude CLI chat wrapper', () => {
 
     const promptText = runCli.mock.calls[0]![0].promptText;
     expect(promptText).toBe('SYSTEM\nsystem prompt\n\nUSER\nuser prompt\n\nReturn only the JSON object, no commentary, no code fences.');
-    expect(runCli.mock.calls[0]![0]).toMatchObject({ projectId: 'project-1', chapterId: 'seo-generation', stepLabel: 'main-sections', model: 'claude-sonnet-5-5' });
+    expect(runCli.mock.calls[0]![0]).toMatchObject({ projectId: 'project-1', chapterId: 'seo-generation', stepLabel: 'main-sections', model: 'claude-sonnet-5-5', effort: 'medium' });
     expect(appendLog).toHaveBeenCalledWith(expect.stringContaining(`prompt ${Buffer.byteLength(promptText, 'utf8')} bytes`));
+    expect(appendLog).toHaveBeenCalledWith(expect.stringContaining('model claude-sonnet-5-5; effort medium'));
     expect(appendLog).toHaveBeenCalledWith(expect.stringContaining('123 ms'));
     expect(appendLog).toHaveBeenCalledWith(expect.stringContaining('audit/display'));
     expect(appendLog.mock.calls.join(' ')).not.toContain('secret-sentinel');
+  });
+
+  it.each([
+    { caller: 'SEO generation', chapterId: 'seo-generation', label: 'SEO' },
+    { caller: 'YouTube review', chapterId: 'youtube-review-channel', label: 'Đánh giá kênh YouTube' },
+    { caller: 'YouTube video ideas', chapterId: 'youtube-ideas', label: 'Ý tưởng video tiếp theo' },
+  ])('resolves omitted model and effort to the product defaults for $caller', async ({ chapterId, label }) => {
+    const runCli = vi.fn(async (options: ClaudeCliRunOptions) => {
+      expect(options.model).toBe('claude-sonnet-5-5');
+      return result();
+    });
+    const chat = await createClaudeCliChat({
+      config, projectId: 'p', chapterId, label, context: { isCancelled: async () => false, appendLog: async () => undefined },
+      getStatus: async () => available, runCli,
+    });
+    await chat.chat(messages);
+    expect(chat).toMatchObject({ model: 'claude-sonnet-5-5' });
+    expect(runCli.mock.calls[0]?.[0]).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'medium' });
   });
 
   it('maps unavailable, timeout, output-cap, rate-limit, and auth failures', async () => {

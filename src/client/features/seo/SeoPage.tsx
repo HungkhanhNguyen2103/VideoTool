@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { SEO_SECTIONS, SEO_THUMBNAIL_MAX_BYTES, type SeoSection } from '../../../contracts/seo';
-import { AI_MODEL_REGISTRY } from '../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_MODEL } from '../../../contracts/claude-cli';
 import { aiModelForProviderChange } from '../../shared/ai/AiModelSelect';
 import { buildPackageMarkdown, slugifyPackageTitle } from '../../../contracts/seo-format';
 import { Button } from '../../shared/ui/Button';
@@ -42,7 +42,7 @@ export function SeoPage() {
   const { draft, saveState, update, flush } = useSeoDraft(projectId, project?.seo);
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
   const [generationBackend, setGenerationBackend] = useState<'api' | 'cli'>('api');
-  const [cliModel, setCliModel] = useState<string>(AI_MODEL_REGISTRY.claude.defaultModelId);
+  const [cliModel, setCliModel] = useState<string>(CLAUDE_CLI_DEFAULT_MODEL);
   const [manualShortsOnly, setManualShortsOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);

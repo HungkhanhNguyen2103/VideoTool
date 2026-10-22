@@ -1,4 +1,5 @@
 import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_MODEL } from '../../../contracts/claude-cli';
 import { YoutubeVideoStatsSchema } from '../../../contracts/youtube';
 import { YoutubeReviewVideoContextSchema, YoutubeReviewV2ResultSchema } from '../../../contracts/youtube-review';
 import type { AiProvider } from '../../../contracts/project';
@@ -164,7 +165,7 @@ export async function generateYoutubeReviewV2(input: {
   const packet = await buildCurrentEvidence({ profileId: input.profileId, target: input.target, videoId: input.videoId, config, fetcher: input.fetcher, context: input.context, allowRetentionFetch: input.target === 'video' });
   let backend;
   if (input.request.backend === 'cli') {
-    const model = input.request.cliModel ?? getDefaultAiModelId('claude');
+    const model = input.request.cliModel ?? CLAUDE_CLI_DEFAULT_MODEL;
     if (!isAiModelForProvider('claude', model)) throw new AppError('Model Claude CLI không còn khả dụng; hãy chọn model khác.', 422, 'AI_MODEL_UNAVAILABLE');
     const cli = await (input.cliChatFactory ?? createClaudeCliChat)({
       projectId: input.profileId,

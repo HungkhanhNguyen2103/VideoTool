@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { AiProvider } from '../../../contracts/project';
 import { AI_MODEL_REGISTRY } from '../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL } from '../../../contracts/claude-cli';
 import { getReferenceCoverage, type ChapterDoc, type ScriptQualitySummary } from '../../../contracts/script';
 import type { ManualScriptImportResult, QAIssue, QAResult } from './api';
 import { isHardStopRegenerationError } from './api';
@@ -187,7 +188,7 @@ export function ReviewScriptPage() {
   const [instructionOrigin, setInstructionOrigin] = useState<{ kind: 'user' } | { kind: 'qa'; chapterId: string }>({ kind: 'user' });
   const [regenLevel, setRegenLevel] = useState<'light' | 'medium' | 'rewrite'>('medium');
   const [regenMode, setRegenMode] = useState<'automatic' | 'cli' | 'manual'>('automatic');
-  const [cliModel, setCliModel] = useState<ClaudeCliModelId>(AI_MODEL_REGISTRY.claude.defaultModelId);
+  const [cliModel, setCliModel] = useState<ClaudeCliModelId>(CLAUDE_CLI_DEFAULT_MODEL);
   const [cliJobId, setCliJobId] = useState<string | null>(null);
   const [cliJobStartedAt, setCliJobStartedAt] = useState<number | null>(null);
   const [cliJobLastEventAt, setCliJobLastEventAt] = useState<number | null>(null);
@@ -195,7 +196,7 @@ export function ReviewScriptPage() {
   const [manualRegenBusy, setManualRegenBusy] = useState(false);
   const [generationMode, setGenerationMode] = useState<'automatic' | 'cli' | 'manual'>('automatic');
   const [resumeBackend, setResumeBackend] = useState<ScriptGenerationBackend>('api');
-  const [cliGenerationModel, setCliGenerationModel] = useState<ClaudeCliModelId | null>(null);
+  const [cliGenerationModel, setCliGenerationModel] = useState<ClaudeCliModelId | null>(CLAUDE_CLI_DEFAULT_MODEL);
   const [manualRaw, setManualRaw] = useState('');
   const [manualPrompt, setManualPrompt] = useState<{ prompt: string; promptVersion: string } | null>(null);
   const [manualQuality, setManualQuality] = useState<{ projectId: string; signature: string; summary: ScriptQualitySummary } | null>(null);
@@ -1205,6 +1206,7 @@ export function ReviewScriptPage() {
                       <option value="">Mặc định của Claude CLI</option>
                       {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
                     </select>
+                    <small>Mức suy luận: {CLAUDE_CLI_DEFAULT_EFFORT}</small>
                   </label>
                   <p className={styles.generationEstimate}>{cliGenerationEstimate(projectQuery.data?.chapterCount ?? 1).label}</p>
                 </>}
@@ -1248,6 +1250,7 @@ export function ReviewScriptPage() {
                     <option value="">Mặc định của Claude CLI</option>
                     {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
                   </select>
+                  <small>Mức suy luận: {CLAUDE_CLI_DEFAULT_EFFORT}</small>
                 </label>}
                 <Button variant="amber" disabled={controlsBusy || (resumeBackend === 'cli' && !cliStatusQuery.data?.available)} onClick={() => void resumeScriptGeneration()}>Viết tiếp từ chương {resumeChapterNo}</Button>
               </div>

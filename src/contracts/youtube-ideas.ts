@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { CLAUDE_CLI_DEFAULT_MODEL } from './claude-cli';
 import { SCRIPT_PRESET_IDS } from './project';
 import { YoutubeReviewVariableSchema } from './youtube-review';
 
 export const NEXT_VIDEO_IDEAS_MIN_MATURE = 10;
-export const IDEA_DEFAULT_CLI_MODEL = 'claude-sonnet-5-5';
+export const IDEA_DEFAULT_CLI_MODEL = CLAUDE_CLI_DEFAULT_MODEL;
 export const YOUTUBE_IDEA_EVIDENCE_TIERS = ['no-performance-data', 'weak-signal', 'data-informed'] as const;
 export const YoutubeIdeaEvidenceTierSchema = z.enum(YOUTUBE_IDEA_EVIDENCE_TIERS);
 export type YoutubeIdeaEvidenceTier = z.infer<typeof YoutubeIdeaEvidenceTierSchema>;

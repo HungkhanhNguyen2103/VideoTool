@@ -183,10 +183,11 @@ describe('project popup analysis service', () => {
       setProjectScenePopupPlans: vi.fn().mockResolvedValue(1),
     };
 
-    const result = await analyzeProjectPopups('project-1', { backend: 'cli', cliModel: 'claude-haiku-4-5-20251001', density: 'medium' }, context({ appendLog }), dependencies);
+    const result = await analyzeProjectPopups('project-1', { backend: 'cli', density: 'medium' }, context({ appendLog }), dependencies);
 
-    expect(runCli).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-1', chapterId: 'popup-analysis', model: 'claude-haiku-4-5-20251001' }));
+    expect(runCli).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-1', chapterId: 'popup-analysis', model: 'claude-sonnet-5-5', effort: 'medium' }));
     expect(result.runDirectories).toEqual(['data/files/project-1/cli-runs/run-1']);
+    expect(appendLog).toHaveBeenCalledWith(expect.stringContaining('model claude-sonnet-5-5; effort medium'));
     expect(appendLog).toHaveBeenCalledWith(expect.stringContaining('audit folder data/files/project-1/cli-runs/run-1'));
   });
 

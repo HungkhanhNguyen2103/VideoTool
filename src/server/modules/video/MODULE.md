@@ -7,6 +7,8 @@
 
 ## Invariants
 
+- Popup analysis selects the shared Claude CLI model default `claude-sonnet-5-5` when `cliModel` is omitted and passes medium effort for every chunk/retry. Per-call logs include the resolved model and effort; API analysis still uses the project's selected provider/model.
+
 - Video code never calls `getCollection('projects')`; scene/project writes stay in the project service.
 - Every FFmpeg input path is resolved through file-store ownership checks for the current project.
 - Scene segments always have H.264 video plus stereo 48 kHz AAC audio, including generated silence when voiceover or SFX is absent.

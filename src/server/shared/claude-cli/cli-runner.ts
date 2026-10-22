@@ -4,7 +4,11 @@ import { access, mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from '
 import os from 'node:os';
 import path from 'node:path';
 import type { Config } from '../../config';
+import { CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL, type ClaudeCliEffort } from '../../../contracts/claude-cli';
 import { newId } from '../../shared/ids';
+
+export { CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL } from '../../../contracts/claude-cli';
+export type { ClaudeCliEffort } from '../../../contracts/claude-cli';
 
 const require = createRequire(import.meta.url);
 const spawnWithWindowsShimSupport = require('cross-spawn') as typeof nodeSpawn;
@@ -36,6 +40,7 @@ export type ClaudeCliRunOptions = Pick<Config,
   stepLabel?: string;
   promptText: string;
   model?: string;
+  effort?: ClaudeCliEffort;
   cliVersion?: string;
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
@@ -87,7 +92,10 @@ function safePathPart(value: string): boolean {
   return /^[a-zA-Z0-9_-]+$/u.test(value) && value !== '.' && value !== '..';
 }
 
-function cliArgs(model?: string): string[] {
+export function buildClaudeCliArgs(
+  model = CLAUDE_CLI_DEFAULT_MODEL,
+  effort: ClaudeCliEffort = CLAUDE_CLI_DEFAULT_EFFORT,
+): string[] {
   return [
     '--print',
     '--input-format', 'text',
@@ -95,7 +103,8 @@ function cliArgs(model?: string): string[] {
     '--tools', '',
     '--safe-mode',
     '--no-session-persistence',
-    ...(model ? ['--model', model] : []),
+    '--model', model,
+    '--effort', effort,
   ];
 }
 
@@ -301,7 +310,9 @@ export async function runClaudeCli(options: ClaudeCliRunOptions): Promise<Claude
     exitCode: null, durationMs: 0, cancelled: Boolean(options.signal?.aborted), timedOut: false,
     outputTooLarge: false, spawnError: null,
   };
-  const args = cliArgs(options.model);
+  const model = options.model ?? CLAUDE_CLI_DEFAULT_MODEL;
+  const effort = options.effort ?? CLAUDE_CLI_DEFAULT_EFFORT;
+  const args = buildClaudeCliArgs(model, effort);
   try {
     if (!captured.cancelled) {
       executable = await resolveExecutable(options.CLAUDE_CLI_PATH, defaultEnvironment(options.env));
@@ -330,7 +341,8 @@ export async function runClaudeCli(options: ClaudeCliRunOptions): Promise<Claude
   await writeFile(outputPath, outputBuffer);
   const metadata = {
     command: { executable, args, shell: false },
-    model: options.model ?? null,
+    model,
+    effort,
     cliVersion: options.cliVersion ?? null,
     exitCode: captured.exitCode,
     durationMs: captured.durationMs,

@@ -7,12 +7,15 @@ import { AppError } from '../../shared/errors';
 import { getProject } from '../project';
 import { parseRegeneratedParagraphs, translateManualParseError } from './ai/parse-output';
 import {
+  CLAUDE_CLI_DEFAULT_EFFORT,
+  CLAUDE_CLI_DEFAULT_MODEL,
   getClaudeCliStatus,
   runClaudeCli,
   type ClaudeCliRunOptions,
   type ClaudeCliRunResult,
   type ClaudeCliSpawn,
 } from '../../shared/claude-cli/cli-runner';
+import type { ClaudeCliEffort } from '../../shared/claude-cli/cli-runner';
 import { buildRegenerationPromptForChapter, formatRegenerationPrompt, importRegeneratedChapter, patchChapter } from './service';
 
 export const CliRegenerationJobPayloadSchema = CliRegenerateRequestSchema.extend({
@@ -132,6 +135,8 @@ export async function handleCliRegeneration(
   if (missingIds.length > 0) throw new AppError('Có chương được chọn không còn trong dự án.', 422, 'CHAPTER_NOT_FOUND');
   const ordered = project.chapters.filter((chapter) => selectedIds.has(chapter.id)).sort((left, right) => left.no - right.no);
   const runCli = dependencies.runCli ?? runClaudeCli;
+  const model = payload.model ?? CLAUDE_CLI_DEFAULT_MODEL;
+  const effort: ClaudeCliEffort = CLAUDE_CLI_DEFAULT_EFFORT;
   const total = ordered.length;
 
   for (let index = 0; index < ordered.length; index += 1) {
@@ -143,7 +148,7 @@ export async function handleCliRegeneration(
       level: payload.level,
       ...(payload.historyBatchId ? { historyBatchId: payload.historyBatchId } : {}),
     });
-    await context.appendLog(`Đang tái tạo lần ${index + 1}/${total} (chương ${chapter.no}) bằng Claude CLI.`);
+    await context.appendLog(`Đang tái tạo lần ${index + 1}/${total} (chương ${chapter.no}) bằng Claude CLI; model ${model}; effort ${effort}.`);
 
     let accumulatedDurationMs = 0;
     let validOutput: string | null = null;
@@ -162,7 +167,8 @@ export async function handleCliRegeneration(
           projectId: payload.projectId,
           chapterId: chapter.id,
           promptText: formatRegenerationPrompt(prompt),
-          ...(payload.model ? { model: payload.model } : {}),
+          model,
+          effort,
           cliVersion: status.version,
           signal: controller.signal,
           env,
@@ -174,7 +180,7 @@ export async function handleCliRegeneration(
       }
       accumulatedDurationMs += cliResult.durationMs;
       result.runDirectories.push(cliResult.displayPath);
-      await context.appendLog(`Tệp Claude CLI: ${cliResult.displayPath}`);
+      await context.appendLog(`Tệp Claude CLI: ${cliResult.displayPath}; model ${model}; effort ${effort}.`);
       if (cliResult.cancelled || controller.signal.aborted || await context.isCancelled()) {
         return { ...resultSnapshot(result), cancelled: true };
       }

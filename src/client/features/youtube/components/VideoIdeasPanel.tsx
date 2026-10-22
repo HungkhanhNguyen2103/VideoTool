@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AI_MODEL_REGISTRY } from '../../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_EFFORT } from '../../../../contracts/claude-cli';
 import { SCRIPT_PRESET_IDS } from '../../../../contracts/project';
 import type { YoutubeIdeaRecord, YoutubeIdeaStatus } from '../../../../contracts/youtube-ideas';
 import { ApiError } from '../../../shared/api-client';
@@ -149,7 +150,7 @@ export function VideoIdeasPanel({ channelId, language = 'vi' }: { channelId: str
   const ideasQuery = useYoutubeIdeas(channelId);
   const planQuery = useYoutubeGrowthPlanStatus(channelId);
   const [backend, setBackend] = useState<'cli' | 'api'>('cli');
-  const [cliModel, setCliModel] = useState<string>(youtubeIdeaCliDefaultModel(AI_MODEL_REGISTRY.claude.models));
+  const [cliModel, setCliModel] = useState<string>(youtubeIdeaCliDefaultModel());
   const [steering, setSteering] = useState('');
   const [presetId, setPresetId] = useState<(typeof SCRIPT_PRESET_IDS)[number]>('hubris-trap');
   const [count, setCount] = useState(6);
@@ -230,7 +231,7 @@ export function VideoIdeasPanel({ channelId, language = 'vi' }: { channelId: str
       <label>Số ý tưởng<select value={count} onChange={(event) => setCount(Number(event.target.value))}>{[4, 5, 6, 7, 8].map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
       <label>Thời lượng · giây<input type="number" min={30} max={3600} value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="Dự án gần nhất hoặc 600" /><small>Bỏ trống để dùng thời lượng dự án gần nhất hoặc 600 giây.</small></label>
       <label>Backend<select value={backend} disabled={active} onChange={(event) => setBackend(event.target.value as 'cli' | 'api')}><option value="cli">Claude CLI</option><option value="api">API</option></select></label>
-      {backend === 'cli' && <label>Model Claude<select value={cliModel} disabled={active} onChange={(event) => setCliModel(event.target.value)}>{AI_MODEL_REGISTRY.claude.models.map((model) => <option value={model.id} key={model.id}>{model.label} · {model.hint}</option>)}</select></label>}
+      {backend === 'cli' && <label>Model Claude<select value={cliModel} disabled={active} onChange={(event) => setCliModel(event.target.value)}>{AI_MODEL_REGISTRY.claude.models.map((model) => <option value={model.id} key={model.id}>{model.label} · {model.hint}</option>)}</select><small className={styles.muted}>Mức suy luận: {CLAUDE_CLI_DEFAULT_EFFORT}</small></label>}
       <Button variant="amber" onClick={() => void generate()} disabled={starting || active || Boolean(cliUnavailable) || (backend === 'cli' && cliStatusQuery.isLoading)}>{starting ? 'Đang xếp hàng…' : active ? 'Đang gợi ý…' : 'Gợi ý video tiếp theo'}</Button>
     </div>
     {backend === 'cli' && <p className={cliUnavailable ? styles.error : styles.muted} role={cliUnavailable ? 'alert' : undefined}>{cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliUnavailable ? (cliStatusQuery.data?.reason ?? 'Không kiểm tra được trạng thái Claude Code CLI.') : `Claude Code CLI sẵn sàng${cliStatusQuery.data?.version ? ` · ${cliStatusQuery.data.version}` : ''}.`}</p>}

@@ -1,10 +1,11 @@
-import { canTransitionYoutubeIdeaStatus, IDEA_DEFAULT_CLI_MODEL, type YoutubeIdeaCreateProjectResponse, type YoutubeIdeaEvidenceTier, type YoutubeIdeaProjectPrefill, type YoutubeIdeaRunSummary, type YoutubeIdeaStatus, type YoutubeIdeaStored, type YoutubeIdeaV2 } from '../../../contracts/youtube-ideas';
+import { CLAUDE_CLI_DEFAULT_MODEL } from '../../../contracts/claude-cli';
+import { canTransitionYoutubeIdeaStatus, type YoutubeIdeaCreateProjectResponse, type YoutubeIdeaEvidenceTier, type YoutubeIdeaProjectPrefill, type YoutubeIdeaRunSummary, type YoutubeIdeaStatus, type YoutubeIdeaStored, type YoutubeIdeaV2 } from '../../../contracts/youtube-ideas';
 import { findDuplicateTitle, normalizeSeoTitleForComparison } from '../../../contracts/seo-duplicates';
 
 export const YOUTUBE_IDEA_MANUAL_CHECK_INSTRUCTIONS = 'Gõ tiêu đề hoặc từ khóa chính vào tìm kiếm YouTube, mở 5 kết quả đầu: kênh nhỏ có video từ 10k lượt xem không? Video cũ hơn 2 năm còn lượt xem không? Ghi lại một câu.';
 
-export function youtubeIdeaCliDefaultModel(models: readonly { id: string }[]): string {
-  return models.some((model) => model.id === IDEA_DEFAULT_CLI_MODEL) ? IDEA_DEFAULT_CLI_MODEL : models[0]?.id ?? IDEA_DEFAULT_CLI_MODEL;
+export function youtubeIdeaCliDefaultModel(): string {
+  return CLAUDE_CLI_DEFAULT_MODEL;
 }
 
 export function youtubeIdeaTierText(tier: YoutubeIdeaEvidenceTier, matureCount: number): string {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AI_MODEL_REGISTRY } from '../../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL } from '../../../../contracts/claude-cli';
 import { hashNarration } from '../../../../contracts/name-keywords';
 import { POPUP_DENSITIES, type PopupBackend, type PopupDensity, type PopupPlanPopup } from '../../../../contracts/popup-analysis';
 import type { ProjectDetail, Scene } from '../../../../contracts/project';
@@ -59,7 +60,7 @@ export function PopupAnalysisCard({
 }: PopupAnalysisCardProps) {
   const [backend, setBackend] = useState<PopupBackend>('api');
   const [density, setDensity] = useState<PopupDensity>(project.popupDensity);
-  const [cliModel, setCliModel] = useState<string>(AI_MODEL_REGISTRY.claude.defaultModelId);
+  const [cliModel, setCliModel] = useState<string>(CLAUDE_CLI_DEFAULT_MODEL);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingDisplay, setEditingDisplay] = useState('');
   const activeSceneEntries = useMemo(() => activeScenes(scenes.map((scene, index) => ({ scene, index, active: scene.active }))), [scenes]);
@@ -114,6 +115,7 @@ export function PopupAnalysisCard({
         <select aria-label="Model AI" value={cliModel} disabled={disabled || analysisActive || cliBlocked} onChange={(event) => setCliModel(event.currentTarget.value)}>
           {AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label} — {model.hint}</option>)}
         </select>
+        <small className={styles.muted}>Mức suy luận: {CLAUDE_CLI_DEFAULT_EFFORT}</small>
       </label> : <AiModelSelect provider={project.aiProvider} value={project.aiModel} disabled={disabled || analysisActive} showCostNote={false} onChange={(model) => void onApiModelChange(model)} />}
       <Button size="sm" variant="indigoline" disabled={disabled || analysisActive || cliBlocked || eligibleCount === 0} onClick={() => void analyze()}>Phân tích popup · {formatBatchSceneCount(scenes, eligible)}</Button>
     </div>

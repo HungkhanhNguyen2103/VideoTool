@@ -18,6 +18,15 @@ describe('AI model registry', () => {
     expect(isAiModelForProvider('deepseek', 'deepseek-retired')).toBe(false);
   });
 
+  it('accepts the Claude Haiku 5.5 CLI option and rejects unknown model IDs', () => {
+    expect(isAiModelForProvider('claude', 'claude-haiku-5-5')).toBe(true);
+    expect(isAiModelForProvider('claude', 'claude-haiku-5-6')).toBe(false);
+    expect(AI_MODEL_REGISTRY.claude.models.find((model) => model.id === 'claude-haiku-5-5')).toMatchObject({
+      label: 'Claude Haiku 5.5', hint: 'rẻ',
+      capabilities: { supportsTemperature: true, supportsJsonMode: true, maxOutputTokens: 64_000 },
+    });
+  });
+
   it('records model parameter and output limits in the registry', () => {
     expect(AI_MODEL_REGISTRY.deepseek.models.find((model) => model.id === 'deepseek-flash')?.capabilities)
       .toEqual({ supportsTemperature: false, supportsJsonMode: true, maxOutputTokens: 384_000 });

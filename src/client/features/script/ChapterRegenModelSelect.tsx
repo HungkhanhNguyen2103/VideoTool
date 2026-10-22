@@ -1,4 +1,5 @@
 import { AI_MODEL_REGISTRY } from '../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_EFFORT } from '../../../contracts/claude-cli';
 import type { AiProvider } from '../../../contracts/project';
 import { AiModelSelect } from '../../shared/ai/AiModelSelect';
 import type { ClaudeCliModelId } from './generation-mode';
@@ -39,6 +40,7 @@ export function ChapterRegenModelSelect({
       <select className={selectClassName} id="claude-cli-model" value={cliModel} disabled={disabled} onChange={(event) => onCliModelChange(event.target.value as ClaudeCliModelId)}>
         {AI_MODEL_REGISTRY.claude.models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
       </select>
+      <small>Mức suy luận: {CLAUDE_CLI_DEFAULT_EFFORT}</small>
     </label> : <AiModelSelect
       provider={provider}
       value={model}

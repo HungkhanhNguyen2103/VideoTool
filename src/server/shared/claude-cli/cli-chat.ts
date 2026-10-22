@@ -4,8 +4,11 @@ import { AppError } from '../errors';
 import {
   getClaudeCliStatus,
   runClaudeCli,
+  CLAUDE_CLI_DEFAULT_EFFORT,
+  CLAUDE_CLI_DEFAULT_MODEL,
   type ClaudeCliRunOptions,
   type ClaudeCliRunResult,
+  type ClaudeCliEffort,
   type ClaudeCliStatus,
 } from './cli-runner';
 
@@ -23,6 +26,7 @@ export type ClaudeCliChatOptions = {
   chapterId: string;
   label: string;
   model?: string;
+  effort?: ClaudeCliEffort;
   config: ClaudeCliChatConfig;
   context: ClaudeCliChatContext;
   env?: NodeJS.ProcessEnv;
@@ -81,7 +85,8 @@ export async function assertClaudeCliAvailable(
 export async function createClaudeCliChat(options: ClaudeCliChatOptions): Promise<ClaudeCliChat> {
   const env = options.env ?? process.env;
   const status = await assertClaudeCliAvailable(options.config, { env, getStatus: options.getStatus });
-  const model = options.model ?? 'default';
+  const model = options.model ?? CLAUDE_CLI_DEFAULT_MODEL;
+  const effort = options.effort ?? CLAUDE_CLI_DEFAULT_EFFORT;
   const runCli = options.runCli ?? runClaudeCli;
   const pollIntervalMs = options.pollIntervalMs ?? 250;
   let callCount = 0;
@@ -113,7 +118,8 @@ export async function createClaudeCliChat(options: ClaudeCliChatOptions): Promis
           chapterId: options.chapterId,
           stepLabel: `${stepLabel}${callCount > 1 ? `-${callCount}` : ''}`,
           promptText,
-          ...(options.model ? { model: options.model } : {}),
+          model,
+          effort,
           cliVersion: status.version,
           signal: controller.signal,
           env,
@@ -123,7 +129,7 @@ export async function createClaudeCliChat(options: ClaudeCliChatOptions): Promis
       } finally {
         clearInterval(timer);
       }
-      await options.context.appendLog(`Claude CLI ${options.label} call ${callCount}: ${stepLabel}; prompt ${promptBytes} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
+      await options.context.appendLog(`Claude CLI ${options.label} call ${callCount}: ${stepLabel}; model ${model}; effort ${effort}; prompt ${promptBytes} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
       if (result.cancelled || controller.signal.aborted || await options.context.isCancelled()) {
         throw new DOMException('Aborted', 'AbortError');
       }

@@ -235,8 +235,8 @@ describe('handleCliRegeneration', () => {
     });
 
     const logs = context.appendLog.mock.calls.map(([message]) => message).join('\n');
-    expect(logs).toContain('Đang tái tạo lần 1/2 (chương 1) bằng Claude CLI.');
-    expect(logs).toContain('Đang tái tạo lần 2/2 (chương 3) bằng Claude CLI.');
+    expect(logs).toContain('Đang tái tạo lần 1/2 (chương 1) bằng Claude CLI; model claude-sonnet-5-5; effort medium.');
+    expect(logs).toContain('Đang tái tạo lần 2/2 (chương 3) bằng Claude CLI; model claude-sonnet-5-5; effort medium.');
   });
 
   it('sends the byte-identical manual prompt and imports through the shared parser/apply path', async () => {

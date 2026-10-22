@@ -8,6 +8,8 @@
 
 ## Invariants
 
+- When `cliModel` is omitted, the worker uses the shared CLI default `claude-sonnet-5-5`; the chat wrapper passes medium effort and records the resolved model/effort for each call. This local CLI choice does not change the Claude API registry default or project AI settings.
+
 - The project’s assigned channel is read through `channel/index.ts`; a missing channel is treated as unassigned. Description assembly is deterministic and combines intro, keywords, active-scene chapter timestamps, numbered HTTP(S) sources, assigned-channel links/footer/disclosure, and hashtags. Sources and keywords are the only blocks removed to meet the description length limit. Publishing guidance includes a neutral schedule reminder, optional same-channel comparison against other projects' chosen titles, and a Markdown schedule block when a valid long-video schedule and timestamp are available.
 - Generated `descriptionKeywords` is stored with `descriptionIntro` when the description section is written. Hashtag defaults are merged only when tags are requested and a channel is assigned; footer, links, and AI disclosure are assembled in code and never sent in the AI prompt.
 - Shorts candidates come only from active scenes, use per-scene frame rounding, and snap to scene boundaries. Valid chapter scene counts are required; 30–55 second runs are ranked by climax containment (or the longest active chapter when there is no active climax), then distance to the target center, with no overlap and at most three results. The picker is shared by server and client; `short-N` IDs remain stable while the first scene remains the same.

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AI_MODEL_REGISTRY, getDefaultAiModelId } from '../../../../contracts/ai-models';
+import { AI_MODEL_REGISTRY } from '../../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL } from '../../../../contracts/claude-cli';
 import type { YoutubeReviewClaim, YoutubeReviewIdea, YoutubeReviewSuccessCriterion, YoutubeReviewV2Result } from '../../../../contracts/youtube-review';
 import { useJobProgress } from '../../../shared/hooks/use-job-progress';
 import { cancelJob } from '../../../shared/job-api';
@@ -148,7 +149,7 @@ export function ReviewV2Panel({ channelId, target, videoId, onOpenVideo }: Props
   const videoQuery = useYoutubeVideoReviewV2(channelId, target === 'video' ? videoId ?? null : null);
   const resultQuery = target === 'channel' ? channelQuery : videoQuery;
   const [backend, setBackend] = useState<'cli' | 'api'>('cli');
-  const [cliModel, setCliModel] = useState<string>(getDefaultAiModelId('claude'));
+  const [cliModel, setCliModel] = useState<string>(CLAUDE_CLI_DEFAULT_MODEL);
   const [jobId, setJobId] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -208,7 +209,7 @@ export function ReviewV2Panel({ channelId, target, videoId, onOpenVideo }: Props
     </header>
     <div className={styles.controls}>
       <label>Backend<select value={backend} disabled={active} onChange={(event) => setBackend(event.target.value as 'cli' | 'api')}><option value="cli">Claude CLI</option><option value="api">API</option></select></label>
-      {backend === 'cli' && <label>Model Claude<select value={cliModel} disabled={active} onChange={(event) => setCliModel(event.target.value)}>{AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label} · {model.hint}</option>)}</select></label>}
+      {backend === 'cli' && <label>Model Claude<select value={cliModel} disabled={active} onChange={(event) => setCliModel(event.target.value)}>{AI_MODEL_REGISTRY.claude.models.map((model) => <option key={model.id} value={model.id}>{model.label} · {model.hint}</option>)}</select><small className={styles.muted}>Mức suy luận: {CLAUDE_CLI_DEFAULT_EFFORT}</small></label>}
     </div>
     {backend === 'cli' && <p className={cliUnavailable ? styles.error : styles.muted} role={cliUnavailable ? 'alert' : undefined}>{cliStatusQuery.isLoading ? 'Đang kiểm tra Claude Code CLI…' : cliUnavailable ? (cliStatusQuery.data?.reason ?? 'Không kiểm tra được trạng thái Claude Code CLI.') : `Claude Code CLI sẵn sàng${cliStatusQuery.data?.version ? ` · ${cliStatusQuery.data.version}` : ''}.`}</p>}
     {startError && <p className={styles.error} role="alert">{startError}</p>}

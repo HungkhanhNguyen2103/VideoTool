@@ -3,6 +3,7 @@ import type { Document } from 'mongodb';
 import { getCollection } from '../../db/client';
 import { closeTestMongo, startTestMongo } from '../../../test-utils/mongo';
 import { createChannel } from '../channel';
+import { CLAUDE_CLI_DEFAULT_MODEL } from '../../../contracts/claude-cli';
 import { loadConfig } from '../../config';
 import { findYoutubeReviewV2, upsertReview } from './repo';
 import { ensureYoutubeIndexes } from './indexes';
@@ -48,6 +49,22 @@ const validVideoAnalysis = JSON.stringify({
 });
 
 describe('YouTube review v2 persistence', () => {
+  it('uses the shared CLI model default when channel review has no cliModel', async () => {
+    const profile = await createChannel({ name: 'Review CLI default' });
+    await addVideo(profile.id);
+    const selectedModels: string[] = [];
+    const result = await generateYoutubeReviewV2({
+      profileId: profile.id, target: 'channel', request: { backend: 'cli' }, context: jobContext(), config,
+      getClaudeCliStatus: async () => ({ available: true, version: '2.1.306', authPathLikely: 'subscription' }),
+      cliChatFactory: async (options) => {
+        selectedModels.push(options.model ?? '');
+        return { label: 'test-cli', model: options.model ?? CLAUDE_CLI_DEFAULT_MODEL, chat: async () => validAnalysis };
+      },
+    });
+    expect(selectedModels).toEqual([CLAUDE_CLI_DEFAULT_MODEL]);
+    expect(result).toMatchObject({ backend: 'cli', model: CLAUDE_CLI_DEFAULT_MODEL });
+  });
+
   it('stores versioned review metadata only and preserves the legacy review', async () => {
     const profile = await createChannel({ name: 'Review versioning' });
     await addVideo(profile.id);

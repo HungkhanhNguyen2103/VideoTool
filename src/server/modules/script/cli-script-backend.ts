@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Config } from '../../config';
 import { getAiModelDefinition } from '../../../contracts/ai-models';
 import { AppError } from '../../shared/errors';
-import { getClaudeCliStatus, runClaudeCli, type ClaudeCliRunOptions, type ClaudeCliRunResult, type ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
+import { CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL, getClaudeCliStatus, runClaudeCli, type ClaudeCliEffort, type ClaudeCliRunOptions, type ClaudeCliRunResult, type ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { formatChatMessages, type ScriptChatBackend, type ScriptGenerationJobContext } from './service';
 
 type ScriptCliJobContext = Pick<ScriptGenerationJobContext, 'isCancelled' | 'appendLog'>;
@@ -41,8 +41,9 @@ export async function createClaudeCliScriptBackend(options: ClaudeCliScriptBacke
   if (!status.available) {
     throw new AppError('Claude Code CLI chưa khả dụng trên máy chủ này. Hãy kiểm tra cài đặt và đăng nhập rồi thử lại.', 503, 'CLAUDE_CLI_UNAVAILABLE');
   }
-  const model = options.model ?? 'default';
-  const modelCap = options.model ? getAiModelDefinition('claude', options.model)?.capabilities.maxOutputTokens : undefined;
+  const model = options.model ?? CLAUDE_CLI_DEFAULT_MODEL;
+  const effort: ClaudeCliEffort = CLAUDE_CLI_DEFAULT_EFFORT;
+  const modelCap = getAiModelDefinition('claude', model)?.capabilities.maxOutputTokens;
   const runCli = options.runCli ?? runClaudeCli;
   const pollIntervalMs = options.pollIntervalMs ?? 250;
   let callCount = 0;
@@ -79,7 +80,8 @@ export async function createClaudeCliScriptBackend(options: ClaudeCliScriptBacke
           chapterId: 'script-generation',
           stepLabel,
           promptText,
-          ...(options.model ? { model: options.model } : {}),
+          model,
+          effort,
           cliVersion: status.version,
           signal: controller.signal,
           env: options.env,
@@ -90,7 +92,7 @@ export async function createClaudeCliScriptBackend(options: ClaudeCliScriptBacke
         clearInterval(timer);
         callContext.signal?.removeEventListener('abort', callerAborted);
       }
-      await callContext.appendLog(`Claude CLI call ${callCount}: ${stepLabel}; prompt ${promptBytes} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
+      await callContext.appendLog(`Claude CLI call ${callCount}: ${stepLabel}; model ${model}; effort ${effort}; prompt ${promptBytes} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
       if (result.cancelled || controller.signal.aborted || await options.context.isCancelled()) {
         throw new DOMException('Aborted', 'AbortError');
       }

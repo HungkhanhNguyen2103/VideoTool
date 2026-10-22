@@ -122,9 +122,9 @@ describe('Claude CLI script generation backend', () => {
     expect(saved).toMatchObject({ aiProvider: before.aiProvider, aiModel: before.aiModel });
     expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Claude CLI preamble-before-JSON occurrences: 1'));
     expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('response had leading text before JSON at outline'));
-    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Claude CLI call 1: outline; prompt'));
-    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Claude CLI call 3: chapter-1-repair; prompt'));
-    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Claude CLI call 5: chapter-2-length-retry-1; prompt'));
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Claude CLI call 1: outline; model claude-sonnet-5-5; effort medium; prompt'));
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Claude CLI call 3: chapter-1-repair; model claude-sonnet-5-5; effort medium; prompt'));
+    expect(ctx.appendLog).toHaveBeenCalledWith(expect.stringContaining('Claude CLI call 5: chapter-2-length-retry-1; model claude-sonnet-5-5; effort medium; prompt'));
 
     const runsDirectory = path.join(root, project.id, 'cli-runs');
     const runDirectories = await readdir(runsDirectory);
@@ -190,7 +190,7 @@ describe('Claude CLI script generation backend', () => {
       directory,
       metadata: JSON.parse(await readFile(path.join(runsDirectory, directory, 'meta.json'), 'utf8')) as Record<string, unknown>,
     }))).then((runs) => runs.find((run) => run.metadata.stepLabel === 'chapter-1'));
-    expect(chapterRun?.metadata.cancelled).toBe(true);
+    expect(chapterRun?.metadata).toMatchObject({ cancelled: true, model: 'claude-sonnet-5-5', effort: 'medium' });
     expect(await readFile(path.join(runsDirectory, chapterRun!.directory, 'output.txt'), 'utf8')).toBe('');
   });
 

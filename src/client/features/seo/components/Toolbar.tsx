@@ -3,6 +3,7 @@ import styles from '../SeoPage.module.css';
 import { Button } from '../../../shared/ui/Button';
 import { AiModelSelect } from '../../../shared/ai/AiModelSelect';
 import { AI_MODEL_REGISTRY } from '../../../../contracts/ai-models';
+import { CLAUDE_CLI_DEFAULT_EFFORT } from '../../../../contracts/claude-cli';
 import { SEO_CLI_NOTE, type SeoGenerationAvailability } from '../seo-generation-mode';
 
 type Props = {
@@ -59,6 +60,7 @@ export function Toolbar({ mode, provider, model, backend, cliModel, cliAvailabil
               <select id="seo-cli-model" className={styles.input} value={cliModel} disabled={busy} onChange={(event) => onCliModelChange(event.target.value)}>
                 {AI_MODEL_REGISTRY.claude.models.map((item) => <option key={item.id} value={item.id}>{item.label} — {item.hint}</option>)}
               </select>
+              <small>Mức suy luận: {CLAUDE_CLI_DEFAULT_EFFORT}</small>
             </label>
           )}
           <Button className={styles.generateButton} variant="amber" onClick={onGenerate} disabled={busy || cliAvailability.disabled} busy={busy} title={cliAvailability.reason}>Tạo toàn bộ gói</Button>

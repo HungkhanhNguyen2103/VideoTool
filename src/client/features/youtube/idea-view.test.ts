@@ -43,9 +43,8 @@ describe('YouTube video idea view helpers', () => {
     expect(youtubeIdeaGateText(10, 10)).toContain('Đã đạt ngưỡng 10');
   });
 
-  it('selects Sonnet 5.5 as the idea panel model and has a safe registry fallback', () => {
-    expect(youtubeIdeaCliDefaultModel([{ id: 'claude-opus-4-5' }, { id: 'claude-sonnet-5-5' }])).toBe('claude-sonnet-5-5');
-    expect(youtubeIdeaCliDefaultModel([{ id: 'claude-sonnet-4-5' }])).toBe('claude-sonnet-4-5');
+  it('selects the shared CLI default even when the registry ordering changes', () => {
+    expect(youtubeIdeaCliDefaultModel()).toBe('claude-sonnet-5-5');
   });
 
   it('checks steering length, status transitions, stale coverage, and diacritic-insensitive duplicate titles', () => {

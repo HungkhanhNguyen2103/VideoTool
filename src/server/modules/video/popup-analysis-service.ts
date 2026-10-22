@@ -8,7 +8,7 @@ import type { Config } from '../../config';
 import { loadConfig } from '../../config';
 import { AppError } from '../../shared/errors';
 import { getAiClient, type AiProvider, type ChatMessage } from '../../shared/ai';
-import { getClaudeCliStatus, runClaudeCli, type ClaudeCliRunOptions, type ClaudeCliRunResult, type ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
+import { CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL, getClaudeCliStatus, runClaudeCli, type ClaudeCliRunOptions, type ClaudeCliRunResult, type ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { logger } from '../../shared/logger';
 import { getProject, setProjectScenePopupPlans, type ProjectScenePopupPlanUpdate } from '../project';
 import { assemblePopupPlans, type PopupAssemblyScene, type PopupPlanAssemblyResult } from './popup-plan';
@@ -244,6 +244,7 @@ async function runCliChunk(
         stepLabel: `chunk-${chunkIndex + 1}${attempt ? '-retry' : ''}`,
         promptText,
         model,
+        effort: CLAUDE_CLI_DEFAULT_EFFORT,
         cliVersion: status.version,
         signal: controller.signal,
         env: dependencies.env ?? process.env,
@@ -251,7 +252,7 @@ async function runCliChunk(
     } finally {
       stopWatching();
     }
-    await context.appendLog(`Claude CLI popup chunk ${chunkIndex + 1}: prompt ${Buffer.byteLength(promptText, 'utf8')} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
+    await context.appendLog(`Claude CLI popup chunk ${chunkIndex + 1}: model ${model}; effort ${CLAUDE_CLI_DEFAULT_EFFORT}; prompt ${Buffer.byteLength(promptText, 'utf8')} bytes; ${result.durationMs} ms; audit folder ${result.displayPath}.`);
     if (result.cancelled || controller.signal.aborted || await context.isCancelled()) return { cancelled: true };
     const failure = cliFailure(result, config);
     if (failure) throw failure;
@@ -281,7 +282,7 @@ export async function analyzeProjectPopups(
   const resultBase = {
     backend: request.backend,
     provider: request.backend === 'cli' ? 'claude' as const : project.aiProvider,
-    model: request.backend === 'cli' ? request.cliModel ?? getDefaultAiModelId('claude') : project.aiModel ?? getDefaultAiModelId(project.aiProvider),
+    model: request.backend === 'cli' ? request.cliModel ?? CLAUDE_CLI_DEFAULT_MODEL : project.aiModel ?? getDefaultAiModelId(project.aiProvider),
     density: request.density,
     scenesExpected: scenes.length,
     scenesApplied: 0,

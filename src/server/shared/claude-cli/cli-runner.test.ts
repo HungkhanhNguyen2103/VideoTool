@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { getClaudeCliStatus, runClaudeCli, type ClaudeCliSpawn } from './cli-runner';
+import { buildClaudeCliArgs, CLAUDE_CLI_DEFAULT_EFFORT, CLAUDE_CLI_DEFAULT_MODEL, getClaudeCliStatus, runClaudeCli, type ClaudeCliSpawn } from './cli-runner';
 
 const fixture = fileURLToPath(new URL('./fixtures/fake-claude-cli.mjs', import.meta.url));
 const testRoots: string[] = [];
@@ -54,6 +54,7 @@ describe('runClaudeCli', () => {
     const metadata = JSON.parse(await readFile(path.join(result.runDirectory, 'meta.json'), 'utf8')) as Record<string, unknown>;
     expect(metadata).toMatchObject({
       model: 'claude-sonnet-5-5',
+      effort: 'medium',
       exitCode: 0,
       promptBytes: Buffer.byteLength(promptText),
       outputBytes: Buffer.byteLength(output),
@@ -63,7 +64,7 @@ describe('runClaudeCli', () => {
     expect(JSON.stringify(metadata)).not.toContain(promptText);
     expect(calls[0]?.args).toEqual([
       '--print', '--input-format', 'text', '--output-format', 'text', '--tools', '',
-      '--safe-mode', '--no-session-persistence', '--model', 'claude-sonnet-5-5',
+      '--safe-mode', '--no-session-persistence', '--model', 'claude-sonnet-5-5', '--effort', 'medium',
     ]);
     expect(calls[0]?.options.shell).toBe(false);
     expect(calls[0]?.options.cwd).not.toBe(filesDir);
@@ -90,7 +91,7 @@ describe('runClaudeCli', () => {
     expect(await readFile(path.join(result.runDirectory, 'output.txt'), 'utf8')).toBe(fenced);
   });
 
-  it('records a stable pipeline step and omits --model when using the CLI default', async () => {
+  it('records the shared model and effort defaults in args and audit metadata', async () => {
     const filesDir = await makeRoot();
     const calls: Array<{ command: string; args: string[]; options: SpawnOptions }> = [];
     const runOptions = {
@@ -109,7 +110,15 @@ describe('runClaudeCli', () => {
     const metadata = JSON.parse(await readFile(path.join(result.runDirectory, 'meta.json'), 'utf8')) as Record<string, unknown>;
 
     expect(metadata.stepLabel).toBe('outline');
-    expect(calls[0]?.args).not.toContain('--model');
+    expect(metadata).toMatchObject({ model: CLAUDE_CLI_DEFAULT_MODEL, effort: CLAUDE_CLI_DEFAULT_EFFORT });
+    expect(calls[0]?.args).toEqual(buildClaudeCliArgs());
+  });
+
+  it('allows an explicit model while retaining the default effort', () => {
+    expect(buildClaudeCliArgs('claude-haiku-5-5')).toEqual([
+      '--print', '--input-format', 'text', '--output-format', 'text', '--tools', '',
+      '--safe-mode', '--no-session-persistence', '--model', 'claude-haiku-5-5', '--effort', 'medium',
+    ]);
   });
 
   it.skipIf(process.platform !== 'win32')('runs a Windows .cmd shim with argv flags while keeping shell text in stdin', async () => {

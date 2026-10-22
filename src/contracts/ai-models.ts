@@ -28,6 +28,7 @@ export const AI_MODEL_REGISTRY = {
       { id: 'claude-opus-4-5', label: 'Claude Opus 4.5', hint: 'mặc định hiện tại', capabilities: { supportsTemperature: true, supportsJsonMode: true, maxOutputTokens: 64_000 } },
       { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', hint: 'mạnh nhất', capabilities: { supportsTemperature: false, supportsJsonMode: true, maxOutputTokens: 128_000 } },
       { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', hint: 'cân bằng', capabilities: { supportsTemperature: false, supportsJsonMode: true, maxOutputTokens: 128_000 } },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', hint: 'rẻ', capabilities: { supportsTemperature: true, supportsJsonMode: true, maxOutputTokens: 64_000 } },
       { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', hint: 'rẻ', capabilities: { supportsTemperature: true, supportsJsonMode: true, maxOutputTokens: 64_000 } },
     ],
   },

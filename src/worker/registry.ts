@@ -11,6 +11,7 @@ import { isSceneActive } from '../contracts/scene-active';
 import { generateYoutubeReviewV2, generateYoutubeVideoIdeas, syncYoutubeChannel } from '../server/modules/youtube';
 import { YoutubeIdeasJobPayloadSchema } from '../contracts/youtube-ideas';
 import { loadConfig } from '../server/config';
+import { CLAUDE_CLI_DEFAULT_MODEL } from '../contracts/claude-cli';
 import { isAiModelForProvider } from '../contracts/ai-models';
 import { AppError } from '../server/shared/errors';
 import { createClaudeCliChat } from '../server/shared/claude-cli/cli-chat';
@@ -100,7 +101,7 @@ const handleGenerateSeo: JobHandler = async (job, context) => {
       projectId,
       chapterId: 'seo-generation',
       label: 'SEO',
-      model: typeof payload.cliModel === 'string' ? payload.cliModel : undefined,
+      model: typeof payload.cliModel === 'string' ? payload.cliModel : CLAUDE_CLI_DEFAULT_MODEL,
       config,
       context,
     });
