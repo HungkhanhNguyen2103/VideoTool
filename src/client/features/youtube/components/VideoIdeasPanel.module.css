@@ -34,6 +34,8 @@
 .runSummary { display: grid; grid-template-columns: 1fr auto; gap: .4rem .8rem; align-items: center; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel-2); color: var(--text-2); font-size: .65rem; }
 .runSummary > div { display: grid; gap: .15rem; }
 .runSummary > div span { color: var(--text-3); }
+.runSummary .stageDurations { display: flex; flex-wrap: wrap; gap: .25rem .65rem; grid-column: 1 / -1; }
+.stageDurations span { color: var(--text-2) !important; font-variant-numeric: tabular-nums; }
 .runSummary > span { text-align: right; }
 .runSummary details { grid-column: 1 / -1; }
 .runSummary summary, .rejected summary, .brief summary { color: var(--amber-text); cursor: pointer; font-weight: 700; }
@@ -41,13 +43,20 @@
 .ideaList { display: grid; gap: .65rem; min-width: 0; }
 .ideaCard { display: grid; gap: .6rem; min-width: 0; padding: .8rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--panel-2); }
 .ideaHeading { display: grid; gap: .35rem; }
-.ideaHeading > div { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
 .ideaHeading h4 { flex-basis: 100%; margin: .12rem 0 0; color: var(--text); font-size: .92rem; line-height: 1.35; overflow-wrap: anywhere; }
+.ideaMeta { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.trapSketch { margin: 0; padding: .55rem .65rem; border-left: 3px solid var(--amber); color: var(--text-2); background: var(--panel); font-size: .72rem; font-weight: 700; line-height: 1.5; }
 .presetChip, .statusChip, .variableChip { border-color: var(--border-2); color: var(--text-2); background: var(--panel); }
 .hook, .why, .brief p, .testRow p { margin: 0; color: var(--text-2); font-size: .7rem; line-height: 1.5; }
 .brief { padding: .4rem .5rem; border: 1px solid var(--border); border-radius: .42rem; background: var(--panel); }
 .brief summary { font-size: .64rem; }
 .brief p { margin-top: .45rem; white-space: pre-wrap; }
+.trapDetails { padding: .4rem .5rem; border: 1px solid var(--border); border-radius: .42rem; background: var(--panel); }
+.trapDetails summary { color: var(--amber-text); cursor: pointer; font-size: .64rem; font-weight: 700; }
+.trapGrid { display: grid; gap: .4rem; margin: .5rem 0 0; }
+.trapGrid div { display: grid; grid-template-columns: minmax(8rem, .35fr) minmax(0, 1fr); gap: .4rem; }
+.trapGrid dt { color: var(--text-3); font-size: .62rem; font-weight: 700; }
+.trapGrid dd { margin: 0; color: var(--text-2); font-size: .67rem; line-height: 1.45; }
 .motifTableWrap { max-width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: .45rem; }
 .motifTable { width: 100%; border-collapse: collapse; }
 .motifTable th, .motifTable td { padding: .42rem .5rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; font-size: .64rem; line-height: 1.45; }
@@ -64,6 +73,10 @@
 .unverified { padding: .55rem .65rem; border-left: 3px solid var(--amber); color: var(--amber-text); background: var(--amber-bg); font-size: .67rem; }
 .unverified strong span { display: block; margin-top: .1rem; color: var(--text-2); font-size: .58rem; }
 .unverified ul { margin: .35rem 0 0; padding-left: 1.05rem; color: var(--text-2); line-height: 1.5; overflow-wrap: anywhere; }
+.claimList { display: grid; gap: .45rem; padding-left: 0 !important; list-style: none; }
+.claimRow { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: .4rem; font-size: .65rem; }
+.claimChip { width: fit-content; padding: .15rem .35rem; border: 1px solid var(--border-2); border-radius: 999px; color: var(--text-2); background: var(--panel); font-size: .56rem; font-weight: 800; line-height: 1.4; }
+.claimLow { border-color: var(--red-bd); color: var(--red); background: var(--panel); }
 .rarity { margin: 0; color: var(--text-3); font-size: .62rem; }
 .manualCheck { display: grid; gap: .3rem; padding: .6rem; border: 1px solid var(--border); border-radius: .45rem; background: var(--panel); }
 .manualCheck > label { color: var(--text-2); font-size: .65rem; font-weight: 800; }
@@ -93,5 +106,7 @@
   .steering { grid-column: auto; }
   .manualRow { align-items: stretch; flex-direction: column; }
   .motifTable tbody th { width: 6.8rem; }
+  .trapGrid div { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+  .claimRow { grid-template-columns: minmax(0, 1fr); }
   .cardActions > button { flex: 1 1 9rem; }
 }

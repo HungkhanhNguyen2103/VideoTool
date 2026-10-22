@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AI_MODEL_REGISTRY, getDefaultAiModelId } from '../../../../contracts/ai-models';
+import { AI_MODEL_REGISTRY } from '../../../../contracts/ai-models';
 import { SCRIPT_PRESET_IDS } from '../../../../contracts/project';
 import type { YoutubeIdeaRecord, YoutubeIdeaStatus } from '../../../../contracts/youtube-ideas';
 import { ApiError } from '../../../shared/api-client';
@@ -11,7 +11,7 @@ import { cancelJob } from '../../../shared/job-api';
 import { addYoutubeGrowthExperiment } from '../api';
 import { getYoutubeCliStatus, prepareYoutubeIdeaProject, startYoutubeIdeasGeneration, updateYoutubeIdea } from '../api';
 import { youtubeGrowthPlanKey, youtubeGrowthPlanStatusKey, youtubeIdeasKey, useYoutubeGrowthPlanStatus, useYoutubeIdeas } from '../hooks';
-import { buildYoutubeIdeaResearchRequest, canChangeYoutubeIdeaStatus, isYoutubeIdeaCoverageStale, mapYoutubeIdeaToProjectPrefill, validateYoutubeIdeaSteering, YOUTUBE_IDEA_MANUAL_CHECK_INSTRUCTIONS, youtubeIdeaGateText, youtubeIdeaTierText } from '../idea-view';
+import { buildYoutubeIdeaResearchRequest, canChangeYoutubeIdeaStatus, isYoutubeIdeaCoverageStale, mapYoutubeIdeaToProjectPrefill, validateYoutubeIdeaSteering, YOUTUBE_IDEA_MANUAL_CHECK_INSTRUCTIONS, youtubeIdeaArchetypeLabel, youtubeIdeaClaimRows, youtubeIdeaCliDefaultModel, youtubeIdeaConfidenceLabel, youtubeIdeaDropReasonLabel, youtubeIdeaFamousnessLabel, youtubeIdeaGateText, youtubeIdeaIsV2, youtubeIdeaStageDurations, youtubeIdeaTierText, youtubeIdeaTrapLines } from '../idea-view';
 import styles from './VideoIdeasPanel.module.css';
 
 const PRESET_LABELS: Record<(typeof SCRIPT_PRESET_IDS)[number], string> = {
@@ -46,6 +46,11 @@ function IdeaCard({ channelId, language, row, verdictPresent, onRefresh }: { cha
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const v2Idea = youtubeIdeaIsV2(row.idea) ? row.idea : null;
+  const legacyIdea = youtubeIdeaIsV2(row.idea) ? null : row.idea;
+  const isV2 = v2Idea !== null;
+  const claimRows = youtubeIdeaClaimRows(row.idea);
+  const trapLines = youtubeIdeaTrapLines(row.idea);
 
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: youtubeIdeasKey(channelId) });
@@ -98,16 +103,27 @@ function IdeaCard({ channelId, language, row, verdictPresent, onRefresh }: { cha
   }
 
   return <article className={styles.ideaCard}>
-    <header className={styles.ideaHeading}>
-      <div><span className={styles.presetChip}>{PRESET_LABELS[row.idea.presetId]}</span><span className={styles.statusChip}>{row.status === 'new' ? 'Mới' : row.status === 'chosen' ? 'Đã chọn' : row.status === 'rejected' ? 'Đã loại' : 'Đã dùng'}</span><h4>{row.idea.title}</h4></div>
-      <p className={styles.hook}><strong>Mở đầu:</strong> {row.idea.hook}</p>
-    </header>
+    <header className={styles.ideaHeading}><h4>{row.idea.title}</h4></header>
+    {v2Idea && <p className={styles.trapSketch}>{v2Idea.trapSketch}</p>}
+    <div className={styles.ideaMeta}>
+      <span className={styles.presetChip}>{PRESET_LABELS[row.idea.presetId]}</span>
+      <span className={styles.statusChip}>{row.status === 'new' ? 'Mới' : row.status === 'chosen' ? 'Đã chọn' : row.status === 'rejected' ? 'Đã loại' : 'Đã dùng'}</span>
+      {v2Idea && <>
+        <span className={styles.variableChip}>{youtubeIdeaArchetypeLabel(v2Idea.hunterArchetype)}</span>
+        <span className={styles.variableChip}>{v2Idea.period} · {v2Idea.place}</span>
+        <span className={styles.variableChip}>{youtubeIdeaFamousnessLabel(v2Idea)}</span>
+      </>}
+    </div>
+    <p className={styles.hook}><strong>Mở đầu:</strong> {row.idea.hook}</p>
     <details className={styles.brief}><summary>Xem brief</summary><p>{row.idea.brief}</p></details>
+    {v2Idea && <details className={styles.trapDetails}><summary>Bốn giả thuyết của trap</summary><dl className={styles.trapGrid}>{trapLines.map((line) => <div key={line.key}><dt>{line.label}</dt><dd>{line.text}</dd></div>)}</dl></details>}
     <MotifTable idea={row.idea} />
     <p className={styles.why}><strong>Vì sao hợp kênh:</strong> {row.idea.whyForThisChannel}</p>
     <div className={styles.testRow}><span className={styles.variableChip}>Thử biến: {VARIABLE_LABELS[row.idea.testVariable]}</span><p><strong>Tiêu chí:</strong> {row.idea.successCriterion.description} · sau {row.idea.successCriterion.afterVideos} video</p></div>
     <div className={styles.scores} aria-label="Điểm phản biện"><span>Độ hợp {row.idea.scores.fit}/5</span><span>Độ rõ {row.idea.scores.clarity}/5</span><span>Rủi ro nguồn mỏng {row.idea.scores.riskOfThinSources}/5</span></div>
-    {row.idea.unverifiedFacts.length > 0 && <section className={styles.unverified}><strong>Cần kiểm chứng <span>Từ trí nhớ của AI, chưa có nguồn</span></strong><ul>{row.idea.unverifiedFacts.map((fact, index) => <li key={`${index}-${fact}`}>{fact}</li>)}</ul></section>}
+    {isV2
+      ? <section className={styles.unverified}><strong>Claims cần kiểm chứng <span>Đây là checklist research; độ tin cậy chỉ là ước đoán của AI.</span></strong><ul className={styles.claimList}>{claimRows.map((claim, index) => <li className={styles.claimRow} key={`${index}-${claim.text}`}><span className={`${styles.claimChip} ${claim.confidence === 'low' ? styles.claimLow : ''}`}>{youtubeIdeaConfidenceLabel(claim.confidence)}</span><span>{claim.text}</span></li>)}</ul></section>
+      : legacyIdea && legacyIdea.unverifiedFacts.length > 0 && <section className={styles.unverified}><strong>Cần kiểm chứng <span>Từ trí nhớ của AI, chưa có nguồn</span></strong><ul>{legacyIdea.unverifiedFacts.map((fact, index) => <li key={`${index}-${fact}`}>{fact}</li>)}</ul></section>}
     {row.idea.rarityGuess && <p className={styles.rarity}>Ước đoán độ hiếm: {RARITY_LABELS[row.idea.rarityGuess]} · chưa được kiểm chứng</p>}
     <section className={styles.manualCheck}>
       <label htmlFor={`manual-demand-${row.id}`}>Kiểm tra nhu cầu thủ công · khoảng 5 phút</label>
@@ -133,7 +149,7 @@ export function VideoIdeasPanel({ channelId, language = 'vi' }: { channelId: str
   const ideasQuery = useYoutubeIdeas(channelId);
   const planQuery = useYoutubeGrowthPlanStatus(channelId);
   const [backend, setBackend] = useState<'cli' | 'api'>('cli');
-  const [cliModel, setCliModel] = useState<string>(getDefaultAiModelId('claude'));
+  const [cliModel, setCliModel] = useState<string>(youtubeIdeaCliDefaultModel(AI_MODEL_REGISTRY.claude.models));
   const [steering, setSteering] = useState('');
   const [presetId, setPresetId] = useState<(typeof SCRIPT_PRESET_IDS)[number]>('hubris-trap');
   const [count, setCount] = useState(6);
@@ -231,7 +247,7 @@ export function VideoIdeasPanel({ channelId, language = 'vi' }: { channelId: str
       {logsOpen && <ol className={styles.logs} role="log" aria-live="polite">{(progress?.logs ?? []).slice(-30).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ol>}
     </section>}
 
-    {run && <section className={styles.runSummary}><div><strong>Lượt gần nhất</strong><span>{run.backend === 'cli' ? 'Claude CLI' : 'API'} · {run.model} · {DATE_TIME.format(new Date(run.generatedAt))}</span></div><span>{run.dropped.length} mục bị bỏ sau đối chiếu · bậc {run.evidenceTier}</span>{run.dropped.length > 0 && <details><summary>Xem lý do các mục bị bỏ</summary><ul>{run.dropped.map((item, index) => <li key={`${index}-${item.id}`}><strong>{item.id}:</strong> {item.reason}</li>)}</ul></details>}</section>}
+    {run && <section className={styles.runSummary}><div><strong>Lượt gần nhất</strong><span>{run.backend === 'cli' ? 'Claude CLI' : 'API'} · {run.model} · {DATE_TIME.format(new Date(run.generatedAt))}</span></div><span>{run.dropped.length} mục bị bỏ sau đối chiếu · bậc {run.evidenceTier}</span><div className={styles.stageDurations}>{youtubeIdeaStageDurations(run.durations).map((stage) => <span key={stage.label}>{stage.label}: {(stage.durationMs / 1000).toFixed(1)} giây</span>)}</div>{run.dropped.length > 0 && <details><summary>Xem lý do các mục bị bỏ</summary><ul>{run.dropped.map((item, index) => <li key={`${index}-${item.id}`}><strong>{item.id}:</strong> {youtubeIdeaDropReasonLabel(item.reason)}{youtubeIdeaDropReasonLabel(item.reason) !== item.reason ? ` · ${item.reason}` : ''}</li>)}</ul></details>}</section>}
     {!ideasQuery.isLoading && !ideasQuery.error && accepted.length === 0 && <p className={styles.state}>Chưa có ý tưởng. Bấm Gợi ý video tiếp theo.</p>}
     {accepted.length > 0 && <div className={styles.ideaList}>{accepted.map((row) => <IdeaCard channelId={channelId} language={language} key={row.id} row={row} verdictPresent={Boolean(planVerdict)} onRefresh={() => queryClient.invalidateQueries({ queryKey: youtubeIdeasKey(channelId) })} />)}</div>}
     {rejected.length > 0 && <details className={styles.rejected}><summary>Ý tưởng đã loại bỏ ({rejected.length})</summary><div className={styles.ideaList}>{rejected.map((row) => <IdeaCard channelId={channelId} language={language} key={row.id} row={row} verdictPresent={Boolean(planVerdict)} onRefresh={() => queryClient.invalidateQueries({ queryKey: youtubeIdeasKey(channelId) })} />)}</div></details>}
