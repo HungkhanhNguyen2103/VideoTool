@@ -1,19 +1,35 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   beginYoutubeConnection,
+  beginYoutubeImport,
   disconnectYoutube,
   generateYoutubeChannelReview,
   getActiveYoutubeSync,
   getYoutubeConnection,
+  getYoutubeSetupStatus,
   getYoutubeVideos,
   linkProjectToYoutubeVideo,
   startYoutubeSync,
+  refreshYoutubeProfile,
   unlinkProjectFromYoutubeVideo,
 } from './api';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('YouTube analytics client API', () => {
+  it('starts account import and sends refresh selection to the profile route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ configured: true }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ authorizationUrl: 'https://accounts.google.com/auth' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ updated: ['description'], skipped: ['name', 'handle', 'language'] }), { status: 200 }));
+    await expect(getYoutubeSetupStatus()).resolves.toEqual({ configured: true });
+    await expect(beginYoutubeImport()).resolves.toMatchObject({ authorizationUrl: expect.stringContaining('accounts.google.com') });
+    await expect(refreshYoutubeProfile('channel/one', { overwrite: true, fields: ['description'] })).resolves.toMatchObject({ updated: ['description'] });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/youtube/setup', expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/youtube/import/start', expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/youtube/channels/channel%2Fone/refresh-profile', expect.objectContaining({ method: 'POST', body: JSON.stringify({ overwrite: true, fields: ['description'] }) }));
+  });
+
   it('starts OAuth and reads token-free connection summaries using encoded channel ids', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=x' }), { status: 200 }))
@@ -57,5 +73,10 @@ describe('YouTube analytics client API', () => {
   it('maps review errors to the shared Vietnamese API error shape', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'YOUTUBE_REVIEW_NO_DATA', message: 'Đồng bộ ít nhất một video trước khi nhận xét bằng AI.' } }), { status: 409 }));
     await expect(generateYoutubeChannelReview('channel-1')).rejects.toMatchObject({ status: 409, code: 'YOUTUBE_REVIEW_NO_DATA', message: 'Đồng bộ ít nhất một video trước khi nhận xét bằng AI.' });
+  });
+
+  it('maps refresh-profile errors through the shared API error contract', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'YOUTUBE_NOT_CONNECTED', message: 'Kênh YouTube chưa được kết nối.' } }), { status: 409 }));
+    await expect(refreshYoutubeProfile('channel-1')).rejects.toMatchObject({ status: 409, code: 'YOUTUBE_NOT_CONNECTED', message: 'Kênh YouTube chưa được kết nối.' });
   });
 });

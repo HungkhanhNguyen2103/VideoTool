@@ -2,14 +2,27 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Channel } from '../../../../contracts/channel';
+import type { YoutubeProfileField } from '../../../../contracts/youtube';
 import { Button } from '../../../shared/ui/Button';
 import { useJobProgress } from '../../../shared/hooks/use-job-progress';
-import { useYoutubeActiveSync, useYoutubeConnection, invalidateYoutubeChannelQueries, youtubeConnectionKey } from '../hooks';
+import { useYoutubeActiveSync, useYoutubeConnection, invalidateYoutubeChannelQueries, useRefreshYoutubeProfile, youtubeConnectionKey } from '../hooks';
 import { beginYoutubeConnection, disconnectYoutube, getYoutubeConnection, startYoutubeSync } from '../api';
-import { isTrustedYoutubeOauthMessage, isYoutubeSyncActive, youtubeConnectionLabel, youtubeConnectionState, youtubeSyncMessage } from '../youtube-view';
+import { isYoutubeSyncActive, youtubeConnectionLabel, youtubeConnectionState, youtubeSyncMessage } from '../youtube-view';
+import { useYoutubeOauthPopup, type YoutubeOauthFinishedMessage } from '../use-youtube-oauth-popup';
 import styles from './ChannelYoutubeControls.module.css';
 
-type Props = { channel: Channel };
+type Props = {
+  channel: Channel;
+  beforeProfileRefresh?: () => boolean | Promise<boolean>;
+  onProfileRefreshed?: () => void | Promise<void>;
+};
+
+const PROFILE_FIELD_LABELS: Record<YoutubeProfileField, string> = {
+  name: 'Tên kênh',
+  handle: 'Handle',
+  description: 'Mô tả',
+  language: 'Ngôn ngữ',
+};
 
 function SetupGuide() {
   return (
@@ -28,20 +41,31 @@ function SetupGuide() {
   );
 }
 
-export function ChannelYoutubeControls({ channel }: Props) {
+export function ChannelYoutubeControls({ channel, beforeProfileRefresh, onProfileRefreshed }: Props) {
   const queryClient = useQueryClient();
   const connectionQuery = useYoutubeConnection(channel.id, channel.youtube);
   const activeJobQuery = useYoutubeActiveSync(channel.id, connectionQuery.data?.connected ?? false);
   const [jobId, setJobId] = useState<string | null>(null);
-  const [oauthPending, setOauthPending] = useState(false);
+  const [connectionCheckPending, setConnectionCheckPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const popupRef = useRef<Window | null>(null);
-  const popupMonitorRef = useRef<number | null>(null);
+  const overwriteDialogRef = useRef<HTMLDialogElement>(null);
+  const [overwriteFields, setOverwriteFields] = useState<YoutubeProfileField[]>(['name', 'handle', 'description', 'language']);
+  const refreshMutation = useRefreshYoutubeProfile();
   const progress = useJobProgress(jobId);
   const connection = connectionQuery.data;
   const state = youtubeConnectionState(connection);
   const syncActive = isYoutubeSyncActive(jobId, progress);
+  const { pending: popupPending, openPopup } = useYoutubeOauthPopup((payload: YoutubeOauthFinishedMessage) => {
+    if (!payload.success) {
+      setConnectionCheckPending(false);
+      setError('Google không hoàn tất kết nối. Hãy kiểm tra quyền đọc YouTube rồi thử lại.');
+      return;
+    }
+    setMessage('Đã xác nhận Google. Đang kiểm tra kênh được liên kết…');
+    void pollForConnection();
+  });
+  const oauthPending = popupPending || connectionCheckPending;
 
   useEffect(() => {
     if (activeJobQuery.data?.jobId) setJobId(activeJobQuery.data.jobId);
@@ -58,31 +82,8 @@ export function ChannelYoutubeControls({ channel }: Props) {
     return () => window.clearTimeout(timer);
   }, [channel.id, jobId, progress?.status, progress?.error, queryClient]);
 
-  useEffect(() => {
-    const onMessage = (event: MessageEvent<unknown>) => {
-      if (!isTrustedYoutubeOauthMessage(event, popupRef.current) || !event.data || typeof event.data !== 'object') return;
-      const payload = event.data as { type?: unknown; success?: unknown };
-      if (payload.type !== 'youtube-oauth-finished') return;
-      if (popupMonitorRef.current !== null) window.clearInterval(popupMonitorRef.current);
-      popupMonitorRef.current = null;
-      popupRef.current = null;
-      if (payload.success !== true) {
-        setOauthPending(false);
-        setError('Google không hoàn tất kết nối. Hãy kiểm tra quyền đọc YouTube rồi thử lại.');
-        return;
-      }
-      setMessage('Đã xác nhận Google. Đang kiểm tra kênh được liên kết…');
-      void pollForConnection();
-    };
-    window.addEventListener('message', onMessage);
-    return () => {
-      window.removeEventListener('message', onMessage);
-      if (popupMonitorRef.current !== null) window.clearInterval(popupMonitorRef.current);
-    };
-  }, [channel.id, queryClient]);
-
   async function pollForConnection() {
-    setOauthPending(true);
+    setConnectionCheckPending(true);
     setError(null);
     const deadline = Date.now() + 120_000;
     while (Date.now() < deadline) {
@@ -93,7 +94,7 @@ export function ChannelYoutubeControls({ channel }: Props) {
           await queryClient.invalidateQueries({ queryKey: ['channels'] });
           await invalidateYoutubeChannelQueries(queryClient, channel.id);
           setMessage(`Đã kết nối ${latest.title ?? 'kênh YouTube'}.`);
-          setOauthPending(false);
+          setConnectionCheckPending(false);
           return;
         }
       } catch {
@@ -101,39 +102,38 @@ export function ChannelYoutubeControls({ channel }: Props) {
       }
       await new Promise((resolve) => window.setTimeout(resolve, 2_000));
     }
-    setOauthPending(false);
+    setConnectionCheckPending(false);
     setError('Chưa nhận được trạng thái kênh sau 2 phút. Hãy làm mới danh sách kênh để kiểm tra.');
   }
 
   async function connect() {
     setMessage(null);
     setError(null);
-    const popup = window.open('about:blank', 'youtube-oauth', 'popup,width=620,height=760');
-    if (!popup) {
-      setError('Trình duyệt đã chặn cửa sổ Google. Hãy cho phép popup rồi thử lại.');
-      return;
-    }
-    popupRef.current = popup;
-    setOauthPending(true);
-    popupMonitorRef.current = window.setInterval(() => {
-      if (popup.closed) {
-        if (popupMonitorRef.current !== null) window.clearInterval(popupMonitorRef.current);
-        popupMonitorRef.current = null;
-        popupRef.current = null;
-        setOauthPending(false);
-      }
-    }, 500);
     try {
-      const { authorizationUrl } = await beginYoutubeConnection(channel.id);
-      popup.location.href = authorizationUrl;
+      await openPopup(() => beginYoutubeConnection(channel.id));
     } catch (caught) {
-      popup.close();
-      if (popupMonitorRef.current !== null) window.clearInterval(popupMonitorRef.current);
-      popupMonitorRef.current = null;
-      popupRef.current = null;
-      setOauthPending(false);
       setError(caught instanceof Error ? caught.message : 'Không thể bắt đầu kết nối Google.');
     }
+  }
+
+  async function refreshProfile(overwrite: boolean, fields?: YoutubeProfileField[]) {
+    if (beforeProfileRefresh && !(await beforeProfileRefresh())) return;
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await refreshMutation.mutateAsync({ channelId: channel.id, input: { overwrite, ...(fields ? { fields } : {}) } });
+      const updated = result.updated.map((field) => PROFILE_FIELD_LABELS[field]);
+      setMessage(updated.length ? `Đã cập nhật thông tin hồ sơ từ YouTube: ${updated.join(', ')}.` : 'Không có trường hồ sơ nào cần cập nhật.');
+      overwriteDialogRef.current?.close();
+      await onProfileRefreshed?.();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không thể cập nhật hồ sơ từ YouTube.');
+    }
+  }
+
+  function openOverwriteDialog() {
+    setOverwriteFields(['name', 'handle', 'description', 'language']);
+    overwriteDialogRef.current?.showModal();
   }
 
   async function syncNow() {
@@ -188,10 +188,25 @@ export function ChannelYoutubeControls({ channel }: Props) {
           {connection?.connected && <>
             <Button size="sm" variant="amber" onClick={() => void syncNow()} disabled={syncActive || oauthPending}>{syncActive ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</Button>
             <Link className={styles.analyticsLink} to={`/channels/${encodeURIComponent(channel.id)}/analytics`}>Phân tích kênh</Link>
+            <Button size="sm" onClick={() => void refreshProfile(false)} disabled={refreshMutation.isPending || oauthPending}>{refreshMutation.isPending ? 'Đang cập nhật…' : 'Cập nhật thông tin từ YouTube'}</Button>
+            <Button size="sm" onClick={openOverwriteDialog} disabled={refreshMutation.isPending || oauthPending}>Ghi đè từ YouTube…</Button>
             <Button size="sm" onClick={() => void disconnect()} disabled={syncActive}>Ngắt kết nối</Button>
           </>}
         </div>
       )}
+      <dialog ref={overwriteDialogRef} className={styles.overwriteDialog} aria-labelledby={`youtube-overwrite-title-${channel.id}`}>
+        <form method="dialog" className={styles.overwriteForm} onSubmit={(event) => { event.preventDefault(); void refreshProfile(true, overwriteFields); }}>
+          <h3 id={`youtube-overwrite-title-${channel.id}`}>Ghi đè trường hồ sơ từ YouTube</h3>
+          <p>Chọn các trường được phép ghi đè.</p>
+          {(Object.keys(PROFILE_FIELD_LABELS) as YoutubeProfileField[]).map((field) => (
+            <label key={field}><input type="checkbox" checked={overwriteFields.includes(field)} onChange={(event) => setOverwriteFields((current) => event.target.checked ? [...current, field] : current.filter((value) => value !== field))} /> {PROFILE_FIELD_LABELS[field]}</label>
+          ))}
+          <div className={styles.actions}>
+            <Button type="button" size="sm" onClick={() => overwriteDialogRef.current?.close()}>Hủy</Button>
+            <Button type="submit" size="sm" variant="amber" disabled={overwriteFields.length === 0 || refreshMutation.isPending}>{refreshMutation.isPending ? 'Đang cập nhật…' : 'Ghi đè trường đã chọn'}</Button>
+          </div>
+        </form>
+      </dialog>
     </section>
   );
 }

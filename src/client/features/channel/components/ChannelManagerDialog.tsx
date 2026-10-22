@@ -3,8 +3,12 @@ import type { Channel, CreateChannelRequest } from '../../../../contracts/channe
 import { PUBLISH_SCHEDULE_STARTER_WINDOWS, type PublishSchedule } from '../../../../contracts/channel-schedule';
 import { Button } from '../../../shared/ui/Button';
 import { ChannelYoutubeControls } from '../../youtube/components/ChannelYoutubeControls';
-import { channelEditorInput, channelScheduleEditor, formatChannelLinks, starterScheduleEditor } from '../channel-helpers';
+import { channelEditorInput, channelScheduleEditor, formatChannelLinks, isChannelEditorDirty, profileRefreshNeedsConfirmation, starterScheduleEditor } from '../channel-helpers';
 import { useChannels, useCreateChannel, useDeleteChannel, useUpdateChannel } from '../hooks';
+import { beginYoutubeImport } from '../../youtube/api';
+import { useYoutubeSetupStatus } from '../../youtube/hooks';
+import { useYoutubeOauthPopup, type YoutubeOauthFinishedMessage } from '../../youtube/use-youtube-oauth-popup';
+import { youtubeImportResultSummary } from '../../youtube/youtube-view';
 import styles from './ChannelManagerDialog.module.css';
 
 type ChannelEditor = {
@@ -71,6 +75,7 @@ export type ChannelManagerDialogProps = {
 export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose }: ChannelManagerDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const channelsQuery = useChannels();
+  const youtubeSetupQuery = useYoutubeSetupStatus();
   const createMutation = useCreateChannel();
   const updateMutation = useUpdateChannel();
   const deleteMutation = useDeleteChannel();
@@ -78,7 +83,18 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
   const [editor, setEditor] = useState<ChannelEditor>(EMPTY_EDITOR);
   const [pendingDelete, setPendingDelete] = useState<Channel | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [youtubeImportError, setYoutubeImportError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const busy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  const { pending: importPending, openPopup: openImportPopup } = useYoutubeOauthPopup((payload: YoutubeOauthFinishedMessage) => {
+    if (!payload.success) {
+      setYoutubeImportError('Google không hoàn tất việc thêm kênh. Hãy thử đăng nhập lại.');
+      return;
+    }
+    setYoutubeImportError(null);
+    setNotice(youtubeImportResultSummary({ imported: payload.imported ?? 0, alreadyBound: payload.alreadyBound, failed: payload.failed }));
+    void selectImportedProfile(payload);
+  });
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -101,6 +117,38 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
     setEditor(EMPTY_EDITOR);
     setError(null);
     setPendingDelete(null);
+  }
+
+  function mayDiscardEditor(channelId?: string): boolean {
+    if (!editingId || editingId !== channelId) return true;
+    const saved = channelsQuery.data?.find((channel) => channel.id === editingId);
+    const dirty = saved ? isChannelEditorDirty(editor, editorFromChannel(saved)) : false;
+    if (!profileRefreshNeedsConfirmation(dirty)) return true;
+    return window.confirm('Bạn có thay đổi hồ sơ chưa lưu. Tiếp tục sẽ thay nội dung đang sửa bằng thông tin vừa tải từ YouTube. Bạn muốn tiếp tục?');
+  }
+
+  async function refreshEditorFromProfile(channelId: string) {
+    const refreshed = await channelsQuery.refetch();
+    const updated = refreshed.data?.find((channel) => channel.id === channelId);
+    if (updated && editingId === channelId) setEditor(editorFromChannel(updated));
+  }
+
+  async function selectImportedProfile(payload: YoutubeOauthFinishedMessage) {
+    const firstId = payload.profileIds?.[0];
+    const refreshed = await channelsQuery.refetch();
+    const first = firstId ? refreshed.data?.find((channel) => channel.id === firstId) : undefined;
+    if (!first || !mayDiscardEditor(editingId ?? undefined)) return;
+    editChannel(first);
+  }
+
+  async function importFromYoutube() {
+    setYoutubeImportError(null);
+    setNotice(null);
+    try {
+      await openImportPopup(beginYoutubeImport);
+    } catch (caught) {
+      setYoutubeImportError(caught instanceof Error ? caught.message : 'Không thể bắt đầu đăng nhập Google.');
+    }
   }
 
   function editChannel(channel: Channel) {
@@ -182,8 +230,20 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
           <section className={styles.listPanel} aria-label="Danh sách kênh">
             <div className={styles.panelHeader}>
               <h3>Kênh đã lưu</h3>
-              <Button size="sm" onClick={startNew} disabled={busy}>Tạo kênh</Button>
+              <div className={styles.headerActions}>
+                <Button size="sm" onClick={startNew} disabled={busy}>Tạo kênh</Button>
+                <div className={styles.importControl}>
+                  <Button size="sm" variant="amber" onClick={() => void importFromYoutube()} disabled={busy || importPending || youtubeSetupQuery.data?.configured !== true}>
+                    {importPending ? 'Đang chờ Google…' : 'Thêm kênh từ YouTube'}
+                  </Button>
+                  <p className={styles.muted}>Google quyết định kênh nào được liệt kê. Cần thêm kênh khác? Bấm lại và chọn kênh khác khi đăng nhập.</p>
+                  {youtubeSetupQuery.data?.configured === false && <p className={styles.muted}>{youtubeSetupQuery.data.message}</p>}
+                  {youtubeSetupQuery.isError && <p className={styles.muted}>Không kiểm tra được cấu hình Google. Hãy tải lại trang.</p>}
+                </div>
+              </div>
             </div>
+            {notice && <p className={styles.notice} role="status">{notice}</p>}
+            {youtubeImportError && <p className={styles.error} role="alert">{youtubeImportError}</p>}
             {channelsQuery.isLoading && <p className={styles.muted}>Đang tải danh sách kênh…</p>}
             {channelsQuery.error && <p className={styles.error} role="alert">Không tải được danh sách kênh.</p>}
             <div className={styles.channelList}>
@@ -191,7 +251,11 @@ export function ChannelManagerDialog({ open, prefill, onPrefillConsumed, onClose
                 <article className={`${styles.channelItem} ${editingId === channel.id ? styles.selected : ''}`} key={channel.id}>
                   <div className={styles.channelName}><strong>{channel.name}</strong>{channel.handle && <span>{channel.handle}</span>}</div>
                   {channel.tagline && <p>{channel.tagline}</p>}
-                  <ChannelYoutubeControls channel={channel} />
+                  <ChannelYoutubeControls
+                    channel={channel}
+                    beforeProfileRefresh={() => mayDiscardEditor(channel.id)}
+                    onProfileRefreshed={() => refreshEditorFromProfile(channel.id)}
+                  />
                   <div className={styles.itemActions}>
                     <Button size="sm" onClick={() => editChannel(channel)} disabled={busy}>Sửa</Button>
                     <Button size="sm" variant="red" onClick={() => setPendingDelete(channel)} disabled={busy}>Xóa</Button>

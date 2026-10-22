@@ -14,6 +14,14 @@ export function isTrustedYoutubeOauthMessage(event: Pick<MessageEvent, 'origin' 
   return popup !== null && event.source === popup && YOUTUBE_OAUTH_CALLBACK_ORIGINS.has(event.origin);
 }
 
+export function youtubeImportResultSummary(input: { imported: number; alreadyBound?: number; failed?: number }): string {
+  const alreadyBound = input.alreadyBound ?? 0;
+  const failed = input.failed ?? 0;
+  if (failed > 0) return `Đã thêm ${input.imported} kênh; ${alreadyBound} kênh đã được gắn và ${failed} kênh chưa thể thêm.`;
+  if (alreadyBound > 0) return `Đã thêm ${input.imported} kênh, bỏ qua ${alreadyBound} kênh đã được gắn.`;
+  return `Đã thêm ${input.imported} kênh từ YouTube.`;
+}
+
 export function youtubeThresholdSourceLinks(sourceUrls: readonly string[]): { href: string; label: string }[] {
   return sourceUrls.map((href, index) => ({ href, label: YOUTUBE_THRESHOLD_SOURCE_LABELS.get(href) ?? `Nguồn YouTube ${index + 1}` }));
 }

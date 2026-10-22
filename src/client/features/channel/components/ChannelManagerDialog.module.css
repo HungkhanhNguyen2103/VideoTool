@@ -10,6 +10,10 @@
 .listPanel { border-right: 1px solid var(--border); background: var(--panel-2); }
 .panelHeader { justify-content: space-between; margin-bottom: .7rem; }
 .panelHeader h3 { margin: 0; font-size: .9rem; }
+.headerActions { display: flex; align-items: flex-start; justify-content: flex-end; gap: .45rem; flex-wrap: wrap; }
+.importControl { display: grid; justify-items: end; gap: .25rem; max-width: 20rem; }
+.importControl .muted { max-width: 20rem; margin: 0; text-align: right; font-size: .65rem; line-height: 1.35; }
+.notice { margin: 0 0 .65rem; padding: .5rem .6rem; border: 1px solid var(--green-bd, var(--border-2)); border-radius: .45rem; color: var(--green); background: var(--green-bg, transparent); font-size: .75rem; }
 .channelList { display: grid; gap: .55rem; }
 .channelItem { display: grid; gap: .3rem; padding: .65rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--panel); }
 .channelItem.selected { border-color: var(--amber-bd); background: var(--amber-bg); }

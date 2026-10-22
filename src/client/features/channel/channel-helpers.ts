@@ -13,6 +13,14 @@ const LAST_USED_CHANNEL_KEY = 'video-tool:last-used-channel-id';
 
 export type ChannelScheduleEditor = { timezone: string; slots: PublishSchedule['slots']; notes: string };
 
+export function isChannelEditorDirty<T extends Record<string, unknown>>(current: T, saved: T): boolean {
+  return JSON.stringify(current) !== JSON.stringify(saved);
+}
+
+export function profileRefreshNeedsConfirmation(isDirty: boolean): boolean {
+  return isDirty;
+}
+
 export function channelScheduleEditor(schedule: PublishSchedule | null | undefined): ChannelScheduleEditor {
   return schedule
     ? { timezone: schedule.timezone, slots: schedule.slots.map((slot) => ({ ...slot })), notes: schedule.notes }

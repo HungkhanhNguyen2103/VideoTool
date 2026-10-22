@@ -1,4 +1,4 @@
-import { useQuery, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { YoutubeVideoFilters } from './api';
 import * as api from './api';
 
@@ -9,6 +9,7 @@ export const youtubeVideosKey = (channelId: string, filters: YoutubeVideoFilters
 export const youtubeVideoKey = (channelId: string, videoId: string) => [...YOUTUBE_QUERY_KEY, 'video', channelId, videoId] as const;
 export const youtubeLinksKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'suggested-links', channelId] as const;
 export const youtubeActiveSyncKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'active-sync', channelId] as const;
+export const youtubeSetupStatusKey = [...YOUTUBE_QUERY_KEY, 'setup'] as const;
 
 export async function invalidateYoutubeChannelQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, channelId: string): Promise<void> {
   await Promise.all([
@@ -29,6 +30,26 @@ export async function invalidateYoutubeLinkQueries(queryClient: Pick<QueryClient
   ];
   if (videoId) invalidations.push(queryClient.invalidateQueries({ queryKey: youtubeVideoKey(channelId, videoId) }));
   await Promise.all(invalidations);
+}
+
+export async function invalidateYoutubeProfileQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, channelId: string): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['channels'] }),
+    queryClient.invalidateQueries({ queryKey: ['channels', 'detail', channelId] }),
+    queryClient.invalidateQueries({ queryKey: youtubeConnectionKey(channelId) }),
+  ]);
+}
+
+export function useYoutubeSetupStatus() {
+  return useQuery({ queryKey: youtubeSetupStatusKey, queryFn: api.getYoutubeSetupStatus });
+}
+
+export function useRefreshYoutubeProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ channelId, input }: { channelId: string; input?: Parameters<typeof api.refreshYoutubeProfile>[1] }) => api.refreshYoutubeProfile(channelId, input),
+    onSuccess: (_result, variables) => invalidateYoutubeProfileQueries(queryClient, variables.channelId),
+  });
 }
 
 export function useYoutubeConnection(channelId: string, initialData?: Awaited<ReturnType<typeof api.getYoutubeConnection>>) {

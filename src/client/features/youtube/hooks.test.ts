@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { invalidateYoutubeChannelQueries, invalidateYoutubeLinkQueries, youtubeOverviewKey, youtubeVideoKey, youtubeVideosKey } from './hooks';
+import { invalidateYoutubeChannelQueries, invalidateYoutubeLinkQueries, invalidateYoutubeProfileQueries, youtubeOverviewKey, youtubeSetupStatusKey, youtubeVideoKey, youtubeVideosKey } from './hooks';
 
 describe('YouTube analytics query keys', () => {
   it('keeps channel and filter-specific query keys stable', () => {
@@ -23,5 +23,17 @@ describe('YouTube analytics query keys', () => {
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['youtube', 'video', 'channel-1', 'video-1'] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['youtube', 'suggested-links', 'channel-1'] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] });
+  });
+
+  it('invalidates the channel list, channel detail, and connection summary after profile refresh', async () => {
+    const calls: Array<readonly unknown[] | undefined> = [];
+    const invalidateQueries = vi.fn(async (filters?: { queryKey?: readonly unknown[] }) => { calls.push(filters?.queryKey); });
+    await invalidateYoutubeProfileQueries({ invalidateQueries } as never, 'channel-1');
+    expect(calls).toEqual([
+      ['channels'],
+      ['channels', 'detail', 'channel-1'],
+      ['youtube', 'connection', 'channel-1'],
+    ]);
+    expect(youtubeSetupStatusKey).toEqual(['youtube', 'setup']);
   });
 });

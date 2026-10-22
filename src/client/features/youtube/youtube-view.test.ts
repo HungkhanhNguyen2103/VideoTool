@@ -5,6 +5,7 @@ import {
   isTrustedYoutubeOauthMessage,
   isYoutubeSyncActive,
   lineChartPath,
+  youtubeImportResultSummary,
   youtubeThresholdSourceLinks,
   YOUTUBE_CTR_UNAVAILABLE_TOOLTIP,
   youtubeConnectionLabel,
@@ -23,6 +24,11 @@ describe('YouTube analytics view helpers', () => {
     expect(isTrustedYoutubeOauthMessage({ origin: 'http://127.0.0.1:3000', source: popup } as MessageEvent, popup)).toBe(true);
     expect(isTrustedYoutubeOauthMessage({ origin: 'http://localhost:5173', source: popup } as MessageEvent, popup)).toBe(false);
     expect(isTrustedYoutubeOauthMessage({ origin: 'http://localhost:3000', source: {} } as MessageEvent, popup)).toBe(false);
+  });
+
+  it('summarizes imported, already-bound, and failed channels in Vietnamese', () => {
+    expect(youtubeImportResultSummary({ imported: 2, alreadyBound: 1 })).toBe('Đã thêm 2 kênh, bỏ qua 1 kênh đã được gắn.');
+    expect(youtubeImportResultSummary({ imported: 1, alreadyBound: 1, failed: 1 })).toBe('Đã thêm 1 kênh; 1 kênh đã được gắn và 1 kênh chưa thể thêm.');
   });
 
   it('preserves official YPP source URLs and gives them readable link labels', () => {

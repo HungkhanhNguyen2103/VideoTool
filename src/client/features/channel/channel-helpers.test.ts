@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   HISTORY_CHANNEL_PREFILL,
   channelScheduleEditor,
+  isChannelEditorDirty,
   parseChannelLinks,
+  profileRefreshNeedsConfirmation,
   readLastUsedChannelId,
   scheduleFromEditor,
   starterScheduleEditor,
@@ -10,6 +12,14 @@ import {
 } from './channel-helpers';
 
 describe('channel helpers', () => {
+  it('detects channel editor changes and requests confirmation only for a dirty form', () => {
+    const saved = { name: 'Kênh', description: '', links: [] };
+    expect(isChannelEditorDirty(saved, { ...saved, links: [] })).toBe(false);
+    expect(isChannelEditorDirty({ ...saved, description: 'Đang sửa' }, saved)).toBe(true);
+    expect(profileRefreshNeedsConfirmation(false)).toBe(false);
+    expect(profileRefreshNeedsConfirmation(true)).toBe(true);
+  });
+
   it('provides the requested Lịch Sử Không Khô prefill values without saving', () => {
     expect(HISTORY_CHANNEL_PREFILL).toEqual({
       name: 'Lịch Sử Không Khô',

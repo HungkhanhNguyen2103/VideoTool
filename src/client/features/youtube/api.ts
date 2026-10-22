@@ -10,7 +10,7 @@ import {
   YoutubeVideoListItemSchema,
   type YoutubeVideoListItem,
 } from '../../../contracts/youtube-analytics';
-import { YoutubeConnectionSummarySchema } from '../../../contracts/youtube';
+import { RefreshYoutubeProfileRequestSchema, RefreshYoutubeProfileResultSchema, YoutubeConnectionSummarySchema, YoutubeSetupStatusSchema, type RefreshYoutubeProfileRequest } from '../../../contracts/youtube';
 import { apiRequest } from '../../shared/api-client';
 
 const VideoListSchema = z.array(YoutubeVideoListItemSchema);
@@ -27,6 +27,20 @@ export type YoutubeVideoFilters = {
 
 export function beginYoutubeConnection(channelId: string) {
   return apiRequest(`/api/youtube/connect/${encodeURIComponent(channelId)}`, YoutubeAuthorizationStartSchema, { method: 'POST' });
+}
+
+export function beginYoutubeImport() {
+  return apiRequest('/api/youtube/import/start', YoutubeAuthorizationStartSchema, { method: 'POST' });
+}
+
+export function getYoutubeSetupStatus() {
+  return apiRequest('/api/youtube/setup', YoutubeSetupStatusSchema);
+}
+
+export function refreshYoutubeProfile(channelId: string, input: RefreshYoutubeProfileRequest = {}) {
+  return apiRequest(`/api/youtube/channels/${encodeURIComponent(channelId)}/refresh-profile`, RefreshYoutubeProfileResultSchema, {
+    method: 'POST', body: RefreshYoutubeProfileRequestSchema.parse(input),
+  });
 }
 
 export function getYoutubeConnection(channelId: string) {

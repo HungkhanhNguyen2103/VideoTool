@@ -23,3 +23,11 @@
 .setupGuide p { color: var(--amber-text); }
 .setupGuide a { color: var(--amber-text); }
 .setupGuide code { overflow-wrap: anywhere; color: var(--text); font-size: .66rem; }
+.overwriteDialog { width: min(28rem, calc(100vw - 2rem)); max-width: calc(100vw - 2rem); padding: 1rem; border: 1px solid var(--border-2); border-radius: .75rem; color: var(--text); background: var(--panel); box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 45%); }
+.overwriteDialog::backdrop { background: rgb(3 5 14 / 72%); }
+.overwriteForm { display: grid; gap: .7rem; }
+.overwriteForm h3, .overwriteForm p { margin: 0; }
+.overwriteForm h3 { font-size: .95rem; }
+.overwriteForm p { color: var(--text-2); font-size: .76rem; }
+.overwriteForm label { display: flex; align-items: center; gap: .45rem; color: var(--text-2); font-size: .78rem; }
+.overwriteForm input { accent-color: var(--amber); }
