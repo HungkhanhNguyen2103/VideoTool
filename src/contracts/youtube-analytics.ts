@@ -41,6 +41,11 @@ export const YoutubePartnerThresholdsSchema = z.object({
   sourceUrls: z.array(z.string().url()),
   current: PartnerThresholdPairSchema,
   from2027_02_01: PartnerThresholdPairSchema,
+  // Added in Task 117: the same dated table now also carries window and label metadata.
+  referenceLabel: z.string().optional(),
+  longWatchWindowDays: z.number().int().positive().optional(),
+  shortsViewWindowDays: z.number().int().positive().optional(),
+  qualifyingWatchHours: z.string().optional(),
 }).strict();
 export type YoutubePartnerThresholds = z.infer<typeof YoutubePartnerThresholdsSchema>;
 

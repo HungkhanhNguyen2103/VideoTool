@@ -12,6 +12,20 @@ describe('YouTube analytics client contracts', () => {
     expect(YoutubePartnerThresholdsSchema.parse(thresholds)).toEqual(thresholds);
   });
 
+  it('accepts the Task 117 window and label metadata on the same table', () => {
+    const thresholds = {
+      checkedOn: '2026-10-22',
+      sourceUrls: ['https://support.google.com/youtube/answer/72851'],
+      current: { entryTier: { subscribers: 500, longWatchHours: 3000, shortViews: 3_000_000 }, ads: { subscribers: 1000, longWatchHours: 4000, shortViews: 10_000_000 } },
+      from2027_02_01: { entryTier: { subscribers: 500, longWatchHours: 3000, shortViews: 3_000_000 }, ads: { subscribers: 1000, longWatchHours: 8000, shortViews: 20_000_000 } },
+      referenceLabel: 'mốc tham khảo, kiểm tra lại trên YouTube Studio',
+      longWatchWindowDays: 365,
+      shortsViewWindowDays: 90,
+      qualifyingWatchHours: 'public long-form only; Shorts feed watch hours do not count',
+    };
+    expect(YoutubePartnerThresholdsSchema.parse(thresholds)).toEqual(thresholds);
+  });
+
   it('keeps review and missing CTR data explicit in strict responses', () => {
     expect(YoutubeReviewSchema.parse({ target: 'video', targetId: 'video-1', promptVersion: 'youtube-review-v1', dataWindow: '28d', result: { observations: [], hypotheses: [], experiments: [] }, generatedAt: '2026-10-21T00:00:00.000Z' }).target).toBe('video');
     const video = YoutubeVideoListItemSchema.parse({
