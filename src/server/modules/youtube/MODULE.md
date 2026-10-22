@@ -90,6 +90,27 @@
 - Provider calls append Vietnamese stage, byte-count, elapsed-time, repair and survivor logs; progress reports generation, critique, completion and the terminal result. Heartbeats are bounded; jobs use `maxAttempts: 1`. The manual-demand note is user-entered free text with a server timestamp and is shown only as context, never treated as numeric evidence.
 - Product safeguards are heuristic. Phrase checks may miss novel promises, rarity, or demand claims; title similarity can reject a legitimate related idea; a number repeated in `unverifiedFacts` passes the number flag check even when the item does not accurately capture every surrounding claim. Non-numeric historical claims cannot be exhaustively verified by the validator: the real Task 120 CLI run included specific actions and events missing from `unverifiedFacts`, so `unverifiedFacts` cannot guarantee complete fact coverage. Claude output still needs a human source check before script writing.
 
+## Video ideas (Task 121)
+
+- New generations use the v2 episode pipeline. `video-ideas-v2-seeds` asks for `count × 3` compact event-and-decision seeds (maximum 24); `video-ideas-v2-select` returns exactly `count + 2` when enough seeds are viable (or all viable seeds when fewer remain); `video-ideas-v2-expand` writes selected seeds in batches of at most four. Each of seeds and selection can use one repair call; expansion shares one repair call across all its batches. A run still fails without saving when fewer than `max(2, ceil(count / 2))` ideas survive. Cancellation and full-result-only persistence remain in force. Stored v1 ideas and summaries continue to parse and render.
+- The deterministic hubris-trap test requires a non-thin blind spot, at least one non-thin perfect-plan/self-destruction link, four trap statements consistent with the motif, and an advantage of the hunter that backfires. Bad-luck-only advantages and unquoted moral-label titles are rejected. Episodes need a decision verb and a period. Every v2 idea uses `testVariable: topic`; final selection checks title similarity, distinct angle, archetype/century, archetype count, and normalized person/polity overlap.
+- When steering includes a configured obscurity phrase, `idea-quality.ts` injects the Vietnamese-history avoid list as data, drops ideas guessed famous, and only uses ideas guessed known as a labelled fallback when fewer than the requested count survive. Famousness is an AI estimate, not a verified fact. The channel's saved ideas are added to future packets, so earlier generated titles can influence a later run's novelty checks.
+- V2 uses `claims[]` as an ordered research checklist. Number, year, capitalized-name, and causal-statement checks compare title, hook, brief, episode, period, place, trap, trap sketch, and motif text with claims or the current evidence packet. More than half low-confidence claims drops an idea. These checks are lexical heuristics; they cannot establish that a claim is historically true. Roman numerals are excluded from proper-name checks, and common Vietnamese sentence starters are ignored. Unusual capitalization, transliteration, compound claims, and causal paraphrases can still cause false positives or false negatives.
+- A deterministic normalizer runs before validation repair. It lowercases enum values, drops unknown keys, wraps singleton rows, and trims only `whyForThisChannel`, risks, and claim text at word boundaries. It does not truncate titles, briefs, or trap statements. `IDEA_DEFAULT_CLI_MODEL` selects `claude-sonnet-5-5` in the idea panel and idea job only; the global provider default is unchanged.
+
+| Rule or limit | Value | Origin and caveat |
+|---|---:|---|
+| Seed count | `count × 3`, max 24 | Product exploration heuristic; short seeds aim to reduce schema and provider cost |
+| Selection buffer | `count + 2` | Product heuristic for expansion headroom |
+| Expansion batch | at most 4 | Product context-size and repair-cost heuristic |
+| Repair calls | one for seeds, one for selection, one total across expansion batches | Bounded-retry product rule |
+| Minimum survivors | `max(2, ceil(count / 2))` | Existing thin-list safeguard reused from Task 120 |
+| Blind-spot evidence | strong or partial | User's hubris-trap acceptance rule; the model's label is not historical verification |
+| Diversity | at most 2 per archetype; no same archetype/century pair; at most 2 overlapping person/polity episodes | Product editorial heuristics; name extraction and century parsing can miss cases |
+| Low-confidence claims | drop when over half are low | User's memory-dependence gate; confidence labels remain estimates |
+| Obscurity | reject `famous`; use `known` only as a short-list fallback | User's steering rule; fame is not independently verified |
+| Default idea CLI model | `claude-sonnet-5-5` | User-requested idea-only default; no registry-wide change |
+
 ## Growth plan and deterministic verdict (Task 117)
 
 - `youtubeGrowthPlans` stores one strict, channel-profile-scoped plan document. GET returns virtual defaults without writing; PUT replaces only configuration fields and preserves the user's experiment log. Experiments are capped at 100. Plan-status reads only MongoDB and local deterministic analysis; it makes no Google request and no AI call.

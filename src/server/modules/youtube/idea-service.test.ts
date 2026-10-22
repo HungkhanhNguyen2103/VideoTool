@@ -24,36 +24,56 @@ function context(overrides: Partial<YoutubeIdeaJobContext> = {}): YoutubeIdeaJob
   return { reportProgress: async () => undefined, isCancelled: async () => false, appendLog: async () => undefined, ...overrides };
 }
 
-function draft(id: string, title: string) {
+const archetypes = ['military', 'political', 'economic', 'technological', 'diplomatic', 'institutional'] as const;
+
+function seeds() {
+  return archetypes.map((hunterArchetype, index) => ({
+    id: `idea-${index + 1}`, episode: `Chỉ huy đổi tuyến tiếp tế trong lĩnh vực ${hunterArchetype}.`,
+    yearOrPeriod: `thế kỷ ${['XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII'][index]}`, place: `đồng bằng ${hunterArchetype}`,
+    hunterArchetype, domain: 'logistics', famousnessGuess: 'obscure',
+  }));
+}
+
+function expanded(seed: ReturnType<typeof seeds>[number], score: number) {
   return {
-    id, title, hook: 'Cánh cửa vừa khép khi người đi săn bước qua.',
-    brief: 'Một nhân vật chuẩn bị một kế hoạch tỉ mỉ. Một giả định quan trọng không được kiểm tra. Dấu hiệu đầu tiên xuất hiện khi kế hoạch bắt đầu. Nhân vật quyết định tiếp tục. Hành động ấy khiến cái bẫy khép lại. Câu chuyện kết thúc bằng hệ quả do chính kế hoạch tạo ra.',
+    id: seed.id, episode: seed.episode, period: seed.yearOrPeriod, place: seed.place, hunterArchetype: seed.hunterArchetype,
+    famousnessGuess: seed.famousnessGuess, famousnessFallback: false, angle: `góc ${seed.hunterArchetype}`,
+    title: `Kế hoạch tự khép lại trong lĩnh vực ${seed.hunterArchetype}`, hook: 'Người chỉ huy tin đường tiếp tế vẫn an toàn.',
+    brief: 'Người chỉ huy tin rằng đường tiếp tế đã an toàn. Kế hoạch kéo dài cuộc vây hãm. Một lối vòng nằm ngoài tính toán. Bên phòng thủ cắt tuyến tiếp tế. Quân đông bị dồn khỏi vị trí. Chính quy mô lực lượng khiến kế hoạch khó xoay chuyển.',
     presetId: 'hubris-trap',
     motif: {
-      hunter: { text: 'Nhân vật chủ động dựng bẫy.', evidence: 'strong' },
-      perfectPlan: { text: 'Một kế hoạch được chuẩn bị.', evidence: 'partial' },
-      blindSpot: { text: 'Một giả định bị bỏ qua.', evidence: 'partial' },
-      selfDestruction: { text: 'Kế hoạch quay lại gây hại.', evidence: 'strong' },
+      hunter: { text: 'Người chỉ huy tin đường tiếp tế an toàn.', evidence: 'strong' },
+      perfectPlan: { text: 'Kế hoạch kéo dài cuộc vây hãm dựa vào quân số đông.', evidence: 'partial' },
+      blindSpot: { text: 'Tuyến tiếp tế kéo dài nằm ngoài dự tính.', evidence: 'partial' },
+      selfDestruction: { text: 'Chính quy mô quân số kéo dài tuyến tiếp tế và khiến lực lượng mắc kẹt.', evidence: 'strong' },
     },
+    trap: {
+      hunterBelief: 'Người chỉ huy tin đường tiếp tế an toàn.',
+      outsideVariable: 'Tuyến tiếp tế kéo dài nằm ngoài khung nhìn.',
+      exploitedBy: 'Bên phòng thủ dùng lối vòng để cắt tuyến tiếp tế.',
+      advantageThatBackfired: 'Chính quy mô quân số kéo dài tuyến tiếp tế và làm lực lượng mắc kẹt.',
+    },
+    trapSketch: 'Người chỉ huy tin đường tiếp tế an toàn, nên kéo dài cuộc vây hãm; nhưng tuyến tiếp tế nằm ngoài khung nhìn; kết quả lực lượng mắc kẹt vì chính quy mô của mình.',
     whyForThisChannel: 'Hồ sơ kênh chưa có câu chuyện xoay quanh một điểm mù.', testVariable: 'topic',
     successCriterion: { description: 'So sánh mức giữ chân đầu video sau khi đăng.', afterVideos: 3 },
-    unverifiedFacts: ['Tên và thời điểm của sự kiện cần kiểm chứng.'], risks: [], rarityGuess: 'unknown',
-    evidenceTier: 'no-performance-data', suggestedDurationSec: 600, suggestedChapterCount: 5,
+    claims: [{ text: `Tuyến tiếp tế kéo dài khiến đội hình mắc kẹt trong ${seed.yearOrPeriod}; quy mô lực lượng khiến kế hoạch khó xoay chuyển.`, confidence: 'medium' }],
+    risks: ['Cần kiểm chứng địa điểm và bối cảnh.'], rarityGuess: 'unknown', evidenceTier: 'no-performance-data',
+    scores: { fit: score, clarity: score, riskOfThinSources: 1 }, suggestedDurationSec: 600, suggestedChapterCount: 5,
   };
 }
 
 function outputs() {
+  const rows = seeds();
   return [
-    JSON.stringify({ ideas: [draft('idea-1', 'Kế hoạch tự khép thành chiếc bẫy'), draft('idea-2', 'Điểm mù khiến kế hoạch phản tác dụng')] }),
-    JSON.stringify({ ideas: [
-      { id: 'idea-1', decision: 'keep', scores: { fit: 4, clarity: 4, riskOfThinSources: 2 } },
-      { id: 'idea-2', decision: 'keep', scores: { fit: 5, clarity: 4, riskOfThinSources: 1 } },
-    ] }),
+    JSON.stringify({ seeds: rows }),
+    JSON.stringify({ selected: rows.map(({ id }) => ({ id, trapSketch: 'Một giả định trở thành điểm gãy do chính lợi thế của người ra quyết định.' })), rejected: [] }),
+    JSON.stringify({ ideas: rows.slice(0, 4).map((row, index) => expanded(row, 5 - index)) }),
+    JSON.stringify({ ideas: rows.slice(4).map((row, index) => expanded(row, 3 - index)) }),
   ];
 }
 
 describe('YouTube video idea generation service', () => {
-  it('runs both API calls, persists metadata and ideas without storing raw packet or credentials', async () => {
+  it('runs all v2 API stages, persists per-stage metadata and ideas without storing raw packet or credentials', async () => {
     const channel = await createChannel({ name: 'Task 120 no-data demo' });
     const responses = outputs();
     const calls: string[] = [];
@@ -62,11 +82,13 @@ describe('YouTube video idea generation service', () => {
       context: context(), config,
       clientFactory: () => ({ chat: async (messages) => { calls.push(messages[1]!.content); return responses.shift()!; } }),
     });
-    expect(calls).toHaveLength(2);
-    expect(calls[0]).toContain('video-ideas-v1-generate');
-    expect(calls[1]).toContain('video-ideas-v1-critique');
-    expect(result).toMatchObject({ dropped: 0, evidenceTier: 'no-performance-data' });
-    expect((await listYoutubeIdeaDocs(channel.id)).map((row) => row.idea.title).sort()).toEqual(['Điểm mù khiến kế hoạch phản tác dụng', 'Kế hoạch tự khép thành chiếc bẫy'].sort());
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toContain('video-ideas-v2-seeds');
+    expect(calls[1]).toContain('video-ideas-v2-select');
+    expect(calls[2]).toContain('video-ideas-v2-expand');
+    expect(calls[3]).toContain('video-ideas-v2-expand');
+    expect(result).toMatchObject({ dropped: 2, evidenceTier: 'no-performance-data', repairCalls: { seeds: 0, select: 0, expand: 0 } });
+    expect((await listYoutubeIdeaDocs(channel.id)).map((row) => row.idea.title)).toHaveLength(4);
     const publicResult = await getYoutubeIdeas(channel.id);
     expect(publicResult).toMatchObject({ currentTier: 'no-performance-data', matureVideoCount: 0, stale: false });
     expect(publicResult.ideas).toEqual(expect.arrayContaining([expect.objectContaining({ backend: 'api' })]));
@@ -88,20 +110,23 @@ describe('YouTube video idea generation service', () => {
     expect(await getCollection<TestDoc>('youtubeIdeaRuns').countDocuments({ channelProfileId: channel.id })).toBe(0);
   });
 
-  it('uses a filesystem-safe CLI audit scope for colon-scoped channel jobs', async () => {
+  it('uses the idea Sonnet default and filesystem-safe CLI audit scope for channel jobs', async () => {
     const channel = await createChannel({ name: 'Task 120 CLI audit scope' });
     const responses = outputs();
     const projectIds: string[] = [];
+    const models: string[] = [];
     await generateYoutubeVideoIdeas({
       profileId: channel.id, request: { backend: 'cli', steering: '', presetId: 'hubris-trap', count: 4, targetDurationSec: 600 },
       context: context(), config,
       getClaudeCliStatus: async () => ({ available: true, version: '2.1.306', authPathLikely: 'subscription' }),
       cliChatFactory: async (options) => {
         projectIds.push(options.projectId);
-        return { label: 'test-cli', model: options.model ?? 'claude-sonnet-4-5', chat: async () => responses.shift()! };
+        models.push(options.model ?? '');
+        return { label: 'test-cli', model: options.model ?? 'claude-sonnet-5-5', chat: async () => responses.shift()! };
       },
     });
     expect(projectIds).toEqual([`youtube-ideas-${channel.id}`]);
     expect(projectIds[0]).toMatch(/^[a-zA-Z0-9_-]+$/u);
+    expect(models).toEqual(['claude-sonnet-5-5']);
   });
 });

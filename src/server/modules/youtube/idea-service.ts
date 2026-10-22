@@ -1,4 +1,4 @@
-import { canTransitionYoutubeIdeaStatus, NEXT_VIDEO_IDEAS_MIN_MATURE, YoutubeIdeaCreateProjectResponseSchema, YoutubeIdeaProjectPrefillSchema, YoutubeIdeasListResponseSchema, type YoutubeIdeasGenerateRequest, type YoutubeIdeaRecord } from '../../../contracts/youtube-ideas';
+import { canTransitionYoutubeIdeaStatus, IDEA_DEFAULT_CLI_MODEL, NEXT_VIDEO_IDEAS_MIN_MATURE, YoutubeIdeaCreateProjectResponseSchema, YoutubeIdeaProjectPrefillSchema, YoutubeIdeasListResponseSchema, type YoutubeIdeasGenerateRequest, type YoutubeIdeaRecord } from '../../../contracts/youtube-ideas';
 import { getDefaultAiModelId, isAiModelForProvider } from '../../../contracts/ai-models';
 import type { AiProvider } from '../../../contracts/project';
 import type { Config } from '../../config';
@@ -126,12 +126,12 @@ export async function generateYoutubeVideoIdeas(input: {
   getClaudeCliStatus?: (options: { executablePath: string; env?: NodeJS.ProcessEnv }) => Promise<ClaudeCliStatus>;
   cliChatFactory?: typeof createClaudeCliChat;
   clientFactory?: (provider: AiProvider, model: string) => Pick<AiClient, 'chat'>;
-}): Promise<{ runId: string; ideaIds: string[]; dropped: number; evidenceTier: string } | undefined> {
+}): Promise<{ runId: string; ideaIds: string[]; dropped: number; evidenceTier: string; repairCalls: { seeds: number; select: number; expand: number } } | undefined> {
   const config = input.config ?? loadConfig();
   const { packet } = await buildYoutubeIdeaRunPacket(input.profileId, input.request);
   let backend: YoutubeIdeaBackend;
   if (input.request.backend === 'cli') {
-    const model = input.request.cliModel ?? getDefaultAiModelId('claude');
+    const model = input.request.cliModel ?? IDEA_DEFAULT_CLI_MODEL;
     if (!isAiModelForProvider('claude', model)) throw new AppError('Model Claude CLI không còn khả dụng; hãy chọn model khác.', 422, 'AI_MODEL_UNAVAILABLE');
     const cli = await (input.cliChatFactory ?? createClaudeCliChat)({
       projectId: `youtube-ideas-${input.profileId}`,
@@ -187,8 +187,8 @@ export async function generateYoutubeVideoIdeas(input: {
   if (!saved) return undefined;
   input.context.markCommitComplete?.();
   await input.context.appendLog(`Đã lưu ${ideaRows.length} ý tưởng và tóm tắt lượt chạy; không lưu prompt, gói coverage, token hoặc nội dung phản hồi thô.`);
-  await input.context.reportProgress(100, { step: 'Hoàn tất', runId, ideaCount: ideaRows.length, droppedCount: result.dropped.length });
-  return { runId, ideaIds: ideaRows.map((idea) => idea._id), dropped: result.dropped.length, evidenceTier: packet.evidenceTier };
+  await input.context.reportProgress(100, { step: 'Hoàn tất', runId, ideaCount: ideaRows.length, droppedCount: result.dropped.length, repairCalls: result.repairCalls });
+  return { runId, ideaIds: ideaRows.map((idea) => idea._id), dropped: result.dropped.length, evidenceTier: packet.evidenceTier, repairCalls: result.repairCalls };
 }
 
 export async function updateYoutubeIdea(profileId: string, ideaId: string, patch: {

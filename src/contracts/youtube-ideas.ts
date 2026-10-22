@@ -3,6 +3,7 @@ import { SCRIPT_PRESET_IDS } from './project';
 import { YoutubeReviewVariableSchema } from './youtube-review';
 
 export const NEXT_VIDEO_IDEAS_MIN_MATURE = 10;
+export const IDEA_DEFAULT_CLI_MODEL = 'claude-sonnet-5-5';
 export const YOUTUBE_IDEA_EVIDENCE_TIERS = ['no-performance-data', 'weak-signal', 'data-informed'] as const;
 export const YoutubeIdeaEvidenceTierSchema = z.enum(YOUTUBE_IDEA_EVIDENCE_TIERS);
 export type YoutubeIdeaEvidenceTier = z.infer<typeof YoutubeIdeaEvidenceTierSchema>;
@@ -57,6 +58,51 @@ export type YoutubeIdeaDraft = z.infer<typeof YoutubeIdeaDraftSchema>;
 export const YoutubeIdeaSchema = YoutubeIdeaDraftSchema.extend({ scores: YoutubeIdeaScoresSchema }).strict();
 export type YoutubeIdea = z.infer<typeof YoutubeIdeaSchema>;
 
+export const YoutubeIdeaHunterArchetypeSchema = z.enum(['military', 'political', 'economic', 'technological', 'diplomatic', 'institutional', 'other']);
+export const YoutubeIdeaFamousnessGuessSchema = z.enum(['famous', 'known', 'obscure', 'unknown']);
+export const YoutubeIdeaClaimSchema = z.object({
+  text: z.string().trim().min(1).max(160),
+  confidence: z.enum(['high', 'medium', 'low']),
+}).strict();
+export const YoutubeIdeaTrapSchema = z.object({
+  hunterBelief: z.string().trim().min(1).max(200),
+  outsideVariable: z.string().trim().min(1).max(200),
+  exploitedBy: z.string().trim().min(1).max(200),
+  advantageThatBackfired: z.string().trim().min(1).max(200),
+}).strict();
+
+export const YoutubeIdeaV2DraftSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  episode: z.string().trim().min(1).max(160),
+  period: z.string().trim().min(1).max(80),
+  place: z.string().trim().min(1).max(100),
+  hunterArchetype: YoutubeIdeaHunterArchetypeSchema,
+  famousnessGuess: YoutubeIdeaFamousnessGuessSchema,
+  famousnessFallback: z.boolean(),
+  angle: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(100),
+  hook: z.string().trim().min(1).max(300),
+  brief: z.string().trim().min(10).max(1200).refine(hasFiveToEightSentences, 'Brief must contain 5–8 sentences.'),
+  presetId: z.enum(SCRIPT_PRESET_IDS),
+  motif: YoutubeIdeaMotifSchema,
+  trap: YoutubeIdeaTrapSchema,
+  trapSketch: z.string().trim().min(1).max(280),
+  whyForThisChannel: z.string().trim().min(1).max(300),
+  testVariable: z.literal('topic'),
+  successCriterion: z.object({ description: z.string().trim().min(1).max(400), afterVideos: z.number().int().min(1).max(60) }).strict(),
+  claims: z.array(YoutubeIdeaClaimSchema).max(20),
+  risks: z.array(z.string().trim().min(1).max(300)).max(4),
+  rarityGuess: z.enum(['common', 'uncommon', 'rare', 'unknown']).optional(),
+  evidenceTier: YoutubeIdeaEvidenceTierSchema,
+  suggestedDurationSec: z.number().int().min(30).max(3600),
+  suggestedChapterCount: z.number().int().min(1).max(20).nullable(),
+}).strict();
+export type YoutubeIdeaV2Draft = z.infer<typeof YoutubeIdeaV2DraftSchema>;
+export const YoutubeIdeaV2Schema = YoutubeIdeaV2DraftSchema.extend({ scores: YoutubeIdeaScoresSchema }).strict();
+export type YoutubeIdeaV2 = z.infer<typeof YoutubeIdeaV2Schema>;
+export const YoutubeIdeaStoredSchema = z.union([YoutubeIdeaSchema, YoutubeIdeaV2Schema]);
+export type YoutubeIdeaStored = z.infer<typeof YoutubeIdeaStoredSchema>;
+
 export const YoutubeIdeaManualDemandInputSchema = z.object({ note: z.string().trim().min(1).max(300) }).strict();
 export const YoutubeIdeaManualDemandSchema = YoutubeIdeaManualDemandInputSchema.extend({ checkedAt: z.string().datetime() }).strict();
 
@@ -86,19 +132,21 @@ export const YoutubeIdeaPacketSummarySchema = z.object({
   matureVideoCount: z.number().int().nonnegative(),
 }).strict();
 export const YoutubeIdeaRunDurationsSchema = z.object({ generateMs: z.number().int().nonnegative(), critiqueMs: z.number().int().nonnegative(), totalMs: z.number().int().nonnegative() }).strict();
+export const YoutubeIdeaV2RunDurationsSchema = z.object({ seedsMs: z.number().int().nonnegative(), selectMs: z.number().int().nonnegative(), expandMs: z.number().int().nonnegative(), totalMs: z.number().int().nonnegative() }).strict();
+export const YoutubeIdeaStoredRunDurationsSchema = z.union([YoutubeIdeaRunDurationsSchema, YoutubeIdeaV2RunDurationsSchema]);
 
 export const YoutubeIdeaRunSummarySchema = z.object({
   id: z.string().min(1),
   evidenceTier: YoutubeIdeaEvidenceTierSchema,
   backend: YoutubeIdeaBackendSchema,
   model: z.string().min(1),
-  promptVersion: z.literal('video-ideas-v1'),
+  promptVersion: z.enum(['video-ideas-v1', 'video-ideas-v2']),
   generatedAt: z.string().datetime(),
   requestedCount: z.number().int().min(4).max(8),
   packetSummary: YoutubeIdeaPacketSummarySchema,
   coverageFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
   dropped: z.array(YoutubeIdeaDroppedSchema).max(30),
-  durations: YoutubeIdeaRunDurationsSchema,
+  durations: YoutubeIdeaStoredRunDurationsSchema,
 }).strict();
 export type YoutubeIdeaRunSummary = z.infer<typeof YoutubeIdeaRunSummarySchema>;
 
@@ -109,9 +157,9 @@ export const YoutubeIdeaRecordSchema = z.object({
   evidenceTier: YoutubeIdeaEvidenceTierSchema,
   backend: YoutubeIdeaBackendSchema,
   model: z.string().min(1),
-  promptVersion: z.literal('video-ideas-v1'),
+  promptVersion: z.enum(['video-ideas-v1', 'video-ideas-v2']),
   generatedAt: z.string().datetime(),
-  idea: YoutubeIdeaSchema,
+  idea: YoutubeIdeaStoredSchema,
   status: YoutubeIdeaStatusSchema,
   statusNote: z.string().max(300).optional(),
   usedProjectId: z.string().min(1).optional(),

@@ -5,6 +5,7 @@ export { syncYoutubeChannel } from './sync';
 export { generateYoutubeReviewV2, getYoutubeReviewV2, youtubeReviewJobScope } from './review-v2-service';
 export { getYoutubeIdeas, buildYoutubeIdeaRunPacket, generateYoutubeVideoIdeas, handoffYoutubeIdeaToProject, updateYoutubeIdea, deleteYoutubeIdea, youtubeVideoIdeasJobScope, YOUTUBE_VIDEO_IDEAS_JOB_TYPE } from './idea-service';
 export { runYoutubeIdeaPipeline, validateYoutubeIdea } from './idea-engine';
+export { computeYoutubeIdeaEvalMetrics } from './idea-eval';
 export { classifyIdeaEvidence, buildYoutubeIdeaPacket } from './idea-packet';
 export { getYoutubeConnection, disconnectYoutube, selectYoutubeChannel, youtubeIsConfigured } from './service';
 export { YOUTUBE_SETUP_MESSAGE } from './service';

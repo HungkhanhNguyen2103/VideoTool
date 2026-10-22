@@ -5,6 +5,10 @@ import {
   canTransitionYoutubeIdeaStatus,
   YoutubeIdeasGenerateRequestSchema,
   YoutubeIdeaRecordSchema,
+  YoutubeIdeaV2Schema,
+  YoutubeIdeaStoredSchema,
+  YoutubeIdeaRunSummarySchema,
+  IDEA_DEFAULT_CLI_MODEL,
 } from './youtube-ideas';
 
 const validIdea = {
@@ -53,5 +57,57 @@ describe('YouTube video idea contracts', () => {
     expect(canTransitionYoutubeIdeaStatus('rejected', 'chosen')).toBe(true);
     expect(canTransitionYoutubeIdeaStatus('chosen', 'rejected')).toBe(true);
     expect(canTransitionYoutubeIdeaStatus('used', 'chosen')).toBe(false);
+  });
+
+  it('accepts a v2 episode idea with a structured trap and confidence-ranked claims', () => {
+    const { unverifiedFacts: _legacyFacts, ...legacyFields } = validIdea;
+    void _legacyFacts;
+    const v2 = {
+      ...legacyFields,
+      episode: 'A commander extends the siege line after assuming the river crossing is secure',
+      period: 'Late 13th century',
+      place: 'River crossing',
+      hunterArchetype: 'military',
+      famousnessGuess: 'obscure',
+      famousnessFallback: false,
+      angle: 'supply line',
+      trap: {
+        hunterBelief: 'The crossing would remain safe behind the main force.',
+        outsideVariable: 'A second route remained outside the command plan.',
+        exploitedBy: 'The defending force used the unguarded route.',
+        advantageThatBackfired: 'The larger force stretched its own supply line.',
+      },
+      trapSketch: 'Người chỉ huy tin rằng lối vượt sông đã an toàn, nên kéo dài đội hình; nhưng tuyến tiếp tế nằm ngoài khung nhìn; kết quả lực lượng tự mắc kẹt vì chính quy mô của mình.',
+      claims: [{ text: 'The episode, commander and river crossing need source checks.', confidence: 'medium' }],
+    };
+    expect(YoutubeIdeaV2Schema.parse(v2)).toMatchObject({ hunterArchetype: 'military', claims: [{ confidence: 'medium' }] });
+    expect(() => YoutubeIdeaV2Schema.parse({ ...v2, trap: { ...v2.trap, outsideVariable: 'x'.repeat(201) } })).toThrow();
+  });
+
+  it('keeps v1 stored rows readable through the versioned idea union', () => {
+    expect(YoutubeIdeaStoredSchema.parse(validIdea)).toMatchObject({ unverifiedFacts: ['Cần kiểm chứng niên đại của sự kiện.'] });
+    expect(() => YoutubeIdeaV2Schema.parse(validIdea)).toThrow();
+    expect(IDEA_DEFAULT_CLI_MODEL).toBe('claude-sonnet-5-5');
+  });
+
+  it('accepts v2 records and per-stage durations alongside v1 summaries', () => {
+    const { unverifiedFacts: _legacyFacts, ...legacyFields } = validIdea;
+    void _legacyFacts;
+    const idea = {
+      ...legacyFields, episode: 'A commander extends the siege line.', period: '13th century', place: 'River crossing',
+      hunterArchetype: 'military', famousnessGuess: 'obscure', famousnessFallback: false, angle: 'supply',
+      trap: { hunterBelief: 'The crossing was safe.', outsideVariable: 'A second route was hidden.', exploitedBy: 'The defender used it.', advantageThatBackfired: 'The larger force stretched supplies.' },
+      trapSketch: 'Một giả định trở thành điểm gãy.', claims: [{ text: 'The episode needs source checks.', confidence: 'medium' }],
+    };
+    expect(YoutubeIdeaRecordSchema.parse({
+      id: 'record-v2', channelProfileId: 'channel-1', runId: 'run-v2', evidenceTier: 'no-performance-data', backend: 'cli',
+      model: 'claude-sonnet-5-5', promptVersion: 'video-ideas-v2', generatedAt: '2026-10-22T00:00:00.000Z', idea, status: 'new',
+    })).toMatchObject({ promptVersion: 'video-ideas-v2', idea: { claims: [{ confidence: 'medium' }] } });
+    expect(YoutubeIdeaRunSummarySchema.parse({
+      id: 'run-v2', evidenceTier: 'no-performance-data', backend: 'cli', model: 'claude-sonnet-5-5', promptVersion: 'video-ideas-v2',
+      generatedAt: '2026-10-22T00:00:00.000Z', requestedCount: 6,
+      packetSummary: { projectCount: 0, syncedVideoCount: 2, savedIdeaCount: 0, matureVideoCount: 2 },
+      coverageFingerprint: 'a'.repeat(64), dropped: [], durations: { seedsMs: 10, selectMs: 20, expandMs: 30, totalMs: 60 },
+    })).toMatchObject({ durations: { seedsMs: 10, selectMs: 20, expandMs: 30 } });
   });
 });

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { YoutubeChannelOptionSchema, YoutubeVideoStatsSchema, YoutubeChannelDailySchema, YoutubeSearchTermsBreakdownSchema, YoutubeTrafficBreakdownSchema } from '../../../contracts/youtube';
 import { YOUTUBE_GROWTH_PLAN_DEFAULTS, YoutubeGrowthExperimentSchema, YoutubeGrowthPlanConfigSchema } from '../../../contracts/youtube-plan';
 import { YoutubeChannelReviewV2AnalysisSchema, YoutubeReviewBackendSchema, YoutubeReviewGroundingReportSchema, YoutubeReviewIdeaSchema, YoutubeReviewPacketSummarySchema, YoutubeVideoReviewV2AnalysisSchema } from '../../../contracts/youtube-review';
-import { YoutubeIdeaBackendSchema, YoutubeIdeaDroppedSchema, YoutubeIdeaEvidenceTierSchema, YoutubeIdeaPacketSummarySchema, YoutubeIdeaRunDurationsSchema, YoutubeIdeaSchema, YoutubeIdeaStatusSchema } from '../../../contracts/youtube-ideas';
+import { YoutubeIdeaBackendSchema, YoutubeIdeaDroppedSchema, YoutubeIdeaEvidenceTierSchema, YoutubeIdeaPacketSummarySchema, YoutubeIdeaStoredRunDurationsSchema, YoutubeIdeaStoredSchema, YoutubeIdeaStatusSchema } from '../../../contracts/youtube-ideas';
 
 const EncryptedRefreshTokenSchema = z.object({
   algorithm: z.literal('aes-256-gcm'),
@@ -112,9 +112,9 @@ export const YoutubeVideoIdeaDocSchema = z.object({
   evidenceTier: YoutubeIdeaEvidenceTierSchema,
   backend: YoutubeIdeaBackendSchema,
   model: z.string().min(1),
-  promptVersion: z.literal('video-ideas-v1'),
+  promptVersion: z.enum(['video-ideas-v1', 'video-ideas-v2']),
   generatedAt: z.string().datetime(),
-  idea: YoutubeIdeaSchema,
+  idea: YoutubeIdeaStoredSchema,
   status: YoutubeIdeaStatusSchema,
   statusNote: z.string().max(300).optional(),
   usedProjectId: z.string().min(1).optional(),
@@ -128,13 +128,13 @@ export const YoutubeIdeaRunDocSchema = z.object({
   evidenceTier: YoutubeIdeaEvidenceTierSchema,
   backend: YoutubeIdeaBackendSchema,
   model: z.string().min(1),
-  promptVersion: z.literal('video-ideas-v1'),
+  promptVersion: z.enum(['video-ideas-v1', 'video-ideas-v2']),
   generatedAt: z.string().datetime(),
   requestedCount: z.number().int().min(4).max(8),
   packetSummary: YoutubeIdeaPacketSummarySchema,
   coverageFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
   dropped: z.array(YoutubeIdeaDroppedSchema).max(30),
-  durations: YoutubeIdeaRunDurationsSchema,
+  durations: YoutubeIdeaStoredRunDurationsSchema,
 }).strict();
 export type YoutubeIdeaRunDoc = z.infer<typeof YoutubeIdeaRunDocSchema>;
 

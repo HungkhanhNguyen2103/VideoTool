@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { YoutubeIdea } from '../../../contracts/youtube-ideas';
+import type { YoutubeIdeaV2 } from '../../../contracts/youtube-ideas';
 import type { YoutubeIdeaPacket } from './idea-packet';
 import { runYoutubeIdeaPipeline, validateYoutubeIdea, type YoutubeIdeaJobContext } from './idea-engine';
+import { validateYoutubeIdeaV2 } from './idea-quality';
 
 const baseIdea: YoutubeIdea = {
   id: 'idea-1', title: 'Kế hoạch hoàn hảo tự sụp đổ', hook: 'Cánh cửa khép lại đúng lúc người đi săn bước vào.',
@@ -80,12 +82,6 @@ describe('validateYoutubeIdea', () => {
   });
 });
 
-function draft(id: string, title: string): Omit<YoutubeIdea, 'scores'> {
-  const { scores, ...candidate } = baseIdea;
-  void scores;
-  return { ...candidate, id, title };
-}
-
 function context(overrides: Partial<YoutubeIdeaJobContext> = {}): YoutubeIdeaJobContext {
   return {
     reportProgress: vi.fn(async () => undefined),
@@ -95,52 +91,154 @@ function context(overrides: Partial<YoutubeIdeaJobContext> = {}): YoutubeIdeaJob
   };
 }
 
+function v2Idea(id: string, archetype: YoutubeIdeaV2['hunterArchetype'], period: string, score: number): YoutubeIdeaV2 {
+  const episode = `Chỉ huy đổi kế hoạch tiếp tế sau khi tin đường chính an toàn ${id}.`;
+  return {
+    id, episode, period, place: `vùng ${id}`, hunterArchetype: archetype, famousnessGuess: 'obscure', famousnessFallback: false,
+    angle: `góc ${id}`, title: `Kế hoạch tự khép lại ${id}`,
+    hook: `Người chỉ huy tin rằng đường tiếp tế ${id} vẫn được bảo vệ.`,
+    brief: `Người chỉ huy tin rằng đường tiếp tế ${id} vẫn an toàn. Kế hoạch kéo dài cuộc vây hãm. Một lối vòng nằm ngoài tính toán. Bên phòng thủ cắt tuyến tiếp tế. Quân đông bị dồn khỏi vị trí. Chính quy mô lực lượng khiến kế hoạch khó xoay chuyển.`,
+    presetId: 'hubris-trap',
+    motif: {
+      hunter: { text: 'Người chỉ huy tin đường tiếp tế được bảo vệ.', evidence: 'strong' },
+      perfectPlan: { text: 'Kế hoạch kéo dài cuộc vây hãm dựa vào quân số đông.', evidence: 'partial' },
+      blindSpot: { text: 'Tuyến tiếp tế kéo dài nằm ngoài dự tính.', evidence: 'partial' },
+      selfDestruction: { text: 'Chính quy mô quân số kéo dài tuyến tiếp tế.', evidence: 'strong' },
+    },
+    trap: {
+      hunterBelief: 'Người chỉ huy tin đường tiếp tế vẫn được bảo vệ.',
+      outsideVariable: 'Tuyến tiếp tế kéo dài nằm ngoài khung nhìn.',
+      exploitedBy: 'Bên phòng thủ dùng lối vòng để cắt tuyến tiếp tế.',
+      advantageThatBackfired: 'Chính quy mô quân số kéo dài tuyến tiếp tế và làm lực lượng mắc kẹt.',
+    },
+    trapSketch: `Người chỉ huy tin đường tiếp tế ${id} an toàn, nên kéo dài cuộc vây hãm; nhưng tuyến tiếp tế nằm ngoài khung nhìn; kết quả lực lượng mắc kẹt vì chính quy mô của mình.`,
+    whyForThisChannel: 'Chủ đề phù hợp với hồ sơ kênh.', testVariable: 'topic',
+    successCriterion: { description: 'So sánh mức giữ chân đầu video sau khi đăng.', afterVideos: 3 },
+    claims: [{ text: `Tuyến tiếp tế kéo dài khiến đội hình mắc kẹt trong ${period}; chính quy mô lực lượng khiến kế hoạch khó xoay chuyển.`, confidence: 'medium' }],
+    risks: ['Cần kiểm chứng địa điểm và bối cảnh.'], rarityGuess: 'unknown', evidenceTier: 'no-performance-data',
+    scores: { fit: score, clarity: score, riskOfThinSources: 1 }, suggestedDurationSec: 600, suggestedChapterCount: 5,
+  };
+}
+
+function v2Seed(id: string, archetype: YoutubeIdeaV2['hunterArchetype'], period: string) {
+  return { id, episode: `Chỉ huy đổi tuyến tiếp tế tại ${id}.`, yearOrPeriod: period, place: `vùng ${id}`, hunterArchetype: archetype, domain: 'logistics', famousnessGuess: 'obscure' };
+}
+
 describe('runYoutubeIdeaPipeline', () => {
-  it('runs generation then critique and merges scores by id while recording rejected candidates', async () => {
-    const chat = vi.fn()
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [draft('one', 'Kế hoạch tự khép thành chiếc bẫy'), draft('two', 'Giả định sai làm kế hoạch sụp đổ'), draft('three', 'Khi người dựng bẫy mắc vào chính nó')] }))
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [
-        { id: 'two', decision: 'keep', scores: { fit: 5, clarity: 4, riskOfThinSources: 1 } },
-        { id: 'one', decision: 'drop', rejectionReason: 'Quá giống nội dung đã làm.', scores: { fit: 2, clarity: 3, riskOfThinSources: 4 } },
-        { id: 'three', decision: 'keep', scores: { fit: 4, clarity: 4, riskOfThinSources: 2 } },
-      ] }));
-    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-opus-4-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
-    expect(chat).toHaveBeenCalledTimes(2);
-    expect(chat.mock.calls[0]![1]).toEqual({ stepLabel: 'video-ideas-generate' });
-    expect(chat.mock.calls[1]![1]).toEqual({ stepLabel: 'video-ideas-critique' });
-    expect(result?.ideas).toHaveLength(2);
-    expect(result?.ideas[0]).toMatchObject({ id: 'two', scores: { fit: 5, clarity: 4, riskOfThinSources: 1 } });
-    expect(result?.dropped).toContainEqual({ id: 'one', reason: 'Quá giống nội dung đã làm.' });
+  it('accepts the expanded fixture against the trap and legacy safeguards', () => {
+    expect(validateYoutubeIdeaV2(v2Idea('a', 'military', 'thế kỷ XIII', 5), packet).reasons).toEqual([]);
   });
 
-  it('repairs invalid candidate rows once and uses the repaired item', async () => {
-    const broken = { ...draft('repair-me', 'Mục tiêu bị bỏ quên'), motif: { hunter: { text: '', evidence: 'strong' } } };
-    const repaired = draft('repair-me', 'Mục tiêu bị bỏ quên ở cửa sau');
+  it('runs seeds, selection and expansion in batches of four, then trims deterministically', async () => {
+    const seeds = [
+      v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV'),
+      v2Seed('c', 'economic', 'thế kỷ XV'), v2Seed('d', 'technological', 'thế kỷ XVI'),
+      v2Seed('e', 'diplomatic', 'thế kỷ XVII'), v2Seed('f', 'institutional', 'thế kỷ XVIII'),
+    ];
+    const selected = seeds.map(({ id }) => ({ id, trapSketch: `Giả định cụ thể của ${id} bị lợi thế của chính người ra quyết định làm phản tác dụng.` }));
+    const ideas = seeds.map((row, index) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 5 - Math.floor(index / 2)));
     const chat = vi.fn()
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [broken, draft('second', 'Kế hoạch lệch khỏi dự tính')] }))
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [repaired] }))
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [
-        { id: 'repair-me', decision: 'keep', scores: { fit: 4, clarity: 4, riskOfThinSources: 2 } },
-        { id: 'second', decision: 'keep', scores: { fit: 3, clarity: 4, riskOfThinSources: 2 } },
-      ] }));
-    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-opus-4-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: ideas.slice(0, 4) }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: ideas.slice(4) }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(chat.mock.calls.map((call) => call[1]?.stepLabel)).toEqual([
+      'video-ideas-v2-seeds', 'video-ideas-v2-select', 'video-ideas-v2-expand', 'video-ideas-v2-expand',
+    ]);
+    expect(chat.mock.calls[2]![0][1]!.content).toContain('"id":"a"');
+    expect(chat.mock.calls[2]![0][1]!.content).toContain('"id":"d"');
+    expect(chat.mock.calls[2]![0][1]!.content).not.toContain('"id":"e"');
+    expect(result?.ideas.map((row) => row.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(result?.promptVersion).toBe('video-ideas-v2');
+    expect(result?.durations).toHaveProperty('seedsMs');
+    expect(result?.repairCalls).toEqual({ seeds: 0, select: 0, expand: 0 });
+  });
+
+  it('normalizes safe shape and enum problems before deciding whether a repair call is needed', async () => {
+    const seeds = [v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV')];
+    const first = { ...seeds[0]!, hunterArchetype: 'MILITARY', harmlessExtra: 'drop' };
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds: [first, seeds[1]] }))
+      .mockResolvedValueOnce(JSON.stringify({ selected: seeds.map(({ id }) => ({ id, trapSketch: 'Một giả định bị chính lợi thế của người ra quyết định làm phản tác dụng.' })), rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: seeds.map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4)) }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
     expect(chat).toHaveBeenCalledTimes(3);
-    expect(chat.mock.calls[1]![1]).toEqual({ stepLabel: 'video-ideas-generate-repair' });
-    expect(result?.ideas[0]?.title).toBe('Mục tiêu bị bỏ quên ở cửa sau');
+    expect(result?.repairCalls).toEqual({ seeds: 0, select: 0, expand: 0 });
+    expect(result?.ideas).toHaveLength(2);
   });
 
-  it('fails with YOUTUBE_IDEAS_UNGROUNDED when fewer than half the requested ideas survive', async () => {
+  it('repairs an underfilled selection once before expanding the requested shortlist', async () => {
+    const seeds = [
+      v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV'),
+      v2Seed('c', 'economic', 'thế kỷ XV'), v2Seed('d', 'technological', 'thế kỷ XVI'),
+      v2Seed('e', 'diplomatic', 'thế kỷ XVII'), v2Seed('f', 'institutional', 'thế kỷ XVIII'),
+    ];
+    const selected = seeds.map(({ id }) => ({ id, trapSketch: `Giả định của ${id} bị chính lợi thế làm phản tác dụng.` }));
+    const rejected = seeds.map(({ id }) => ({ id, rejectionReason: 'Không thuộc shortlist.' }));
     const chat = vi.fn()
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [draft('one', 'Kế hoạch tự khép thành chiếc bẫy')] }))
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [{ id: 'one', decision: 'drop', rejectionReason: 'Nguồn quá mỏng.', scores: { fit: 1, clarity: 2, riskOfThinSources: 5 } }] }));
-    await expect(runYoutubeIdeaPipeline({ packet, backend: { kind: 'api', model: 'deepseek-chat', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } }))
-      .rejects.toMatchObject({ code: 'YOUTUBE_IDEAS_UNGROUNDED' });
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected: selected.slice(0, 4), rejected: rejected.slice(4) }))
+      .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: seeds.slice(0, 4).map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4)) }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: seeds.slice(4).map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4)) }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(chat).toHaveBeenCalledTimes(5);
+    expect(chat.mock.calls[2]![1]?.stepLabel).toBe('video-ideas-v2-select-repair');
+    expect(result?.repairCalls).toEqual({ seeds: 0, select: 1, expand: 0 });
+    expect(result?.ideas).toHaveLength(4);
   });
 
-  it('does not continue to critique after cancellation between calls', async () => {
-    const chat = vi.fn().mockResolvedValueOnce(JSON.stringify({ ideas: [draft('one', 'Kế hoạch tự khép thành chiếc bẫy')] }));
-    const isCancelled = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'api', model: 'deepseek-chat', chat }, context: context({ isCancelled }), request: { count: 4, presetId: 'hubris-trap' } });
+  it('uses no more than one repair across all expansion batches', async () => {
+    const seeds = [
+      v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV'),
+      v2Seed('c', 'economic', 'thế kỷ XV'), v2Seed('d', 'technological', 'thế kỷ XVI'),
+      v2Seed('e', 'diplomatic', 'thế kỷ XVII'), v2Seed('f', 'institutional', 'thế kỷ XVIII'),
+    ];
+    const selected = seeds.map(({ id }) => ({ id, trapSketch: 'Giả định bị lợi thế của chính người ra quyết định làm phản tác dụng.' }));
+    const wrong = { ...v2Idea('d', 'technological', 'thế kỷ XVI', 4), angle: '' };
+    const secondWrong = { ...v2Idea('f', 'institutional', 'thế kỷ XVIII', 4), angle: '' };
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [...seeds.slice(0, 3).map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4)), wrong] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea('d', 'technological', 'thế kỷ XVI', 4)] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea('e', 'diplomatic', 'thế kỷ XVII', 4), secondWrong] }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(chat.mock.calls.filter((call) => String(call[1]?.stepLabel).startsWith('video-ideas-v2-expand'))).toHaveLength(3);
+    expect(result?.repairCalls).toEqual({ seeds: 0, select: 0, expand: 1 });
+    expect(result?.dropped.some((row) => row.id === 'f')).toBe(true);
+  });
+
+  it('repairs omitted expansion rows and merges the repaired seed with valid rows', async () => {
+    const seeds = [v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV')];
+    const selected = seeds.map(({ id }) => ({ id, trapSketch: 'Giả định bị chính lợi thế của người ra quyết định làm phản tác dụng.' }));
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea('a', 'military', 'thế kỷ XIII', 4)] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea('b', 'political', 'thế kỷ XIV', 4)] }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(chat).toHaveBeenCalledTimes(4);
+    expect(chat.mock.calls[3]![1]?.stepLabel).toBe('video-ideas-v2-expand-repair');
+    expect(result?.repairCalls).toEqual({ seeds: 0, select: 0, expand: 1 });
+    expect(result?.ideas.map((row) => row.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('fails the minimum-survivor gate after all expansion batches', async () => {
+    const seeds = [v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV')];
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected: seeds.map(({ id }) => ({ id, trapSketch: 'Giả định bị lợi thế của chính người ra quyết định làm phản tác dụng.' })), rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [{ ...v2Idea('a', 'military', 'thế kỷ XIII', 4), angle: '' }] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [] }));
+    await expect(runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } })).rejects.toMatchObject({ code: 'YOUTUBE_IDEAS_UNGROUNDED' });
+  });
+
+  it('stops after a stage response when cancellation arrives', async () => {
+    let cancelled = false;
+    const chat = vi.fn(async () => { cancelled = true; return JSON.stringify({ seeds: [v2Seed('a', 'military', 'thế kỷ XIII')] }); });
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context({ isCancelled: async () => cancelled }), request: { count: 4, presetId: 'hubris-trap' } });
     expect(result).toBeUndefined();
     expect(chat).toHaveBeenCalledTimes(1);
   });
