@@ -3,6 +3,7 @@ import express from 'express';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { Document } from 'mongodb';
+import type { JobSummary } from '../../../contracts/job';
 import { getCollection } from '../../db/client';
 import { errorHandler } from '../../error-handler';
 import { loadConfig } from '../../config';
@@ -11,6 +12,7 @@ import { createChannel } from '../channel';
 import { encryptRefreshToken } from './credentials-store';
 import { ensureYoutubeIndexes } from './indexes';
 import { createYoutubeRouter } from './routes';
+import { quotaDatePacific, quotaProjectKey } from './sync';
 
 type TestDoc = Document & { _id: string; [key: string]: unknown };
 const key = Buffer.alloc(32, 26).toString('base64');
@@ -27,6 +29,8 @@ beforeAll(async () => { await startTestMongo(); await ensureYoutubeIndexes(); })
 beforeEach(async () => {
   await getCollection<TestDoc>('youtubeCredentials').deleteMany({});
   await getCollection<TestDoc>('youtubeQuota').deleteMany({});
+  await getCollection<TestDoc>('youtubeVideos').deleteMany({});
+  await getCollection<TestDoc>('youtubeChannelDaily').deleteMany({});
   await getCollection<TestDoc>('channels').deleteMany({});
 });
 afterEach(async () => {
@@ -36,15 +40,19 @@ afterEach(async () => {
 });
 afterAll(async () => closeTestMongo());
 
-async function startApi(fetcher: typeof fetch): Promise<string> {
+async function startApi(fetcher: typeof fetch, overrides: {
+  config?: typeof config;
+  enqueueJob?: (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
+  getActiveJob?: (projectId: string, type: string) => Promise<JobSummary | null>;
+} = {}): Promise<string> {
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   app.use('/api/youtube', createYoutubeRouter({
-    config,
+    config: overrides.config ?? config,
     fetcher,
-    enqueueJob: async () => ({ id: 'job-1' } as never),
-    getActiveJob: async () => null,
+    enqueueJob: overrides.enqueueJob ?? (async () => ({ id: 'job-1' } as JobSummary)),
+    getActiveJob: overrides.getActiveJob ?? (async () => null),
   }));
   app.use(errorHandler);
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
@@ -115,5 +123,123 @@ describe('YouTube import routes', () => {
     const credentials = await getCollection<TestDoc>('youtubeCredentials').find({}).toArray();
     expect(JSON.stringify(credentials)).not.toContain('import-refresh-token-private');
     expect(credentials.some((credential) => credential.kind === 'pending-import')).toBe(false);
+  });
+});
+
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+async function addCredential(profileId: string, values: {
+  youtubeChannelId: string | null;
+  title: string | null;
+  subscriberCount?: number | null;
+  needsReconnect?: boolean;
+}): Promise<void> {
+  await getCollection<TestDoc>('youtubeCredentials').insertOne({
+    _id: profileId,
+    schemaVersion: 1,
+    refreshToken: encryptRefreshToken('refresh-token-secret', key),
+    youtubeChannelId: values.youtubeChannelId,
+    title: values.title,
+    connectedAt: new Date(),
+    needsReconnect: values.needsReconnect ?? false,
+    subscriberCount: values.subscriberCount ?? null,
+    channelOptions: [],
+  });
+}
+
+describe('YouTube channels overview and sync-all routes', () => {
+  it('returns every profile from stored data, preserves unavailable metrics, ranks videos, and omits credentials', async () => {
+    let activeProfileId = '';
+    const base = await startApi(async () => { throw new Error('Overview must not call Google.'); }, {
+      getActiveJob: async (profileId) => profileId === activeProfileId ? { id: 'active-sync-1' } as JobSummary : null,
+    });
+    const disconnected = await createChannel({ name: 'Chưa kết nối', language: 'vi' });
+    const connected = await createChannel({ name: 'Kênh đã kết nối', handle: '@connected', language: 'en' });
+    activeProfileId = connected.id;
+    const missingDaily = await createChannel({ name: 'Thiếu dữ liệu ngày', language: 'vi' });
+    const reconnect = await createChannel({ name: 'Cần kết nối lại', language: 'vi' });
+    await addCredential(connected.id, { youtubeChannelId: 'UC-connected', title: 'Tên YouTube', subscriberCount: 300 });
+    await addCredential(missingDaily.id, { youtubeChannelId: 'UC-missing', title: 'Kênh thiếu daily', subscriberCount: 200 });
+    await addCredential(reconnect.id, { youtubeChannelId: 'UC-reconnect', title: 'Kênh hết quyền', subscriberCount: 9, needsReconnect: true });
+    await getCollection<TestDoc>('youtubeCredentials').updateOne({ _id: connected.id }, { $set: { lastSyncAt: new Date(), thumbnailUrl: 'https://example.com/channel.png' } });
+    await getCollection<TestDoc>('youtubeChannelDaily').insertMany([
+      { _id: `${connected.id}:${daysAgo(5)}`, channelProfileId: connected.id, date: daysAgo(5), views: 150, estimatedMinutesWatched: 9_000, subscribersGained: 5, subscribersLost: 1 },
+      { _id: `${connected.id}:${daysAgo(35)}`, channelProfileId: connected.id, date: daysAgo(35), views: 100, estimatedMinutesWatched: 6_000, subscribersGained: 3, subscribersLost: 2 },
+    ]);
+    await getCollection<TestDoc>('youtubeVideos').insertOne({
+      _id: `${connected.id}:video-top`, channelProfileId: connected.id, videoId: 'video-top', title: 'Video nổi bật',
+      publishedAt: new Date(Date.now() - 30 * 86_400_000).toISOString(), durationSec: 600, isShort: false, privacy: 'public',
+      viewCount: 300, likeCount: 4, commentCount: 2, fetchedAt: new Date().toISOString(), analytics: {}, removed: false,
+    });
+
+    const response = await fetch(`${base}/api/youtube/channels-overview`);
+    expect(response.status).toBe(200);
+    const payload = await response.json() as { channels: Array<{ channelId: string; [key: string]: unknown }>; totals: Record<string, unknown> };
+    const rows = new Map(payload.channels.map((channel) => [channel.channelId, channel]));
+    expect(rows.size).toBe(4);
+    expect(rows.get(disconnected.id)).toMatchObject({ connection: { connected: false }, last28: { views: null }, activeSyncJobId: null });
+    expect(rows.get(connected.id)).toMatchObject({
+      language: 'en', subscriberCount: 300, videoCount: 1, longCount: 1, shortCount: 0,
+      last28: { views: 150, estimatedMinutesWatched: 9_000, subscribersGained: 5, subscribersLost: 1 },
+      previous28: { views: 100, estimatedMinutesWatched: 6_000, subscribersGained: 3, subscribersLost: 2 },
+      trend: { views: { changePercent: 50 }, tooFewData: false },
+      activeSyncJobId: 'active-sync-1', topVideo: { videoId: 'video-top', title: 'Video nổi bật', viewsPerDay: expect.any(Number) },
+    });
+    expect(rows.get(missingDaily.id)).toMatchObject({ last28: { views: null, estimatedMinutesWatched: null, subscribersGained: null, subscribersLost: null }, previous28: { views: null } });
+    expect(rows.get(reconnect.id)?.connection).toMatchObject({ connected: false, needsReconnect: true });
+    expect(payload.totals).toMatchObject({ subscriberCount: 500, channelsConnected: 2, channelsNeedReconnect: 1, views28: 150, watchHours28: 150, subscribersGained28: 5 });
+    expect(JSON.stringify(payload)).not.toMatch(/refreshToken|accessToken|ciphertext|authTag|clientSecret/i);
+  });
+
+  it('returns empty overview and queues only eligible channels while isolating quota and active-job skips', async () => {
+    const emptyBase = await startApi(async () => { throw new Error('Overview must not call Google.'); });
+    const empty = await (await fetch(`${emptyBase}/api/youtube/channels-overview`)).json();
+    expect(empty).toMatchObject({ channels: [], totals: { channelsConnected: 0, channelsNeedReconnect: 0 } });
+    await new Promise<void>((resolve) => { server!.close(() => resolve()); });
+    server = null;
+
+    const eligible = await createChannel({ name: 'Đủ điều kiện' });
+    const alreadyRunning = await createChannel({ name: 'Đang chạy' });
+    const quotaBlocked = await createChannel({ name: 'Hết quota' });
+    const disconnected = await createChannel({ name: 'Chưa kết nối' });
+    const reconnect = await createChannel({ name: 'Cần kết nối lại' });
+    await addCredential(eligible.id, { youtubeChannelId: 'UC-eligible', title: 'Eligible' });
+    await addCredential(alreadyRunning.id, { youtubeChannelId: 'UC-running', title: 'Running' });
+    await addCredential(quotaBlocked.id, { youtubeChannelId: 'UC-quota', title: 'Quota' });
+    await addCredential(reconnect.id, { youtubeChannelId: 'UC-reconnect', title: 'Reconnect', needsReconnect: true });
+    await getCollection<TestDoc>('youtubeQuota').insertOne({ _id: 'quota', date: quotaDatePacific(), projectKey: quotaProjectKey(config.GOOGLE_OAUTH_CLIENT_ID), estimatedUnits: 7_970 });
+    await getCollection<TestDoc>('youtubeVideos').insertMany(Array.from({ length: 1_000 }, (_, index) => ({
+      _id: `quota-video-${index}`, channelProfileId: quotaBlocked.id, videoId: `video-${index}`, removed: false,
+    })));
+    const enqueued: string[] = [];
+    const base = await startApi(async () => { throw new Error('Sync-all must enqueue jobs without calling Google.'); }, {
+      enqueueJob: async (input) => { enqueued.push(input.projectId); return { id: `job-${input.projectId}` } as JobSummary; },
+      getActiveJob: async (profileId) => profileId === alreadyRunning.id ? { id: 'already-running-job' } as JobSummary : null,
+    });
+
+    const response = await fetch(`${base}/api/youtube/sync-all`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    const payload = await response.json() as { results: Array<Record<string, unknown>> };
+    const rows = new Map(payload.results.map((result) => [result.channelId, result]));
+    expect(enqueued).toEqual([eligible.id]);
+    expect(rows.get(eligible.id)).toMatchObject({ jobId: `job-${eligible.id}` });
+    expect(rows.get(alreadyRunning.id)).toMatchObject({ jobId: 'already-running-job', skipped: 'already-running' });
+    expect(rows.get(quotaBlocked.id)).toMatchObject({ jobId: null, skipped: 'quota' });
+    expect(rows.get(disconnected.id)).toMatchObject({ jobId: null, skipped: 'not-connected' });
+    expect(rows.get(reconnect.id)).toMatchObject({ jobId: null, skipped: 'needs-reconnect' });
+    expect(JSON.stringify(payload)).not.toMatch(/refreshToken|accessToken|ciphertext|authTag|clientSecret/i);
+  });
+
+  it('refuses sync-all with the existing setup message only when Google is unconfigured', async () => {
+    const noGoogleConfig = { ...config, GOOGLE_OAUTH_CLIENT_ID: '', GOOGLE_OAUTH_CLIENT_SECRET: '', YOUTUBE_TOKEN_ENCRYPTION_KEY: '' };
+    const base = await startApi(async () => { throw new Error('No Google request should happen.'); }, { config: noGoogleConfig });
+    const response = await fetch(`${base}/api/youtube/sync-all`, { method: 'POST' });
+    expect(response.status).toBe(503);
+    const body = await response.json() as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('YOUTUBE_NOT_CONFIGURED');
+    expect(body.error.message).toContain('GOOGLE_OAUTH_CLIENT_ID');
+    expect(JSON.stringify(body)).not.toMatch(/refreshToken|accessToken|ciphertext|authTag|clientSecret/i);
   });
 });

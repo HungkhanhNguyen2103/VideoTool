@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Config } from '../../config';
-import { getChannel } from '../channel';
+import { getChannel, listChannels } from '../channel';
 import { AppError, NotFound } from '../../shared/errors';
 import type { JobSummary } from '../../../contracts/job';
 import { RefreshYoutubeProfileRequestSchema, YoutubeVideoStatsSchema, type YoutubeVideoStats } from '../../../contracts/youtube';
@@ -14,6 +14,8 @@ import { getSuggestedYoutubeLinks } from './link-service';
 import { generateYoutubeReview, getYoutubeReview } from './review-service';
 import { getYoutubeRetention, getStoredChannelDaily } from './analytics-service';
 import { getProject, listProjects } from '../project';
+import { YoutubeChannelsOverviewSchema, YoutubeChannelOverviewRowSchema, YoutubeSyncAllResultSchema } from '../../../contracts/youtube-overview';
+import { buildYoutubeOverviewWindows } from './channel-overview';
 
 type EnqueueYoutubeJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<JobSummary>;
 type GetActiveYoutubeJob = (projectId: string, type: string) => Promise<JobSummary | null>;
@@ -97,6 +99,59 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
   router.get('/setup', (_req, res) => {
     const configured = youtubeIsConfigured(options.config);
     res.json({ configured, ...(!configured ? { message: YOUTUBE_SETUP_MESSAGE } : {}) });
+  });
+
+  router.get('/channels-overview', async (_req, res) => {
+    const profiles = await listChannels();
+    const channels = await Promise.all(profiles.map(async (profile) => {
+      const [connection, daily, videos, credential, activeJob] = await Promise.all([
+        getYoutubeConnection(profile.id, options.config),
+        getStoredChannelDaily(profile.id),
+        listVideoDocs(profile.id, { removed: { $ne: true } }),
+        findCredential(profile.id),
+        options.getActiveJob(profile.id, 'youtube-sync'),
+      ]);
+      const windows = buildYoutubeOverviewWindows(daily);
+      const rankings = getVideoRanking(videos);
+      const topRank = rankings.viewsPerDay[0];
+      const topVideo = topRank ? videos.find((video) => video.videoId === topRank.videoId) : undefined;
+      return YoutubeChannelOverviewRowSchema.parse({
+        channelId: profile.id,
+        name: profile.name,
+        ...(profile.handle ? { handle: profile.handle } : {}),
+        language: profile.language,
+        connection,
+        subscriberCount: credential?.subscriberCount ?? null,
+        videoCount: videos.length,
+        longCount: videos.filter((video) => !video.isShort).length,
+        shortCount: videos.filter((video) => video.isShort).length,
+        last28: windows.last28,
+        previous28: windows.previous28,
+        trend: windows.trend,
+        health: buildChannelHealth({ subscriberCount: credential?.subscriberCount ?? null, videos, dataSynced: Boolean(connection.lastSyncAt) }),
+        activeSyncJobId: activeJob?.id ?? null,
+        topVideo: topRank && topVideo ? { videoId: topVideo.videoId, title: topVideo.title, viewsPerDay: topRank.value } : null,
+      });
+    }));
+    const connected = channels.filter((channel) => channel.connection.connected);
+    const sumKnown = (values: readonly (number | null)[]) => {
+      const known = values.filter((value): value is number => value !== null);
+      return known.length ? known.reduce((total, value) => total + value, 0) : null;
+    };
+    res.json(YoutubeChannelsOverviewSchema.parse({
+      channels,
+      totals: {
+        subscriberCount: sumKnown(connected.map((channel) => channel.subscriberCount)),
+        views28: sumKnown(connected.map((channel) => channel.last28.views)),
+        watchHours28: (() => {
+          const known = connected.flatMap((channel) => channel.last28.estimatedMinutesWatched === null ? [] : [channel.last28.estimatedMinutesWatched / 60]);
+          return known.length ? known.reduce((total, value) => total + value, 0) : null;
+        })(),
+        subscribersGained28: sumKnown(connected.map((channel) => channel.last28.subscribersGained)),
+        channelsConnected: connected.length,
+        channelsNeedReconnect: channels.filter((channel) => channel.connection.needsReconnect).length,
+      },
+    }));
   });
 
   router.post('/connect/:channelId', async (req, res) => {
@@ -196,6 +251,37 @@ export function createYoutubeRouter(options: { config: Config; enqueueJob: Enque
     if (active) { res.status(200).json({ jobId: active.id }); return; }
     const job = await options.enqueueJob({ type: 'youtube-sync', projectId: req.params.channelId, payload: { channelProfileId: req.params.channelId }, maxAttempts: 1 });
     res.status(201).json({ jobId: job.id });
+  });
+
+  router.post('/sync-all', async (_req, res) => {
+    assertYoutubeConfigured(options.config);
+    const profiles = await listChannels();
+    const results = await Promise.all(profiles.map(async (profile) => {
+      try {
+        const connection = await getYoutubeConnection(profile.id, options.config);
+        if (connection.needsReconnect) {
+          return { channelId: profile.id, jobId: null, skipped: 'needs-reconnect' as const, message: 'Cần kết nối lại YouTube.' };
+        }
+        if (!connection.connected) {
+          return { channelId: profile.id, jobId: null, skipped: 'not-connected' as const, message: 'Chưa kết nối YouTube.' };
+        }
+        await assertYoutubeQuotaAllowsSync(profile.id, options.config, await countVideoDocs(profile.id));
+        const active = await options.getActiveJob(profile.id, 'youtube-sync');
+        if (active) return { channelId: profile.id, jobId: active.id, skipped: 'already-running' as const, message: 'Đang có lượt đồng bộ chạy.' };
+        const job = await options.enqueueJob({ type: 'youtube-sync', projectId: profile.id, payload: { channelProfileId: profile.id }, maxAttempts: 1 });
+        return { channelId: profile.id, jobId: job.id };
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'YOUTUBE_QUOTA_LIMIT') {
+          return { channelId: profile.id, jobId: null, skipped: 'quota' as const, message: error.message };
+        }
+        return {
+          channelId: profile.id,
+          jobId: null,
+          message: error instanceof AppError ? error.message : 'Không thể xếp hàng đồng bộ kênh này. Hãy thử lại.',
+        };
+      }
+    }));
+    res.json(YoutubeSyncAllResultSchema.parse({ results }));
   });
 
   router.get('/channels/:channelId/sync-job', async (req, res) => {

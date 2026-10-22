@@ -14,6 +14,9 @@
 
 ## API and quota rules
 
+- `GET /api/youtube/channels-overview` returns one safe summary per local channel profile. It reads stored channel credentials, daily analytics, and video documents only; it makes no Google request and consumes no quota. Totals include connected channels only, ignore unavailable values, and intentionally mix channel audiences.
+- `POST /api/youtube/sync-all` checks Google setup once, then applies connection, reconnect, estimated-quota, and active-job checks per profile. A channel's skip or enqueue failure does not stop other channels. It reuses the existing `youtube-sync` job type and does not persist or return credentials.
+
 - Channel discovery uses `channels.list?mine=true`, then the channel's uploads playlist via `playlistItems.list`, followed by `videos.list` in batches of 50. **Never call `search.list`.**
 - Verified YouTube Data API quota documentation says every `channels.list`, `playlistItems.list`, and `videos.list` list call costs 1 quota unit. The default quota allocation is 10,000 units/day; this module keeps an estimate and pauses manual sync above 8,000 estimated units/day. See https://developers.google.com/youtube/v3/determine_quota_cost.
 - A full pass estimates `1 + max(1, ceil(videoCount / 50)) + ceil(videoCount / 50)` units: 5 units for 100 videos, 41 for 1,000. Actual API project usage remains authoritative.
