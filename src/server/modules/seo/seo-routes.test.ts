@@ -60,10 +60,11 @@ afterAll(async () => {
 async function startSeoServer(
   enqueueJob = vi.fn().mockResolvedValue({ id: 'job-1' }),
   getActiveJob = vi.fn().mockResolvedValue(null),
+  getClaudeCliStatus?: () => Promise<{ available: boolean; reason?: string; authPathLikely: 'api-key' | 'subscription' }>,
 ): Promise<string> {
   const app = express();
   app.use(express.json());
-  app.use('/api/project', createSeoRouter({ enqueueJob, getActiveJob }));
+  app.use('/api/project', createSeoRouter({ enqueueJob, getActiveJob, getClaudeCliStatus }));
   app.use(errorHandler);
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
   return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
@@ -97,6 +98,49 @@ describe('SEO routes and thumbnail files', () => {
     const duplicate = await fetch(`${base}/api/project/${project.id}/seo/generate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
     expect(duplicate.status).toBe(200);
     expect(await duplicate.json()).toEqual({ jobId: 'job-existing' });
+  });
+
+  it('validates the CLI model and checks availability before enqueueing CLI jobs', async () => {
+    const project = await projectWithChapter();
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-cli' });
+    const unavailable = await startSeoServer(enqueueJob, vi.fn().mockResolvedValue(null), async () => ({
+      available: false, reason: 'Đăng nhập lại Claude Code.', authPathLikely: 'subscription',
+    }));
+    const request = (body: unknown) => fetch(`${unavailable}/api/project/${project.id}/seo/generate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+
+    const invalidModel = await request({ backend: 'cli', cliModel: 'unknown-model' });
+    expect(invalidModel.status).toBe(422);
+    expect(await invalidModel.json()).toMatchObject({ error: { code: 'AI_MODEL_UNAVAILABLE' } });
+    const blankModel = await request({ backend: 'cli', cliModel: '   ' });
+    expect(blankModel.status).toBe(422);
+    expect(await blankModel.json()).toMatchObject({ error: { code: 'AI_MODEL_UNAVAILABLE' } });
+    const extraField = await request({ backend: 'cli', surprise: true });
+    expect(extraField.status).toBe(400);
+    expect(enqueueJob).not.toHaveBeenCalled();
+
+    const unavailableResponse = await request({ backend: 'cli' });
+    expect(unavailableResponse.status).toBe(503);
+    expect(await unavailableResponse.json()).toMatchObject({ error: { code: 'CLAUDE_CLI_UNAVAILABLE', message: 'Đăng nhập lại Claude Code.' } });
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('enqueues an available CLI backend and model without changing project AI settings', async () => {
+    const project = await projectWithChapter();
+    const enqueueJob = vi.fn().mockResolvedValue({ id: 'job-cli' });
+    const base = await startSeoServer(enqueueJob, vi.fn().mockResolvedValue(null), async () => ({ available: true, authPathLikely: 'subscription' }));
+    const response = await fetch(`${base}/api/project/${project.id}/seo/generate`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sections: ['titles'], backend: 'cli', cliModel: 'claude-sonnet-5-5' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(enqueueJob).toHaveBeenCalledWith({
+      type: 'generate-seo', projectId: project.id,
+      payload: { projectId: project.id, sections: ['titles'], backend: 'cli', cliModel: 'claude-sonnet-5-5' },
+      maxAttempts: 1,
+    });
+    expect((await getProject(project.id)).aiProvider).toBe('deepseek');
   });
 
   it('serves manual prompts, imports selected sections, patches partial fields, and translates invalid JSON', async () => {

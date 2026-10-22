@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { SEO_SECTIONS, SEO_THUMBNAIL_MAX_BYTES, type SeoSection } from '../../../contracts/seo';
+import { AI_MODEL_REGISTRY } from '../../../contracts/ai-models';
 import { aiModelForProviderChange } from '../../shared/ai/AiModelSelect';
 import { buildPackageMarkdown, slugifyPackageTitle } from '../../../contracts/seo-format';
 import { Button } from '../../shared/ui/Button';
@@ -22,6 +24,8 @@ import { ChannelManagerDialog } from '../channel/components/ChannelManagerDialog
 import { HISTORY_CHANNEL_PREFILL } from '../channel/channel-helpers';
 import { useChannel, useChannels } from '../channel/hooks';
 import { useSetProjectChannel } from '../project/hooks';
+import { getClaudeCliStatus } from '../asset/api';
+import { seoGenerationAvailability } from './seo-generation-mode';
 import styles from './SeoPage.module.css';
 
 export function SeoPage() {
@@ -36,6 +40,8 @@ export function SeoPage() {
   const setChannelMutation = useSetProjectChannel();
   const { draft, saveState, update, flush } = useSeoDraft(projectId, project?.seo);
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
+  const [generationBackend, setGenerationBackend] = useState<'api' | 'cli'>('api');
+  const [cliModel, setCliModel] = useState<string>(AI_MODEL_REGISTRY.claude.defaultModelId);
   const [manualShortsOnly, setManualShortsOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -45,6 +51,12 @@ export function SeoPage() {
   const [manageChannels, setManageChannels] = useState(false);
   const [channelPrefill, setChannelPrefill] = useState<typeof HISTORY_CHANNEL_PREFILL | null>(null);
   const progress = useJobProgress(jobId);
+  const cliStatusQuery = useQuery({ queryKey: ['script', 'claude-cli-status'], queryFn: getClaudeCliStatus, enabled: Boolean(projectId), staleTime: 15_000, retry: false });
+  const cliAvailability = seoGenerationAvailability(
+    generationBackend,
+    cliStatusQuery.data,
+    cliStatusQuery.error instanceof Error ? cliStatusQuery.error.message : undefined,
+  );
   const seo = draft ?? project?.seo;
   const files = filesQuery.data ?? [];
   const thumbnailFile = seo?.thumbnail.fileId ? files.find((file) => file.id === seo.thumbnail.fileId) : undefined;
@@ -69,6 +81,7 @@ export function SeoPage() {
 
   async function generate(sections: SeoSection[]) {
     if (!project || activeJob) return;
+    if (cliAvailability.disabled) { toast(cliAvailability.reason ?? 'Claude Code CLI chưa khả dụng trên máy này.'); return; }
     const hasContent = sections.some((section) => {
       if (section === 'titles') return seo?.titles.length;
       if (section === 'description') return Boolean(seo && (seo.descriptionIntro.trim() || seo.descriptionKeywords.trim()));
@@ -80,7 +93,9 @@ export function SeoPage() {
     if (hasContent && !window.confirm('Phần này đã có nội dung. Tạo lại sẽ thay thế nội dung phần đã chọn, tiếp tục?')) return;
     try {
       setBusy('generate');
-      const result = await api.generateSeo(project.id, sections);
+      const result = await api.generateSeo(project.id, sections, generationBackend === 'cli'
+        ? { backend: 'cli', cliModel }
+        : {});
       setJobId(result.jobId);
       toast('Đã xếp hàng tạo gói SEO.');
     } catch (error) {
@@ -193,21 +208,23 @@ export function SeoPage() {
 
   const readyDisplay = buildSeoDisplay({ ...project, seo }, channel);
   const controlsBusy = Boolean(busy || activeJob);
+  const generationDisabledReason = cliAvailability.disabled ? cliAvailability.reason : undefined;
+  const generationLabel = generationBackend === 'cli' ? 'Sinh bằng Claude' : undefined;
   return <main className={styles.page}>
     {pageHeader}
     {channelSection}
-    <Toolbar mode={mode} provider={project.aiProvider} model={project.aiModel} busy={controlsBusy} sections={manualSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider, aiModelForProviderChange(provider, project.aiProvider, project.aiModel))} onModelChange={(model) => void changeModel(model)} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
+    <Toolbar mode={mode} provider={project.aiProvider} model={project.aiModel} backend={generationBackend} cliModel={cliModel} cliAvailability={cliAvailability} busy={controlsBusy} sections={manualSections} hasRaw={Boolean(manualRaw.trim())} onModeChange={setMode} onProviderChange={(provider) => void changeProvider(provider, aiModelForProviderChange(provider, project.aiProvider, project.aiModel))} onModelChange={(model) => void changeModel(model)} onBackendChange={setGenerationBackend} onCliModelChange={setCliModel} onGenerate={() => void generate(allSections)} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />
     {activeJob && <div className={styles.jobProgress} role="status"><span>Đang tạo gói SEO…</span><progress value={progress?.progress ?? 0} max={100} /> <span>{progress?.progress ?? 0}%</span></div>}
     {readyDisplay.unsupportedFacts.length > 0 && <aside className={styles.factWarning}><strong>Kiểm tra số liệu</strong><ul>{readyDisplay.unsupportedFacts.map((fact) => <li key={fact}>Số liệu “{fact}” chưa thấy trong dữ liệu nguồn. Đây là cảnh báo, không chặn.</li>)}</ul></aside>}
     {mode === 'manual' && <ManualSeoPanel prompt={manualPrompt} raw={manualRaw} error={manualError} busy={controlsBusy} sections={manualSections} shortsOnly={manualShortsOnly} onShortsOnlyChange={setManualShortsOnly} onRawChange={setManualRaw} onLoadPrompt={() => void loadManualPrompt()} onImport={() => void importManual()} />}
     <div className={styles.grid}>
-      <TitlesPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['titles'])} onFlush={() => void flush()} />
-      <DescriptionPanel project={project} seo={seo} description={readyDisplay.description} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['description'])} onFlush={() => void flush()} />
-      <TagsPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['tags'])} onFlush={() => void flush()} />
-      <PinnedCommentPanel seo={seo} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['pinnedComment'])} onFlush={() => void flush()} />
-      <ThumbnailPanel seo={seo} thumbnailFile={thumbnailFile} busy={controlsBusy} onPatch={update} onRegenerate={() => void generate(['thumbnail'])} onUpload={(file) => void uploadThumbnail(file)} onRemove={() => void removeThumbnail()} />
+      <TitlesPanel seo={seo} busy={controlsBusy} generationDisabledReason={generationDisabledReason} generationLabel={generationLabel} onPatch={update} onRegenerate={() => void generate(['titles'])} onFlush={() => void flush()} />
+      <DescriptionPanel project={project} seo={seo} description={readyDisplay.description} busy={controlsBusy} generationDisabledReason={generationDisabledReason} generationLabel={generationLabel} onPatch={update} onRegenerate={() => void generate(['description'])} onFlush={() => void flush()} />
+      <TagsPanel seo={seo} busy={controlsBusy} generationDisabledReason={generationDisabledReason} generationLabel={generationLabel} onPatch={update} onRegenerate={() => void generate(['tags'])} onFlush={() => void flush()} />
+      <PinnedCommentPanel seo={seo} busy={controlsBusy} generationDisabledReason={generationDisabledReason} generationLabel={generationLabel} onPatch={update} onRegenerate={() => void generate(['pinnedComment'])} onFlush={() => void flush()} />
+      <ThumbnailPanel seo={seo} thumbnailFile={thumbnailFile} busy={controlsBusy} generationDisabledReason={generationDisabledReason} generationLabel={generationLabel} onPatch={update} onRegenerate={() => void generate(['thumbnail'])} onUpload={(file) => void uploadThumbnail(file)} onRemove={() => void removeThumbnail()} />
     </div>
-    <ShortsPanel project={{ ...project, seo }} busy={controlsBusy} onPatch={update} onRegenerate={() => {
+    <ShortsPanel project={{ ...project, seo }} busy={controlsBusy} generationDisabledReason={generationDisabledReason} generationLabel={generationLabel ? 'Sinh Shorts bằng Claude' : undefined} onPatch={update} onRegenerate={() => {
       if (mode === 'manual') {
         setManualShortsOnly(true);
         void loadManualPrompt(['shorts']);

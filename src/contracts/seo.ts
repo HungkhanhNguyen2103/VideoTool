@@ -52,7 +52,10 @@ export const SeoGeneratedBySchema = z.object({
   model: z.string().min(1),
   promptVersion: z.string().min(1),
   generatedAt: z.string().min(1),
-}).strict();
+  backend: z.enum(['api', 'cli']).optional(),
+}).strict().transform((generatedBy) => generatedBy.backend || generatedBy.provider === 'manual'
+  ? generatedBy
+  : { ...generatedBy, backend: 'api' as const });
 export type SeoGeneratedBy = z.infer<typeof SeoGeneratedBySchema>;
 
 export const SeoThumbnailSchema = z.object({

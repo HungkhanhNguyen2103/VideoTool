@@ -11,6 +11,8 @@ const ManualPromptResponseSchema = z.object({ prompt: z.string(), promptVersion:
 const FileListSchema = z.array(FileSummarySchema);
 const ChannelTitlesResponseSchema = z.object({ titles: z.array(z.string()) }).strict();
 
+export type SeoGenerationOptions = { backend?: 'api' | 'cli'; cliModel?: string };
+
 export function getSeoProject(projectId: string): Promise<ProjectDetail> {
   return apiRequest(`/api/project/${encodeURIComponent(projectId)}`, ProjectDetailSchema);
 }
@@ -24,8 +26,10 @@ export async function getSeoChannelTitles(projectId: string): Promise<string[]> 
   return response.titles;
 }
 
-export function generateSeo(projectId: string, sections: SeoSection[] = [...SEO_SECTIONS]): Promise<{ jobId: string }> {
-  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/seo/generate`, JobResponseSchema, { method: 'POST', body: { sections } });
+export function generateSeo(projectId: string, sections: SeoSection[] = [...SEO_SECTIONS], options: SeoGenerationOptions = {}): Promise<{ jobId: string }> {
+  return apiRequest(`/api/project/${encodeURIComponent(projectId)}/seo/generate`, JobResponseSchema, {
+    method: 'POST', body: { sections, ...options },
+  });
 }
 
 export function getSeoManualPrompt(projectId: string, sections: SeoSection[] = [...SEO_SECTIONS.filter((section) => section !== 'shorts')]): Promise<{ prompt: string; promptVersion: string }> {

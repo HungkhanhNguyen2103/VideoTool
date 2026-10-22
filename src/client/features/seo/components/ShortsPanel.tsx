@@ -8,9 +8,9 @@ import { toast } from '../../../shared/ui/toast-store';
 import { buildShortsPanelItems, copyShortsText } from '../shorts-view';
 import styles from './ShortsPanel.module.css';
 
-type Props = { project: ProjectDetail; busy: boolean; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
+type Props = { project: ProjectDetail; busy: boolean; generationDisabledReason?: string; generationLabel?: string; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
 
-export function ShortsPanel({ project, busy, onPatch, onRegenerate, onFlush }: Props) {
+export function ShortsPanel({ project, busy, generationDisabledReason, generationLabel = 'Tạo lại gói Shorts', onPatch, onRegenerate, onFlush }: Props) {
   const [fallbackText, setFallbackText] = useState<string | null>(null);
   const [hashtagDrafts, setHashtagDrafts] = useState<Record<string, string>>({});
   const seo: SeoPackage = project.seo;
@@ -40,7 +40,7 @@ export function ShortsPanel({ project, busy, onPatch, onRegenerate, onFlush }: P
   return <section className={styles.panel} aria-labelledby="seo-shorts-title">
     <div className={styles.panelHead}>
       <div><h2 id="seo-shorts-title">Gói Shorts</h2><p className={styles.muted}>Các mốc cắt là gợi ý xác định theo cảnh; mốc và lời dẫn không được AI tự thay đổi.</p></div>
-      <Button size="sm" onClick={onRegenerate} disabled={busy}>Tạo lại gói Shorts</Button>
+      <Button size="sm" onClick={onRegenerate} disabled={busy || Boolean(generationDisabledReason)} title={generationDisabledReason}>{generationLabel}</Button>
     </div>
     <label className={styles.field} htmlFor="seo-long-video-url">URL video dài
       <input id="seo-long-video-url" className={styles.input} type="url" maxLength={SEO_LONG_VIDEO_URL_MAX_CHARS} value={seo.longVideoUrl} onChange={(event) => onPatch({ longVideoUrl: event.target.value })} onBlur={onFlush} disabled={busy} placeholder="https://…" />

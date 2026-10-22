@@ -10,6 +10,7 @@
 .modelSelect { display: grid; gap: .15rem; flex: 1 1 15rem; min-width: min(15rem, 100%); color: var(--text-2); font-size: .75rem; font-weight: 700; }
 .modelSelect select { width: 100%; min-width: 0; }
 .modelSelect small { color: var(--text-3); font-size: .65rem; font-weight: 400; white-space: nowrap; }
+.cliNote { flex-basis: 100%; color: var(--text-3); font-size: .8rem; }
 .input { min-height: 36px; max-width: 100%; padding: 0 .65rem; background: var(--input); border: 1px solid var(--border-2); border-radius: .5rem; color: var(--text); font: inherit; }
 .providerHint { margin-left: auto; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }

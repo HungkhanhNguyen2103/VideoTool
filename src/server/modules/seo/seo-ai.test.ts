@@ -286,8 +286,93 @@ describe('SEO AI generation', () => {
     expect(mocks.chat.mock.calls[1]?.[0][1].content).toContain('Validation error:');
     expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledOnce();
     expect(mocks.applyGeneratedSeoSections.mock.calls[0]?.[1]).toEqual(['titles', 'tags']);
+    expect(mocks.applyGeneratedSeoSections.mock.calls[0]?.[2]).toMatchObject({ generatedBy: { backend: 'api' } });
     expect(mocks.getChannel).not.toHaveBeenCalled();
     expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('retrying once'));
+  });
+
+  it('generates through an injected Claude CLI backend without constructing the API client and records CLI metadata', async () => {
+    const cli = { kind: 'cli' as const, model: 'claude-sonnet-5-5', chat: vi.fn(async () => `Here is the package:\n\`\`\`json\n${generatedJson}\n\`\`\``) };
+    const jobContext = context();
+
+    await generateSeoPackage(project.id, ['titles', 'tags'], jobContext, cli);
+
+    expect(mocks.getAiClient).not.toHaveBeenCalled();
+    expect(cli.chat).toHaveBeenCalledOnce();
+    expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledWith(project.id, ['titles', 'tags'], expect.objectContaining({
+      generatedBy: expect.objectContaining({ provider: 'claude', model: 'claude-sonnet-5-5', backend: 'cli' }),
+    }));
+  });
+
+  it('retries CLI validation failures once, tolerates leading prose, and leaves projects unchanged when cancelled', async () => {
+    const cli = { kind: 'cli' as const, model: 'default', chat: vi.fn()
+      .mockResolvedValueOnce('Not valid JSON')
+      .mockResolvedValueOnce(`The corrected result follows.\n${generatedJson}`) };
+    const jobContext = context();
+
+    await generateSeoPackage(project.id, ['titles'], jobContext, cli);
+
+    expect(cli.chat).toHaveBeenCalledTimes(2);
+    expect(jobContext.appendLog).toHaveBeenCalledWith(expect.stringContaining('retrying once'));
+    expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledOnce();
+
+    mocks.applyGeneratedSeoSections.mockClear();
+    const cancelledContext = { ...context(), isCancelled: vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true) };
+    const cancelledCli = { kind: 'cli' as const, model: 'default', chat: vi.fn(async () => generatedJson) };
+    await generateSeoPackage(project.id, ['titles'], cancelledContext, cancelledCli);
+    expect(cancelledCli.chat).toHaveBeenCalledOnce();
+    expect(mocks.applyGeneratedSeoSections).not.toHaveBeenCalled();
+  });
+
+  it('does not write when both CLI validation attempts fail', async () => {
+    const cli = { kind: 'cli' as const, model: 'default', chat: vi.fn().mockResolvedValue('not JSON') };
+
+    await expect(generateSeoPackage(project.id, ['titles'], context(), cli)).rejects.toMatchObject({ status: 502, code: 'SEO_AI_OUTPUT_INVALID' });
+
+    expect(cli.chat).toHaveBeenCalledTimes(2);
+    expect(mocks.applyGeneratedSeoSections).not.toHaveBeenCalled();
+  });
+
+  it('keeps CLI main and Shorts calls sequential and merges assigned channel defaults', async () => {
+    const eligible = { ...projectWithShortWindow(), channelId: channel.id };
+    mocks.getProject.mockResolvedValue(eligible);
+    mocks.getChannel.mockResolvedValue(channel);
+    let active = 0;
+    let maxActive = 0;
+    const cli = {
+      kind: 'cli' as const,
+      model: 'claude-sonnet-5-5',
+      chat: vi.fn(async (messages: Array<{ role: string; content: string }>, options?: { stepLabel?: string }) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        active -= 1;
+        return options?.stepLabel === 'Shorts-windows'
+          ? JSON.stringify({ shorts: [{ window_id: 'short-short-scene-1', hook_line: 'Hook', title: 'Short title', caption: 'Caption', hashtags: ['#History'], reason: 'Reason' }] })
+          : JSON.stringify({ tags: ['lịch sử'], hashtags: ['#DienBienPhu'] });
+      }),
+    };
+
+    await generateSeoPackage(project.id, ['tags', 'shorts'], context(), cli);
+
+    expect(cli.chat).toHaveBeenCalledTimes(2);
+    expect(maxActive).toBe(1);
+    expect(mocks.applyGeneratedSeoSections).toHaveBeenCalledWith(eligible.id, ['tags', 'shorts'], expect.objectContaining({
+      hashtags: ['#DienBienPhu', '#SuViet'],
+      shorts: [expect.objectContaining({ hashtags: ['#History', '#Shorts', '#LichSu', '#SuViet'] })],
+    }));
+  });
+
+  it('does not retry CLI process failures as schema failures', async () => {
+    const cli = { kind: 'cli' as const, model: 'default', chat: vi.fn().mockRejectedValue(Object.assign(new Error('timed out'), { code: 'CLAUDE_CLI_TIMEOUT', status: 503 })) };
+
+    await expect(generateSeoPackage(project.id, ['titles'], context(), cli)).rejects.toMatchObject({ code: 'CLAUDE_CLI_TIMEOUT' });
+
+    expect(cli.chat).toHaveBeenCalledOnce();
+    expect(mocks.applyGeneratedSeoSections).not.toHaveBeenCalled();
   });
 
   it('does not write when both validation attempts fail', async () => {

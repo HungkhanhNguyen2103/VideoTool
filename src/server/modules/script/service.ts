@@ -5,6 +5,8 @@ import { getAiClient, type AiChatMetadata, type AiClient, type ChatMessage } fro
 import { aiRequestTimeoutMs, normalizeAiError, withAiRequestTimeout, type AiProviderName } from '../../shared/ai/errors';
 import { AppError, NotFound } from '../../shared/errors';
 import { newId } from '../../shared/ids';
+import { formatChatMessages } from '../../shared/claude-cli/cli-chat';
+export { formatChatMessages } from '../../shared/claude-cli/cli-chat';
 import {
   getProject,
   getProjectHistory,
@@ -545,12 +547,6 @@ export function buildRegenerationPromptForChapter(
     voiceAnchorParagraphs: chapter.no > 1 ? (project.chapters[0]?.paragraphs ?? []).slice(0, 2) : [],
   });
   return { prompt, chapter, nextChapter };
-}
-
-export function formatChatMessages(messages: readonly ChatMessage[]): string {
-  const system = messages.find((message) => message.role === 'system')?.content ?? '';
-  const user = messages.filter((message) => message.role === 'user').map((message) => message.content).join('\n\n');
-  return `SYSTEM\n${system}\n\nUSER\n${user}`;
 }
 
 export function formatRegenerationPrompt(prompt: BuiltPrompt): string {

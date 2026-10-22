@@ -75,6 +75,15 @@ describe('SEO project storage', () => {
     });
   });
 
+  it('maps legacy generatedBy records without a backend to the API backend', async () => {
+    const project = await createProject(projectInput);
+    await getCollection<ProjectDoc>('projects').updateOne({ _id: project.id }, { $set: {
+      'seo.generatedBy': { provider: 'deepseek', model: 'deepseek-chat', promptVersion: 'seo-v1', generatedAt: '2026-10-01T00:00:00.000Z' },
+    } });
+
+    expect((await getProject(project.id)).seo.generatedBy).toMatchObject({ provider: 'deepseek', backend: 'api' });
+  });
+
   it('duplicates SEO text but clears the thumbnail file reference', async () => {
     const project = await createProject(projectInput);
     await patchProjectSeo(project.id, packageWithContent());

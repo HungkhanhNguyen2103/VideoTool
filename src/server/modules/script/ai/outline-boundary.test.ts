@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { countNarrationWords, estimateNarrationDurationSec, NARRATION_WORDS_PER_MINUTE } from '../../../../contracts/script';
 import { parseScriptOutline, validateScriptOutlineChapterCount } from './parse-output';
+import { parseJsonWithLeadingText } from '../../../shared/claude-cli/json-output';
 
 const chapter = { no: 1, title: 'Origins', role: 'hook', beat: 'Mystery', targetWords: 10, endsOnTension: false };
 
@@ -19,6 +20,14 @@ describe('outline boundary', () => {
 
     expect(outline.chapters).toHaveLength(1);
     expect(skipped).toEqual(['The requested outline is below:']);
+  });
+
+  it('shares the same tolerant parser for fenced output while keeping strict parsing by default', () => {
+    expect(parseJsonWithLeadingText('```json\n{"ok":true}\n```')).toEqual({ ok: true });
+    expect(() => parseJsonWithLeadingText('Here is JSON: {"ok":true}')).toThrow(SyntaxError);
+    const skipped: string[] = [];
+    expect(parseJsonWithLeadingText('Here is JSON: {"ok":true}', (text) => skipped.push(text))).toEqual({ ok: true });
+    expect(skipped).toEqual(['Here is JSON:']);
   });
 
   it.each([0, 21])('rejects AI-selected chapter counts outside the allowed 1–20 range: %s', (count) => {

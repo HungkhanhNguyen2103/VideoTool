@@ -8,6 +8,10 @@ import { AiRequestError } from '../server/shared/ai/errors';
 import { logger } from '../server/shared/logger';
 import { isSceneActive } from '../contracts/scene-active';
 import { syncYoutubeChannel } from '../server/modules/youtube';
+import { loadConfig } from '../server/config';
+import { isAiModelForProvider } from '../contracts/ai-models';
+import { AppError } from '../server/shared/errors';
+import { createClaudeCliChat } from '../server/shared/claude-cli/cli-chat';
 
 function projectIdFrom(job: { payload: unknown }): string {
   const projectId = (job.payload as { projectId?: unknown } | null)?.projectId;
@@ -77,11 +81,31 @@ const handleRenderFullVideo: JobHandler = async (job, context) => {
 
 const handleGenerateSeo: JobHandler = async (job, context) => {
   if (await context.isCancelled()) return;
-  const payload = job.payload as { sections?: unknown };
+  const payload = job.payload as { sections?: unknown; backend?: unknown; cliModel?: unknown };
   const sections = Array.isArray(payload.sections)
     ? payload.sections as SeoSection[]
     : [...SEO_SECTIONS];
-  await generateSeoPackage(projectIdFrom(job), sections, context);
+  const projectId = projectIdFrom(job);
+  if (payload.backend !== undefined && payload.backend !== 'api' && payload.backend !== 'cli') {
+    throw new AppError('Backend tạo gói SEO không hợp lệ.', 422, 'validation_error');
+  }
+  if (payload.cliModel !== undefined && (typeof payload.cliModel !== 'string' || !isAiModelForProvider('claude', payload.cliModel))) {
+    throw new AppError('Model Claude CLI không còn khả dụng; hãy chọn model khác.', 422, 'AI_MODEL_UNAVAILABLE');
+  }
+  if (payload.backend === 'cli') {
+    const config = loadConfig();
+    const backend = await createClaudeCliChat({
+      projectId,
+      chapterId: 'seo-generation',
+      label: 'SEO',
+      model: typeof payload.cliModel === 'string' ? payload.cliModel : undefined,
+      config,
+      context,
+    });
+    await generateSeoPackage(projectId, sections, context, { kind: 'cli', model: backend.model, chat: backend.chat });
+    return;
+  }
+  await generateSeoPackage(projectId, sections, context);
 };
 
 const handleYoutubeSync: JobHandler = async (job, context) => {

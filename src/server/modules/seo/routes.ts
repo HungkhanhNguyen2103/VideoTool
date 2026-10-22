@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { SEO_SECTIONS, SeoPatchSchema, type SeoSection } from '../../../contracts/seo';
+import { isAiModelForProvider } from '../../../contracts/ai-models';
 import { pickShortsWindows } from '../../../contracts/seo-shorts';
+import { loadConfig } from '../../config';
+import type { Config } from '../../config';
+import { assertClaudeCliAvailable, assertClaudeCliStatusAvailable } from '../../shared/claude-cli/cli-chat';
+import type { ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
 import { AppError } from '../../shared/errors';
 import { uploadThumbnail } from '../../shared/upload';
 import { applyGeneratedSeoSections, getProject, listChosenSeoTitlesByChannel, patchProjectSeo } from '../project';
@@ -10,11 +15,16 @@ import { parseSeoOutput, parseShortsOutput, SeoAiOutputError } from './ai/parse-
 import { getSeoChannel, mergeGeneratedChannelDefaults, mergeGeneratedShortsChannelDefaults } from './service';
 import { configureThumbnailService, removeProjectThumbnail, replaceProjectThumbnail, THUMBNAIL_MIME_TYPES } from './thumbnail-service';
 
-type EnqueueSeoJob = (input: { type: string; projectId: string; payload: unknown }) => Promise<{ id: string }>;
-type GetActiveSeoJob = (projectId: string, type: string) => Promise<{ id: string } | null>;
+type EnqueueSeoJob = (input: { type: string; projectId: string; payload: unknown; maxAttempts?: number }) => Promise<{ id: string }>;
+type GetActiveSeoJob = (projectId: string, type: string) => Promise<{ id: string; payload?: unknown } | null>;
+type SeoCliStatusReader = () => Promise<ClaudeCliStatus>;
 
 const SeoSectionsSchema = z.array(z.enum(SEO_SECTIONS)).min(1).transform((sections) => [...new Set(sections)]);
-const GenerateSchema = z.object({ sections: SeoSectionsSchema.optional() }).strict();
+const GenerateSchema = z.object({
+  sections: SeoSectionsSchema.optional(),
+  backend: z.enum(['api', 'cli']).optional(),
+  cliModel: z.string().trim().optional(),
+}).strict();
 const ManualImportSchema = z.object({ raw: z.string(), sections: SeoSectionsSchema }).strict();
 
 function allSections(): SeoSection[] {
@@ -50,7 +60,12 @@ export function configureSeoModule(filesDir: string): void {
   configureThumbnailService(filesDir);
 }
 
-export function createSeoRouter(options: { enqueueJob: EnqueueSeoJob; getActiveJob?: GetActiveSeoJob }): Router {
+export function createSeoRouter(options: {
+  enqueueJob: EnqueueSeoJob;
+  getActiveJob?: GetActiveSeoJob;
+  getClaudeCliStatus?: SeoCliStatusReader;
+  config?: Pick<Config, 'CLAUDE_CLI_PATH'>;
+}): Router {
   const router = Router();
 
   router.post('/:id/seo/generate', async (req, res) => {
@@ -58,9 +73,39 @@ export function createSeoRouter(options: { enqueueJob: EnqueueSeoJob; getActiveJ
     const project = await getProject(req.params.id);
     if (project.chapters.length === 0) throw new AppError('Cần có ít nhất một chương trước khi tạo gói SEO.', 422, 'SCRIPT_NOT_READY');
     const sections = body.sections ?? allSections();
+    const backend = body.backend ?? 'api';
+    if (body.cliModel !== undefined && !isAiModelForProvider('claude', body.cliModel)) {
+      throw new AppError(`Model ${body.cliModel} không còn khả dụng cho Claude CLI; hãy chọn model khác.`, 422, 'AI_MODEL_UNAVAILABLE');
+    }
+    if (backend === 'cli') {
+      if (options.getClaudeCliStatus) assertClaudeCliStatusAvailable(await options.getClaudeCliStatus());
+      else {
+        const config = options.config ?? loadConfig();
+        await assertClaudeCliAvailable({ CLAUDE_CLI_PATH: config.CLAUDE_CLI_PATH });
+      }
+    }
     const active = await options.getActiveJob?.(project.id, 'generate-seo');
-    if (active) { res.status(200).json({ jobId: active.id }); return; }
-    const job = await options.enqueueJob({ type: 'generate-seo', projectId: project.id, payload: { projectId: project.id, sections } });
+    if (active) {
+      const activePayload = z.object({ backend: z.enum(['api', 'cli']).optional(), cliModel: z.string().nullable().optional() }).passthrough().safeParse(active.payload);
+      const activeBackend = activePayload.success ? activePayload.data.backend ?? 'api' : 'api';
+      const activeCliModel = activePayload.success ? activePayload.data.cliModel ?? null : null;
+      if (activeBackend !== backend || (backend === 'cli' && activeCliModel !== (body.cliModel ?? null))) {
+        throw new AppError('Đang có job tạo gói SEO bằng backend khác. Hãy chờ job hoàn tất hoặc hủy trước khi đổi backend hoặc model.', 409, 'SEO_GENERATION_BACKEND_MISMATCH');
+      }
+      res.status(200).json({ jobId: active.id });
+      return;
+    }
+    const job = await options.enqueueJob({
+      type: 'generate-seo',
+      projectId: project.id,
+      ...(backend === 'cli' ? { maxAttempts: 1 } : {}),
+      payload: {
+        projectId: project.id,
+        sections,
+        ...(body.backend ? { backend: body.backend } : {}),
+        ...(body.cliModel !== undefined ? { cliModel: body.cliModel } : {}),
+      },
+    });
     res.status(201).json({ jobId: job.id });
   });
 

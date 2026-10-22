@@ -63,7 +63,7 @@ export function createApp(options: AppOptions): Express {
   app.use('/api/project', fileStoreRouter);
   app.use('/api/project', assetRouter);
   app.use('/api/project', createVideoRouter({ enqueueJob }));
-  app.use('/api/project', createSeoRouter({ enqueueJob, getActiveJob: getActiveJobByType }));
+  app.use('/api/project', createSeoRouter({ enqueueJob, getActiveJob: getActiveJobDetailsByType, config: youtubeConfig }));
   app.use('/api/visual-style-samples', visualStyleSamplesRouter);
   app.use('/api/visual-style-packs', visualStylePacksRouter);
   app.use('/api/job', jobRouter);

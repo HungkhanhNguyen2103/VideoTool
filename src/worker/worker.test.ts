@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWorkerLoop } from './main';
 
-const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn(), generateSeoPackage: vi.fn(), generateProjectVoiceovers: vi.fn(), alignProjectWordTimings: vi.fn(), autoAnalyzeProjectPopupsIfStale: vi.fn(), analyzeProjectPopups: vi.fn(), PopupAnalysisRequestSchema: { parse: (value: unknown) => value }, generateProjectSfx: vi.fn(), generateProjectDepthMaps: vi.fn(), generateSceneDepthMap: vi.fn(), renderFullProject: vi.fn(), loggerError: vi.fn() }));
+const mocks = vi.hoisted(() => ({ generateScript: vi.fn(), generateVisualPrompts: vi.fn(), splitProjectScenes: vi.fn(), runFinalQa: vi.fn(), generateSeoPackage: vi.fn(), createClaudeCliChat: vi.fn(), loadConfig: vi.fn(), generateProjectVoiceovers: vi.fn(), alignProjectWordTimings: vi.fn(), autoAnalyzeProjectPopupsIfStale: vi.fn(), analyzeProjectPopups: vi.fn(), PopupAnalysisRequestSchema: { parse: (value: unknown) => value }, generateProjectSfx: vi.fn(), generateProjectDepthMaps: vi.fn(), generateSceneDepthMap: vi.fn(), renderFullProject: vi.fn(), loggerError: vi.fn() }));
 vi.mock('../server/modules/script/service', () => ({ generateScript: mocks.generateScript }));
 vi.mock('../server/modules/script/visual-prompts', () => ({ generateVisualPrompts: mocks.generateVisualPrompts }));
 vi.mock('../server/modules/script/scene-split', () => ({ splitProjectScenes: mocks.splitProjectScenes }));
 vi.mock('../server/modules/script/qa', () => ({ runFinalQa: mocks.runFinalQa }));
 vi.mock('../server/modules/seo', () => ({ generateSeoPackage: mocks.generateSeoPackage }));
+vi.mock('../server/shared/claude-cli/cli-chat', () => ({ createClaudeCliChat: mocks.createClaudeCliChat }));
+vi.mock('../server/config', () => ({ loadConfig: mocks.loadConfig }));
 vi.mock('../server/modules/video', () => ({ generateProjectVoiceovers: mocks.generateProjectVoiceovers, alignProjectWordTimings: mocks.alignProjectWordTimings, autoAnalyzeProjectPopupsIfStale: mocks.autoAnalyzeProjectPopupsIfStale, analyzeProjectPopups: mocks.analyzeProjectPopups, PopupAnalysisRequestSchema: mocks.PopupAnalysisRequestSchema, generateProjectSfx: mocks.generateProjectSfx, generateProjectDepthMaps: mocks.generateProjectDepthMaps, generateSceneDepthMap: mocks.generateSceneDepthMap, renderFullProject: mocks.renderFullProject }));
 vi.mock('../server/shared/logger', () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: mocks.loggerError } }));
 import { jobHandlers } from './registry';
@@ -75,6 +77,23 @@ describe('script job registration', () => {
       progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
     }, { reportProgress: vi.fn(), isCancelled, appendLog });
     expect(mocks.generateScript).toHaveBeenCalledWith('project-2', expect.objectContaining({ reportProgress: expect.any(Function), isCancelled, appendLog }), {});
+  });
+
+  it('rechecks CLI availability in the worker and injects its chat backend without project AI settings', async () => {
+    const chat = vi.fn(async () => '{"titles":[]}');
+    mocks.createClaudeCliChat.mockResolvedValue({ model: 'claude-sonnet-5-5', chat });
+    mocks.loadConfig.mockReturnValue({ CLAUDE_CLI_PATH: 'claude', CLAUDE_CLI_TIMEOUT_MS: 10_000, CLAUDE_CLI_MAX_OUTPUT_BYTES: 4096, FILES_DIR: 'files' });
+    const context = { reportProgress: vi.fn(), isCancelled: vi.fn().mockResolvedValue(false), appendLog: vi.fn() };
+
+    await jobHandlers['generate-seo']!({
+      _id: 'job-seo-cli', schemaVersion: 1, type: 'generate-seo', projectId: 'project-1',
+      payload: { projectId: 'project-1', sections: ['titles'], backend: 'cli', cliModel: 'claude-sonnet-5-5' },
+      status: 'running', attempts: 1, maxAttempts: 1, runAt: new Date(), lockedBy: 'worker', lockedAt: new Date(),
+      progress: 0, result: null, error: null, cancelRequested: false, logs: [], createdAt: new Date(), updatedAt: new Date(),
+    }, context);
+
+    expect(mocks.createClaudeCliChat).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'project-1', model: 'claude-sonnet-5-5', chapterId: 'seo-generation', context }));
+    expect(mocks.generateSeoPackage).toHaveBeenCalledWith('project-1', ['titles'], context, { kind: 'cli', model: 'claude-sonnet-5-5', chat });
   });
 
   it('forwards the optional resume flag to script generation', async () => {

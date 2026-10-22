@@ -4,12 +4,12 @@ import { Button } from '../../../shared/ui/Button';
 import { TITLE_ANGLE_LABELS } from '../seo-view';
 import styles from '../SeoPage.module.css';
 
-type Props = { seo: SeoPackage; busy: boolean; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
+type Props = { seo: SeoPackage; busy: boolean; generationDisabledReason?: string; generationLabel?: string; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
 
-export function TitlesPanel({ seo, busy, onPatch, onRegenerate, onFlush }: Props) {
+export function TitlesPanel({ seo, busy, generationDisabledReason, generationLabel = 'Tạo lại', onPatch, onRegenerate, onFlush }: Props) {
   return (
     <section className={styles.panel} aria-labelledby="seo-titles-title">
-      <div className={styles.panelHead}><div><h2 id="seo-titles-title">Tiêu đề</h2><p className={styles.muted}>Chọn một phương án làm tiêu đề chính.</p></div><Button size="sm" onClick={onRegenerate} disabled={busy}>Tạo lại</Button></div>
+      <div className={styles.panelHead}><div><h2 id="seo-titles-title">Tiêu đề</h2><p className={styles.muted}>Chọn một phương án làm tiêu đề chính.</p></div><Button size="sm" onClick={onRegenerate} disabled={busy || Boolean(generationDisabledReason)} title={generationDisabledReason}>{generationLabel}</Button></div>
       {seo.titles.length === 0 ? <p className={styles.empty}>Chưa có phương án tiêu đề.</p> : <div className={styles.titleList}>
         {seo.titles.map((title) => {
           const status = titleStatus(title.text);

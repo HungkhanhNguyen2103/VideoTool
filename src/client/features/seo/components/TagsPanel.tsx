@@ -5,9 +5,9 @@ import { tagBudget, hashtagStatus } from '../../../../contracts/seo-format';
 import { Button } from '../../../shared/ui/Button';
 import styles from '../SeoPage.module.css';
 
-type Props = { seo: SeoPackage; busy: boolean; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
+type Props = { seo: SeoPackage; busy: boolean; generationDisabledReason?: string; generationLabel?: string; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
 
-export function TagsPanel({ seo, busy, onPatch, onRegenerate, onFlush }: Props) {
+export function TagsPanel({ seo, busy, generationDisabledReason, generationLabel = 'Tạo lại', onPatch, onRegenerate, onFlush }: Props) {
   const [tagInput, setTagInput] = useState('');
   const [hashtagInput, setHashtagInput] = useState('');
   const budget = tagBudget(seo.tags);
@@ -24,7 +24,7 @@ export function TagsPanel({ seo, busy, onPatch, onRegenerate, onFlush }: Props) 
   }
   return (
     <section className={styles.panel} aria-labelledby="seo-tags-title">
-      <div className={styles.panelHead}><div><h2 id="seo-tags-title">Tags &amp; hashtag</h2><p className={styles.muted}>Ba hashtag đầu được đánh dấu vị trí hiện trên tiêu đề.</p></div><Button size="sm" onClick={onRegenerate} disabled={busy}>Tạo lại</Button></div>
+      <div className={styles.panelHead}><div><h2 id="seo-tags-title">Tags &amp; hashtag</h2><p className={styles.muted}>Ba hashtag đầu được đánh dấu vị trí hiện trên tiêu đề.</p></div><Button size="sm" onClick={onRegenerate} disabled={busy || Boolean(generationDisabledReason)} title={generationDisabledReason}>{generationLabel}</Button></div>
       <div className={styles.chipGroup}>{seo.tags.map((tag, index) => <button className={styles.chip} type="button" key={`${tag}-${index}`} onClick={() => onPatch({ tags: seo.tags.filter((_, itemIndex) => itemIndex !== index) })}>{tag} ×</button>)}</div>
       <div className={styles.addRow}><input className={styles.input} value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="Thêm tags, phân tách bằng dấu phẩy" onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag(); } }} onBlur={onFlush} /><Button size="sm" onClick={addTag}>Thêm</Button><span className={budget.overLimit ? styles.error : styles.muted}>{budget.used}/{budget.max} ký tự</span></div>
       <div className={styles.chipGroup}>{seo.hashtags.map((tag, index) => <button className={`${styles.chip} ${index < SEO_HASHTAGS_VISIBLE_COUNT ? styles.chipVisible : ''}`} type="button" key={`${tag}-${index}`} onClick={() => onPatch({ hashtags: seo.hashtags.filter((_, itemIndex) => itemIndex !== index) })}>{tag}{index < SEO_HASHTAGS_VISIBLE_COUNT ? ' · hiện' : ''} ×</button>)}</div>

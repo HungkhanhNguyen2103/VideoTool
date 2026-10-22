@@ -5,16 +5,16 @@ import { Button } from '../../../shared/ui/Button';
 import { descriptionLengthGuidance } from '../seo-view';
 import styles from '../SeoPage.module.css';
 
-type Props = { project: ProjectDetail; seo: SeoPackage; description: string; busy: boolean; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
+type Props = { project: ProjectDetail; seo: SeoPackage; description: string; busy: boolean; generationDisabledReason?: string; generationLabel?: string; onPatch: (patch: SeoPatch) => void; onRegenerate: () => void; onFlush: () => void };
 
-export function DescriptionPanel({ project, seo, description, busy, onPatch, onRegenerate, onFlush }: Props) {
+export function DescriptionPanel({ project, seo, description, busy, generationDisabledReason, generationLabel = 'Tạo lại', onPatch, onRegenerate, onFlush }: Props) {
   const guidance = descriptionLengthGuidance(description);
   async function copyDescription() {
     await navigator.clipboard.writeText(description);
   }
   return (
     <section className={styles.panel} aria-labelledby="seo-description-title">
-      <div className={styles.panelHead}><div><h2 id="seo-description-title">Mô tả</h2><p className={styles.muted}>Mốc chương chỉ xuất hiện khi timing thật của video đủ điều kiện.</p></div><Button size="sm" onClick={onRegenerate} disabled={busy}>Tạo lại</Button></div>
+      <div className={styles.panelHead}><div><h2 id="seo-description-title">Mô tả</h2><p className={styles.muted}>Mốc chương chỉ xuất hiện khi timing thật của video đủ điều kiện.</p></div><Button size="sm" onClick={onRegenerate} disabled={busy || Boolean(generationDisabledReason)} title={generationDisabledReason}>{generationLabel}</Button></div>
       <textarea className={styles.textarea} value={seo.descriptionIntro} maxLength={SEO_DESCRIPTION_MAX_CHARS} onChange={(event) => onPatch({ descriptionIntro: event.target.value })} onBlur={onFlush} aria-label="Mở đầu mô tả" />
       <div className={styles.counter}>{seo.descriptionIntro.length}/{SEO_DESCRIPTION_MAX_CHARS} ký tự · {guidance.wordCount} từ · {guidance.hint} · dữ liệu đầu vào: {project.language}</div>
       <label className={styles.fieldLabel} htmlFor="seo-description-keywords">Từ khóa mô tả</label>

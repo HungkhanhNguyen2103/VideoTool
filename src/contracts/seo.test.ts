@@ -25,6 +25,13 @@ describe('SEO contracts', () => {
     expect(SeoPackageSchema.parse({ descriptionIntro: 'Intro.' }).descriptionKeywords).toBe('');
   });
 
+  it('defaults legacy generatedBy metadata to the API backend while preserving manual metadata', () => {
+    const generatedBy = { provider: 'claude', model: 'claude-opus-4-5', promptVersion: 'seo-v1', generatedAt: '2026-10-22T00:00:00.000Z' };
+    expect(SeoPackageSchema.parse({ generatedBy }).generatedBy).toMatchObject({ backend: 'api' });
+    expect(SeoPackageSchema.parse({ generatedBy: { ...generatedBy, backend: 'cli' } }).generatedBy).toMatchObject({ backend: 'cli' });
+    expect(SeoPackageSchema.parse({ generatedBy: { ...generatedBy, provider: 'manual' } }).generatedBy).not.toHaveProperty('backend');
+  });
+
   it('accepts description keywords up to 800 characters and rejects longer values', () => {
     expect(SeoPackageSchema.safeParse({ descriptionKeywords: 'k'.repeat(800) }).success).toBe(true);
     expect(SeoPackageSchema.safeParse({ descriptionKeywords: 'k'.repeat(801) }).success).toBe(false);

@@ -27,4 +27,16 @@ describe('SEO section API defaults', () => {
     expect(fetchMock.mock.calls[1]?.[0]).toContain('sections=titles%2Cdescription%2Ctags%2CpinnedComment%2Cthumbnail');
     expect(fetchMock.mock.calls[1]?.[0]).not.toContain('shorts');
   });
+
+  it('keeps API generation body shape by default and sends an explicit CLI backend/model when selected', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jobId: 'api-job' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ jobId: 'cli-job' }), { status: 200 }));
+
+    await generateSeo('project-1', ['titles']);
+    await generateSeo('project-1', ['titles'], { backend: 'cli', cliModel: 'claude-sonnet-5-5' });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ sections: ['titles'] });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ sections: ['titles'], backend: 'cli', cliModel: 'claude-sonnet-5-5' });
+  });
 });
