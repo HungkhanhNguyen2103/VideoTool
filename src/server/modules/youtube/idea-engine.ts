@@ -16,6 +16,7 @@ import type { YoutubeIdeaPacket } from './idea-packet';
 import {
   createIdeaAvoidList,
   filterYoutubeIdeaSeeds,
+  isYoutubeIdeaPeriodRefinement,
   normalizeYoutubeIdeaStageOutput,
   trimYoutubeIdeaV2Final,
   validateYoutubeIdeaV2,
@@ -38,7 +39,13 @@ export const YOUTUBE_IDEA_UNSUPPORTED_DEMAND_CLAIMS = [
   'rising search demand', 'search demand is rising', 'search volume is increasing', 'high search volume',
   'many people are searching', 'trending search', 'popular topic', 'high demand',
 ] as const;
-export const YOUTUBE_IDEA_SURVIVOR_ABSOLUTE_MIN = 2;
+export const YOUTUBE_IDEA_MAX_EXPAND_BATCHES = 3;
+export const YOUTUBE_IDEA_MAX_SHORTLIST = 12;
+export const YOUTUBE_IDEA_EXPANSION_BATCH_SIZE = 4;
+const configuredIdeaBudgetSec = Number(process.env.IDEA_JOB_SOFT_BUDGET_SEC ?? 240);
+export const IDEA_JOB_SOFT_BUDGET_SEC = Number.isInteger(configuredIdeaBudgetSec) && configuredIdeaBudgetSec > 0 && configuredIdeaBudgetSec <= 3600
+  ? configuredIdeaBudgetSec
+  : 240;
 export const YOUTUBE_IDEA_HEARTBEAT_INTERVAL_MS = 30_000;
 export const YOUTUBE_IDEA_MAX_HEARTBEATS_PER_STEP = 20;
 
@@ -55,7 +62,7 @@ export const YoutubeIdeaSeedSchema = z.object({
 const SelectedIdeaSeedSchema = z.object({ id: z.string().trim().min(1).max(80), trapSketch: z.string().trim().min(1).max(280) }).strict();
 const RejectedIdeaSeedSchema = z.object({ id: z.string().trim().min(1).max(80), rejectionReason: z.string().trim().min(1).max(300) }).strict();
 const SelectionResponseSchema = z.object({
-  selected: z.array(SelectedIdeaSeedSchema).max(10),
+  selected: z.array(SelectedIdeaSeedSchema).max(YOUTUBE_IDEA_MAX_SHORTLIST),
   rejected: z.array(RejectedIdeaSeedSchema).max(24).default([]),
 }).strict();
 
@@ -82,6 +89,26 @@ function object(value: unknown): JsonObject {
 
 function normalizeVietnamese(value: string): string {
   return value.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/giu, 'd').toLocaleLowerCase('vi-VN');
+}
+
+function episodeComparisonKey(value: string): string {
+  return normalizeVietnamese(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/gu, ' ');
+}
+
+function alreadyProposedEpisodes(packet: YoutubeIdeaPacket): string[] {
+  const values = object(packet.packet).alreadyProposedEpisodes;
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string').slice(0, 40) : [];
+}
+
+function mechanicalExpansionRepair(reason: string): boolean {
+  return /^(?:Schema:|JSON không hợp lệ|Cấu trúc ideas|Bản chi tiết thiếu)/u.test(reason)
+    || /(?:số chưa có claim|tên chưa có claim|mệnh đề nhân quả chưa có claim)/u.test(reason);
+}
+
+function topDropReasons(rows: YoutubeIdeaDropped[]): Array<{ reason: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
+  return [...counts].map(([reason, count]) => ({ reason, count })).sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason)).slice(0, 3);
 }
 
 function splitNumbers(value: string): string[] {
@@ -183,6 +210,10 @@ function validateCompleteIdea(value: unknown, packet: YoutubeIdeaPacket): { idea
   return { idea: reasons.length ? null : checked.idea, reasons };
 }
 
+export function validateYoutubeIdeaV2Complete(value: unknown, packet: YoutubeIdeaPacket): { idea: YoutubeIdeaV2 | null; reasons: string[] } {
+  return validateCompleteIdea(value, packet);
+}
+
 function parseJson(raw: string): { value: unknown; error?: string } {
   try { return { value: parseJsonWithLeadingText(raw) }; }
   catch { return { value: null, error: 'JSON không hợp lệ.' }; }
@@ -242,7 +273,7 @@ const STEP_PERCENT: Record<YoutubeIdeaStage, number> = { seeds: 5, select: 35, e
 
 async function ask(input: {
   stage: YoutubeIdeaStage; packet: YoutubeIdeaPacket; backend: YoutubeIdeaBackend; context: YoutubeIdeaJobContext;
-  avoidList?: readonly string[]; seedsJson?: string; selectedSeedsJson?: string;
+  avoidList?: readonly string[]; seedsJson?: string; selectedSeedsJson?: string; expansionHint?: string;
   repair?: { invalidItems: InvalidRow[]; originalOutput: unknown; error?: string };
 }): Promise<string | undefined> {
   if (await input.context.isCancelled()) return undefined;
@@ -252,6 +283,7 @@ async function ask(input: {
     avoidList: input.avoidList,
     seedsJson: input.seedsJson,
     selectedSeedsJson: input.selectedSeedsJson,
+    expansionHint: input.expansionHint,
     ...(input.repair ? { repair: input.repair } : {}),
   });
   const stepName = STEP_NAMES[input.stage];
@@ -317,7 +349,7 @@ function parseSelection(value: unknown, seeds: YoutubeIdeaSeed[], count: number)
   const normalized = normalizeYoutubeIdeaStageOutput('select', parsed.value);
   const result = SelectionResponseSchema.safeParse(normalized);
   if (!result.success) return { selection: null, invalid: [{ id: 'root', reason: `Schema: ${issueText(result.error)}.`, value: parsed.value }], original: parsed.value };
-  const expectedSelected = Math.min(count + 2, seeds.length);
+  const expectedSelected = Math.min(YOUTUBE_IDEA_MAX_SHORTLIST, Math.ceil(count * 2), seeds.length);
   const seedIds = new Set(seeds.map((seed) => seed.id));
   const selectedIds = result.data.selected.map((row) => row.id);
   const rejectedIds = result.data.rejected.map((row) => row.id);
@@ -362,7 +394,7 @@ function selectionToSeeds(input: {
   for (const row of input.selection.selected) {
     if (!seedById.has(row.id)) { dropped.push({ id: row.id, reason: 'Chọn lọc tham chiếu seed không có trong lượt chạy.' }); continue; }
     if (selectedIds.has(row.id)) { dropped.push({ id: row.id, reason: 'Chọn lọc trả về mã seed trùng.' }); continue; }
-    if (candidates.length >= input.count + 2) { dropped.push({ id: row.id, reason: 'Vượt số seed được mở rộng.' }); continue; }
+    if (candidates.length >= Math.min(YOUTUBE_IDEA_MAX_SHORTLIST, Math.ceil(input.count * 2))) { dropped.push({ id: row.id, reason: 'Vượt số seed được mở rộng.' }); continue; }
     selectedIds.add(row.id);
     sketchById.set(row.id, row.trapSketch);
     candidates.push({ ...seedById.get(row.id)!, trapSketch: row.trapSketch });
@@ -378,24 +410,65 @@ function selectionToSeeds(input: {
   return { seeds: selected, dropped };
 }
 
-export async function runYoutubeIdeaPipeline(input: {
-  packet: YoutubeIdeaPacket; backend: YoutubeIdeaBackend; context: YoutubeIdeaJobContext;
-  request: { count: number; presetId: string };
-}): Promise<{
+export type YoutubeIdeaPipelineResult = {
   ideas: YoutubeIdeaV2[];
   dropped: YoutubeIdeaDropped[];
+  status: 'complete' | 'partial';
+  diagnostics: {
+    seedCount: number;
+    shortlistedCount: number;
+    expandedCount: number;
+    validCount: number;
+    expansionBatches: Array<{ index: number; seedCount: number; validCount: number; durationMs: number; repairCalls: number; repairRescues: number }>;
+    repairRescues: number;
+    budgetStopped: boolean;
+    repairCalls: { seeds: number; select: number; expand: number };
+  };
   durations: { seedsMs: number; selectMs: number; expandMs: number; totalMs: number };
   repairCalls: { seeds: number; select: number; expand: number };
   promptVersion: 'video-ideas-v2';
-} | undefined> {
-  const startedAt = Date.now();
+};
+
+export async function runYoutubeIdeaPipeline(input: {
+  packet: YoutubeIdeaPacket; backend: YoutubeIdeaBackend; context: YoutubeIdeaJobContext;
+  request: { count: number; presetId: string };
+  softBudgetSec?: number;
+  clock?: () => number;
+}): Promise<YoutubeIdeaPipelineResult | undefined> {
+  const now = input.clock ?? Date.now;
+  const startedAt = now();
+  const budgetMs = (input.softBudgetSec ?? IDEA_JOB_SOFT_BUDGET_SEC) * 1000;
   const dropped: YoutubeIdeaDropped[] = [];
   const drop = (id: string, reason: string) => dropped.push({ id: id.slice(0, 80) || 'unknown', reason: reason.slice(0, 300) });
   const steering = typeof object(input.packet.packet).steering === 'string' ? String(object(input.packet.packet).steering) : '';
   const language = object(object(input.packet.packet).channel).language === 'en' ? 'en' : 'vi';
   const avoidList = createIdeaAvoidList(steering, language);
+  const previousEpisodes = alreadyProposedEpisodes(input.packet);
+  const previousEpisodeKeys = new Set(previousEpisodes.map(episodeComparisonKey));
+  const failWithTopReasons = async (options: {
+    step: string;
+    fallback: string;
+    seedCount: number;
+    shortlistedCount: number;
+    seedsMs: number;
+    selectMs: number;
+    repairCalls: { seeds: number; select: number; expand: number };
+  }): Promise<never> => {
+    const compactDropped = uniqueDropped(dropped);
+    const reasonSummary = topDropReasons(compactDropped);
+    const reasonsText = reasonSummary.map(({ reason, count }) => `${reason} (${count})`).join('; ') || options.fallback;
+    const durations = { seedsMs: options.seedsMs, selectMs: options.selectMs, expandMs: 0, totalMs: now() - startedAt };
+    const diagnostics: YoutubeIdeaPipelineResult['diagnostics'] = {
+      seedCount: options.seedCount, shortlistedCount: options.shortlistedCount, expandedCount: 0, validCount: 0,
+      expansionBatches: [], repairRescues: 0, budgetStopped: false, repairCalls: options.repairCalls,
+    };
+    const dropReasonCounts = Object.fromEntries(compactDropped.reduce((counts, row) => counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1), new Map<string, number>()));
+    await input.context.reportProgress(95, { step: options.step, accepted: 0, dropped: compactDropped.length, dropReasonCounts, droppedRows: compactDropped, durations, diagnostics, status: 'failed' });
+    await input.context.appendLog(`${options.fallback} Lý do chính: ${reasonsText}.`);
+    throw new AppError(`${options.fallback} Lý do chính: ${reasonsText}.`, 422, 'YOUTUBE_IDEAS_UNGROUNDED');
+  };
 
-  const seedsStarted = Date.now();
+  const seedsStarted = now();
   await input.context.reportProgress(STEP_PERCENT.seeds, { step: STEP_NAMES.seeds });
   const seedRaw = await ask({ stage: 'seeds', packet: input.packet, backend: input.backend, context: input.context, avoidList });
   if (seedRaw === undefined || await input.context.isCancelled()) return undefined;
@@ -405,7 +478,7 @@ export async function runYoutubeIdeaPipeline(input: {
     stage: 'seeds', packet: input.packet, backend: input.backend, context: input.context, avoidList,
     initial: firstSeeds, parse: parseSeeds, getId: (row) => row.id,
   });
-  const seedsMs = Date.now() - seedsStarted;
+  const seedsMs = now() - seedsStarted;
   if (generated.cancelled || await input.context.isCancelled()) return undefined;
   for (const invalid of generated.invalid) drop(invalid.id, invalid.reason);
   const distinctSeeds: YoutubeIdeaSeed[] = [];
@@ -413,30 +486,65 @@ export async function runYoutubeIdeaPipeline(input: {
   for (const row of generated.rows) {
     if (seenSeedIds.has(row.id)) { drop(row.id, 'Mã seed bị trùng trong lượt sinh.'); continue; }
     seenSeedIds.add(row.id);
+    if (previousEpisodeKeys.has(episodeComparisonKey(row.episode))) { drop(row.id, 'Episode đã được đề xuất trong lượt chạy trước.'); continue; }
     distinctSeeds.push(row);
   }
 
-  if (distinctSeeds.length === 0) throw new AppError('Không có tập sự kiện hợp lệ để chọn lọc. Hãy thử lại với chỉ dẫn khác.', 422, 'YOUTUBE_IDEAS_UNGROUNDED');
+  if (distinctSeeds.length === 0) {
+    return failWithTopReasons({
+      step: 'Không có seed hợp lệ', fallback: 'Không có tập sự kiện hợp lệ để chọn lọc.', seedCount: 0, shortlistedCount: 0,
+      seedsMs, selectMs: 0, repairCalls: { seeds: generated.repairCalls, select: 0, expand: 0 },
+    });
+  }
 
-  const selectStarted = Date.now();
+  const selectStarted = now();
   await input.context.reportProgress(STEP_PERCENT.select, { step: STEP_NAMES.select });
   const selectedResponse = await runSelectionStage({ packet: input.packet, backend: input.backend, context: input.context, seeds: distinctSeeds, count: input.request.count });
-  const selectMs = Date.now() - selectStarted;
+  const selectMs = now() - selectStarted;
   if (selectedResponse.cancelled || await input.context.isCancelled()) return undefined;
   for (const invalid of selectedResponse.invalid) drop(invalid.id, invalid.reason);
-  if (!selectedResponse.selection) throw new AppError('Không thể đọc kết quả chọn lọc; hãy thử lại.', 422, 'YOUTUBE_IDEAS_UNGROUNDED');
+  if (!selectedResponse.selection) {
+    return failWithTopReasons({
+      step: 'Không thể đọc kết quả chọn lọc', fallback: 'Không thể đọc kết quả chọn lọc; hãy thử lại.', seedCount: distinctSeeds.length,
+      shortlistedCount: 0, seedsMs, selectMs, repairCalls: { seeds: generated.repairCalls, select: selectedResponse.repairCalls, expand: 0 },
+    });
+  }
   const selected = selectionToSeeds({ selection: selectedResponse.selection, seeds: distinctSeeds, count: input.request.count, steering });
   dropped.push(...selected.dropped);
-  if (!selected.seeds.length) throw new AppError('Không còn episode nào vượt qua bộ lọc đa dạng và độ nổi tiếng.', 422, 'YOUTUBE_IDEAS_UNGROUNDED');
+  if (!selected.seeds.length) {
+    return failWithTopReasons({
+      step: 'Không còn seed qua lọc', fallback: 'Không còn episode nào vượt qua bộ lọc đa dạng và độ nổi tiếng.', seedCount: distinctSeeds.length,
+      shortlistedCount: 0, seedsMs, selectMs, repairCalls: { seeds: generated.repairCalls, select: selectedResponse.repairCalls, expand: 0 },
+    });
+  }
 
-  const expandStarted = Date.now();
+  const expandStarted = now();
   await input.context.reportProgress(STEP_PERCENT.expand, { step: STEP_NAMES.expand });
   const expandedById = new Map<string, YoutubeIdeaV2>();
-  const repairState = { used: false };
-  for (let offset = 0; offset < selected.seeds.length; offset += 4) {
+  const expansionBatches: Array<{ index: number; seedCount: number; validCount: number; durationMs: number; repairCalls: number; repairRescues: number }> = [];
+  let expansionRepairCalls = 0;
+  let repairRescues = 0;
+  let expandedCount = 0;
+  let budgetStopped = false;
+  let offset = 0;
+  while (offset < selected.seeds.length && expansionBatches.length < YOUTUBE_IDEA_MAX_EXPAND_BATCHES) {
+    const running = trimYoutubeIdeaV2Final([...expandedById.values()], input.request.count, steering);
+    if (running.ideas.length >= input.request.count) break;
+    if (now() - startedAt >= budgetMs) {
+      budgetStopped = true;
+      await input.context.appendLog('Đã dừng thêm lượt viết chi tiết vì sắp hết thời gian dự kiến');
+      break;
+    }
     if (await input.context.isCancelled()) return undefined;
-    const batch = selected.seeds.slice(offset, offset + 4);
+    const batchIndex = expansionBatches.length + 1;
+    const batch = selected.seeds.slice(offset, offset + YOUTUBE_IDEA_EXPANSION_BATCH_SIZE);
+    const batchStarted = now();
     const batchSeedsJson = JSON.stringify(batch);
+    const archetypes = ['military', 'political', 'economic', 'technological', 'diplomatic', 'institutional', 'other'] as const;
+    const presentArchetypes = new Set(running.ideas.map((idea) => idea.hunterArchetype));
+    const presentCenturies = new Set(running.ideas.map((idea) => idea.period));
+    const missingArchetypes = archetypes.filter((value) => !presentArchetypes.has(value));
+    const expansionHint = running.ideas.length ? `Đang có ${running.ideas.length}/${input.request.count} ý hợp lệ. Archetype còn thiếu trong danh sách đang có: ${missingArchetypes.join(', ') || 'không có'}; ưu tiên archetype còn thiếu khi phù hợp, tránh lặp kỳ đã sống sót: ${[...presentCenturies].join(', ') || 'chưa có'}.` : undefined;
     const expected = new Map(batch.map((seed) => [seed.id, seed]));
     const parseExpanded = (value: unknown, requireAllRows = true) => {
       const seenIds = new Set<string>();
@@ -446,7 +554,8 @@ export async function runYoutubeIdeaPipeline(input: {
         if (!seed) return ['Bản chi tiết có mã seed không nằm trong batch.'];
         if (seenIds.has(row.id)) return ['Mã ý tưởng bị trùng trong batch.'];
         seenIds.add(row.id);
-        if (normalizeVietnamese(row.period) !== normalizeVietnamese(seed.yearOrPeriod)) reasons.push('Thời kỳ trong bản chi tiết lệch seed đã chọn.');
+        const evidenceForPeriod = `${input.packet.serialized} ${row.claims.map((claim) => claim.text).join(' ')}`;
+        if (!isYoutubeIdeaPeriodRefinement(seed.yearOrPeriod, row.period, evidenceForPeriod)) reasons.push('Thời kỳ trong bản chi tiết lệch seed đã chọn hoặc chưa có căn cứ để chi tiết hơn.');
         if (normalizeVietnamese(row.place) !== normalizeVietnamese(seed.place)) reasons.push('Địa điểm trong bản chi tiết lệch seed đã chọn.');
         if (row.hunterArchetype !== seed.hunterArchetype) reasons.push('Archetype trong bản chi tiết lệch seed đã chọn.');
         if (row.famousnessGuess !== seed.famousnessGuess) reasons.push('Ước đoán độ nổi tiếng trong bản chi tiết lệch seed đã chọn.');
@@ -462,24 +571,33 @@ export async function runYoutubeIdeaPipeline(input: {
       }
       return parsed;
     };
-    const initialRaw = await ask({ stage: 'expand', packet: input.packet, backend: input.backend, context: input.context, selectedSeedsJson: batchSeedsJson });
+    const initialRaw = await ask({ stage: 'expand', packet: input.packet, backend: input.backend, context: input.context, selectedSeedsJson: batchSeedsJson, expansionHint });
     if (initialRaw === undefined || await input.context.isCancelled()) return undefined;
     const first = parseExpanded(initialRaw);
     let batchRows = first.valid;
     let batchInvalid = first.invalid;
-    if (batchInvalid.length && !repairState.used) {
-      repairState.used = true;
-      await input.context.appendLog(`${STEP_NAMES.expand}: ${batchInvalid.length} mục chưa hợp lệ sau khi chuẩn hóa; dùng lần sửa duy nhất của giai đoạn.`);
+    let batchRepairCalls = 0;
+    let batchRepairRescues = 0;
+    const repairable = batchInvalid.filter((row) => mechanicalExpansionRepair(row.reason));
+    if (repairable.length >= 2 && now() - startedAt < budgetMs) {
+      expansionRepairCalls += 1;
+      batchRepairCalls = 1;
+      await input.context.appendLog(`${STEP_NAMES.expand}: ${repairable.length} mục có lỗi định dạng hoặc đối chiếu claim; thử sửa một lần cho batch ${batchIndex}.`);
       const repairedRaw = await ask({
-        stage: 'expand', packet: input.packet, backend: input.backend, context: input.context, selectedSeedsJson: batchSeedsJson,
-        repair: { invalidItems: batchInvalid, originalOutput: first.original },
+        stage: 'expand', packet: input.packet, backend: input.backend, context: input.context, selectedSeedsJson: batchSeedsJson, expansionHint,
+        repair: { invalidItems: repairable, originalOutput: first.original },
       });
       if (repairedRaw === undefined || await input.context.isCancelled()) return undefined;
       const repaired = parseExpanded(repairedRaw, false);
-      batchRows = mergeRows(first.valid, repaired.valid, (row) => row.id);
-      const repairedIds = new Set(repaired.valid.map((row) => row.id));
+      const repairableIds = new Set(repairable.map((row) => row.id));
+      const repairedRows = repaired.valid.filter((row) => repairableIds.has(row.id));
+      batchRows = mergeRows(first.valid, repairedRows, (row) => row.id);
+      const repairedIds = new Set(repairedRows.map((row) => row.id));
+      const rescuedIds = new Set(repairable.filter((row) => repairedIds.has(row.id)).map((row) => row.id));
+      repairRescues += rescuedIds.size;
+      batchRepairRescues = rescuedIds.size;
       const stillInvalid = batchInvalid.filter((row) => !repairedIds.has(row.id));
-      const newlyInvalid = repaired.invalid.filter((row) => !batchInvalid.some((old) => old.id === row.id));
+      const newlyInvalid = repaired.invalid.filter((row) => repairableIds.has(row.id) && !batchInvalid.some((old) => old.id === row.id));
       batchInvalid = [...stillInvalid, ...newlyInvalid];
     }
     for (const invalid of batchInvalid) drop(invalid.id, invalid.reason);
@@ -490,22 +608,34 @@ export async function runYoutubeIdeaPipeline(input: {
     for (const seed of batch) if (!expandedById.has(seed.id) && !batchInvalid.some((row) => row.id === seed.id)) {
       drop(seed.id, 'Không nhận được bản chi tiết hợp lệ cho episode đã chọn.');
     }
+    const batchAcceptedIds = new Set(batchRows.filter((row) => expected.has(row.id)).map((row) => row.id));
+    expandedCount += batchAcceptedIds.size;
+    const batchDurationMs = Math.max(0, now() - batchStarted);
+    expansionBatches.push({ index: batchIndex, seedCount: batch.length, validCount: batchAcceptedIds.size, durationMs: batchDurationMs, repairCalls: batchRepairCalls, repairRescues: batchRepairRescues });
+    offset += batch.length;
   }
-  const expandMs = Date.now() - expandStarted;
+  const expandMs = now() - expandStarted;
   const final = trimYoutubeIdeaV2Final([...expandedById.values()], input.request.count, steering);
   dropped.push(...final.dropped);
-  const minimum = Math.max(YOUTUBE_IDEA_SURVIVOR_ABSOLUTE_MIN, Math.ceil(input.request.count / 2));
-  if (final.ideas.length < minimum) {
-    await input.context.appendLog(`Chỉ còn ${final.ideas.length} ý tưởng đạt yêu cầu; cần ít nhất ${minimum}. Không lưu danh sách mỏng.`);
-    throw new AppError(`Chỉ còn ${final.ideas.length} ý tưởng đủ căn cứ; cần ít nhất ${minimum}. Hãy đổi chỉ dẫn hoặc kiểm tra nguồn trước khi tạo dự án.`, 422, 'YOUTUBE_IDEAS_UNGROUNDED');
+  const compactDropped = uniqueDropped(dropped);
+  const durations = { seedsMs, selectMs, expandMs, totalMs: now() - startedAt };
+  const status = final.ideas.length < input.request.count ? 'partial' as const : 'complete' as const;
+  const repairCalls = { seeds: generated.repairCalls, select: selectedResponse.repairCalls, expand: expansionRepairCalls };
+  const diagnostics: YoutubeIdeaPipelineResult['diagnostics'] = {
+    seedCount: distinctSeeds.length, shortlistedCount: selected.seeds.length, expandedCount, validCount: final.ideas.length,
+    expansionBatches, repairRescues, budgetStopped, repairCalls,
+  };
+  const reasonSummary = topDropReasons(compactDropped);
+  const dropReasonCounts = Object.fromEntries(compactDropped.reduce((counts, row) => counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1), new Map<string, number>()));
+  await input.context.reportProgress(95, { step: final.ideas.length ? 'Đã hoàn tất chọn lọc' : 'Không có ý qua kiểm tra', accepted: final.ideas.length, dropped: compactDropped.length, dropReasonCounts, droppedRows: compactDropped, durations, diagnostics, status });
+  if (!final.ideas.length) {
+    const reasonsText = reasonSummary.map(({ reason, count }) => `${reason} (${count})`).join('; ') || 'không có ứng viên hợp lệ';
+    await input.context.appendLog(`Không có ý tưởng nào qua kiểm tra. Lý do chính: ${reasonsText}.`);
+    throw new AppError(`Không có ý tưởng nào đủ căn cứ để lưu. Lý do chính: ${reasonsText}.`, 422, 'YOUTUBE_IDEAS_UNGROUNDED');
   }
   if (await input.context.isCancelled()) return undefined;
-  const compactDropped = uniqueDropped(dropped);
-  const durations = { seedsMs, selectMs, expandMs, totalMs: Date.now() - startedAt };
-  const repairCalls = { seeds: generated.repairCalls, select: selectedResponse.repairCalls, expand: Number(repairState.used) };
-  await input.context.appendLog(`Hoàn tất: giữ ${final.ideas.length}/${input.request.count} ý tưởng, bỏ ${compactDropped.length}; sơ bộ ${seedsMs} ms, chọn lọc ${selectMs} ms, chi tiết ${expandMs} ms.`);
-  await input.context.reportProgress(95, { step: 'Đã hoàn tất chọn lọc', accepted: final.ideas.length, dropped: compactDropped.length, durations });
-  return { ideas: final.ideas, dropped: compactDropped, durations, repairCalls, promptVersion: 'video-ideas-v2' };
+  await input.context.appendLog(`Hoàn tất: giữ ${final.ideas.length}/${input.request.count} ý tưởng${status === 'partial' ? ' (kết quả một phần)' : ''}, bỏ ${compactDropped.length}; sơ bộ ${seedsMs} ms, chọn lọc ${selectMs} ms, chi tiết ${expandMs} ms.`);
+  return { ideas: final.ideas, dropped: compactDropped, status, diagnostics, durations, repairCalls, promptVersion: 'video-ideas-v2' };
 }
 
 export const YOUTUBE_IDEA_STAGE_PROMPTS = YOUTUBE_IDEA_V2_PROMPT_VERSIONS;

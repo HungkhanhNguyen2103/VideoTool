@@ -82,18 +82,35 @@ describe('YouTube video idea generation service', () => {
       context: context(), config,
       clientFactory: () => ({ chat: async (messages) => { calls.push(messages[1]!.content); return responses.shift()!; } }),
     });
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(3);
     expect(calls[0]).toContain('video-ideas-v2-seeds');
     expect(calls[1]).toContain('video-ideas-v2-select');
     expect(calls[2]).toContain('video-ideas-v2-expand');
-    expect(calls[3]).toContain('video-ideas-v2-expand');
-    expect(result).toMatchObject({ dropped: 2, evidenceTier: 'no-performance-data', repairCalls: { seeds: 0, select: 0, expand: 0 } });
+    expect(result).toMatchObject({ dropped: 0, evidenceTier: 'no-performance-data', repairCalls: { seeds: 0, select: 0, expand: 0 } });
     expect((await listYoutubeIdeaDocs(channel.id)).map((row) => row.idea.title)).toHaveLength(4);
     const publicResult = await getYoutubeIdeas(channel.id);
     expect(publicResult).toMatchObject({ currentTier: 'no-performance-data', matureVideoCount: 0, stale: false });
     expect(publicResult.ideas).toEqual(expect.arrayContaining([expect.objectContaining({ backend: 'api' })]));
     const stored = await getCollection<TestDoc>('youtubeIdeaRuns').findOne({ channelProfileId: channel.id });
     expect(JSON.stringify({ publicResult, stored })).not.toMatch(/refreshToken|accessToken|client_secret|packetJson|steering|narration|promptText/i);
+  });
+
+  it.each([1, 2])('persists a %i-survivor result with partial status for the panel', async (survivorCount) => {
+    const channel = await createChannel({ name: 'Task 121c partial demo' });
+    const eligibleSeeds = seeds().slice(0, survivorCount);
+    const responses = [
+      JSON.stringify({ seeds: eligibleSeeds }),
+      JSON.stringify({ selected: eligibleSeeds.map(({ id }) => ({ id, trapSketch: 'Một lợi thế trở thành điểm yếu.' })), rejected: [] }),
+      JSON.stringify({ ideas: eligibleSeeds.map((seed) => expanded(seed, 4)) }),
+    ];
+    const result = await generateYoutubeVideoIdeas({
+      profileId: channel.id, request: { backend: 'api', steering: '', presetId: 'hubris-trap', count: 4, targetDurationSec: 600 },
+      context: context(), config, clientFactory: () => ({ chat: async () => responses.shift()! }),
+    });
+    expect(result).toMatchObject({ status: 'partial', ideaIds: Array.from({ length: survivorCount }, () => expect.any(String)) });
+    const saved = await getYoutubeIdeas(channel.id);
+    expect(saved.latestRun).toMatchObject({ status: 'partial', requestedCount: 4 });
+    expect(saved.ideas.map((row) => row.id)).toEqual(expect.arrayContaining(result!.ideaIds));
   });
 
   it('leaves idea and run collections untouched when cancellation arrives after generation', async () => {

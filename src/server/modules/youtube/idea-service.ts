@@ -6,7 +6,7 @@ import { loadConfig } from '../../config';
 import { getAiClient, type AiClient } from '../../shared/ai';
 import { createClaudeCliChat } from '../../shared/claude-cli/cli-chat';
 import type { ClaudeCliStatus } from '../../shared/claude-cli/cli-runner';
-import type { YoutubeIdeaJobContext, YoutubeIdeaBackend } from './idea-engine';
+import type { YoutubeIdeaJobContext, YoutubeIdeaBackend, YoutubeIdeaPipelineResult } from './idea-engine';
 import { runYoutubeIdeaPipeline } from './idea-engine';
 import { getChannel } from '../channel';
 import { getProject, listProjects } from '../project';
@@ -38,6 +38,7 @@ function publicRun(row: NonNullable<Awaited<ReturnType<typeof findLatestYoutubeI
     promptVersion: row.promptVersion,
     generatedAt: row.generatedAt,
     requestedCount: row.requestedCount,
+    ...(row.status ? { status: row.status } : {}),
     packetSummary: row.packetSummary,
     coverageFingerprint: row.coverageFingerprint,
     dropped: row.dropped,
@@ -81,7 +82,7 @@ async function loadIdeaPacket(profileId: string, request: Pick<YoutubeIdeasGener
     planStatus,
     projects,
     syncedVideos: videoRows.filter((video) => video.privacy === 'public').map(({ videoId, title, publishedAt, privacy }) => ({ videoId, title, publishedAt, privacy })),
-    savedIdeas: savedRows.map(({ idea, status }) => ({ title: idea.title, status })),
+    savedIdeas: savedRows.map(({ idea, status }) => ({ title: idea.title, status, ...('episode' in idea ? { episode: idea.episode } : {}) })),
     steering: request.steering,
     presetId: request.presetId,
     count: request.count,
@@ -126,7 +127,7 @@ export async function generateYoutubeVideoIdeas(input: {
   getClaudeCliStatus?: (options: { executablePath: string; env?: NodeJS.ProcessEnv }) => Promise<ClaudeCliStatus>;
   cliChatFactory?: typeof createClaudeCliChat;
   clientFactory?: (provider: AiProvider, model: string) => Pick<AiClient, 'chat'>;
-}): Promise<{ runId: string; ideaIds: string[]; dropped: number; evidenceTier: string; repairCalls: { seeds: number; select: number; expand: number } } | undefined> {
+}): Promise<{ runId: string; ideaIds: string[]; dropped: number; evidenceTier: string; status: 'complete' | 'partial'; diagnostics: YoutubeIdeaPipelineResult['diagnostics']; repairCalls: { seeds: number; select: number; expand: number } } | undefined> {
   const config = input.config ?? loadConfig();
   const { packet } = await buildYoutubeIdeaRunPacket(input.profileId, input.request);
   let backend: YoutubeIdeaBackend;
@@ -176,6 +177,7 @@ export async function generateYoutubeVideoIdeas(input: {
       promptVersion: result.promptVersion,
       generatedAt,
       requestedCount: input.request.count,
+      status: result.status,
       packetSummary: packet.packetSummary,
       coverageFingerprint: packet.coverageFingerprint,
       dropped: result.dropped,
@@ -186,9 +188,9 @@ export async function generateYoutubeVideoIdeas(input: {
   });
   if (!saved) return undefined;
   input.context.markCommitComplete?.();
-  await input.context.appendLog(`Đã lưu ${ideaRows.length} ý tưởng và tóm tắt lượt chạy; không lưu prompt, gói coverage, token hoặc nội dung phản hồi thô.`);
-  await input.context.reportProgress(100, { step: 'Hoàn tất', runId, ideaCount: ideaRows.length, droppedCount: result.dropped.length, repairCalls: result.repairCalls });
-  return { runId, ideaIds: ideaRows.map((idea) => idea._id), dropped: result.dropped.length, evidenceTier: packet.evidenceTier, repairCalls: result.repairCalls };
+  await input.context.appendLog(`Đã lưu ${ideaRows.length} ý tưởng${result.status === 'partial' ? ' (kết quả một phần)' : ''} và tóm tắt lượt chạy; không lưu prompt, gói coverage, token hoặc nội dung phản hồi thô.`);
+  await input.context.reportProgress(100, { step: 'Hoàn tất', runId, ideaCount: ideaRows.length, droppedCount: result.dropped.length, status: result.status, diagnostics: result.diagnostics, repairCalls: result.repairCalls });
+  return { runId, ideaIds: ideaRows.map((idea) => idea._id), dropped: result.dropped.length, evidenceTier: packet.evidenceTier, status: result.status, diagnostics: result.diagnostics, repairCalls: result.repairCalls };
 }
 
 export async function updateYoutubeIdea(profileId: string, ideaId: string, patch: {

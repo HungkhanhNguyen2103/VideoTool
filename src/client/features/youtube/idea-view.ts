@@ -95,6 +95,29 @@ export function youtubeIdeaDropReasonLabel(reason: string): string {
   return reason;
 }
 
+export function youtubeIdeaPartialRunNotice(input: {
+  status?: YoutubeIdeaRunSummary['status'];
+  requestedCount: number;
+  acceptedCount: number;
+  dropped: Array<{ reason: string }>;
+}): { heading: string; detail: string } | null {
+  if (input.status !== 'partial') return null;
+  const heading = input.acceptedCount === 1
+    ? `Chỉ còn 1/${input.requestedCount} ý qua kiểm tra.`
+    : `Chỉ ${input.acceptedCount}/${input.requestedCount} ý qua kiểm tra.`;
+  const grouped = new Map<string, number>();
+  for (const row of input.dropped) {
+    const label = youtubeIdeaDropReasonLabel(row.reason);
+    grouped.set(label, (grouped.get(label) ?? 0) + 1);
+  }
+  const reasons = [...grouped].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 3).map(([label, count]) => `${label}${count > 1 ? ` (${count})` : ''}`);
+  const detail = input.dropped.length
+    ? `${input.dropped.length} ý bị loại vì ${reasons.join('; ')}${grouped.size > 3 ? '; còn lý do khác' : ''}.`
+    : 'Một số ý chưa đạt ngưỡng kiểm tra.';
+  return { heading, detail };
+}
+
 function motifResearchLines(idea: YoutubeIdeaStored): string {
   const motifLines = idea.motif
     ? (['hunter', 'perfectPlan', 'blindSpot', 'selfDestruction'] as const).map((key) => `- ${key}: ${idea.motif![key].text} (giả thuyết cần kiểm chứng; mức chứng cứ hiện tại: ${idea.motif![key].evidence})`).join('\n')

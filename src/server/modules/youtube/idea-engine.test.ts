@@ -144,7 +144,7 @@ describe('runYoutubeIdeaPipeline', () => {
       .mockResolvedValueOnce(JSON.stringify({ ideas: ideas.slice(4) }));
     const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
     expect(chat.mock.calls.map((call) => call[1]?.stepLabel)).toEqual([
-      'video-ideas-v2-seeds', 'video-ideas-v2-select', 'video-ideas-v2-expand', 'video-ideas-v2-expand',
+      'video-ideas-v2-seeds', 'video-ideas-v2-select', 'video-ideas-v2-expand',
     ]);
     expect(chat.mock.calls[2]![0][1]!.content).toContain('"id":"a"');
     expect(chat.mock.calls[2]![0][1]!.content).toContain('"id":"d"');
@@ -153,6 +153,74 @@ describe('runYoutubeIdeaPipeline', () => {
     expect(result?.promptVersion).toBe('video-ideas-v2');
     expect(result?.durations).toHaveProperty('seedsMs');
     expect(result?.repairCalls).toEqual({ seeds: 0, select: 0, expand: 0 });
+  });
+
+  it('accepts a more specific period when the added year is backed by claims or packet', async () => {
+    const seed = v2Seed('french-1930', 'political', 'thời Pháp thuộc');
+    const expanded = v2Idea(seed.id, seed.hunterArchetype, 'thời Pháp thuộc, năm 1930', 5);
+    expanded.claims = [{ text: 'Thời Pháp thuộc năm 1930, quy mô lực lượng khiến kế hoạch khó xoay chuyển.', confidence: 'medium' }];
+    const packetWithEvidence = { ...packet, serialized: JSON.stringify({ request: { count: 4, targetDurationSec: 600 }, historicalEvidence: 'Thời Pháp thuộc năm 1930' }) };
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds: [seed] }))
+      .mockResolvedValueOnce(JSON.stringify({ selected: [{ id: seed.id, trapSketch: 'Niềm tin về đường tiếp tế khiến quy mô lực lượng thành điểm yếu.' }], rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [expanded] }));
+    const result = await runYoutubeIdeaPipeline({ packet: packetWithEvidence, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(result?.ideas.map((row) => row.period)).toEqual(['thời Pháp thuộc, năm 1930']);
+    expect(result?.dropped.some((row) => row.reason.includes('Thời kỳ trong bản chi tiết lệch seed'))).toBe(false);
+  });
+
+  it('continues into a later batch until running validated survivors reach the requested count', async () => {
+    const archetypes: YoutubeIdeaV2['hunterArchetype'][] = ['military', 'political', 'economic', 'technological', 'diplomatic', 'institutional', 'other', 'military'];
+    const seeds = archetypes.map((archetype, index) => v2Seed(`s${index}`, archetype, `thế kỷ ${13 + index}`));
+    const selected = seeds.map(({ id }) => ({ id, trapSketch: 'Giả định biến lợi thế thành điểm yếu.' }));
+    const rowsForBatch = (batch: typeof seeds, validCount: number) => batch.map((seed, index) => {
+      const row = v2Idea(seed.id, seed.hunterArchetype, seed.yearOrPeriod, 4);
+      if (index >= validCount) row.motif.blindSpot.evidence = 'thin';
+      return row;
+    });
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: rowsForBatch(seeds.slice(0, 4), 1) }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: rowsForBatch(seeds.slice(4), 3) }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(chat.mock.calls.filter((call) => call[1]?.stepLabel === 'video-ideas-v2-expand')).toHaveLength(2);
+    expect(chat.mock.calls[3]![0][1]!.content).toContain('archetype còn thiếu');
+    expect(result?.ideas).toHaveLength(4);
+    expect(result?.diagnostics.expansionBatches).toHaveLength(2);
+  });
+
+  it('caps expansion at three batches and stops starting batches after the soft budget', async () => {
+    const archetypes: YoutubeIdeaV2['hunterArchetype'][] = ['military', 'political', 'economic', 'technological', 'diplomatic', 'institutional', 'other', 'military', 'political', 'economic', 'technological', 'diplomatic'];
+    const seeds = archetypes.map((archetype, index) => v2Seed(`s${index}`, archetype, `thế kỷ ${13 + index}`));
+    const selected = seeds.map(({ id }) => ({ id, trapSketch: 'Giả định biến lợi thế thành điểm yếu.' }));
+    const rowsForBatch = (batch: typeof seeds) => batch.map((seed, index) => {
+      const row = v2Idea(seed.id, seed.hunterArchetype, seed.yearOrPeriod, 4);
+      if (index > 0) row.motif.blindSpot.evidence = 'thin';
+      return row;
+    });
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: rowsForBatch(seeds.slice(0, 4)) }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: rowsForBatch(seeds.slice(4, 8)) }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: rowsForBatch(seeds.slice(8, 12)) }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 8, presetId: 'hubris-trap' } });
+    expect(chat.mock.calls.filter((call) => call[1]?.stepLabel === 'video-ideas-v2-expand')).toHaveLength(3);
+    expect(result?.diagnostics.expansionBatches).toHaveLength(3);
+    expect(result?.ideas).toHaveLength(3);
+
+    let now = 0;
+    const budgetContext = context();
+    const sourceResponses = [JSON.stringify({ seeds }), JSON.stringify({ selected, rejected: [] }), JSON.stringify({ ideas: rowsForBatch(seeds.slice(0, 4)) })];
+    const budgetChat = vi.fn(async (_messages: unknown, options?: { stepLabel?: string }) => {
+      if (options?.stepLabel === 'video-ideas-v2-expand') now += 241_000;
+      return sourceResponses[budgetChat.mock.calls.length - 1]!;
+    });
+    const budgetResult = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat: budgetChat }, context: budgetContext, request: { count: 8, presetId: 'hubris-trap' }, clock: () => now });
+    expect(budgetChat.mock.calls.filter((call) => call[1]?.stepLabel === 'video-ideas-v2-expand')).toHaveLength(1);
+    expect(budgetResult?.diagnostics.budgetStopped).toBe(true);
+    expect(budgetContext.appendLog).toHaveBeenCalledWith('Đã dừng thêm lượt viết chi tiết vì sắp hết thời gian dự kiến');
   });
 
   it('normalizes safe shape and enum problems before deciding whether a repair call is needed', async () => {
@@ -173,16 +241,18 @@ describe('runYoutubeIdeaPipeline', () => {
       v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV'),
       v2Seed('c', 'economic', 'thế kỷ XV'), v2Seed('d', 'technological', 'thế kỷ XVI'),
       v2Seed('e', 'diplomatic', 'thế kỷ XVII'), v2Seed('f', 'institutional', 'thế kỷ XVIII'),
-      v2Seed('g', 'other', 'thế kỷ XIX'),
+      v2Seed('g', 'other', 'thế kỷ XIX'), v2Seed('h', 'economic', 'thế kỷ XX'), v2Seed('i', 'technological', 'thế kỷ XXI'),
     ];
     const selected = seeds.map(({ id }) => ({ id, trapSketch: `Giả định của ${id} bị chính lợi thế làm phản tác dụng.` }));
     const rejected = seeds.map(({ id }) => ({ id, rejectionReason: 'Không thuộc shortlist.' }));
+    const firstBatchIdeas = seeds.slice(0, 4).map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4));
+    firstBatchIdeas[3]!.motif.blindSpot.evidence = 'thin';
     const chat = vi.fn()
       .mockResolvedValueOnce(JSON.stringify({ seeds }))
       .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
-      .mockResolvedValueOnce(JSON.stringify({ selected: selected.slice(0, 6), rejected: [rejected[6]!] }))
-      .mockResolvedValueOnce(JSON.stringify({ ideas: seeds.slice(0, 4).map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4)) }))
-      .mockResolvedValueOnce(JSON.stringify({ ideas: seeds.slice(4, 6).map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4)) }));
+      .mockResolvedValueOnce(JSON.stringify({ selected: selected.slice(0, 8), rejected: [rejected[8]!] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: firstBatchIdeas }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: seeds.slice(4, 8).map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4)) }));
     const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
     expect(chat).toHaveBeenCalledTimes(5);
     expect(chat.mock.calls[2]![1]?.stepLabel).toBe('video-ideas-v2-select-repair');
@@ -254,28 +324,73 @@ describe('runYoutubeIdeaPipeline', () => {
   });
 
   it('repairs omitted expansion rows and merges the repaired seed with valid rows', async () => {
-    const seeds = [v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV')];
+    const seeds = [v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV'), v2Seed('c', 'economic', 'thế kỷ XV')];
     const selected = seeds.map(({ id }) => ({ id, trapSketch: 'Giả định bị chính lợi thế của người ra quyết định làm phản tác dụng.' }));
     const chat = vi.fn()
       .mockResolvedValueOnce(JSON.stringify({ seeds }))
       .mockResolvedValueOnce(JSON.stringify({ selected, rejected: [] }))
       .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea('a', 'military', 'thế kỷ XIII', 4)] }))
-      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea('b', 'political', 'thế kỷ XIV', 4)] }));
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea('b', 'political', 'thế kỷ XIV', 4), v2Idea('c', 'economic', 'thế kỷ XV', 4)] }));
     const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
     expect(chat).toHaveBeenCalledTimes(4);
     expect(chat.mock.calls[3]![1]?.stepLabel).toBe('video-ideas-v2-expand-repair');
     expect(result?.repairCalls).toEqual({ seeds: 0, select: 0, expand: 1 });
-    expect(result?.ideas.map((row) => row.id).sort()).toEqual(['a', 'b']);
+    expect(result?.ideas.map((row) => row.id).sort()).toEqual(['a', 'b', 'c']);
   });
 
-  it('fails the minimum-survivor gate after all expansion batches', async () => {
+  it('fails with the top drop reasons when zero ideas survive', async () => {
     const seeds = [v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV')];
     const chat = vi.fn()
       .mockResolvedValueOnce(JSON.stringify({ seeds }))
       .mockResolvedValueOnce(JSON.stringify({ selected: seeds.map(({ id }) => ({ id, trapSketch: 'Giả định bị lợi thế của chính người ra quyết định làm phản tác dụng.' })), rejected: [] }))
       .mockResolvedValueOnce(JSON.stringify({ ideas: [{ ...v2Idea('a', 'military', 'thế kỷ XIII', 4), angle: '' }] }))
       .mockResolvedValueOnce(JSON.stringify({ ideas: [] }));
-    await expect(runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } })).rejects.toMatchObject({ code: 'YOUTUBE_IDEAS_UNGROUNDED' });
+    await expect(runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } })).rejects.toMatchObject({
+      code: 'YOUTUBE_IDEAS_UNGROUNDED', message: expect.stringContaining('Lý do chính:'),
+    });
+  });
+
+  it('keeps one valid survivor as a partial result', async () => {
+    const seed = v2Seed('one', 'military', 'thế kỷ XIII');
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds: [seed] }))
+      .mockResolvedValueOnce(JSON.stringify({ selected: [{ id: seed.id, trapSketch: 'Giả định biến lợi thế thành điểm yếu.' }], rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea(seed.id, seed.hunterArchetype, seed.yearOrPeriod, 4)] }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(result).toMatchObject({ status: 'partial', ideas: [{ id: 'one' }] });
+  });
+
+  it('skips action-like claimed intentions and excludes previously proposed episodes before selection', async () => {
+    const repeated = v2Seed('old', 'military', 'thế kỷ XIII');
+    const fresh = v2Seed('fresh', 'political', 'thế kỷ XIV');
+    const packetWithPrevious = {
+      ...packet,
+      packet: { ...packet.packet, alreadyProposedEpisodes: [repeated.episode] },
+      serialized: JSON.stringify({ request: { targetDurationSec: 600 }, alreadyProposedEpisodes: [repeated.episode] }),
+    } as YoutubeIdeaPacket;
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds: [repeated, fresh] }))
+      .mockResolvedValueOnce(JSON.stringify({ selected: [{ id: fresh.id, trapSketch: 'Giả định biến lợi thế thành điểm yếu.' }], rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas: [v2Idea(fresh.id, fresh.hunterArchetype, fresh.yearOrPeriod, 4)] }));
+    const result = await runYoutubeIdeaPipeline({ packet: packetWithPrevious, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(chat.mock.calls[1]![0][1]!.content).toContain('fresh');
+    expect(chat.mock.calls[1]![0][1]!.content).not.toContain('"id":"old"');
+    expect(result?.dropped).toContainEqual(expect.objectContaining({ id: 'old' }));
+  });
+
+  it('does not repair judgment failures in a batch', async () => {
+    const seeds = [v2Seed('a', 'military', 'thế kỷ XIII'), v2Seed('b', 'political', 'thế kỷ XIV'), v2Seed('c', 'economic', 'thế kỷ XV')];
+    const ideas = seeds.map((row) => v2Idea(row.id, row.hunterArchetype, row.yearOrPeriod, 4));
+    ideas[1]!.motif.blindSpot.evidence = 'thin';
+    ideas[2]!.trap.advantageThatBackfired = 'Một biến cố bất ngờ làm lực lượng suy yếu.';
+    const chat = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({ seeds }))
+      .mockResolvedValueOnce(JSON.stringify({ selected: seeds.map(({ id }) => ({ id, trapSketch: 'Giả định biến lợi thế thành điểm yếu.' })), rejected: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ ideas }));
+    const result = await runYoutubeIdeaPipeline({ packet, backend: { kind: 'cli', model: 'claude-sonnet-5-5', chat }, context: context(), request: { count: 4, presetId: 'hubris-trap' } });
+    expect(chat).toHaveBeenCalledTimes(3);
+    expect(result?.repairCalls.expand).toBe(0);
+    expect(result?.dropped.some((row) => row.reason.includes('blind spot mỏng'))).toBe(true);
   });
 
   it('stops after a stage response when cancellation arrives', async () => {

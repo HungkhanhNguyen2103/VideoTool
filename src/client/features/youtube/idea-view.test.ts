@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { YoutubeIdea, YoutubeIdeaCreateProjectResponse, YoutubeIdeaV2 } from '../../../contracts/youtube-ideas';
-import { buildYoutubeIdeaResearchRequest, canChangeYoutubeIdeaStatus, isNearDuplicateYoutubeIdeaTitle, isYoutubeIdeaCoverageStale, mapYoutubeIdeaToProjectPrefill, normalizeYoutubeIdeaTitleForClient, validateYoutubeIdeaSteering, YOUTUBE_IDEA_MANUAL_CHECK_INSTRUCTIONS, youtubeIdeaArchetypeLabel, youtubeIdeaClaimRows, youtubeIdeaCliDefaultModel, youtubeIdeaDropReasonLabel, youtubeIdeaFamousnessLabel, youtubeIdeaGateText, youtubeIdeaStageDurations, youtubeIdeaTierText, youtubeIdeaTrapLines } from './idea-view';
+import { buildYoutubeIdeaResearchRequest, canChangeYoutubeIdeaStatus, isNearDuplicateYoutubeIdeaTitle, isYoutubeIdeaCoverageStale, mapYoutubeIdeaToProjectPrefill, normalizeYoutubeIdeaTitleForClient, validateYoutubeIdeaSteering, YOUTUBE_IDEA_MANUAL_CHECK_INSTRUCTIONS, youtubeIdeaArchetypeLabel, youtubeIdeaClaimRows, youtubeIdeaCliDefaultModel, youtubeIdeaDropReasonLabel, youtubeIdeaFamousnessLabel, youtubeIdeaGateText, youtubeIdeaPartialRunNotice, youtubeIdeaStageDurations, youtubeIdeaTierText, youtubeIdeaTrapLines } from './idea-view';
 
 const idea: YoutubeIdea = {
   id: 'idea-1', title: 'Kế hoạch hoàn hảo tự sụp đổ', hook: 'Cánh cửa khép lại khi người đi săn bước vào.',
@@ -91,5 +91,17 @@ describe('YouTube video idea view helpers', () => {
     expect(youtubeIdeaDropReasonLabel('không phải bẫy tự giăng.')).toBe('Không phải bẫy tự giăng');
     expect(youtubeIdeaDropReasonLabel('quá dựa vào trí nhớ: quá nửa claim có độ tin cậy thấp.')).toBe('Quá dựa vào trí nhớ');
     expect(youtubeIdeaDropReasonLabel('trùng loại bẫy trong cùng thế kỷ.')).toBe('Trùng loại bẫy');
+  });
+
+  it('builds a partial-run notice with mapped leading reasons and no notice for legacy complete runs', () => {
+    expect(youtubeIdeaPartialRunNotice({
+      status: 'partial', requestedCount: 6, acceptedCount: 2,
+      dropped: [{ reason: 'blind spot mỏng.' }, { reason: 'blind spot mỏng.' }, { reason: 'trùng loại bẫy trong cùng thế kỷ.' }],
+    })).toEqual({
+      heading: 'Chỉ 2/6 ý qua kiểm tra.',
+      detail: '3 ý bị loại vì Blind spot mỏng (2); Trùng loại bẫy.',
+    });
+    expect(youtubeIdeaPartialRunNotice({ status: 'partial', requestedCount: 4, acceptedCount: 1, dropped: [] })?.heading).toBe('Chỉ còn 1/4 ý qua kiểm tra.');
+    expect(youtubeIdeaPartialRunNotice({ status: undefined, requestedCount: 6, acceptedCount: 6, dropped: [] })).toBeNull();
   });
 });

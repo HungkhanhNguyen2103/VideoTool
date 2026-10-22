@@ -11,7 +11,7 @@ export type IdeaPacketInput = {
   planStatus: Pick<YoutubeGrowthPlanStatus, 'matureCount' | 'videos' | 'metrics' | 'verdict' | 'distribution' | 'hitRates'>;
   projects: { id: string; title: string; scriptPresetId: ScriptPresetId; brief: string; youtubeVideoId: string | null; status: string }[];
   syncedVideos: { videoId: string; title: string; publishedAt: string | null; privacy: string }[];
-  savedIdeas: { title: string; status: 'new' | 'chosen' | 'rejected' | 'used' }[];
+  savedIdeas: { title: string; status: 'new' | 'chosen' | 'rejected' | 'used'; episode?: string }[];
   steering: string;
   presetId: ScriptPresetId;
   count: number;
@@ -78,6 +78,7 @@ export function buildYoutubeIdeaPacket(input: IdeaPacketInput): YoutubeIdeaPacke
     olderNiche: Boolean(nicheStartDate && video.publishedAt && video.publishedAt.slice(0, 10) < nicheStartDate),
   }));
   const savedIdeas = input.savedIdeas.map((idea) => ({ title: sanitizeIdeaText(idea.title, 100), status: idea.status }));
+  const alreadyProposedEpisodes = [...new Set(input.savedIdeas.flatMap((idea) => idea.episode ? [sanitizeIdeaText(idea.episode, 160)] : []))].slice(0, 40);
   const coverage = { projects, syncedVideos, savedIdeas };
   const packet: Record<string, unknown> = {
     packetVersion: 'youtube-idea-packet-v1',
@@ -91,6 +92,7 @@ export function buildYoutubeIdeaPacket(input: IdeaPacketInput): YoutubeIdeaPacke
       presetsUsedSoFar: presets,
     },
     coverage,
+    alreadyProposedEpisodes,
     steering: sanitizeIdeaText(input.steering, 500),
     request: { presetId: input.presetId, count: input.count, targetDurationSec: input.targetDurationSec },
     evidence: { tier: tier.tier, matureVideoCount: tier.matureVideoCount, minimumMatureForDataInformed: tier.minimumMatureForDataInformed },

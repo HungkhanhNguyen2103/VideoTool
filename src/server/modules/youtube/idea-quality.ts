@@ -100,6 +100,10 @@ function extractNumbers(value: string): string[] {
 }
 
 const SENTENCE_START_WORDS = new Set(['a', 'an', 'the', 'and', 'but', 'because', 'when', 'while', 'after', 'before', 'người', 'khi', 'nếu', 'một', 'đây', 'đó', 'chính', 'sau', 'trước', 'kế', 'câu', 'cuộc', 'năm', 'nhà', 'vua', 'chúa', 'tướng', 'chỉ', 'đội', 'quân', 'triều', 'nhưng', 'vì', 'tuy', 'dù', 'ông', 'bà', 'họ', 'từ', 'trong', 'đến', 'lúc', 'bên', 'tuyến', 'tập'].map(normalizeVietnamese));
+const COMMON_CLAIM_SENTENCE_OPENERS = new Set([
+  ...SENTENCE_START_WORDS,
+  ...['therefore', 'however', 'vậy', 'biến', 'vấn', 'điều', 'phần', 'sức', 'phía', 'như', 'theo', 'mặc', 'dẫu', 'dường', 'thực', 'có', 'cũng', 'đồng', 'ngoài', 'mọi', 'tính', 'trên', 'dưới', 'nội', 'tại'].map(normalizeVietnamese),
+]);
 
 function extractCapitalizedTerms(value: string): string[] {
   const result: string[] = [];
@@ -119,7 +123,7 @@ function extractCapitalizedTerms(value: string): string[] {
   for (const group of groups) {
     const before = value.slice(0, group.start);
     const sentenceStart = !before.trim() || /[.!?。！？]\s*$/u.test(before);
-    const words = sentenceStart && SENTENCE_START_WORDS.has(normalizeVietnamese(group.words[0] ?? ''))
+    const words = sentenceStart && COMMON_CLAIM_SENTENCE_OPENERS.has(normalizeVietnamese(group.words[0] ?? ''))
       ? group.words.slice(1)
       : group.words;
     if (words.length) result.push(normalizeVietnamese(words.join(' ')));
@@ -133,22 +137,60 @@ function meaningfulWords(value: string): Set<string> {
 
 function hasSharedMeaning(left: string, right: string): boolean {
   const leftWords = meaningfulWords(left);
-  return [...meaningfulWords(right)].some((word) => leftWords.has(word));
+  if ([...meaningfulWords(right)].some((word) => leftWords.has(word))) return true;
+  const leftEntities = entitySignatures(left);
+  const rightEntities = entitySignatures(right);
+  return [...leftEntities].some((name) => [...rightEntities].some((other) => {
+    if (name === other || name.startsWith(`${other} `) || other.startsWith(`${name} `)) return true;
+    const nameWords = name.split(' ');
+    const otherWords = other.split(' ');
+    if (nameWords.length >= 2 && otherWords.length >= 2) {
+      const smaller = nameWords.length <= otherWords.length ? nameWords : otherWords;
+      const larger = new Set(nameWords.length <= otherWords.length ? otherWords : nameWords);
+      if (smaller.length >= 2 && smaller.every((word) => larger.has(word))) return true;
+    }
+    return false;
+  }));
 }
 
-function episodeHasDecision(episode: string): boolean {
+const VI_DECISION_ACTIONS = [
+  'chap nhan', 'nhan gap', 'quyet dinh', 'chon', 'doi ke hoach', 'doi tuyen', 'doi huong', 'doi luat', 'doi moi', 'rut lui', 'giu lai', 'giu trong tam', 'tu choi', 'yeu cau', 'de nghi',
+];
+const VI_MILITARY_ACTIONS = [
+  'tan cong', 'tien cong', 'tien quan', 'tien sau', 'dem quan', 'danh tran', 'danh bai', 'danh chiem', 'danh vao', 'dan quan vao', 'dan quan', 'dieu quan', 'chuyen quan', 'cat tuyen', 'cat duong', 'co thu', 'do bo', 'vuot song', 'bat giu', 'dau hang', 'bao vay', 'pha vay', 'chiem', 'sat hai', 'giet', 'chan', 'tru tuong', 'xu tuong', 'xay', 'dung dai don', 'chuan bi khoi nghia', 'cho quan nghi ngoi',
+];
+const VI_DIPLOMATIC_ACTIONS = [
+  'ket thong gia', 'ky ket', 'ky hiep uoc', 'ky thoa thuan', 'ky hoa uoc', 'dam phan', 'lien minh', 'cau phong', 'gui toi hau thu', 'thuong luong', 'tuyen bo', 'gui', 'cu',
+];
+const VI_GOVERNANCE_ACTIONS = [
+  'ra lenh', 'ky lenh', 'ban hanh', 'ban lenh', 'cai cach', 'thanh lap', 'lap', 'tu bo', 'phat dong', 'phe tru', 'bon nhiem', 'dinh chi', 'bai chuc', 'ap dat', 'bai bo', 'bo qua', 'bo nguoi thua ke', 'chon ke vi', 'tap trung', 'cung co', 'xoa bo', 'thu hep', 'doi nguoi noi ngoi', 'giu can bang', 'nhan dieu tran', 'giu nguyen', 'keo dai', 'mo chien dich', 'mo truong', 'mo rong',
+];
+const VI_ECONOMIC_TECHNICAL_ACTIONS = [
+  'chia dat', 'siet thue', 'thu gom', 'tu che', 'che tao', 'sao chep', 'han che', 'don thuong nhan', 'ban thue', 'dat bay', 'dat cuoc', 'dat ra', 'thu xep', 'mo tuyen', 'nhan khai thac', 'cho phep khai thac', 'thu thue', 'nhan ganh no', 'doi lay', 'mua', 'ban', 'cam', 'trien khai', 'bao dong', 'nhan chau lam con nuoi', 'phan doi', 'doi dau', 'gianh quyen', 'dung tai',
+];
+const ENGLISH_ACTIONS = [
+  'withdraw', 'withdrew', 'ordered', 'order', 'signed', 'sign', 'invaded', 'invade', 'attacked', 'attack', 'built', 'build', 'reformed', 'reform', 'chose', 'choose', 'declared', 'declare', 'allied', 'besieged', 'redirected', 'extended', 'blocked', 'advanced',
+  'sent', 'send', 'accepted', 'accept', 'agreed', 'agree', 'met', 'meet', 'issued', 'issue', 'appointed', 'appoint', 'removed', 'remove', 'assassinated', 'assassinate', 'executed', 'execute', 'conquered', 'conquer', 'mobilized', 'mobilize', 'seized', 'seize', 'occupied', 'occupy', 'rejected', 'reject', 'proposed', 'propose', 'negotiated', 'negotiate', 'surrendered', 'surrender', 'launched', 'launch', 'expanded', 'expand', 'imposed', 'impose', 'banned', 'ban', 'adopted', 'adopt', 'introduced', 'introduce', 'deployed', 'deploy', 'crossed', 'cross', 'landed', 'land', 'overthrew', 'overthrow',
+];
+const EPISODE_ACTION_PHRASES = [...VI_DECISION_ACTIONS, ...VI_MILITARY_ACTIONS, ...VI_DIPLOMATIC_ACTIONS, ...VI_GOVERNANCE_ACTIONS, ...VI_ECONOMIC_TECHNICAL_ACTIONS, ...ENGLISH_ACTIONS];
+
+export function youtubeIdeaEpisodeHasDecision(episode: string): boolean {
   const normalized = normalizeVietnamese(episode);
-  const actions = [
-    'chap nhan', 'chia dat', 'ket thong gia', 'phan doi', 'doi dau', 'gianh quyen', 'nhan chau lam con nuoi', 'sat hai', 'tru tuong', 'xu tuong',
-    'dung tai', 'thu xep', 'giu can bang', 'siet thue', 'thu gom', 'dung dai don', 'chiem', 'dan quan vao', 'dan quan', 'danh thang', 'nhan dieu tran', 'giu nguyen', 'tu che', 'che tao', 'sao chep', 'han che', 'don thuong nhan',
-    'quyet dinh', 'ra lenh', 'ky lenh', 'ky ket', 'ky hiep uoc', 'ky thoa thuan', 'doi nguoi noi ngoi', 'doi ke hoach', 'doi tuyen', 'doi huong', 'doi luat', 'doi moi', 'rut lui',
-    'tan cong', 'tien cong', 'tien sau', 'dem quan', 'danh tran', 'danh bai', 'danh chiem', 'danh vao', 'xay',
-    'ban hanh', 'ban lenh', 'ban thue', 'cai cach', 'chon', 'giu lai', 'pha vay', 'bao vay', 'dam phan', 'dat bay', 'dat cuoc', 'dat ra',
-    'thanh lap', 'tu bo', 'phat dong', 'mo chien dich', 'mo truong', 'mo rong', 'dau hang', 'lien minh', 'keo dai',
-    'chuyen quan', 'tu choi', 'dieu quan', 'cat tuyen', 'cat duong', 'co thu', 'withdraw', 'ordered', 'signed', 'invaded', 'attacked',
-    'withdrew', 'built', 'reformed', 'chose', 'declared', 'allied', 'besieged', 'redirected', 'extended', 'blocked', 'advanced',
-  ];
-  return actions.some((action) => new RegExp(`(^|[^a-z])${action.replace(/ /gu, '\\s+')}([^a-z]|$)`, 'u').test(normalized));
+  const actionMatches = EPISODE_ACTION_PHRASES.flatMap((action) => {
+    const match = new RegExp(`(^|[^a-z])${action.replace(/ /gu, '\\s+')}([^a-z]|$)`, 'u').exec(normalized);
+    return match ? [{ start: match.index + match[1]!.length }] : [];
+  });
+  if (!actionMatches.length) return false;
+
+  // An intended action after “tin vào ... để” is part of the belief, not evidence
+  // that the seed names an event. A later action in a new clause still counts.
+  const beliefIndex = normalized.search(/\b(?:tin vao|niem tin)\b/u);
+  if (beliefIndex < 0) return true;
+  return actionMatches.some(({ start }) => {
+    if (start <= beliefIndex) return true;
+    const priorClause = normalized.slice(beliefIndex, start).split(/[,;.!?]/u).at(-1) ?? '';
+    return !/\b(?:de|nham)\b/u.test(priorClause);
+  });
 }
 
 export function youtubeIdeaCenturyBucket(period: string): number | null {
@@ -187,6 +229,41 @@ export function youtubeIdeaCenturyBucket(period: string): number | null {
   if (!number) return null;
   const century = Math.floor((number - 1) / 100) + 1;
   return isBce || Number(year) < 0 ? -century : century;
+}
+
+function evidenceYears(value: string): number[] {
+  return extractNumbers(value).map(Number).filter((year) => Number.isInteger(year) && year >= 100 && year <= 2999);
+}
+
+function numericPeriodReferences(period: string): string[] {
+  return extractNumbers(period);
+}
+
+function periodNumberIsSupported(number: string, expandedPeriod: string, evidence: string): boolean {
+  if (extractNumbers(evidence).includes(number)) return true;
+  const normalizedPeriod = normalizeVietnamese(expandedPeriod);
+  const decadeMatch = normalizedPeriod.match(new RegExp(`(?:thap nien|decade)\\s+${number}(?:s)?\\b`, 'u'));
+  if (!decadeMatch || Number(number) % 10 !== 0) return false;
+  const decade = Number(number);
+  return evidenceYears(evidence).some((year) => year >= decade && year < decade + 10);
+}
+
+export function isYoutubeIdeaPeriodRefinement(seedPeriod: string, expandedPeriod: string, evidence: string): boolean {
+  const seed = normalizeVietnamese(seedPeriod).replace(/\s+/gu, ' ').trim();
+  const expanded = normalizeVietnamese(expandedPeriod).replace(/\s+/gu, ' ').trim();
+  if (seed === expanded) return true;
+  const addedNumbers = numericPeriodReferences(expandedPeriod).filter((number) => !numericPeriodReferences(seedPeriod).includes(number));
+  if (addedNumbers.some((number) => !periodNumberIsSupported(number, expandedPeriod, evidence))) return false;
+  if (expanded.includes(seed)) return true;
+
+  const relativeLateCentury = /cuoi the ky truoc/u.test(seed)
+    && /cuoi thap nien 19\d0/u.test(expanded)
+    && evidenceYears(evidence).some((year) => year >= 1990 && year <= 1999);
+  if (relativeLateCentury) return true;
+
+  const seedCentury = youtubeIdeaCenturyBucket(seedPeriod);
+  const expandedCentury = youtubeIdeaCenturyBucket(expandedPeriod);
+  return seedCentury !== null && seedCentury === expandedCentury && addedNumbers.length > 0;
 }
 
 function entitySignatures(episode: string): Set<string> {
@@ -243,7 +320,14 @@ export function auditYoutubeIdeaClaimCoverage(idea: YoutubeIdeaV2, packetJson: s
   const claimsText = idea.claims.map((claim) => claim.text).join(' ');
   const packetText = normalizeVietnamese(packetJson);
   const claimText = normalizeVietnamese(claimsText);
-  const unbackedNumbers = [...new Set(extractNumbers(fields.join(' ')).filter((number) => !extractNumbers(packetJson).includes(number) && !extractNumbers(claimsText).includes(number)))];
+  const supportedNumbers = new Set([...extractNumbers(packetJson), ...extractNumbers(claimsText)]);
+  const periodCentury = youtubeIdeaCenturyBucket(idea.period);
+  const hasSupportedCenturyYear = (number: string) => {
+    const period = normalizeVietnamese(idea.period);
+    const numericCentury = new RegExp(`(?:the ky|century)\\s*(?:thu\\s*)?${number}(?:st|nd|rd|th)?\\b`, 'u').test(period);
+    return numericCentury && periodCentury !== null && evidenceYears(`${packetJson} ${claimsText}`).some((year) => youtubeIdeaCenturyBucket(String(year)) === periodCentury);
+  };
+  const unbackedNumbers = [...new Set(extractNumbers(fields.join(' ')).filter((number) => !supportedNumbers.has(number) && !hasSupportedCenturyYear(number)))];
   const unbackedNames = [...new Set(fields.flatMap(extractCapitalizedTerms).filter((name) => !packetText.includes(name) && !claimText.includes(name)))];
   const unsupportedCausalStatements: string[] = [];
   for (const sentence of fields.flatMap((field) => field.split(/(?<=[.!?。！？;])\s+/u))) {
@@ -278,7 +362,7 @@ export function validateYoutubeIdeaV2(value: unknown, packet: { evidenceTier: st
   const idea = parsed.data;
   const reasons: string[] = [];
   if (idea.evidenceTier !== packet.evidenceTier) reasons.push('bậc chứng cứ của ý tưởng không khớp với gói dữ liệu.');
-  if (!episodeHasDecision(idea.episode)) reasons.push('chưa phải một tập sự kiện có quyết định cụ thể.');
+  if (!youtubeIdeaEpisodeHasDecision(idea.episode)) reasons.push('chưa phải một tập sự kiện có quyết định cụ thể.');
   if (idea.testVariable !== 'topic') reasons.push('biến thử nghiệm phải là topic.');
   if (idea.presetId === 'hubris-trap') {
     if (idea.motif.blindSpot.evidence === 'thin') reasons.push('blind spot mỏng.');
@@ -325,7 +409,7 @@ export function filterYoutubeIdeaSeeds(rows: YoutubeIdeaSeed[], count: number, s
   const dropped: YoutubeIdeaDropped[] = [];
   const archetypeCounts = new Map<string, number>();
   const obscureMode = isObscuritySteering(steering);
-  const target = count + 2;
+  const target = Math.min(12, Math.ceil(count * 2));
   const famous = obscureMode ? rows.filter((row) => row.famousnessGuess === 'famous') : [];
   for (const row of famous) dropped.push({ id: row.id, reason: 'độ nổi tiếng ước đoán là famous theo yêu cầu tìm chủ đề ít nổi tiếng.' });
   const eligibleRows = rows.filter((row) => !obscureMode || row.famousnessGuess !== 'famous');
@@ -338,7 +422,7 @@ export function filterYoutubeIdeaSeeds(rows: YoutubeIdeaSeed[], count: number, s
       if (considered.has(row.id)) continue;
       considered.add(row.id);
       let reason: string | null = null;
-      if (!episodeHasDecision(row.episode) || !row.yearOrPeriod.trim()) reason = 'không phải một tập sự kiện có quyết định và thời kỳ.';
+      if (!youtubeIdeaEpisodeHasDecision(row.episode) || !row.yearOrPeriod.trim()) reason = 'không phải một tập sự kiện có quyết định và thời kỳ.';
       const yearBucket = youtubeIdeaCenturyBucket(row.yearOrPeriod);
       if (!reason && yearBucket !== null && seeds.some((accepted) => accepted.hunterArchetype === row.hunterArchetype && youtubeIdeaCenturyBucket(accepted.yearOrPeriod) === yearBucket)) {
         reason = 'trùng loại bẫy trong cùng thế kỷ.';

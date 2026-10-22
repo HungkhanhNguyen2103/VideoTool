@@ -12,7 +12,7 @@ import { cancelJob } from '../../../shared/job-api';
 import { addYoutubeGrowthExperiment } from '../api';
 import { getYoutubeCliStatus, prepareYoutubeIdeaProject, startYoutubeIdeasGeneration, updateYoutubeIdea } from '../api';
 import { youtubeGrowthPlanKey, youtubeGrowthPlanStatusKey, youtubeIdeasKey, useYoutubeGrowthPlanStatus, useYoutubeIdeas } from '../hooks';
-import { buildYoutubeIdeaResearchRequest, canChangeYoutubeIdeaStatus, isYoutubeIdeaCoverageStale, mapYoutubeIdeaToProjectPrefill, validateYoutubeIdeaSteering, YOUTUBE_IDEA_MANUAL_CHECK_INSTRUCTIONS, youtubeIdeaArchetypeLabel, youtubeIdeaClaimRows, youtubeIdeaCliDefaultModel, youtubeIdeaConfidenceLabel, youtubeIdeaDropReasonLabel, youtubeIdeaFamousnessLabel, youtubeIdeaGateText, youtubeIdeaIsV2, youtubeIdeaStageDurations, youtubeIdeaTierText, youtubeIdeaTrapLines } from '../idea-view';
+import { buildYoutubeIdeaResearchRequest, canChangeYoutubeIdeaStatus, isYoutubeIdeaCoverageStale, mapYoutubeIdeaToProjectPrefill, validateYoutubeIdeaSteering, YOUTUBE_IDEA_MANUAL_CHECK_INSTRUCTIONS, youtubeIdeaArchetypeLabel, youtubeIdeaClaimRows, youtubeIdeaCliDefaultModel, youtubeIdeaConfidenceLabel, youtubeIdeaDropReasonLabel, youtubeIdeaFamousnessLabel, youtubeIdeaGateText, youtubeIdeaIsV2, youtubeIdeaPartialRunNotice, youtubeIdeaStageDurations, youtubeIdeaTierText, youtubeIdeaTrapLines } from '../idea-view';
 import styles from './VideoIdeasPanel.module.css';
 
 const PRESET_LABELS: Record<(typeof SCRIPT_PRESET_IDS)[number], string> = {
@@ -218,6 +218,7 @@ export function VideoIdeasPanel({ channelId, language = 'vi' }: { channelId: str
   const elapsed = startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1_000));
   const run = ideasQuery.data?.latestRun;
   const stale = isYoutubeIdeaCoverageStale(run ?? null, ideasQuery.data?.currentCoverageFingerprint ?? '');
+  const partialNotice = run ? youtubeIdeaPartialRunNotice({ status: run.status, requestedCount: run.requestedCount, acceptedCount: ideas.filter((row) => row.runId === run.id).length, dropped: run.dropped }) : null;
 
   return <section className={styles.panel} aria-labelledby="video-ideas-heading">
     <header className={styles.header}><div><p className={styles.eyebrow}>YOUTUBE · ƯỚC LƯỢNG THEO CHỨNG CỨ</p><h2 id="video-ideas-heading">Ý tưởng video tiếp theo</h2><p>Claude CLI không có web hoặc tệp. Dữ kiện lịch sử là chưa kiểm chứng; không có dữ liệu nhu cầu tìm kiếm hay dự báo lượt xem.</p></div><span className={styles.tierChip}>{ideasQuery.data?.currentTier ? youtubeIdeaTierText(ideasQuery.data.currentTier, ideasQuery.data.matureVideoCount) : 'Đang xác định mức chứng cứ'}</span></header>
@@ -249,6 +250,7 @@ export function VideoIdeasPanel({ channelId, language = 'vi' }: { channelId: str
     </section>}
 
     {run && <section className={styles.runSummary}><div><strong>Lượt gần nhất</strong><span>{run.backend === 'cli' ? 'Claude CLI' : 'API'} · {run.model} · {DATE_TIME.format(new Date(run.generatedAt))}</span></div><span>{run.dropped.length} mục bị bỏ sau đối chiếu · bậc {run.evidenceTier}</span><div className={styles.stageDurations}>{youtubeIdeaStageDurations(run.durations).map((stage) => <span key={stage.label}>{stage.label}: {(stage.durationMs / 1000).toFixed(1)} giây</span>)}</div>{run.dropped.length > 0 && <details><summary>Xem lý do các mục bị bỏ</summary><ul>{run.dropped.map((item, index) => <li key={`${index}-${item.id}`}><strong>{item.id}:</strong> {youtubeIdeaDropReasonLabel(item.reason)}{youtubeIdeaDropReasonLabel(item.reason) !== item.reason ? ` · ${item.reason}` : ''}</li>)}</ul></details>}</section>}
+    {partialNotice && <aside className={styles.partialRun} role="status"><div><strong>{partialNotice.heading}</strong><p>{partialNotice.detail}</p></div><Button size="sm" onClick={() => void generate()} disabled={starting || active || Boolean(cliUnavailable)}>{starting ? 'Đang xếp hàng…' : 'Chạy lại để lấy thêm'}</Button></aside>}
     {!ideasQuery.isLoading && !ideasQuery.error && accepted.length === 0 && <p className={styles.state}>Chưa có ý tưởng. Bấm Gợi ý video tiếp theo.</p>}
     {accepted.length > 0 && <div className={styles.ideaList}>{accepted.map((row) => <IdeaCard channelId={channelId} language={language} key={row.id} row={row} verdictPresent={Boolean(planVerdict)} onRefresh={() => queryClient.invalidateQueries({ queryKey: youtubeIdeasKey(channelId) })} />)}</div>}
     {rejected.length > 0 && <details className={styles.rejected}><summary>Ý tưởng đã loại bỏ ({rejected.length})</summary><div className={styles.ideaList}>{rejected.map((row) => <IdeaCard channelId={channelId} language={language} key={row.id} row={row} verdictPresent={Boolean(planVerdict)} onRefresh={() => queryClient.invalidateQueries({ queryKey: youtubeIdeasKey(channelId) })} />)}</div></details>}

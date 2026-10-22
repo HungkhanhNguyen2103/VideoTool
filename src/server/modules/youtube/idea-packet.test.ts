@@ -71,6 +71,20 @@ describe('YouTube idea evidence packet', () => {
     expect(normalizeYoutubeIdeaTitle('Vi Sao Viet Nam')).toBe('visaovietnam');
   });
 
+  it('adds a capped list of saved and rejected v2 episodes to the already-proposed data', () => {
+    const value = {
+      ...input(0),
+      savedIdeas: [
+      { title: 'Đã lưu', status: 'new' as const, episode: 'Triều Hồ cầu phong nhà Minh.' },
+      { title: 'Đã loại', status: 'rejected' as const, episode: 'Hầu Nhân Bảo tiến quân vào Lạng Sơn.' },
+      ...Array.from({ length: 45 }, (_, index) => ({ title: `Idea ${index}`, status: 'rejected' as const, episode: `Episode ${index}` })),
+      ],
+    };
+    const episodes = buildYoutubeIdeaPacket(value).packet.alreadyProposedEpisodes as string[];
+    expect(episodes).toHaveLength(40);
+    expect(episodes.slice(0, 2)).toEqual(['Triều Hồ cầu phong nhà Minh.', 'Hầu Nhân Bảo tiến quân vào Lạng Sơn.']);
+  });
+
   it('scrubs metric labels and active experiment notes before they enter the provider packet', () => {
     const sensitive = input(10);
     sensitive.planStatus.metrics.median_first28.label = 'Video by contact@example.com from C:\\Private\\memo.txt';

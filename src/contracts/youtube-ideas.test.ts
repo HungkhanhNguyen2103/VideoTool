@@ -110,4 +110,15 @@ describe('YouTube video idea contracts', () => {
       coverageFingerprint: 'a'.repeat(64), dropped: [], durations: { seedsMs: 10, selectMs: 20, expandMs: 30, totalMs: 60 },
     })).toMatchObject({ durations: { seedsMs: 10, selectMs: 20, expandMs: 30 } });
   });
+
+  it('accepts partial status while keeping legacy run summaries without status readable', () => {
+    const base = {
+      id: 'run-partial', evidenceTier: 'no-performance-data' as const, backend: 'cli' as const, model: 'claude-sonnet-5-5',
+      promptVersion: 'video-ideas-v2' as const, generatedAt: '2026-10-22T00:00:00.000Z', requestedCount: 6,
+      packetSummary: { projectCount: 0, syncedVideoCount: 0, savedIdeaCount: 0, matureVideoCount: 0 },
+      coverageFingerprint: 'b'.repeat(64), dropped: [], durations: { seedsMs: 10, selectMs: 20, expandMs: 30, totalMs: 60 },
+    };
+    expect(YoutubeIdeaRunSummarySchema.parse(base)).not.toHaveProperty('status');
+    expect(YoutubeIdeaRunSummarySchema.parse({ ...base, status: 'partial' })).toMatchObject({ status: 'partial' });
+  });
 });

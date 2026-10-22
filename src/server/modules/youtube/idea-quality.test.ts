@@ -4,10 +4,12 @@ import {
   YOUTUBE_IDEA_AVOID_LISTS,
   auditYoutubeIdeaClaimCoverage,
   filterYoutubeIdeaSeeds,
+  isYoutubeIdeaPeriodRefinement,
   normalizeYoutubeIdeaStageOutput,
   trimYoutubeIdeaV2Final,
   selectYoutubeIdeaObscurity,
   validateYoutubeIdeaV2,
+  youtubeIdeaEpisodeHasDecision,
   youtubeIdeaCenturyBucket,
   type YoutubeIdeaSeed,
 } from './idea-quality';
@@ -151,6 +153,50 @@ describe('YouTube idea quality rules', () => {
     expect(validateYoutubeIdeaV2(named, packet).reasons.join(' ')).toContain('tên chưa có claim');
   });
 
+  it('ignores ordinary sentence openers while retaining unsupported proper names at sentence start', () => {
+    expect(auditYoutubeIdeaClaimCoverage(idea({ title: 'Vậy' }), packet.serialized).unbackedNames).not.toContain('vay');
+    expect(auditYoutubeIdeaClaimCoverage(idea({ title: 'Biến số' }), packet.serialized).unbackedNames).not.toContain('bien');
+    expect(auditYoutubeIdeaClaimCoverage(idea({ title: 'Vấn đề' }), packet.serialized).unbackedNames).not.toContain('van');
+    const capturedOpeners = idea({ brief: 'Mọi chi tiết về diễn biến cần đối chiếu. Tính hòa giải của người ra quyết định là giả thuyết.' });
+    const capturedNames = auditYoutubeIdeaClaimCoverage(capturedOpeners, packet.serialized).unbackedNames;
+    expect(capturedNames).not.toContain('moi');
+    expect(capturedNames).not.toContain('tinh');
+    expect(auditYoutubeIdeaClaimCoverage(idea({ title: 'Đại Việt' }), packet.serialized).unbackedNames).toContain('dai viet');
+  });
+
+  it('matches short acronyms and actor parent-child names in trap motif links only', () => {
+    const voc = idea({
+      motif: { ...idea().motif, hunter: { text: 'Công ty Đông Ấn Hà Lan (VOC), thế lực thương mại ở Maluku.', evidence: 'strong' } },
+      trap: { ...idea().trap, hunterBelief: 'VOC tin rằng đốt phá cây ngoài vùng kiểm soát sẽ giữ chặt độc quyền gia vị.' },
+    });
+    expect(validateYoutubeIdeaV2(voc, packet).reasons.join(' ')).not.toContain('bốn dòng bẫy chưa nhất quán');
+
+    const navy = idea({
+      motif: { ...idea().motif, hunter: { text: 'Hải quân Đế quốc Nga, với hạm đội Baltic do Rozhestvensky chỉ huy.', evidence: 'strong' } },
+      trap: { ...idea().trap, hunterBelief: 'Hải quân Nga tin rằng đưa hạm đội Baltic sang kịp thời sẽ cứu được Cảng Arthur.' },
+    });
+    expect(validateYoutubeIdeaV2(navy, packet).reasons.join(' ')).not.toContain('bốn dòng bẫy chưa nhất quán');
+
+    const beiyang = idea({
+      motif: { ...idea().motif, hunter: { text: 'Triều Thanh, bên xây dựng hạm đội Bắc Dương.', evidence: 'strong' } },
+      trap: { ...idea().trap, hunterBelief: 'Tàu và trang bị hiện đại là đủ để có một hạm đội mạnh.' },
+    });
+    expect(validateYoutubeIdeaV2(beiyang, packet).reasons.join(' ')).toContain('bốn dòng bẫy chưa nhất quán');
+  });
+
+  it('accepts evidence-backed period refinement and a year that supports its century', () => {
+    expect(isYoutubeIdeaPeriodRefinement('thời Pháp thuộc', 'thời Pháp thuộc, năm 1930', 'claims mention 1930')).toBe(true);
+    expect(isYoutubeIdeaPeriodRefinement('cuối thế kỷ trước', 'cuối thế kỷ trước, năm 1998', 'claims mention 1998')).toBe(true);
+    expect(isYoutubeIdeaPeriodRefinement('đầu thế kỷ 20', '1904–1905', 'claims mention 1904 and 1905')).toBe(true);
+    expect(isYoutubeIdeaPeriodRefinement('thế kỷ 20', 'năm 1800', 'claims mention 1800')).toBe(false);
+
+    const russianFleet = idea({ period: 'đầu thế kỷ 20', claims: [{ text: 'The action took place in 1904–1905.', confidence: 'medium' }] });
+    expect(auditYoutubeIdeaClaimCoverage(russianFleet, packet.serialized).unbackedNumbers).not.toContain('20');
+    expect(auditYoutubeIdeaClaimCoverage(idea({ period: 'thế kỷ 20' }), `${packet.serialized} year 1904`).unbackedNumbers).not.toContain('20');
+    const wrongCentury = idea({ period: 'thế kỷ 20', claims: [{ text: 'The event happened in 1800.', confidence: 'medium' }] });
+    expect(auditYoutubeIdeaClaimCoverage(wrongCentury, packet.serialized).unbackedNumbers).toContain('20');
+  });
+
   it('flags single-word names at sentence starts and standalone place fields', () => {
     const namedHook = idea({ hook: 'Napoleon ra lệnh rút lui.' });
     const namedPlace = idea({ place: 'Huế' });
@@ -188,6 +234,35 @@ describe('YouTube idea quality rules', () => {
       expect(validateYoutubeIdeaV2(idea({ id: `episode-${index}`, episode }), packet).reasons.join(' ')).not.toContain('chưa phải một tập sự kiện');
     }
     expect(validateYoutubeIdeaV2(idea({ episode: 'Nguyễn Hữu Chỉnh dùng mưu lược xoay xở giữa các thế lực.' }), packet).reasons.join(' ')).toContain('chưa phải một tập sự kiện');
+
+    const capturedActions = [
+      'Hầu Nhân Bảo tiến quân vào Lạng Sơn sau khi tin đường núi đã mở.',
+      'Giản Định Đế giết hai tướng sau khi họ làm trái lệnh.',
+      'Triều Hồ cầu phong nhà Minh để củng cố vị thế.',
+      'The Austro-Hungarian government sent an ultimatum after negotiations failed.',
+      'Atahualpa agreed to meet the Spanish delegation at Cajamarca.',
+      'Trịnh Sâm dựa vào binh lính Tam phủ để củng cố phủ chúa, rồi lực lượng ấy trở thành kiêu binh.',
+      'Bạch Thái Bưởi mở tuyến tàu thủy cạnh tranh với các hãng nước ngoài đang thống trị đường sông.',
+      'Thái Phiên và Trần Cao Vân chuẩn bị khởi nghĩa cùng vua trẻ, dựa vào bí mật và lòng tin của nhà vua.',
+      'Đinh Tiên Hoàng lập con út làm người kế vị, bỏ qua người con cả từng có công trận.',
+      'Minh Mạng tập trung quyền lực về trung ương và xóa bỏ cơ chế tổng trấn.',
+      'Tôn Sĩ Nghị cho quân nghỉ ngơi ăn Tết ở Thăng Long sau thắng lợi nhanh.',
+      'Trịnh Sâm bỏ người thừa kế chính thức để lập con của người sủng phi.',
+      'Tự Đức ký hòa ước nhượng bộ để giữ yên biên giới.',
+      'Triều đình cho thương nhân người Hoa nhận khai thác mỏ vùng thượng du để thu thuế, rồi mất kiểm soát lực lượng thợ mỏ đông đảo.',
+      'Hoàng Hoa Thám tin vào thỏa thuận ngừng chiến với người Pháp để củng cố căn cứ, rồi bị thu hẹp không gian hoạt động.',
+      'Công ty South Sea nhận gánh nợ quốc gia đổi lấy độc quyền thương mại, kéo cổ phiếu lên bằng kỳ vọng.',
+      'Kodak giữ trọng tâm vào mảng phim chụp ảnh dù chính hãng đã tạo ra công nghệ máy ảnh kỹ thuật số.',
+    ];
+    for (const [index, episode] of capturedActions.entries()) {
+      expect(validateYoutubeIdeaV2(idea({ id: `captured-${index}`, episode }), packet).reasons.join(' ')).not.toContain('chưa phải một tập sự kiện');
+    }
+    const watchIndustry = 'Ngành đồng hồ Thụy Sĩ giữ vững niềm tin vào cơ khí chính xác khi đồng hồ thạch anh xuất hiện.';
+    const nguyenCitadel = 'Triều Nguyễn tin vào thành lũy và pháo cố định để chặn tàu chiến hơi nước phương Tây.';
+    expect(youtubeIdeaEpisodeHasDecision(watchIndustry)).toBe(false);
+    expect(youtubeIdeaEpisodeHasDecision(nguyenCitadel)).toBe(false);
+    expect(validateYoutubeIdeaV2(idea({ episode: watchIndustry }), packet).reasons.join(' ')).toContain('chưa phải một tập sự kiện');
+    expect(validateYoutubeIdeaV2(idea({ episode: nguyenCitadel }), packet).reasons.join(' ')).toContain('chưa phải một tập sự kiện');
   });
 
   it('drops ideas with a majority of low-confidence claims', () => {
@@ -222,7 +297,7 @@ describe('YouTube idea quality rules', () => {
       seed({ id: 'obscure-political', episode: 'Quan lại ban hành luật thuế.', yearOrPeriod: 'thế kỷ 14', hunterArchetype: 'political', famousnessGuess: 'obscure' }),
       seed({ id: 'known', episode: 'Quan chức ban hành luật thuế.', yearOrPeriod: 'thế kỷ 15', hunterArchetype: 'economic', famousnessGuess: 'known' }),
     ];
-    const result = filterYoutubeIdeaSeeds(rows, 1, 'lịch sử ít người biết');
+    const result = filterYoutubeIdeaSeeds(rows, 4, 'lịch sử ít người biết');
     expect(result.seeds.map((row) => row.id)).toEqual(['obscure-military', 'obscure-political', 'known']);
     expect(result.dropped.some((row) => row.id === 'famous' && row.reason.includes('famous'))).toBe(true);
   });

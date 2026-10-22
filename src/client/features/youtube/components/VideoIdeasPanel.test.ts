@@ -26,4 +26,13 @@ describe('VideoIdeasPanel product states', () => {
     expect(source).toContain('progress?.logs');
     expect(source).toContain('Đang xác định mức chứng cứ');
   });
+
+  it('shows partial-run reasons and retries through the existing generate action', async () => {
+    const source = await readFile(new URL('./VideoIdeasPanel.tsx', import.meta.url), 'utf8');
+    const view = await readFile(new URL('../idea-view.ts', import.meta.url), 'utf8');
+    expect(source).toContain('youtubeIdeaPartialRunNotice');
+    expect(source).toContain('Chạy lại để lấy thêm');
+    expect(source).toContain('onClick={() => void generate()}');
+    expect(view).toContain('ý bị loại vì');
+  });
 });

@@ -135,6 +135,7 @@ export const YoutubeIdeaPacketSummarySchema = z.object({
 export const YoutubeIdeaRunDurationsSchema = z.object({ generateMs: z.number().int().nonnegative(), critiqueMs: z.number().int().nonnegative(), totalMs: z.number().int().nonnegative() }).strict();
 export const YoutubeIdeaV2RunDurationsSchema = z.object({ seedsMs: z.number().int().nonnegative(), selectMs: z.number().int().nonnegative(), expandMs: z.number().int().nonnegative(), totalMs: z.number().int().nonnegative() }).strict();
 export const YoutubeIdeaStoredRunDurationsSchema = z.union([YoutubeIdeaRunDurationsSchema, YoutubeIdeaV2RunDurationsSchema]);
+export const YoutubeIdeaRunStatusSchema = z.enum(['complete', 'partial']);
 
 export const YoutubeIdeaRunSummarySchema = z.object({
   id: z.string().min(1),
@@ -144,6 +145,7 @@ export const YoutubeIdeaRunSummarySchema = z.object({
   promptVersion: z.enum(['video-ideas-v1', 'video-ideas-v2']),
   generatedAt: z.string().datetime(),
   requestedCount: z.number().int().min(4).max(8),
+  status: YoutubeIdeaRunStatusSchema.optional(),
   packetSummary: YoutubeIdeaPacketSummarySchema,
   coverageFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
   dropped: z.array(YoutubeIdeaDroppedSchema).max(30),
