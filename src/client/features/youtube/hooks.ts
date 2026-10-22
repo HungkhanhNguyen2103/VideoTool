@@ -10,6 +10,7 @@ export const youtubeVideoKey = (channelId: string, videoId: string) => [...YOUTU
 export const youtubeLinksKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'suggested-links', channelId] as const;
 export const youtubeActiveSyncKey = (channelId: string) => [...YOUTUBE_QUERY_KEY, 'active-sync', channelId] as const;
 export const youtubeSetupStatusKey = [...YOUTUBE_QUERY_KEY, 'setup'] as const;
+export const youtubeChannelsOverviewKey = [...YOUTUBE_QUERY_KEY, 'channels-overview'] as const;
 
 export async function invalidateYoutubeChannelQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, channelId: string): Promise<void> {
   await Promise.all([
@@ -19,6 +20,16 @@ export async function invalidateYoutubeChannelQueries(queryClient: Pick<QueryCli
     queryClient.invalidateQueries({ queryKey: youtubeLinksKey(channelId) }),
     queryClient.invalidateQueries({ queryKey: youtubeActiveSyncKey(channelId) }),
   ]);
+}
+
+export async function invalidateYoutubeChannelsOverviewQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, channelIds?: readonly string[]): Promise<void> {
+  const tasks: Promise<unknown>[] = [
+    queryClient.invalidateQueries({ queryKey: youtubeChannelsOverviewKey }),
+    queryClient.invalidateQueries({ queryKey: ['channels'] }),
+  ];
+  if (channelIds?.length) tasks.push(...channelIds.map((channelId) => invalidateYoutubeChannelQueries(queryClient, channelId)));
+  else tasks.push(queryClient.invalidateQueries({ queryKey: YOUTUBE_QUERY_KEY }));
+  await Promise.all(tasks);
 }
 
 export async function invalidateYoutubeLinkQueries(queryClient: Pick<QueryClient, 'invalidateQueries'>, channelId: string, videoId?: string): Promise<void> {
@@ -42,6 +53,18 @@ export async function invalidateYoutubeProfileQueries(queryClient: Pick<QueryCli
 
 export function useYoutubeSetupStatus() {
   return useQuery({ queryKey: youtubeSetupStatusKey, queryFn: api.getYoutubeSetupStatus });
+}
+
+export function useYoutubeChannelsOverview() {
+  return useQuery({ queryKey: youtubeChannelsOverviewKey, queryFn: api.getYoutubeChannelsOverview });
+}
+
+export function useSyncAllYoutubeChannels() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.syncAllYoutubeChannels,
+    onSuccess: (result) => invalidateYoutubeChannelsOverviewQueries(queryClient, result.results.map((row) => row.channelId)),
+  });
 }
 
 export function useRefreshYoutubeProfile() {

@@ -11,6 +11,7 @@ import {
   type YoutubeVideoListItem,
 } from '../../../contracts/youtube-analytics';
 import { RefreshYoutubeProfileRequestSchema, RefreshYoutubeProfileResultSchema, YoutubeConnectionSummarySchema, YoutubeSetupStatusSchema, type RefreshYoutubeProfileRequest } from '../../../contracts/youtube';
+import { YoutubeChannelsOverviewSchema, YoutubeSyncAllResultSchema } from '../../../contracts/youtube-overview';
 import { apiRequest } from '../../shared/api-client';
 
 const VideoListSchema = z.array(YoutubeVideoListItemSchema);
@@ -35,6 +36,14 @@ export function beginYoutubeImport() {
 
 export function getYoutubeSetupStatus() {
   return apiRequest('/api/youtube/setup', YoutubeSetupStatusSchema);
+}
+
+export function getYoutubeChannelsOverview() {
+  return apiRequest('/api/youtube/channels-overview', YoutubeChannelsOverviewSchema);
+}
+
+export function syncAllYoutubeChannels() {
+  return apiRequest('/api/youtube/sync-all', YoutubeSyncAllResultSchema, { method: 'POST' });
 }
 
 export function refreshYoutubeProfile(channelId: string, input: RefreshYoutubeProfileRequest = {}) {

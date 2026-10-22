@@ -4,6 +4,7 @@ import { useProjectUiStore } from '../features/project/store';
 import { projectDetailMeta } from '../features/project/format';
 import { Icon } from '../shared/ui/Icon';
 import styles from './Layout.module.css';
+import { layoutNavigationState } from './layout-view';
 
 const PRODUCTION_TABS = [
   { key: 'init', label: '1. Khởi Tạo Dự Án', icon: 'sparkles', path: () => '/production/init', needsProject: false },
@@ -22,6 +23,7 @@ export function Layout() {
   const location = useLocation();
   const currentProjectId = useProjectUiStore((s) => s.currentProjectId);
   const { data: currentProject } = useProject(currentProjectId);
+  const navigation = layoutNavigationState(location.pathname);
 
   return (
     <div className={styles.app}>
@@ -34,9 +36,13 @@ export function Layout() {
         </div>
         <nav className={styles.menu} aria-label="Menu tổng">
           <div className={`label ${styles.menuLabel}`}>Menu</div>
-          <Link to="/production/init" className={`${styles.menuItem} ${styles.menuItemActive}`} aria-current="page">
+          <Link to="/production/init" className={`${styles.menuItem} ${navigation.productionActive ? styles.menuItemActive : ''}`} aria-current={navigation.productionActive ? 'page' : undefined}>
             <Icon name="film" size="lg" />
             <span>Sản Xuất &amp; Kịch Bản</span>
+          </Link>
+          <Link to="/analytics" className={`${styles.menuItem} ${navigation.analyticsActive ? styles.menuItemActive : ''}`} aria-current={navigation.analyticsActive ? 'page' : undefined}>
+            <Icon name="chart" size="lg" />
+            <span>Phân Tích Kênh</span>
           </Link>
           <button className={styles.menuItem} type="button" disabled aria-disabled="true">
             <Icon name="lock" size="lg" />
@@ -52,42 +58,44 @@ export function Layout() {
       </aside>
 
       <main className={styles.main}>
-        <header className={styles.projectHead}>
-          <div>
-            <div className="label">Dự án đang mở</div>
-            <h1>{currentProject ? currentProject.title : 'Chưa mở dự án nào'}</h1>
-          </div>
-          <div className={styles.projectHeadActions}>
-            {currentProject?.channelId && <Link className={styles.analyticsLink} to={`/channels/${encodeURIComponent(currentProject.channelId)}/analytics`}>Phân tích kênh</Link>}
-            <div className={`${styles.chip} ${styles.chipMeta}`}>
-              <Icon name="pin" />
-              <span>{currentProject ? projectDetailMeta(currentProject) : '—'}</span>
+        {navigation.showProjectChrome && <>
+          <header className={styles.projectHead}>
+            <div>
+              <div className="label">Dự án đang mở</div>
+              <h1>{currentProject ? currentProject.title : 'Chưa mở dự án nào'}</h1>
             </div>
-          </div>
-        </header>
+            <div className={styles.projectHeadActions}>
+              {currentProject?.channelId && <Link className={styles.analyticsLink} to={`/channels/${encodeURIComponent(currentProject.channelId)}/analytics`}>Phân tích kênh</Link>}
+              <div className={`${styles.chip} ${styles.chipMeta}`}>
+                <Icon name="pin" />
+                <span>{currentProject ? projectDetailMeta(currentProject) : '—'}</span>
+              </div>
+            </div>
+          </header>
 
-        <nav className={styles.tabs} aria-label="Các bước sản xuất">
-          {PRODUCTION_TABS.map((tab) => {
-            const pattern = tab.key === 'init' ? '/production/init' : `/production/:projectId/${tab.key}`;
-            const isActive = matchPath(pattern, location.pathname) !== null;
-            const disabled = tab.needsProject && !currentProjectId;
-            const cls = `${styles.tab} ${isActive ? styles.tabActive : ''}`;
-            if (disabled) {
+          <nav className={styles.tabs} aria-label="Các bước sản xuất">
+            {PRODUCTION_TABS.map((tab) => {
+              const pattern = tab.key === 'init' ? '/production/init' : `/production/:projectId/${tab.key}`;
+              const isActive = matchPath(pattern, location.pathname) !== null;
+              const disabled = tab.needsProject && !currentProjectId;
+              const cls = `${styles.tab} ${isActive ? styles.tabActive : ''}`;
+              if (disabled) {
+                return (
+                  <button key={tab.key} type="button" className={cls} disabled aria-disabled="true" title="Mở một dự án trước.">
+                    <Icon name={tab.icon} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              }
               return (
-                <button key={tab.key} type="button" className={cls} disabled aria-disabled="true" title="Mở một dự án trước.">
+                <Link key={tab.key} to={tab.path(currentProjectId ?? '')} className={cls} aria-current={isActive ? 'page' : undefined}>
                   <Icon name={tab.icon} />
                   <span>{tab.label}</span>
-                </button>
+                </Link>
               );
-            }
-            return (
-              <Link key={tab.key} to={tab.path(currentProjectId ?? '')} className={cls} aria-current={isActive ? 'page' : undefined}>
-                <Icon name={tab.icon} />
-                <span>{tab.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+            })}
+          </nav>
+        </>}
 
         <Outlet />
       </main>

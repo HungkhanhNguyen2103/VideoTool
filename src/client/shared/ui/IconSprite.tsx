@@ -10,6 +10,9 @@ export function IconSprite() {
         <rect x="3" y="4" width="18" height="16" rx="2" />
         <path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" />
       </symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24">
+        <path d="M4 20h17M6 17v-5h3v5M11 17V7h3v10M16 17V3h3v14" />
+      </symbol>
       <symbol id="i-lock" viewBox="0 0 24 24">
         <rect x="5" y="11" width="14" height="9" rx="2" />
         <path d="M8 11V8a4 4 0 0 1 8 0v3" />

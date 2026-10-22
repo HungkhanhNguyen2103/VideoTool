@@ -279,7 +279,7 @@ export function YoutubeAnalyticsPage() {
   return (
     <main className={styles.page}>
       <header className={styles.pageHeader}>
-        <div><p className={styles.eyebrow}>YOUTUBE ANALYTICS · CHỈ ĐỌC</p><h1>Phân tích kênh</h1><p>Thống kê API của kênh bạn sở hữu. Studio vẫn là nguồn chính thức.</p></div>
+        <div><Link className={styles.backLink} to="/analytics">← Tất cả kênh</Link><p className={styles.eyebrow}>YOUTUBE ANALYTICS · CHỈ ĐỌC</p><h1>Phân tích kênh</h1><p>Thống kê API của kênh bạn sở hữu. Studio vẫn là nguồn chính thức.</p></div>
         <label className={styles.channelSelect}>Hồ sơ kênh
           <select value={channel.id} onChange={(event) => navigate(`/channels/${encodeURIComponent(event.target.value)}/analytics`)}>
             {(channelsQuery.data ?? []).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}

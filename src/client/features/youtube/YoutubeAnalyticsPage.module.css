@@ -3,6 +3,7 @@
 .pageHeader { padding: 1.1rem 1.2rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--panel); }
 .pageHeader h1 { margin: .15rem 0; font-size: 1.35rem; }
 .pageHeader p { margin: .25rem 0 0; color: var(--text-3); font-size: .8rem; }
+.backLink { display: inline-block; margin-bottom: .35rem; color: var(--amber-text); font-size: .72rem; font-weight: 700; }
 .eyebrow { margin: 0; color: var(--amber-text); font: 700 .65rem var(--mono); letter-spacing: .08em; }
 .channelSelect, .videoToolbar label, .projectSelect { display: grid; gap: .3rem; color: var(--text-2); font-size: .72rem; font-weight: 700; }
 .channelSelect { min-width: min(16rem, 100%); }

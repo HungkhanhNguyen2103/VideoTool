@@ -5,6 +5,7 @@ import { ReviewScriptPage } from '../features/script/ReviewScriptPage';
 import { StudioPage } from '../features/asset/StudioPage';
 import { SeoPage } from '../features/seo/SeoPage';
 import { YoutubeAnalyticsPage } from '../features/youtube/YoutubeAnalyticsPage';
+import { ChannelsOverviewPage } from '../features/youtube/ChannelsOverviewPage';
 
 export const router = createBrowserRouter([
   {
@@ -13,6 +14,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/production/init" replace /> },
       { path: 'production/init', element: <ProjectInitPage /> },
+      { path: 'analytics', element: <ChannelsOverviewPage /> },
       { path: 'channels/:channelId/analytics', element: <YoutubeAnalyticsPage /> },
       {
         path: 'production/:projectId/review',

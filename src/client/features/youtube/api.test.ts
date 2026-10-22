@@ -6,10 +6,12 @@ import {
   generateYoutubeChannelReview,
   getActiveYoutubeSync,
   getYoutubeConnection,
+  getYoutubeChannelsOverview,
   getYoutubeSetupStatus,
   getYoutubeVideos,
   linkProjectToYoutubeVideo,
   startYoutubeSync,
+  syncAllYoutubeChannels,
   refreshYoutubeProfile,
   unlinkProjectFromYoutubeVideo,
 } from './api';
@@ -54,6 +56,25 @@ describe('YouTube analytics client API', () => {
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('window=90d');
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('type=short');
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('q=Vi%E1%BB%87t+Nam');
+  });
+
+  it('loads the all-channel overview and queues sync-all through the strict API contracts', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ channels: [], totals: { subscriberCount: null, views28: null, watchHours28: null, subscribersGained28: null, channelsConnected: 0, channelsNeedReconnect: 0 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{ channelId: 'channel-1', jobId: 'job-1' }] }), { status: 200 }));
+    await expect(getYoutubeChannelsOverview()).resolves.toMatchObject({ channels: [], totals: { channelsConnected: 0 } });
+    await expect(syncAllYoutubeChannels()).resolves.toEqual({ results: [{ channelId: 'channel-1', jobId: 'job-1' }] });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/youtube/channels-overview', expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/youtube/sync-all', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('maps sync-all errors and rejects overview payloads that contain unexpected fields', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'YOUTUBE_NOT_CONFIGURED', message: 'Chưa cấu hình Google OAuth.' } }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ channels: [], totals: { subscriberCount: null, views28: null, watchHours28: null, subscribersGained28: null, channelsConnected: 0, channelsNeedReconnect: 0 }, credentials: { refreshToken: 'secret' } }), { status: 200 }));
+    await expect(syncAllYoutubeChannels()).rejects.toMatchObject({ status: 503, code: 'YOUTUBE_NOT_CONFIGURED', message: 'Chưa cấu hình Google OAuth.' });
+    await expect(getYoutubeChannelsOverview()).rejects.toMatchObject({ name: 'ZodError' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps disconnect local data by default and links or unlinks a project through project routes', async () => {
