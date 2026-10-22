@@ -66,10 +66,18 @@ function seed(overrides: Partial<YoutubeIdeaSeed> = {}): YoutubeIdeaSeed {
 }
 
 describe('YouTube idea quality rules', () => {
-  it('recognizes Arabic, Roman and Vietnamese written century labels', () => {
+  it('recognizes Arabic, Roman and Vietnamese written century labels and separates BCE', () => {
     expect(youtubeIdeaCenturyBucket('thế kỷ XIII')).toBe(13);
+    expect(youtubeIdeaCenturyBucket('thế kỷ 13')).toBe(13);
+    expect(youtubeIdeaCenturyBucket('thế kỷ 18')).toBe(18);
+    expect(youtubeIdeaCenturyBucket('Late 13th century')).toBe(13);
     expect(youtubeIdeaCenturyBucket('cuối thế kỷ mười tám')).toBe(18);
     expect(youtubeIdeaCenturyBucket('đầu thế kỷ hai mươi')).toBe(20);
+    expect(youtubeIdeaCenturyBucket('thế kỷ 5 TCN')).toBe(-5);
+    expect(youtubeIdeaCenturyBucket('thế kỷ 5 trước Công nguyên')).toBe(-5);
+    expect(youtubeIdeaCenturyBucket('480 BCE')).toBe(-5);
+    expect(youtubeIdeaCenturyBucket('480 B.C.')).toBe(-5);
+    expect(youtubeIdeaCenturyBucket('1527')).toBe(16);
     expect(youtubeIdeaCenturyBucket('Thời Nam Việt')).toBeNull();
   });
 
@@ -122,7 +130,7 @@ describe('YouTube idea quality rules', () => {
   it('recognizes own strengths without treating ordinary sentence openings as proper names', () => {
     const strengthText = 'Thế mạnh kỵ binh khiến đội hình tiến sâu rồi khó rút lui.';
     const strength = idea({
-      brief: 'Minh. Tập trung quân ở vùng đồng bằng. Kế hoạch kéo dài cuộc vây hãm. Một đường vòng nằm ngoài tính toán. Bên phòng thủ cắt tuyến tiếp tế. Quân đông bị dồn khỏi vị trí. Chính quy mô đội hình khiến đường tiếp tế khó bảo vệ.',
+      brief: 'Đây. Tập trung quân ở vùng đồng bằng. Kế hoạch kéo dài cuộc vây hãm. Một đường vòng nằm ngoài tính toán. Bên phòng thủ cắt tuyến tiếp tế. Quân đông bị dồn khỏi vị trí. Chính quy mô đội hình khiến đường tiếp tế khó bảo vệ.',
       trap: { ...idea().trap, advantageThatBackfired: strengthText },
       motif: {
         ...idea().motif,
@@ -141,6 +149,13 @@ describe('YouTube idea quality rules', () => {
     expect(audit.reasons.join(' ')).not.toContain('mệnh đề nhân quả');
     const named = idea({ title: 'Trần Ích Tắc và kế hoạch tự khép lại' });
     expect(validateYoutubeIdeaV2(named, packet).reasons.join(' ')).toContain('tên chưa có claim');
+  });
+
+  it('flags single-word names at sentence starts and standalone place fields', () => {
+    const namedHook = idea({ hook: 'Napoleon ra lệnh rút lui.' });
+    const namedPlace = idea({ place: 'Huế' });
+    expect(auditYoutubeIdeaClaimCoverage(namedHook, packet.serialized).unbackedNames).toContain('napoleon');
+    expect(auditYoutubeIdeaClaimCoverage(namedPlace, packet.serialized).unbackedNames).toContain('hue');
   });
 
   it('does not treat the verb điều khiển as the causal word khiến', () => {
@@ -198,6 +213,29 @@ describe('YouTube idea quality rules', () => {
     const result = filterYoutubeIdeaSeeds(rows, 6);
     expect(result.seeds.map((row) => row.id)).toEqual(['a', 'c', 'd', 'f', 'g']);
     expect(result.dropped.map((row) => row.reason).join(' ')).toContain('trùng loại bẫy');
+  });
+
+  it('does not let ineligible famous seeds consume obscure-mode diversity slots', () => {
+    const rows = [
+      seed({ id: 'famous', episode: 'Napoleon kéo dài cuộc vây hãm.', yearOrPeriod: 'thế kỷ 13', hunterArchetype: 'military', famousnessGuess: 'famous' }),
+      seed({ id: 'obscure-military', episode: 'Chỉ huy đổi tuyến rút lui.', yearOrPeriod: 'thế kỷ 13', hunterArchetype: 'military', famousnessGuess: 'obscure' }),
+      seed({ id: 'obscure-political', episode: 'Quan lại ban hành luật thuế.', yearOrPeriod: 'thế kỷ 14', hunterArchetype: 'political', famousnessGuess: 'obscure' }),
+      seed({ id: 'known', episode: 'Quan chức ban hành luật thuế.', yearOrPeriod: 'thế kỷ 15', hunterArchetype: 'economic', famousnessGuess: 'known' }),
+    ];
+    const result = filterYoutubeIdeaSeeds(rows, 1, 'lịch sử ít người biết');
+    expect(result.seeds.map((row) => row.id)).toEqual(['obscure-military', 'obscure-political', 'known']);
+    expect(result.dropped.some((row) => row.id === 'famous' && row.reason.includes('famous'))).toBe(true);
+  });
+
+  it('groups only adjacent capitalized words when enforcing repeated person limits', () => {
+    const rows = [
+      seed({ id: 'a', episode: 'Trần Ích Tắc ký hiệp ước với Nguyên triều.', yearOrPeriod: 'thế kỷ 13', hunterArchetype: 'military' }),
+      seed({ id: 'b', episode: 'Trần Ích Tắc ký hiệp ước với Tống triều.', yearOrPeriod: 'thế kỷ 14', hunterArchetype: 'political' }),
+      seed({ id: 'c', episode: 'Trần Ích Tắc ký hiệp ước với Minh triều.', yearOrPeriod: 'thế kỷ 15', hunterArchetype: 'economic' }),
+    ];
+    const result = filterYoutubeIdeaSeeds(rows, 6);
+    expect(result.seeds.map((row) => row.id)).toEqual(['a', 'b']);
+    expect(result.dropped).toContainEqual({ id: 'c', reason: 'trùng nhân vật hoặc chính thể quá hai lần.' });
   });
 
   it('drops famous ideas under obscure steering and marks known guesses as fallback only when needed', () => {

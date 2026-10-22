@@ -16,7 +16,6 @@ import type { YoutubeIdeaPacket } from './idea-packet';
 import {
   createIdeaAvoidList,
   filterYoutubeIdeaSeeds,
-  isObscuritySteering,
   normalizeYoutubeIdeaStageOutput,
   trimYoutubeIdeaV2Final,
   validateYoutubeIdeaV2,
@@ -117,6 +116,11 @@ export function validateYoutubeIdea(value: unknown, packet: YoutubeIdeaPacket): 
   const parsed = YoutubeIdeaDraftSchema.extend({ scores: YoutubeIdeaScoresSchema }).safeParse(value);
   if (!parsed.success) return { idea: null, reasons: [`schema: ${parsed.error.issues.slice(0, 4).map((issue) => issue.path.join('.') || issue.message).join(', ')}`] };
   const idea = parsed.data;
+  const reasons = validateLegacyIdeaSemantics(idea, packet);
+  return { idea: reasons.length ? null : idea, reasons };
+}
+
+function validateLegacyIdeaSemantics(idea: YoutubeIdea, packet: YoutubeIdeaPacket): string[] {
   const reasons: string[] = [];
   if (idea.evidenceTier !== packet.evidenceTier) reasons.push('bậc chứng cứ của ý tưởng không khớp với gói dữ liệu.');
   const request = object(object(packet.packet).request);
@@ -148,7 +152,7 @@ export function validateYoutubeIdea(value: unknown, packet: YoutubeIdeaPacket): 
     const links = Object.values(idea.motif ?? {});
     if (links.filter((link) => link.evidence !== 'thin').length < 2) reasons.push('không đủ khớp mẫu: hubris-trap cần ít nhất hai mắt xích không mỏng.');
   }
-  return { idea: reasons.length ? null : idea, reasons };
+  return reasons;
 }
 
 function legacyShape(idea: YoutubeIdeaV2): YoutubeIdea {
@@ -175,8 +179,7 @@ function legacyShape(idea: YoutubeIdeaV2): YoutubeIdea {
 function validateCompleteIdea(value: unknown, packet: YoutubeIdeaPacket): { idea: YoutubeIdeaV2 | null; reasons: string[] } {
   const checked = validateYoutubeIdeaV2(value, packet);
   if (!checked.idea) return checked;
-  const legacyRules = validateYoutubeIdea(legacyShape(checked.idea), packet);
-  const reasons = legacyRules.reasons;
+  const reasons = validateLegacyIdeaSemantics(legacyShape(checked.idea), packet);
   return { idea: reasons.length ? null : checked.idea, reasons };
 }
 
@@ -320,7 +323,7 @@ function parseSelection(value: unknown, seeds: YoutubeIdeaSeed[], count: number)
   const rejectedIds = result.data.rejected.map((row) => row.id);
   const allIds = [...selectedIds, ...rejectedIds];
   const errors: string[] = [];
-  if (selectedIds.length !== expectedSelected) errors.push(`selected must contain exactly ${expectedSelected} unique seed IDs`);
+  if (selectedIds.length > expectedSelected) errors.push(`selected must not contain more than ${expectedSelected} seed IDs`);
   if (new Set(selectedIds).size !== selectedIds.length) errors.push('selected contains duplicate seed IDs');
   if (new Set(rejectedIds).size !== rejectedIds.length) errors.push('rejected contains duplicate seed IDs');
   if (allIds.some((id) => !seedIds.has(id))) errors.push('selection references an unknown seed ID');
@@ -369,15 +372,9 @@ function selectionToSeeds(input: {
       dropped.push({ id: row.id, reason: 'Không được chọn; bộ lọc không nhận được lý do loại cụ thể.' });
     }
   }
-  const diverse = filterYoutubeIdeaSeeds(candidates, input.count);
+  const diverse = filterYoutubeIdeaSeeds(candidates, input.count, input.steering);
   dropped.push(...diverse.dropped);
-  let selected = diverse.seeds.map((seed) => ({ ...seed, trapSketch: sketchById.get(seed.id) ?? '' }));
-  if (isObscuritySteering(input.steering)) {
-    for (const seed of selected.filter((row) => row.famousnessGuess === 'famous')) {
-      dropped.push({ id: seed.id, reason: 'độ nổi tiếng ước đoán là famous theo yêu cầu tìm chủ đề ít nổi tiếng.' });
-    }
-    selected = selected.filter((row) => row.famousnessGuess !== 'famous');
-  }
+  const selected = diverse.seeds.map((seed) => ({ ...seed, trapSketch: sketchById.get(seed.id) ?? '' }));
   return { seeds: selected, dropped };
 }
 

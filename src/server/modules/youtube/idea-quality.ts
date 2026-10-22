@@ -99,7 +99,7 @@ function extractNumbers(value: string): string[] {
     .map((match) => (match[1] ?? '').replace(/[.,]/gu, '')).filter(Boolean);
 }
 
-const SENTENCE_START_WORDS = new Set(['a', 'an', 'the', 'and', 'but', 'because', 'when', 'while', 'after', 'before', 'người', 'khi', 'nếu', 'một', 'đây', 'đó', 'chính', 'sau', 'trước', 'kế', 'câu', 'cuộc', 'năm', 'nhà', 'vua', 'chúa', 'tướng', 'chỉ', 'đội', 'quân', 'triều', 'nhưng', 'vì', 'tuy', 'dù', 'ông', 'bà', 'họ', 'từ', 'trong', 'đến', 'lúc', 'bên', 'tuyến'].map(normalizeVietnamese));
+const SENTENCE_START_WORDS = new Set(['a', 'an', 'the', 'and', 'but', 'because', 'when', 'while', 'after', 'before', 'người', 'khi', 'nếu', 'một', 'đây', 'đó', 'chính', 'sau', 'trước', 'kế', 'câu', 'cuộc', 'năm', 'nhà', 'vua', 'chúa', 'tướng', 'chỉ', 'đội', 'quân', 'triều', 'nhưng', 'vì', 'tuy', 'dù', 'ông', 'bà', 'họ', 'từ', 'trong', 'đến', 'lúc', 'bên', 'tuyến', 'tập'].map(normalizeVietnamese));
 
 function extractCapitalizedTerms(value: string): string[] {
   const result: string[] = [];
@@ -122,7 +122,6 @@ function extractCapitalizedTerms(value: string): string[] {
     const words = sentenceStart && SENTENCE_START_WORDS.has(normalizeVietnamese(group.words[0] ?? ''))
       ? group.words.slice(1)
       : group.words;
-    if (sentenceStart && words.length < 2) continue;
     if (words.length) result.push(normalizeVietnamese(words.join(' ')));
   }
   return result;
@@ -154,45 +153,60 @@ function episodeHasDecision(episode: string): boolean {
 
 export function youtubeIdeaCenturyBucket(period: string): number | null {
   const vietnameseUnits: Record<string, number> = { mot: 1, hai: 2, ba: 3, bon: 4, tu: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9 };
-  const year = period.match(/(?<!\d)(-?\d{1,4})(?!\d)/u)?.[1];
-  if (year) {
-    const number = Number(year);
-    return number > 0 ? Math.floor((number - 1) / 100) + 1 : Math.floor((Math.abs(number) - 1) / 100) + 1;
-  }
   const normalized = normalizeVietnamese(period);
+  const isBce = /(?:^|[^a-z])(?:b\.?c\.?e?\.?|t\.?c\.?n\.?)(?:$|[^a-z])/u.test(normalized)
+    || /(?:truoc\s+(?:cong\s+)?nguyen|before\s+(?:christ|common\s+era))/u.test(normalized);
+  const numericCentury = normalized.match(/(?:the ky|century|c\.)\s*(?:thu\s*)?(\d{1,2})(?:st|nd|rd|th)?\b/u)?.[1]
+    ?? normalized.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+century\b/u)?.[1];
+  if (numericCentury) {
+    const century = Number(numericCentury);
+    return century ? (isBce ? -century : century) : null;
+  }
   const centuryWords = normalized.match(/(?:the ky|century)(?:\s+thu)?\s+(muoi(?:\s+(?:mot|hai|ba|bon|tu|nam|sau|bay|tam|chin))?|hai\s+muoi(?:\s+(?:mot|hai|ba|bon|tu|nam|sau|bay|tam|chin))?)/u)?.[1];
   if (centuryWords) {
     const words = centuryWords.split(/\s+/u);
-    if (words[0] === 'muoi') return 10 + (words[1] ? vietnameseUnits[words[1]] ?? 0 : 0);
-    return 20 + (words[2] ? vietnameseUnits[words[2]] ?? 0 : 0);
+    const century = words[0] === 'muoi' ? 10 + (words[1] ? vietnameseUnits[words[1]] ?? 0 : 0) : 20 + (words[2] ? vietnameseUnits[words[2]] ?? 0 : 0);
+    return isBce ? -century : century;
   }
-  const roman = normalized.match(/(?:the ky|century|c\.)\s*([ivxlcdm]+)/u)?.[1];
-  if (!roman) return null;
-  const values: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
-  let total = 0;
-  let previous = 0;
-  for (const char of [...roman].reverse()) {
-    const current = values[char] ?? 0;
-    total += current < previous ? -current : current;
-    previous = current;
+  const roman = normalized.match(/(?:the ky|century|c\.)\s*([ivxlcdm]+)/u)?.[1]
+    ?? normalized.match(/\b([ivxlcdm]+)(?:st|nd|rd|th)?\s+century\b/u)?.[1];
+  if (roman) {
+    const values: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
+    let total = 0;
+    let previous = 0;
+    for (const char of [...roman].reverse()) {
+      const current = values[char] ?? 0;
+      total += current < previous ? -current : current;
+      previous = current;
+    }
+    return total ? (isBce ? -total : total) : null;
   }
-  return total || null;
+  const year = normalized.match(/(?<!\d)(-?\d{1,4})(?!\d)/u)?.[1];
+  if (!year) return null;
+  const number = Math.abs(Number(year));
+  if (!number) return null;
+  const century = Math.floor((number - 1) / 100) + 1;
+  return isBce || Number(year) < 0 ? -century : century;
 }
 
 function entitySignatures(episode: string): Set<string> {
   const groups: string[] = [];
   let current: string[] = [];
+  let previousEnd = -1;
   for (const match of episode.matchAll(/[\p{Lu}][\p{L}\p{M}'’.-]*/gu)) {
     const word = normalizeVietnamese(match[0]);
-    const before = episode.slice(0, match.index ?? 0);
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    const before = episode.slice(0, start);
     const sentenceStart = !before.trim() || /[.!?。！？]\s*$/u.test(before);
     if (sentenceStart && SENTENCE_START_WORDS.has(word)) continue;
-    const preceding = episode.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 1);
-    if (current.length && preceding === ' ') current.push(word);
+    const between = previousEnd < 0 ? '' : episode.slice(previousEnd, start);
+    if (current.length && /^\s+$/u.test(between)) current.push(word);
     else {
       if (current.length) groups.push(current.join(' '));
       current = [word];
     }
+    previousEnd = end;
   }
   if (current.length) groups.push(current.join(' '));
   return new Set(groups.filter((value) => value.length > 1));
@@ -306,25 +320,48 @@ export type YoutubeIdeaSeed = {
   famousnessGuess: YoutubeIdeaV2['famousnessGuess'];
 };
 
-export function filterYoutubeIdeaSeeds(rows: YoutubeIdeaSeed[], count: number): { seeds: YoutubeIdeaSeed[]; dropped: YoutubeIdeaDropped[] } {
+export function filterYoutubeIdeaSeeds(rows: YoutubeIdeaSeed[], count: number, steering = ''): { seeds: YoutubeIdeaSeed[]; dropped: YoutubeIdeaDropped[] } {
   const seeds: YoutubeIdeaSeed[] = [];
   const dropped: YoutubeIdeaDropped[] = [];
   const archetypeCounts = new Map<string, number>();
-  for (const row of rows) {
-    let reason: string | null = null;
-    if (!episodeHasDecision(row.episode) || !row.yearOrPeriod.trim()) reason = 'không phải một tập sự kiện có quyết định và thời kỳ.';
-    const yearBucket = youtubeIdeaCenturyBucket(row.yearOrPeriod);
-    if (!reason && yearBucket !== null && seeds.some((accepted) => accepted.hunterArchetype === row.hunterArchetype && youtubeIdeaCenturyBucket(accepted.yearOrPeriod) === yearBucket)) {
-      reason = 'trùng loại bẫy trong cùng thế kỷ.';
+  const obscureMode = isObscuritySteering(steering);
+  const target = count + 2;
+  const famous = obscureMode ? rows.filter((row) => row.famousnessGuess === 'famous') : [];
+  for (const row of famous) dropped.push({ id: row.id, reason: 'độ nổi tiếng ước đoán là famous theo yêu cầu tìm chủ đề ít nổi tiếng.' });
+  const eligibleRows = rows.filter((row) => !obscureMode || row.famousnessGuess !== 'famous');
+  const ordinaryRows = eligibleRows.filter((row) => !obscureMode || row.famousnessGuess !== 'known');
+  const knownRows = obscureMode ? eligibleRows.filter((row) => row.famousnessGuess === 'known') : [];
+  const considered = new Set<string>();
+  const considerRows = (candidateRows: YoutubeIdeaSeed[], limit: number) => {
+    for (const row of candidateRows) {
+      if (seeds.length >= limit) break;
+      if (considered.has(row.id)) continue;
+      considered.add(row.id);
+      let reason: string | null = null;
+      if (!episodeHasDecision(row.episode) || !row.yearOrPeriod.trim()) reason = 'không phải một tập sự kiện có quyết định và thời kỳ.';
+      const yearBucket = youtubeIdeaCenturyBucket(row.yearOrPeriod);
+      if (!reason && yearBucket !== null && seeds.some((accepted) => accepted.hunterArchetype === row.hunterArchetype && youtubeIdeaCenturyBucket(accepted.yearOrPeriod) === yearBucket)) {
+        reason = 'trùng loại bẫy trong cùng thế kỷ.';
+      }
+      if (!reason && (archetypeCounts.get(row.hunterArchetype) ?? 0) >= 2) reason = 'trùng loại bẫy: đã đủ hai ý tưởng cùng archetype.';
+      if (!reason && seeds.filter((accepted) => hasPersonOverlap(accepted.episode, row.episode)).length >= 2) reason = 'trùng nhân vật hoặc chính thể quá hai lần.';
+      if (reason) dropped.push({ id: row.id, reason });
+      else {
+        seeds.push(row);
+        archetypeCounts.set(row.hunterArchetype, (archetypeCounts.get(row.hunterArchetype) ?? 0) + 1);
+      }
     }
-    if (!reason && (archetypeCounts.get(row.hunterArchetype) ?? 0) >= 2) reason = 'trùng loại bẫy: đã đủ hai ý tưởng cùng archetype.';
-    if (!reason && seeds.filter((accepted) => hasPersonOverlap(accepted.episode, row.episode)).length >= 2) reason = 'trùng nhân vật hoặc chính thể quá hai lần.';
-    if (reason) dropped.push({ id: row.id, reason });
-    else {
-      seeds.push(row);
-      archetypeCounts.set(row.hunterArchetype, (archetypeCounts.get(row.hunterArchetype) ?? 0) + 1);
-    }
-    if (seeds.length >= count + 2) break;
+  };
+  const ordinaryLimit = obscureMode && knownRows.length ? Math.min(target, count + 1) : target;
+  considerRows(ordinaryRows, ordinaryLimit);
+  if (obscureMode && seeds.length >= count) considerRows(knownRows, target);
+  if (seeds.length < target) considerRows(ordinaryRows, target);
+  if (obscureMode && seeds.length < target) considerRows(knownRows, target);
+  for (const row of eligibleRows) {
+    if (considered.has(row.id) || dropped.some((item) => item.id === row.id)) continue;
+    dropped.push({ id: row.id, reason: obscureMode && row.famousnessGuess === 'known'
+      ? 'không cần phương án đã biết khi còn đủ ý tưởng ước đoán ít nổi tiếng.'
+      : 'vượt số lượng seed sau khi áp dụng đa dạng.' });
   }
   return { seeds, dropped };
 }
